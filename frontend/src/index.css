@@ -1,0 +1,356 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary-color: #2563eb;
+  --primary-hover: #3b82f6;
+  --primary-active: #1d4ed8;
+
+  --success-color: #10b981;
+  --success-hover: #34d399;
+  
+  --warning-color: #f59e0b;
+  --warning-hover: #fbbf24;
+  
+  --error-color: #ef4444;
+  --error-hover: #f87171;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --bg-tertiary: #f1f5f9;
+  --bg-elevated: #ffffff;
+  --bg-surface: #f0f2f5;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #6b7280;
+  --text-quaternary: #9ca3af;
+  --text-disabled: #9ca3af;
+
+  --border-color: #e2e8f0;
+  --border-color-light: #f1f5f9;
+  --border-color-lighter: #f8f9fa;
+
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-base: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.18);
+
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --font-family-code: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+    'Courier New', monospace;
+
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-xxl: 24px;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  --radius-sm: 4px;
+  --radius-base: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-xxl: 24px;
+
+  --duration-instant: 0.1s;
+  --duration-fast: 0.2s;
+  --duration-base: 0.3s;
+  --duration-slow: 0.5s;
+
+  --ease-in-out: cubic-bezier(0.645, 0.045, 0.355, 1);
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-in: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+
+body {
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5715;
+}
+
+code {
+  font-family: var(--font-family-code);
+  background-color: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9em;
+  color: var(--error-color);
+}
+
+pre {
+  font-family: var(--font-family-code);
+  background-color: var(--bg-tertiary);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-base);
+  overflow-x: auto;
+  border: 1px solid var(--border-color-light);
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+.ant-layout {
+  background-color: var(--bg-primary);
+}
+
+.ant-layout-header {
+  background-color: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.ant-layout-content {
+  background-color: var(--bg-secondary);
+}
+
+.ant-btn {
+  border-radius: var(--radius-base);
+  transition: all var(--duration-fast) var(--ease-in-out);
+  box-shadow: var(--shadow-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.ant-btn:hover {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.ant-btn:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
+}
+
+.ant-btn-primary {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.ant-btn-primary:hover {
+  background-color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.ant-btn-primary:active {
+  background-color: var(--primary-active);
+  border-color: var(--primary-active);
+}
+
+.ant-input {
+  border-radius: var(--radius-base);
+  transition: all var(--duration-fast) var(--ease-in-out);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+}
+
+.ant-input:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.ant-input-number {
+  border-radius: var(--radius-base);
+}
+
+.ant-input-number:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.ant-select {
+  border-radius: var(--radius-base);
+}
+
+.ant-select-selector {
+  border-radius: var(--radius-base) !important;
+  border: 1px solid var(--border-color) !important;
+}
+
+.ant-select-focused .ant-select-selector {
+  border-color: var(--primary-color) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important;
+}
+
+.ant-modal {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+
+.ant-modal-header {
+  border-bottom: 1px solid var(--border-color-light);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--spacing-lg);
+}
+
+.ant-modal-body {
+  padding: var(--spacing-lg);
+}
+
+.ant-modal-footer {
+  border-top: 1px solid var(--border-color-light);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.ant-card {
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-color-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.ant-alert {
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-xs);
+}
+
+.ant-tag {
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.ant-progress-line {
+  border-radius: var(--radius-base);
+}
+
+.ant-list-item {
+  border-radius: var(--radius-base);
+  margin-bottom: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color-light);
+  box-shadow: var(--shadow-xs);
+}
+
+.react-flow__node {
+  cursor: grab;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--duration-fast) var(--ease-in-out);
+}
+
+.react-flow__node:hover {
+  box-shadow: var(--shadow-base);
+  transform: translateY(-2px);
+}
+
+.react-flow__node.selected {
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);
+}
+
+.react-flow__node:active {
+  cursor: grabbing;
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  box-shadow: var(--shadow-xs);
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+  transition: stroke-width var(--duration-fast) var(--ease-in-out);
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke-width: 3;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--primary-color);
+  stroke-width: 3;
+}
+
+.react-flow__controls {
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-base);
+  border: 1px solid var(--border-color-light);
+  background-color: var(--bg-primary);
+}
+
+.react-flow__controls-button {
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-in-out);
+}
+
+.react-flow__controls-button:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.react-flow__minimap {
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-base);
+  border: 1px solid var(--border-color-light);
+  background-color: var(--bg-primary);
+}
+
+.react-flow__background {
+  background-color: var(--bg-secondary);
+}
+
+.react-flow__backgrounddots {
+  fill: #e2e8f0;
+}
+
+.ant-typography {
+  color: var(--text-primary);
+}
+
+.ant-typography-secondary {
+  color: var(--text-secondary);
+}
+
+.ant-message {
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-lg);
+}
+
+.ant-form-item-label > label {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+}
+
+.ant-form-item-explain {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.ant-divider {
+  border-color: var(--border-color-light);
+}
+
+.ant-spin {
+  color: var(--primary-color);
+}
+
+.ant-spin-dot-item {
+  background-color: var(--primary-color);
+}
+
+.ant-layout-sider {
+  background-color: var(--bg-primary);
+}
