@@ -10,6 +10,7 @@ import ReactFlow, {
   OnEdgesChange,
   applyNodeChanges,
   applyEdgeChanges,
+  NodeDragHandler,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useCanvasStore } from '../../store/canvasStore';
@@ -17,15 +18,17 @@ import { NodeData, EdgeData } from '../../types/canvas';
 import AgentNode from './AgentNode';
 import Toolbar from '../Toolbar/Toolbar';
 import ScalableBackground from './ScalableBackground';
+import SmartGridLines from './SmartGridLines';
 
 const nodeTypes: NodeTypes = {
   agent: AgentNode,
 };
 
 const Canvas: React.FC = () => {
-  const { nodes, edges, setNodes, setEdges, addEdge: storeAddEdge, saveCanvas, addNode } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, addEdge: storeAddEdge, saveCanvas, addNode, snapToGrid } = useCanvasStore();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [draggingNodeInfo, setDraggingNodeInfo] = useState<{ id: string; position: { x: number; y: number } } | null>(null);
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
@@ -126,6 +129,22 @@ const Canvas: React.FC = () => {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const onNodeDragStart: NodeDragHandler = useCallback((_, node) => {
+    if (snapToGrid) {
+      setDraggingNodeInfo({ id: node.id, position: node.position });
+    }
+  }, [snapToGrid]);
+
+  const onNodeDrag: NodeDragHandler = useCallback((_, node) => {
+    if (snapToGrid) {
+      setDraggingNodeInfo({ id: node.id, position: node.position });
+    }
+  }, [snapToGrid]);
+
+  const onNodeDragStop: NodeDragHandler = useCallback(() => {
+    setDraggingNodeInfo(null);
+  }, []);
+
   return (
     <>
       <div ref={reactFlowWrapper} style={{ width: '100%', height: '100%' }}>
@@ -139,14 +158,34 @@ const Canvas: React.FC = () => {
           onPaneClick={onPaneClick}
           onDrop={onDrop}
           onDragOver={onDragOver}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
           onInit={setReactFlowInstance}
           nodeTypes={nodeTypes}
+          snapToGrid={snapToGrid}
+          snapGrid={[20, 20]}
           fitView
         >
           <Controls />
           <MiniMap />
-          <ScalableBackground baseGap={20} baseSize={1} color="var(--bg-300)" />
+          <ScalableBackground 
+            baseGap={20} 
+            baseSize={1} 
+            color="var(--bg-300)" 
+            showBackground={!snapToGrid}
+          />
         </ReactFlow>
+        {reactFlowInstance && (
+          <SmartGridLines
+            draggingNodeInfo={draggingNodeInfo}
+            nodes={nodes}
+            visible={snapToGrid}
+            viewX={reactFlowInstance.getViewport().x}
+            viewY={reactFlowInstance.getViewport().y}
+            zoom={reactFlowInstance.getViewport().zoom}
+          />
+        )}
       </div>
       <Toolbar reactFlowInstance={reactFlowInstance} />
     </>

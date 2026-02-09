@@ -17,6 +17,7 @@ interface CanvasStore {
   isPreviewOpen: boolean;
   isSettingsOpen: boolean;
   isPropertyPanelOpen: boolean;
+  snapToGrid: boolean;
   
   setCurrentProject: (project: ProjectData | null) => void;
   setNodes: (nodes: NodeData[]) => void;
@@ -31,6 +32,7 @@ interface CanvasStore {
   setPreviewOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
   setPropertyPanelOpen: (open: boolean) => void;
+  setSnapToGrid: (snap: boolean) => void;
   saveCanvas: () => Promise<void>;
   loadCanvas: (projectId: string) => Promise<void>;
 }
@@ -50,6 +52,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isPreviewOpen: false,
   isSettingsOpen: false,
   isPropertyPanelOpen: false,
+  snapToGrid: true,
 
   setCurrentProject: (project) => set({ currentProject: project }),
 
@@ -87,6 +90,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
 
   setPropertyPanelOpen: (open) => set({ isPropertyPanelOpen: open }),
+
+  setSnapToGrid: (snap) => set({ snapToGrid: snap }),
 
   saveCanvas: async () => {
     const { currentProject, nodes, edges } = get();
