@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Layout, Button, Modal, Input, message, Typography } from 'antd';
+import { Layout, Button, Modal, Input, message } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, CloseOutlined, DragOutlined } from '@ant-design/icons';
 import Canvas from './components/Canvas/Canvas';
 import PropertyPanel from './components/PropertyEditor/PropertyEditor';
@@ -9,7 +9,6 @@ import { useCanvasStore } from './store/canvasStore';
 import { projectApi } from './services/api';
 
 const { Header, Content, Sider } = Layout;
-const { Text } = Typography;
 
 const App: React.FC = () => {
   const { 
@@ -91,29 +90,85 @@ const App: React.FC = () => {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between', 
-        background: '#ffffff',
-        borderBottom: '1px solid #f1f5f9',
+        background: 'linear-gradient(135deg, var(--primary-50), var(--bg-200))',
+        borderBottom: '1px solid var(--bg-300)',
         padding: '0 24px',
-        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
+        height: '64px',
       }}>
-        <div style={{ color: '#2563eb', fontSize: 20, fontWeight: 700, letterSpacing: 0.5 }}>
-          SoloEngine
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* 品牌标识 - 类似配色demo中的avatar */}
+          <div style={{
+            width: '36px',
+            height: '36px',
+            background: 'linear-gradient(135deg, var(--primary-100), var(--accent-100))',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'white',
+            fontSize: '16px',
+            fontWeight: 'bold',
+            boxShadow: '0 2px 8px rgba(63, 81, 181, 0.2)'
+          }}>
+            SE
+          </div>
+          
+          {/* 品牌文字 */}
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ 
+              color: 'var(--primary-100)', 
+              fontSize: '18px', 
+              fontWeight: 700,
+              lineHeight: 1.2
+            }}>
+              SoloEngine
+            </div>
+            {currentProject && (
+              <div style={{ 
+                color: 'var(--text-200)', 
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <span style={{ 
+                  width: '6px', 
+                  height: '6px', 
+                  backgroundColor: 'var(--accent-100)',
+                  borderRadius: '50%',
+                  display: 'inline-block'
+                }} />
+                <span>{currentProject.name}</span>
+              </div>
+            )}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {currentProject && (
-            <span style={{ color: '#1f2937', fontSize: 14 }}>
+            <div style={{
+              backgroundColor: 'var(--bg-100)',
+              border: '1px solid var(--bg-300)',
+              borderRadius: '8px',
+              padding: '6px 12px',
+              fontSize: '14px',
+              color: 'var(--text-100)',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
+            }}>
               {currentProject.name}
-            </span>
+            </div>
           )}
           <Button 
             type="primary" 
             icon={<PlayCircleOutlined />} 
             onClick={() => setPreviewOpen(true)}
             style={{
-              background: '#10b981',
-              borderColor: '#10b981',
-              height: 36,
+              background: 'var(--success)',
+              borderColor: 'var(--success)',
+              height: '36px',
               fontWeight: 600,
+              boxShadow: '0 2px 6px rgba(76, 175, 80, 0.2)'
             }}
           >
             运行
@@ -121,7 +176,11 @@ const App: React.FC = () => {
           <Button 
             icon={<PlusOutlined />} 
             onClick={() => setIsModalVisible(true)}
-            style={{ height: 36 }}
+            style={{ 
+              height: '36px',
+              borderColor: 'var(--primary-100)',
+              color: 'var(--primary-100)'
+            }}
           >
             新建项目
           </Button>
@@ -129,7 +188,7 @@ const App: React.FC = () => {
       </Header>
 
       <Layout style={{ height: 'calc(100vh - 64px)' }}>
-        <Content style={{ background: '#f8f9fa' }}>
+        <Content style={{ background: '#f5f5f5' }}>
           <Canvas />
         </Content>
 
@@ -137,8 +196,8 @@ const App: React.FC = () => {
           <Sider
             width={panelWidth}
             style={{
-              background: '#ffffff',
-              borderLeft: '1px solid #f1f5f9',
+              background: '#FFFFFF',
+              borderLeft: '1px solid #cccccc',
               boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.06)',
             }}
             trigger={null}
@@ -172,7 +231,7 @@ const App: React.FC = () => {
                   bottom: 0,
                   width: 4,
                   cursor: 'col-resize',
-                  background: '#f1f5f9',
+                  background: '#f5f5f5',
                   transition: isDragging ? 'none' : 'background 0.2s',
                   display: 'flex',
                   alignItems: 'center',
@@ -182,7 +241,7 @@ const App: React.FC = () => {
                 <DragOutlined 
                   style={{ 
                     fontSize: 12, 
-                    color: '#9ca3af',
+                    color: '#5c5c5c',
                     transform: 'rotate(90deg)',
                   }} 
                 />

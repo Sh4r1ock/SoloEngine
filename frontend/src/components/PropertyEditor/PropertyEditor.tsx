@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Form, Input, Select, Button, Space, Typography, Divider } from 'antd';
-import { CloseOutlined } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
 import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 
@@ -85,7 +84,7 @@ const PropertyPanel: React.FC = () => {
     return (
       <div style={{ 
         textAlign: 'center', 
-        color: '#9ca3af', 
+        color: '#5c5c5c', 
         marginTop: 100 
       }}>
         <Text>请选择一个节点以编辑其属性</Text>
