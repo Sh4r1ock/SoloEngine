@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Tooltip } from 'antd';
-import { PlusOutlined, ZoomInOutlined, ZoomOutOutlined, SettingOutlined } from '@ant-design/icons';
+import { PlusOutlined, ZoomInOutlined, ZoomOutOutlined, SettingOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
 
 interface ToolbarProps {
@@ -8,7 +8,7 @@ interface ToolbarProps {
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
-  const { addNode, setSettingsOpen } = useCanvasStore();
+  const { addNode, setSettingsOpen, snapToGrid, setSnapToGrid } = useCanvasStore();
   const [pendingAdd, setPendingAdd] = useState(false);
 
   const handleDragStart = (event: React.DragEvent) => {
@@ -108,6 +108,21 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
 
         <Tooltip title="缩小">
           <Button type="default" size="small" icon={<ZoomOutOutlined />} onClick={handleZoomOut} />
+        </Tooltip>
+
+        <div style={{ width: 1, backgroundColor: '#cccccc', margin: '0 4px' }} />
+
+        <Tooltip title={snapToGrid ? "关闭网格对齐" : "开启网格对齐"}>
+          <Button
+            type={snapToGrid ? "primary" : "default"}
+            size="small"
+            icon={<AppstoreOutlined />}
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            style={{
+              backgroundColor: snapToGrid ? '#3F51B5' : undefined,
+              borderColor: snapToGrid ? '#3F51B5' : undefined,
+            }}
+          />
         </Tooltip>
 
         <div style={{ width: 1, backgroundColor: '#cccccc', margin: '0 4px' }} />

@@ -6,6 +6,7 @@ interface ScalableBackgroundProps extends Omit<BackgroundProps, 'gap' | 'size'> 
   baseSize?: number;
   minGap?: number;
   maxGap?: number;
+  showBackground?: boolean;
 }
 
 const ScalableBackground: React.FC<ScalableBackgroundProps> = ({
@@ -15,10 +16,15 @@ const ScalableBackground: React.FC<ScalableBackgroundProps> = ({
   maxGap = 50,
   color = 'var(--bg-300)',
   variant = 'dots' as BackgroundVariant,
+  showBackground = true,
   ...props
 }) => {
   const { zoom } = useViewport();
   const safeZoom = Math.max(0.1, zoom || 1); // 防止zoom为0或undefined
+  
+  if (!showBackground) {
+    return null;
+  }
   
   // 计算基于缩放级别的gap和size
   // 使用反比例关系：缩放越大，gap越小
