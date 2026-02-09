@@ -46,10 +46,7 @@ const Monitor: React.FC<MonitorProps> = ({ visible, onClose }) => {
     }
   };
 
-  const reset = () => {
-    setSteps([]);
-    setOverallProgress(0);
-  };
+
 
   useEffect(() => {
     window.addEventListener('ws-message', ((event: CustomEvent) => {
@@ -66,13 +63,13 @@ const Monitor: React.FC<MonitorProps> = ({ visible, onClose }) => {
   const getStatusIcon = (status: ExecutionStep['status']) => {
     switch (status) {
       case 'completed':
-        return <CheckCircleOutlined style={{ color: '#52c41a' }} />;
+        return <CheckCircleOutlined style={{ color: '#4CAF50' }} />;
       case 'running':
-        return <SyncOutlined spin style={{ color: '#1677ff' }} />;
+        return <SyncOutlined spin style={{ color: '#2196F3' }} />;
       case 'error':
-        return <SyncOutlined style={{ color: '#ff4d4f' }} />;
+        return <SyncOutlined style={{ color: '#F44336' }} />;
       default:
-        return <ClockCircleOutlined style={{ color: '#8c8c8c' }} />;
+        return <ClockCircleOutlined style={{ color: '#9ca3af' }} />;
     }
   };
 

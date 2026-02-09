@@ -36,7 +36,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
         data: {
           name: '新节点',
           desc: '',
-          agentType: 'executor',
+          agentType: 'executor' as "orchestrator" | "planner" | "executor",
           system_prompt: '',
           user_prompt: '',
           assistant_prompt: '',
@@ -48,7 +48,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
         },
       };
 
-      addNode(newNode);
+      addNode(newNode as any);
       setPendingAdd(false);
     }
   };
@@ -80,10 +80,10 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
           display: 'flex',
           gap: 8,
           padding: 8,
-          backgroundColor: '#ffffff',
+          backgroundColor: '#FFFFFF',
           borderRadius: 8,
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-          border: '1px solid #f0f0f0',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.12)',
+          border: '1px solid #cccccc',
           zIndex: 1000,
         }}
       >
@@ -100,7 +100,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
           </Button>
         </Tooltip>
 
-        <div style={{ width: 1, backgroundColor: '#f0f0f0', margin: '0 4px' }} />
+        <div style={{ width: 1, backgroundColor: '#cccccc', margin: '0 4px' }} />
 
         <Tooltip title="放大">
           <Button type="default" size="small" icon={<ZoomInOutlined />} onClick={handleZoomIn} />
@@ -110,7 +110,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
           <Button type="default" size="small" icon={<ZoomOutOutlined />} onClick={handleZoomOut} />
         </Tooltip>
 
-        <div style={{ width: 1, backgroundColor: '#f0f0f0', margin: '0 4px' }} />
+        <div style={{ width: 1, backgroundColor: '#cccccc', margin: '0 4px' }} />
 
         <Tooltip title="设置">
           <Button type="default" size="small" icon={<SettingOutlined />} onClick={handleSettingsClick} />
@@ -136,8 +136,8 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
               position: 'fixed',
               pointerEvents: 'none',
               padding: '8px 16px',
-              backgroundColor: '#1677ff',
-              color: '#ffffff',
+              backgroundColor: '#3F51B5',
+            color: '#ffffff',
               borderRadius: 8,
               fontSize: 14,
               fontWeight: 500,

@@ -2,12 +2,10 @@ import { WebSocketEvent } from '../types/canvas';
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
-  private taskId: string | null = null;
   private messageHandlers: ((event: WebSocketEvent) => void)[] = [];
 
   connect(taskId: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.taskId = taskId;
       const wsUrl = `ws://localhost:8000/api/v1/ws/${taskId}`;
       
       this.ws = new WebSocket(wsUrl);
@@ -38,7 +36,6 @@ export class WebSocketService {
       this.ws.close();
       this.ws = null;
     }
-    this.taskId = null;
     this.messageHandlers = [];
   }
 
