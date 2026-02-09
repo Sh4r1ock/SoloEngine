@@ -5,37 +5,59 @@
 }
 
 :root {
-  --primary-color: #2563eb;
-  --primary-hover: #3b82f6;
-  --primary-active: #1d4ed8;
-
-  --success-color: #10b981;
-  --success-hover: #34d399;
+  /* 主要颜色系统 - 基于设计规范 */
+  --primary-50: #e8eaf6;
+  --primary-100: #3F51B5;
+  --primary-200: #757de8;
+  --primary-300: #dedeff;
+  --accent-100: #2196F3;
+  --accent-200: #003f8f;
   
-  --warning-color: #f59e0b;
-  --warning-hover: #fbbf24;
-  
-  --error-color: #ef4444;
-  --error-hover: #f87171;
+  /* 向后兼容的变量映射 */
+  --primary-color: var(--primary-100);
+  --primary-hover: var(--primary-200);
+  --primary-active: var(--primary-100);
 
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
+  /* 状态颜色 */
+  --success: #4CAF50;
+  --warning: #FF9800;
+  --error: #F44336;
+  
+  --success-color: var(--success);
+  --success-hover: #66bb6a;
+  
+  --warning-color: var(--warning);
+  --warning-hover: #ffb74d;
+  
+  --error-color: var(--error);
+  --error-hover: #ef5350;
+
+  /* 中性色系统 - 基于设计规范 */
+  --text-100: #333333;
+  --text-200: #5c5c5c;
+  --bg-100: #FFFFFF;
+  --bg-200: #f5f5f5;
+  --bg-300: #cccccc;
+
+  /* 向后兼容的变量映射 */
+  --bg-primary: var(--bg-100);
+  --bg-secondary: var(--bg-200);
   --bg-tertiary: #f1f5f9;
-  --bg-elevated: #ffffff;
+  --bg-elevated: var(--bg-100);
   --bg-surface: #f0f2f5;
 
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
+  --text-primary: var(--text-100);
+  --text-secondary: var(--text-200);
   --text-tertiary: #6b7280;
   --text-quaternary: #9ca3af;
   --text-disabled: #9ca3af;
 
-  --border-color: #e2e8f0;
+  --border-color: var(--bg-300);
   --border-color-light: #f1f5f9;
   --border-color-lighter: #f8f9fa;
 
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-base: 0 4px 12px rgba(0, 0, 0, 0.12);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
   --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.18);
@@ -84,7 +106,7 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   color: var(--text-primary);
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-200);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5715;
@@ -118,13 +140,13 @@ pre {
 }
 
 .ant-layout-header {
-  background-color: var(--bg-primary);
-  border-bottom: 1px solid var(--border-color-light);
-  box-shadow: var(--shadow-sm);
+  background-color: var(--bg-100);
+  border-bottom: 1px solid var(--bg-300);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .ant-layout-content {
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-200);
 }
 
 .ant-btn {
@@ -144,31 +166,40 @@ pre {
   box-shadow: var(--shadow-xs);
 }
 
+/* 主按钮样式 - 基于设计规范 */
 .ant-btn-primary {
-  background-color: var(--primary-color);
-  border-color: var(--primary-color);
+  background-color: var(--primary-100);
+  border-color: var(--primary-100);
+  color: white;
 }
 
 .ant-btn-primary:hover {
-  background-color: var(--primary-hover);
-  border-color: var(--primary-hover);
+  background-color: var(--primary-200);
+  border-color: var(--primary-200);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(63, 81, 181, 0.3);
 }
 
 .ant-btn-primary:active {
-  background-color: var(--primary-active);
-  border-color: var(--primary-active);
+  background-color: var(--primary-100);
+  border-color: var(--primary-100);
+  transform: translateY(0);
+  box-shadow: var(--shadow-xs);
 }
 
 .ant-input {
-  border-radius: var(--radius-base);
+  border-radius: 8px;
   transition: all var(--duration-fast) var(--ease-in-out);
-  border: 1px solid var(--border-color);
-  background-color: var(--bg-primary);
+  border: 1px solid var(--bg-300);
+  background-color: var(--bg-100);
+  padding: 12px 16px;
+  font-size: 16px;
 }
 
 .ant-input:focus {
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: var(--primary-100);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.1);
 }
 
 .ant-input-number {
@@ -216,9 +247,15 @@ pre {
 }
 
 .ant-card {
-  border-radius: var(--radius-base);
-  border: 1px solid var(--border-color-light);
-  box-shadow: var(--shadow-sm);
+  border-radius: 10px;
+  border: 1px solid var(--bg-300);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  background-color: var(--bg-100);
+  transition: box-shadow 0.3s ease;
+}
+
+.ant-card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .ant-alert {
@@ -246,17 +283,21 @@ pre {
 
 .react-flow__node {
   cursor: grab;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   transition: all var(--duration-fast) var(--ease-in-out);
+  background-color: var(--bg-100);
+  border-radius: 8px;
+  border: 1px solid var(--bg-300);
 }
 
 .react-flow__node:hover {
-  box-shadow: var(--shadow-base);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   transform: translateY(-2px);
 }
 
 .react-flow__node.selected {
-  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3);
+  box-shadow: 0 0 0 4px rgba(63, 81, 181, 0.3);
+  border-color: var(--primary-100);
 }
 
 .react-flow__node:active {
@@ -286,30 +327,30 @@ pre {
 }
 
 .react-flow__controls {
-  border-radius: var(--radius-base);
-  box-shadow: var(--shadow-base);
-  border: 1px solid var(--border-color-light);
-  background-color: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--bg-300);
+  background-color: var(--bg-100);
 }
 
 .react-flow__controls-button {
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   transition: all var(--duration-fast) var(--ease-in-out);
 }
 
 .react-flow__controls-button:hover {
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-200);
 }
 
 .react-flow__minimap {
-  border-radius: var(--radius-base);
-  box-shadow: var(--shadow-base);
-  border: 1px solid var(--border-color-light);
-  background-color: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--bg-300);
+  background-color: var(--bg-100);
 }
 
 .react-flow__background {
-  background-color: var(--bg-secondary);
+  background-color: var(--bg-200);
 }
 
 .react-flow__backgrounddots {

@@ -19,7 +19,6 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<WebSocketEvent[]>([]);
-  const [taskId, setTaskId] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
 
   const handleStart = async () => {
@@ -34,7 +33,6 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
     try {
       const result = await projectApi.runProject(currentProject.id, input);
       const newTaskId = result.task_id;
-      setTaskId(newTaskId);
 
       await wsService.connect(newTaskId);
 
@@ -108,10 +106,10 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
           <div style={{ 
             maxHeight: 400, 
             overflowY: 'auto', 
-            border: '1px solid #d9d9d9', 
+            border: '1px solid #cccccc', 
             borderRadius: 8, 
             padding: 12,
-            backgroundColor: '#fafafa'
+            backgroundColor: '#f5f5f5'
           }}>
             {isRunning && (
               <div style={{ textAlign: 'center', marginBottom: 16 }}>

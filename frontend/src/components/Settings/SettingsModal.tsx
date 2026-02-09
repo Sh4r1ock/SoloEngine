@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Modal, Form, InputNumber, Button, Space, Typography, Divider } from 'antd';
+import { Modal, Form, Button, Space, Typography, Divider } from 'antd';
 import { useCanvasStore, GlobalSettings } from '../../store/canvasStore';
 
 const { Text } = Typography;

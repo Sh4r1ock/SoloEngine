@@ -1,7 +1,5 @@
 import React from 'react';
-import { Card, Typography } from 'antd';
-
-const { Title } = Typography;
+import { Card } from 'antd';
 
 const NodePanel: React.FC = () => {
   const nodeTypes = [

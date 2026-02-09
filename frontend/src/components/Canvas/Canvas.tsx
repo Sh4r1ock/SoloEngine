@@ -1,11 +1,8 @@
 import React, { useCallback, useRef, useState } from 'react';
 import ReactFlow, {
   Node,
-  Edge,
-  addEdge,
   Connection,
   Controls,
-  Background,
   MiniMap,
   NodeTypes,
   ReactFlowInstance,
@@ -16,8 +13,10 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useCanvasStore } from '../../store/canvasStore';
+import { NodeData, EdgeData } from '../../types/canvas';
 import AgentNode from './AgentNode';
 import Toolbar from '../Toolbar/Toolbar';
+import ScalableBackground from './ScalableBackground';
 
 const nodeTypes: NodeTypes = {
   agent: AgentNode,
@@ -30,14 +29,28 @@ const Canvas: React.FC = () => {
 
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
-      setNodes(applyNodeChanges(changes, nodes));
+      const updatedNodes = applyNodeChanges(changes, nodes as any);
+      setNodes(updatedNodes.map(node => ({
+        ...node,
+        type: 'agent' as const,
+        data: {
+          ...node.data,
+          agentType: node.data.agentType as "orchestrator" | "planner" | "executor"
+        }
+      })) as NodeData[]);
     },
     [nodes, setNodes]
   );
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
-      setEdges(applyEdgeChanges(changes, edges));
+      const updatedEdges = applyEdgeChanges(changes, edges as any);
+      setEdges(updatedEdges.map(edge => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: typeof edge.label === 'string' ? edge.label : undefined
+      })) as EdgeData[]);
     },
     [edges, setEdges]
   );
@@ -91,7 +104,7 @@ const Canvas: React.FC = () => {
         data: {
           name: '新节点',
           desc: '',
-          agentType: 'executor',
+          agentType: agentType as "orchestrator" | "planner" | "executor",
           system_prompt: '',
           user_prompt: '',
           assistant_prompt: '',
@@ -103,7 +116,7 @@ const Canvas: React.FC = () => {
         },
       };
 
-      addNode(newNode);
+      addNode(newNode as any);
     },
     [reactFlowInstance, addNode]
   );
@@ -132,7 +145,7 @@ const Canvas: React.FC = () => {
         >
           <Controls />
           <MiniMap />
-          <Background variant="dots" gap={20} size={1} color="#e8e8e8" />
+          <ScalableBackground baseGap={20} baseSize={1} color="var(--bg-300)" />
         </ReactFlow>
       </div>
       <Toolbar reactFlowInstance={reactFlowInstance} />

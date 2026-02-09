@@ -1,7 +1,7 @@
 import { Node } from 'reactflow';
 import { NodeData } from '../types/canvas';
 
-export const generateOrchestratorPrompt = (orchestratorNode: Node, plannerNodes: Node[]): string => {
+export const generateOrchestratorPrompt = (_orchestratorNode: Node, plannerNodes: Node[]): string => {
   const plannerInfo = plannerNodes
     .filter(node => node.data.agentType === 'planner')
     .map(node => `规划师${node.data.name}（简介：${node.data.desc || '无'}）可用于拆解复杂目标。`)
