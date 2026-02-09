@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Form, Input, Select, Button, Space, Typography, Divider } from 'antd';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Form, Input, Select, Button, Typography, Divider, message } from 'antd';
 import { useCanvasStore } from '../../store/canvasStore';
 import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 
@@ -10,6 +10,7 @@ const PropertyPanel: React.FC = () => {
   const { selectedNode, updateNode, nodes, edges, saveCanvas } = useCanvasStore();
   const [form] = Form.useForm();
   const [showAssistantPrompt, setShowAssistantPrompt] = useState(false);
+  const saveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (selectedNode) {
@@ -26,10 +27,12 @@ const PropertyPanel: React.FC = () => {
     }
   }, [selectedNode, form]);
 
-  const handleSave = async () => {
-    const values = await form.validateFields();
-    
-    if (selectedNode) {
+  const handleSave = useCallback(async () => {
+    if (!selectedNode) return;
+
+    try {
+      const values = form.getFieldsValue();
+
       updateNode(selectedNode.id, {
         name: values.name,
         desc: values.desc,
@@ -42,10 +45,30 @@ const PropertyPanel: React.FC = () => {
           model: values.model_name,
         },
       });
-      
+
       await saveCanvas();
+    } catch (error) {
+      message.error('保存失败，请重试');
     }
+  }, [selectedNode, form, updateNode, saveCanvas]);
+
+  const handleValuesChange = () => {
+    if (saveTimeoutRef.current !== null) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      handleSave();
+    }, 500) as unknown as number;
   };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current !== null) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const getConnectedNodes = (nodeId: string, direction: 'upstream' | 'downstream') => {
     if (direction === 'upstream') {
@@ -94,7 +117,7 @@ const PropertyPanel: React.FC = () => {
 
   return (
     <>
-      <Form form={form} layout="vertical">
+      <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
         <Form.Item label="节点名称" name="name" rules={[{ required: true, message: '请输入节点名称' }]}>
           <Input placeholder="请输入节点名称" />
         </Form.Item>
@@ -181,15 +204,6 @@ const PropertyPanel: React.FC = () => {
             <Select.Option value="database_query">数据库查询</Select.Option>
           </Select>
         </Form.Item>
-
-        <Space style={{ marginTop: 24, width: '100%', justifyContent: 'flex-end' }}>
-          <Button onClick={() => form.resetFields()}>
-            重置
-          </Button>
-          <Button type="primary" onClick={handleSave}>
-            保存
-          </Button>
-        </Space>
       </Form>
     </>
   );
