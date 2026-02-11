@@ -1,11 +1,25 @@
 import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData } from '../types/canvas';
 import { projectApi } from '../services/api';
+import { localStorageService } from '../services/localStorage';
+
+const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
+  let timeout: NodeJS.Timeout | null = null;
+  return ((...args: any[]) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  }) as T;
+};
 
 export interface GlobalSettings {
   maxContextLength: number;
   maxIterations: number;
   timeout: number;
+}
+
+interface HistoryState {
+  nodes: NodeData[];
+  edges: EdgeData[];
 }
 
 interface CanvasStore {
@@ -18,10 +32,14 @@ interface CanvasStore {
   isSettingsOpen: boolean;
   isPropertyPanelOpen: boolean;
   snapToGrid: boolean;
+  autoSave: () => void;
+  history: HistoryState[];
+  historyIndex: number;
+  isDragging: boolean;
   
   setCurrentProject: (project: ProjectData | null) => void;
-  setNodes: (nodes: NodeData[]) => void;
-  setEdges: (edges: EdgeData[]) => void;
+  setNodes: (nodes: NodeData[], skipHistory?: boolean) => void;
+  setEdges: (edges: EdgeData[], skipHistory?: boolean) => void;
   addNode: (node: NodeData) => void;
   updateNode: (nodeId: string, data: Partial<NodeData['data']>) => void;
   deleteNode: (nodeId: string) => void;
@@ -33,8 +51,12 @@ interface CanvasStore {
   setSettingsOpen: (open: boolean) => void;
   setPropertyPanelOpen: (open: boolean) => void;
   setSnapToGrid: (snap: boolean) => void;
+  setIsDragging: (dragging: boolean) => void;
   saveCanvas: () => Promise<void>;
   loadCanvas: (projectId: string) => Promise<void>;
+  undo: () => void;
+  redo: () => void;
+  pushHistory: () => void;
 }
 
 const defaultSettings: GlobalSettings = {
@@ -53,31 +75,109 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isSettingsOpen: false,
   isPropertyPanelOpen: false,
   snapToGrid: true,
+  history: [{ nodes: [], edges: [] }],
+  historyIndex: 0,
+  isDragging: false,
 
-  setCurrentProject: (project) => set({ currentProject: project }),
+  autoSave: debounce(() => {
+    const { nodes, edges, isDragging } = get();
+    if (isDragging) return;
+    const defaultProjectName = 'default_flow';
+    localStorageService.saveFlow(defaultProjectName, nodes, edges);
+  }, 500),
 
-  setNodes: (nodes) => set({ nodes }),
+  pushHistory: () => {
+    const { nodes, edges, history, historyIndex } = get();
+    const newHistoryState: HistoryState = {
+      nodes: JSON.parse(JSON.stringify(nodes)),
+      edges: JSON.parse(JSON.stringify(edges)),
+    };
+    
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newHistoryState);
+    
+    if (newHistory.length > 50) {
+      newHistory.shift();
+    }
+    
+    set({ history: newHistory, historyIndex: newHistory.length - 1 });
+  },
 
-  setEdges: (edges) => set({ edges }),
+  undo: () => {
+    const { history, historyIndex } = get();
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      const { nodes, edges } = history[newIndex];
+      set({ nodes, edges, historyIndex: newIndex });
+      get().autoSave();
+    }
+  },
 
-  addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
+  redo: () => {
+    const { history, historyIndex } = get();
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      const { nodes, edges } = history[newIndex];
+      set({ nodes, edges, historyIndex: newIndex });
+      get().autoSave();
+    }
+  },
 
-  updateNode: (nodeId, data) => set((state) => ({
-    nodes: state.nodes.map((node) =>
+  setCurrentProject: (project) => set({ currentProject }),
+
+  setNodes: (nodes, skipHistory = false) => {
+    set({ nodes });
+    get().autoSave();
+    if (!skipHistory) {
+      get().pushHistory();
+    }
+  },
+
+  setEdges: (edges, skipHistory = false) => {
+    set({ edges });
+    get().autoSave();
+    if (!skipHistory) {
+      get().pushHistory();
+    }
+  },
+
+  addNode: (node) => set((state) => {
+    const newNodes = [...state.nodes, node];
+    get().autoSave();
+    get().pushHistory();
+    return { nodes: newNodes };
+  }),
+
+  updateNode: (nodeId, data) => set((state) => {
+    const newNodes = state.nodes.map((node) =>
       node.id === nodeId ? { ...node, data: { ...node.data, ...data } } : node
-    ),
-  })),
+    );
+    get().autoSave();
+    get().pushHistory();
+    return { nodes: newNodes };
+  }),
 
-  deleteNode: (nodeId) => set((state) => ({
-    nodes: state.nodes.filter((node) => node.id !== nodeId),
-    edges: state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
-  })),
+  deleteNode: (nodeId) => set((state) => {
+    const newNodes = state.nodes.filter((node) => node.id !== nodeId);
+    const newEdges = state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
+    get().autoSave();
+    get().pushHistory();
+    return { nodes: newNodes, edges: newEdges };
+  }),
 
-  addEdge: (edge) => set((state) => ({ edges: [...state.edges, edge] })),
+  addEdge: (edge) => set((state) => {
+    const newEdges = [...state.edges, edge];
+    get().autoSave();
+    get().pushHistory();
+    return { edges: newEdges };
+  }),
 
-  deleteEdge: (edgeId) => set((state) => ({
-    edges: state.edges.filter((edge) => edge.id !== edgeId),
-  })),
+  deleteEdge: (edgeId) => set((state) => {
+    const newEdges = state.edges.filter((edge) => edge.id !== edgeId);
+    get().autoSave();
+    get().pushHistory();
+    return { edges: newEdges };
+  }),
 
   setSelectedNode: (node) => set({ selectedNode: node }),
 
@@ -92,6 +192,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setPropertyPanelOpen: (open) => set({ isPropertyPanelOpen: open }),
 
   setSnapToGrid: (snap) => set({ snapToGrid: snap }),
+
+  setIsDragging: (dragging) => set({ isDragging: dragging }),
 
   saveCanvas: async () => {
     const { currentProject, nodes, edges } = get();

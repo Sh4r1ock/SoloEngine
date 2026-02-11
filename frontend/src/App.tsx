@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Layout, Button, Modal, Input, message } from 'antd';
-import { PlusOutlined, PlayCircleOutlined, CloseOutlined, DragOutlined } from '@ant-design/icons';
+import { PlusOutlined, PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined } from '@ant-design/icons';
 import Canvas from './components/Canvas/Canvas';
 import PropertyPanel from './components/PropertyEditor/PropertyEditor';
 import Preview from './components/Preview/Preview';
 import SettingsModal from './components/Settings/SettingsModal';
 import { useCanvasStore } from './store/canvasStore';
 import { projectApi } from './services/api';
+import { localStorageService } from './services/localStorage';
 
 const { Header, Content, Sider } = Layout;
 
@@ -24,7 +25,7 @@ const App: React.FC = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [panelWidth, setPanelWidth] = useState(320);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isPanelDragging, setIsPanelDragging] = useState(false);
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
   const handleCreateProject = async () => {
@@ -44,17 +45,28 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSave = async () => {
+    const { nodes, edges } = useCanvasStore.getState();
+    const defaultProjectName = 'default_flow';
+    try {
+      await localStorageService.saveFlowToFile(defaultProjectName, nodes, edges);
+      message.success('保存成功');
+    } catch (error) {
+      message.error('保存失败');
+    }
+  };
+
   const handleClosePropertyPanel = () => {
     setSelectedNode(null);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    setIsDragging(true);
+    setIsPanelDragging(true);
   };
 
   const handleMouseMove = (e: MouseEvent) => {
-    if (!isDragging) return;
+    if (!isPanelDragging) return;
 
     const newWidth = window.innerWidth - e.clientX;
     const minWidth = 280;
@@ -66,11 +78,11 @@ const App: React.FC = () => {
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
+    setIsPanelDragging(false);
   };
 
   useEffect(() => {
-    if (isDragging) {
+    if (isPanelDragging) {
       document.addEventListener('mousemove', handleMouseMove);
       document.addEventListener('mouseup', handleMouseUp);
     } else {
@@ -82,7 +94,25 @@ const App: React.FC = () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isPanelDragging]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        useCanvasStore.getState().undo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        useCanvasStore.getState().redo();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   return (
     <Layout style={{ height: '100vh' }}>
@@ -160,6 +190,17 @@ const App: React.FC = () => {
             </div>
           )}
           <Button 
+            icon={<SaveOutlined />} 
+            onClick={handleSave}
+            style={{ 
+              height: '36px',
+              borderColor: 'var(--primary-100)',
+              color: 'var(--primary-100)'
+            }}
+          >
+            保存
+          </Button>
+          <Button 
             type="primary" 
             icon={<PlayCircleOutlined />} 
             onClick={() => setPreviewOpen(true)}
@@ -172,17 +213,6 @@ const App: React.FC = () => {
             }}
           >
             运行
-          </Button>
-          <Button 
-            icon={<PlusOutlined />} 
-            onClick={() => setIsModalVisible(true)}
-            style={{ 
-              height: '36px',
-              borderColor: 'var(--primary-100)',
-              color: 'var(--primary-100)'
-            }}
-          >
-            新建项目
           </Button>
         </div>
       </Header>
