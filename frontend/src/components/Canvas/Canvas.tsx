@@ -25,7 +25,7 @@ const nodeTypes: NodeTypes = {
 };
 
 const Canvas: React.FC = () => {
-  const { nodes, edges, setNodes, setEdges, addEdge: storeAddEdge, saveCanvas, addNode, snapToGrid } = useCanvasStore();
+  const { nodes, edges, setNodes, setEdges, addEdge: storeAddEdge, addNode, snapToGrid, setIsDragging, pushHistory } = useCanvasStore();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [draggingNodeInfo, setDraggingNodeInfo] = useState<{ id: string; position: { x: number; y: number } } | null>(null);
@@ -33,14 +33,8 @@ const Canvas: React.FC = () => {
   const onNodesChange: OnNodesChange = useCallback(
     (changes) => {
       const updatedNodes = applyNodeChanges(changes, nodes as any);
-      setNodes(updatedNodes.map(node => ({
-        ...node,
-        type: 'agent' as const,
-        data: {
-          ...node.data,
-          agentType: node.data.agentType as "orchestrator" | "planner" | "executor"
-        }
-      })) as NodeData[]);
+      const isDragging = changes.some(change => change.type === 'position' && change.dragging);
+      setNodes(updatedNodes as NodeData[], isDragging);
     },
     [nodes, setNodes]
   );
@@ -68,9 +62,8 @@ const Canvas: React.FC = () => {
       };
       
       storeAddEdge(newEdge);
-      saveCanvas();
     },
-    [storeAddEdge, saveCanvas]
+    [storeAddEdge]
   );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -130,10 +123,11 @@ const Canvas: React.FC = () => {
   }, []);
 
   const onNodeDragStart: NodeDragHandler = useCallback((_, node) => {
+    setIsDragging(true);
     if (snapToGrid) {
       setDraggingNodeInfo({ id: node.id, position: node.position });
     }
-  }, [snapToGrid]);
+  }, [snapToGrid, setIsDragging]);
 
   const onNodeDrag: NodeDragHandler = useCallback((_, node) => {
     if (snapToGrid) {
@@ -142,8 +136,10 @@ const Canvas: React.FC = () => {
   }, [snapToGrid]);
 
   const onNodeDragStop: NodeDragHandler = useCallback(() => {
+    setIsDragging(false);
     setDraggingNodeInfo(null);
-  }, []);
+    pushHistory();
+  }, [setIsDragging, pushHistory]);
 
   return (
     <>
@@ -175,17 +171,12 @@ const Canvas: React.FC = () => {
             color="var(--bg-300)" 
             showBackground={!snapToGrid}
           />
-        </ReactFlow>
-        {reactFlowInstance && (
           <SmartGridLines
             draggingNodeInfo={draggingNodeInfo}
             nodes={nodes}
             visible={snapToGrid}
-            viewX={reactFlowInstance.getViewport().x}
-            viewY={reactFlowInstance.getViewport().y}
-            zoom={reactFlowInstance.getViewport().zoom}
           />
-        )}
+        </ReactFlow>
       </div>
       <Toolbar reactFlowInstance={reactFlowInstance} />
     </>
