@@ -1,10 +1,32 @@
+/**
+ * @file canvasStore.ts
+ * @description 画布状态管理 - 工作流画布状态管理模块
+ * @author SoloEngine Team
+ * @date 2026-02-19
+ * 
+ * 功能描述：
+ * - 使用Zustand实现状态管理
+ * - 管理画布节点、边、选中状态等
+ * - 管理节点数据、管理边数据、管理选中状态、撤销/重做状态
+ * 
+ * 使用场景：
+ * - 画布编辑器的核心状态管理
+ * - 节点和边的增删改查操作
+ * 
+ * 注意事项：
+ * - 支持自动保存功能
+ * - 支持撤销/重做历史记录（最多30条）
+ */
 import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData } from '../types/canvas';
 import { projectApi } from '../services/api';
 import { localStorageService } from '../services/localStorage';
 
+const MAX_HISTORY_SIZE = 30;
+const DEBOUNCE_DELAY = 500;
+
 const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   return ((...args: any[]) => {
     if (timeout) clearTimeout(timeout);
     timeout = setTimeout(() => func(...args), wait);
@@ -65,6 +87,8 @@ const defaultSettings: GlobalSettings = {
   timeout: 30000,
 };
 
+let debouncedPushHistory: (() => void) | null = null;
+
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   currentProject: null,
   nodes: [],
@@ -84,19 +108,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (isDragging) return;
     const defaultProjectName = 'default_flow';
     localStorageService.saveFlow(defaultProjectName, nodes, edges);
-  }, 500),
+  }, DEBOUNCE_DELAY),
 
   pushHistory: () => {
     const { nodes, edges, history, historyIndex } = get();
     const newHistoryState: HistoryState = {
-      nodes: JSON.parse(JSON.stringify(nodes)),
-      edges: JSON.parse(JSON.stringify(edges)),
+      nodes: structuredClone(nodes),
+      edges: structuredClone(edges),
     };
     
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(newHistoryState);
     
-    if (newHistory.length > 50) {
+    if (newHistory.length > MAX_HISTORY_SIZE) {
       newHistory.shift();
     }
     
@@ -123,13 +147,23 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  setCurrentProject: (project) => set({ currentProject }),
+  setCurrentProject: (project) => set({ currentProject: project }),
 
   setNodes: (nodes, skipHistory = false) => {
     set({ nodes });
     get().autoSave();
     if (!skipHistory) {
-      get().pushHistory();
+      const { isDragging } = get();
+      if (isDragging) {
+        if (!debouncedPushHistory) {
+          debouncedPushHistory = debounce(() => {
+            get().pushHistory();
+          }, 500);
+        }
+        debouncedPushHistory();
+      } else {
+        get().pushHistory();
+      }
     }
   },
 
@@ -137,7 +171,17 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({ edges });
     get().autoSave();
     if (!skipHistory) {
-      get().pushHistory();
+      const { isDragging } = get();
+      if (isDragging) {
+        if (!debouncedPushHistory) {
+          debouncedPushHistory = debounce(() => {
+            get().pushHistory();
+          }, 500);
+        }
+        debouncedPushHistory();
+      } else {
+        get().pushHistory();
+      }
     }
   },
 

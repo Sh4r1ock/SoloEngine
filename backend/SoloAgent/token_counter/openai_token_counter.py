@@ -288,7 +288,6 @@ class OpenAITokenCounter(TokenCounterBase):
                     continue
 
                 elif key == "tool_calls":
-                    # TODO: This is only a temporary solution
                     num_tokens += len(
                         encoding.encode(
                             json.dumps(value, ensure_ascii=False),

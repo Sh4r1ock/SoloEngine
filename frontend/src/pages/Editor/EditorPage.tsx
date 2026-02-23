@@ -1,23 +1,52 @@
+/**
+ * @file EditorPage.tsx
+ * @description 编辑器主页面 - 工作流编辑器核心页面
+ * @author SoloEngine Team
+ * @date 2026-02-19
+ * 
+ * 功能描述：
+ * - 集成画布编辑、节点面板、属性编辑器、工具栏等核心编辑功能
+ * - 支持工作流可视化编辑
+ * - 支持节点拖拽和连线
+ * - 支持属性配置和工具操作
+ * 
+ * 使用场景：
+ * - 用户创建或编辑工作流项目时使用
+ * - 需要配置节点属性时使用
+ * 
+ * 注意事项：
+ * - 支持Ctrl+Z撤销和Ctrl+Y重做快捷键
+ * - 属性面板宽度可通过拖拽调整
+ */
 import React, { useState, useRef, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, Button, Modal, Input, message } from 'antd';
-import { PlusOutlined, PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined } from '@ant-design/icons';
-import Canvas from './components/Canvas/Canvas';
-import PropertyPanel from './components/PropertyEditor/PropertyEditor';
-import Preview from './components/Preview/Preview';
-import SettingsModal from './components/Settings/SettingsModal';
-import { useCanvasStore } from './store/canvasStore';
-import { projectApi } from './services/api';
-import { localStorageService } from './services/localStorage';
+import { PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined, SettingOutlined, BugOutlined, HomeOutlined } from '@ant-design/icons';
+import Canvas from '../../components/Canvas/Canvas';
+import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
+import Preview from '../../components/Preview/Preview';
+import SettingsModal from '../../components/Settings/SettingsModal';
+import { useCanvasStore } from '../../store/canvasStore';
+import { projectApi } from '../../services/api';
+import { localStorageService } from '../../services/localStorage';
 
 const { Header, Content, Sider } = Layout;
 
-const App: React.FC = () => {
-  const { 
-    currentProject, 
-    setCurrentProject, 
+/**
+ * 编辑器主页面组件
+ * 
+ * @description 工作流编辑器主页面，集成画布编辑、节点面板、属性编辑器、工具栏等核心编辑功能
+ * @returns {JSX.Element} 编辑器主页面组件
+ */
+const EditorPage: React.FC = () => {
+  const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
+  const {
+    currentProject,
+    setCurrentProject,
     selectedNode,
     setSelectedNode,
-    isPreviewOpen, 
+    isPreviewOpen,
     isSettingsOpen,
     setPreviewOpen,
     setSettingsOpen
@@ -28,6 +57,40 @@ const App: React.FC = () => {
   const [isPanelDragging, setIsPanelDragging] = useState(false);
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (projectId) {
+      /**
+       * 加载项目数据
+       * 
+       * @description 从本地存储加载项目画布数据
+       * @returns {Promise<void>}
+       */
+      const loadProject = async () => {
+        try {
+          const flowData = await localStorageService.loadFlowFromFile(projectId);
+          if (flowData) {
+            useCanvasStore.getState().setNodes(flowData.nodes || []);
+            useCanvasStore.getState().setEdges(flowData.edges || []);
+            setCurrentProject({ 
+              id: projectId, 
+              name: projectId,
+              canvas: { nodes: flowData.nodes || [], edges: flowData.edges || [] }
+            });
+          }
+        } catch (error) {
+          console.error('Failed to load project:', error);
+        }
+      };
+      loadProject();
+    }
+  }, [projectId, setCurrentProject]);
+
+  /**
+   * 处理创建项目
+   * 
+   * @description 创建新项目并导航到编辑器页面
+   * @returns {Promise<void>}
+   */
   const handleCreateProject = async () => {
     if (!projectName.trim()) {
       message.error('请输入项目名称');
@@ -40,14 +103,21 @@ const App: React.FC = () => {
       setIsModalVisible(false);
       setProjectName('');
       message.success('项目创建成功');
+      navigate(`/editor/${project.id || projectName}`);
     } catch (error) {
       message.error('项目创建失败');
     }
   };
 
+  /**
+   * 处理保存项目
+   * 
+   * @description 保存当前画布数据到本地存储
+   * @returns {Promise<void>}
+   */
   const handleSave = async () => {
     const { nodes, edges } = useCanvasStore.getState();
-    const defaultProjectName = 'default_flow';
+    const defaultProjectName = projectId || currentProject?.name || 'default_flow';
     try {
       await localStorageService.saveFlowToFile(defaultProjectName, nodes, edges);
       message.success('保存成功');
@@ -56,15 +126,32 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * 关闭属性面板
+   * 
+   * @description 取消选中节点并关闭属性编辑面板
+   */
   const handleClosePropertyPanel = () => {
     setSelectedNode(null);
   };
 
+  /**
+   * 处理鼠标按下事件
+   * 
+   * @description 开始拖拽调整属性面板宽度
+   * @param {React.MouseEvent} e - 鼠标事件对象
+   */
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsPanelDragging(true);
   };
 
+  /**
+   * 处理鼠标移动事件
+   * 
+   * @description 拖拽过程中调整属性面板宽度
+   * @param {MouseEvent} e - 鼠标事件对象
+   */
   const handleMouseMove = (e: MouseEvent) => {
     if (!isPanelDragging) return;
 
@@ -77,8 +164,35 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * 处理鼠标释放事件
+   * 
+   * @description 结束拖拽调整属性面板宽度
+   */
   const handleMouseUp = () => {
     setIsPanelDragging(false);
+  };
+
+  /**
+   * 返回主菜单
+   * 
+   * @description 导航到主菜单页面
+   */
+  const handleGoHome = () => {
+    navigate('/mainmenu');
+  };
+
+  /**
+   * 跳转到调试页面
+   * 
+   * @description 导航到调试页面进行工作流调试
+   */
+  const handleGoToDebug = () => {
+    if (projectId) {
+      navigate(`/debug/${projectId}`);
+    } else {
+      navigate('/debug');
+    }
   };
 
   useEffect(() => {
@@ -127,7 +241,6 @@ const App: React.FC = () => {
         height: '64px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {/* 品牌标识 - 类似配色demo中的avatar */}
           <div style={{
             width: '36px',
             height: '36px',
@@ -139,12 +252,12 @@ const App: React.FC = () => {
             color: 'white',
             fontSize: '16px',
             fontWeight: 'bold',
-            boxShadow: '0 2px 8px rgba(63, 81, 181, 0.2)'
-          }}>
+            boxShadow: '0 2px 8px rgba(63, 81, 181, 0.2)',
+            cursor: 'pointer',
+          }} onClick={handleGoHome}>
             SE
           </div>
           
-          {/* 品牌文字 */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ 
               color: 'var(--primary-100)', 
@@ -176,6 +289,17 @@ const App: React.FC = () => {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <Button
+            icon={<HomeOutlined />}
+            onClick={handleGoHome}
+            style={{
+              height: '36px',
+              borderColor: 'var(--bg-400)',
+              color: 'var(--text-100)'
+            }}
+          >
+            主菜单
+          </Button>
           {currentProject && (
             <div style={{
               backgroundColor: 'var(--bg-100)',
@@ -189,10 +313,10 @@ const App: React.FC = () => {
               {currentProject.name}
             </div>
           )}
-          <Button 
-            icon={<SaveOutlined />} 
+          <Button
+            icon={<SaveOutlined />}
             onClick={handleSave}
-            style={{ 
+            style={{
               height: '36px',
               borderColor: 'var(--primary-100)',
               color: 'var(--primary-100)'
@@ -200,10 +324,32 @@ const App: React.FC = () => {
           >
             保存
           </Button>
-          <Button 
-            type="primary" 
-            icon={<PlayCircleOutlined />} 
-            onClick={() => setPreviewOpen(true)}
+          <Button
+            icon={<SettingOutlined />}
+            onClick={() => setSettingsOpen(true)}
+            style={{
+              height: '36px',
+              borderColor: 'var(--bg-400)',
+              color: 'var(--text-100)'
+            }}
+          >
+            设置
+          </Button>
+          <Button
+            icon={<BugOutlined />}
+            onClick={handleGoToDebug}
+            style={{
+              height: '36px',
+              borderColor: 'var(--accent-100)',
+              color: 'var(--accent-100)'
+            }}
+          >
+            调试
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            onClick={handleGoToDebug}
             style={{
               background: 'var(--success)',
               borderColor: 'var(--success)',
@@ -262,7 +408,7 @@ const App: React.FC = () => {
                   width: 4,
                   cursor: 'col-resize',
                   background: '#f5f5f5',
-                  transition: isDragging ? 'none' : 'background 0.2s',
+                  transition: isPanelDragging ? 'none' : 'background 0.2s',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -306,12 +452,12 @@ const App: React.FC = () => {
         onClose={() => setPreviewOpen(false)} 
       />
       
-      <SettingsModal 
-        visible={isSettingsOpen} 
-        onClose={() => setSettingsOpen(false)} 
+      <SettingsModal
+        visible={isSettingsOpen}
+        onClose={() => setSettingsOpen(false)}
       />
     </Layout>
   );
 };
 
-export default App;
+export default EditorPage;

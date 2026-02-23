@@ -1,6 +1,29 @@
+/**
+ * @file AgentNode.tsx
+ * @description 智能体节点组件 - 工作流智能体节点渲染组件
+ * @author SoloEngine Team
+ * @date 2026-02-19
+ * 
+ * 功能描述：
+ * - 展示智能体节点的可视化表示
+ * - 包含节点图标、名称、端口等元素
+ * - 处理节点选中状态
+ * - 显示连接端口
+ * - 显示LLM配置信息
+ * 
+ * 使用场景：
+ * - 在画布中渲染智能体节点
+ * - 作为ReactFlow的自定义节点类型使用
+ * 
+ * 注意事项：
+ * - 支持三种智能体类型：orchestrator、planner、executor
+ * - 不同类型使用不同颜色区分
+ * - 显示用户配置的模型名称
+ */
 import React from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Typography } from 'antd';
+import { Typography, Tag, Tooltip } from 'antd';
+import { StarFilled } from '@ant-design/icons';
 
 const { Text } = Typography;
 
@@ -13,14 +36,74 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
 
   const color = agentTypeColors[data.agentType as keyof typeof agentTypeColors] || '#3F51B5';
 
-  const getDisplayName = (modelName: string) => {
-    const modelDisplayNames: Record<string, string> = {
-      'gpt-4': 'GPT-4',
-      'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-      'claude-3': 'Claude 3',
-      'qwen-max': '通义千问 Max',
+  const getProviderColor = (provider: string) => {
+    const colors: Record<string, string> = {
+      openai: 'blue',
+      anthropic: 'orange',
+      qwen: 'green',
+      ollama: 'purple',
     };
-    return modelDisplayNames[modelName] || modelName;
+    return colors[provider] || 'default';
+  };
+
+  const renderModelInfo = () => {
+    if (data.model_config?.config_name) {
+      return (
+        <Tooltip title={`${data.model_config.provider} - ${data.model_config.model}`}>
+          <Tag 
+            color={getProviderColor(data.model_config.provider)}
+            style={{ 
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              marginTop: 4,
+            }}
+          >
+            {data.model_config.config_name}
+          </Tag>
+        </Tooltip>
+      );
+    }
+    
+    if (data.model_config?.model) {
+      const modelDisplayNames: Record<string, string> = {
+        'gpt-4': 'GPT-4',
+        'gpt-3.5-turbo': 'GPT-3.5 Turbo',
+        'claude-3': 'Claude 3',
+        'qwen-max': '通义千问 Max',
+      };
+      const displayName = modelDisplayNames[data.model_config.model] || data.model_config.model;
+      
+      return (
+        <span style={{
+          display: 'inline-block',
+          padding: '2px 8px',
+          backgroundColor: '#e3f2fd',
+          color: '#1976d2',
+          borderRadius: '4px',
+          fontSize: '11px',
+          fontWeight: 500,
+          marginTop: 4,
+        }}>
+          {displayName}
+        </span>
+      );
+    }
+    
+    return (
+      <span style={{
+        display: 'inline-block',
+        padding: '2px 8px',
+        backgroundColor: '#fff2f0',
+        color: '#ff4d4f',
+        borderRadius: '4px',
+        fontSize: '11px',
+        fontWeight: 500,
+        marginTop: 4,
+      }}>
+        未配置模型
+      </span>
+    );
   };
 
   return (
@@ -48,27 +131,15 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
       />
       
       <div style={{ padding: 12, minHeight: 100 }}>
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 8 }}>
           <Text strong style={{ fontSize: 16, color: '#333333', display: 'block' }}>
             {data.name || '未命名节点'}
           </Text>
         </div>
         
-        {data.model_config?.model && (
-          <div style={{ marginBottom: 10 }}>
-            <span style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              backgroundColor: '#e3f2fd',
-              color: '#1976d2',
-              borderRadius: '4px',
-              fontSize: '11px',
-              fontWeight: 500,
-            }}>
-              {getDisplayName(data.model_config.model)}
-            </span>
-          </div>
-        )}
+        <div style={{ marginBottom: 8 }}>
+          {renderModelInfo()}
+        </div>
         
         <div style={{
           marginTop: 8,

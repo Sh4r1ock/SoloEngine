@@ -1,19 +1,22 @@
 export interface NodeData {
   id: string;
-  type: 'agent';
+  type: 'agent' | 'annotation';
   position: { x: number; y: number };
   data: {
-    name: string;
+    name?: string;
     desc?: string;
-    agentType: 'orchestrator' | 'planner' | 'executor';
-    system_prompt: string;
-    user_prompt: string;
-    assistant_prompt: string;
-    model_config: {
+    agentType?: 'orchestrator' | 'planner' | 'executor';
+    system_prompt?: string;
+    user_prompt?: string;
+    assistant_prompt?: string;
+    model_config?: {
       provider: string;
       model: string;
     };
-    skills: string[];
+    skills?: string[];
+    mcp_tools?: string[];
+    text?: string;
+    color?: string;
   };
 }
 

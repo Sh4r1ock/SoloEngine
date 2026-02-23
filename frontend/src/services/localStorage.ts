@@ -1,8 +1,41 @@
+/**
+ * @file localStorage.ts
+ * @description 本地存储服务 - 项目数据本地存储模块
+ * @author SoloEngine Team
+ * @date 2026-02-19
+ * 
+ * 功能描述：
+ * - 提供项目数据的本地存储和读取功能
+ * - 保存项目、加载项目、获取项目列表、删除项目
+ * 
+ * 使用场景：
+ * - 项目数据的持久化存储
+ * - 项目导入导出功能
+ * 
+ * 注意事项：
+ * - 支持localStorage和服务器端存储两种方式
+ * - 导出功能生成JSON格式文件
+ */
 import { NodeData, EdgeData } from '../types/canvas';
-import axios from 'axios';
+import { api } from './api';
 
-const SAVE_API_BASE_URL = 'http://localhost:8901/api/v1';
-
+/**
+ * 保存的节点接口
+ * 
+ * @property node_id - 节点ID
+ * @property node_name - 节点名称
+ * @property node_intro - 节点简介
+ * @property agent_type - 智能体类型
+ * @property position - 节点位置
+ * @property system_prompt - 系统提示词
+ * @property user_prompt - 用户提示词
+ * @property assistant_prompt - 助手提示词
+ * @property model_config - 模型配置
+ * @property skills - Skills列表
+ * @property mcps - MCP列表
+ * @property source_node_id - 源节点ID
+ * @property target_node_id - 目标节点ID
+ */
 export interface SavedNode {
   node_id: string;
   node_name: string;
@@ -22,12 +55,24 @@ export interface SavedNode {
   target_node_id?: string;
 }
 
+/**
+ * 保存的工作流接口
+ * 
+ * @property project_name - 项目名称
+ * @property nodes - 节点列表
+ * @property saved_at - 保存时间
+ */
 export interface SavedFlow {
   project_name: string;
   nodes: SavedNode[];
   saved_at: string;
 }
 
+/**
+ * 本地存储服务类
+ * 
+ * @description 提供项目数据的本地存储和读取功能
+ */
 class LocalStorageService {
   private readonly STORAGE_KEY = 'agentic_flows';
 
@@ -120,14 +165,42 @@ class LocalStorageService {
 
   async saveFlowToFile(projectName: string, nodes: NodeData[], edges: EdgeData[]): Promise<void> {
     try {
-      const response = await axios.post(`${SAVE_API_BASE_URL}/save-flow`, {
+      await api.post('/save-flow', {
         project_name: projectName,
         nodes: nodes,
         edges: edges,
       });
-      return response.data;
     } catch (error) {
       console.error('Failed to save flow to file:', error);
+      throw error;
+    }
+  }
+
+  async loadFlowFromFile(projectName: string): Promise<{ nodes: NodeData[]; edges: EdgeData[] } | null> {
+    try {
+      const response = await api.get(`/flows/${projectName}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to load flow from file:', error);
+      return null;
+    }
+  }
+
+  async listFlows(): Promise<any[]> {
+    try {
+      const response = await api.get('/flows');
+      return response.data || [];
+    } catch (error) {
+      console.error('Failed to list flows:', error);
+      return [];
+    }
+  }
+
+  async deleteFlowFromServer(projectName: string): Promise<void> {
+    try {
+      await api.delete(`/flows/${projectName}`);
+    } catch (error) {
+      console.error('Failed to delete flow from server:', error);
       throw error;
     }
   }
