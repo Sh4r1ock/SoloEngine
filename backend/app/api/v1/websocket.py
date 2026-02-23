@@ -1,10 +1,12 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from typing import Dict, Any
 import json
 import uuid
 from app.core.canvas_parser import CanvasParser
 from app.core.scheduler import Scheduler
 from app.schemas.response import AgentUpdateEvent, ToolCallEvent, ResponseStreamingEvent, ExecutionCompleteEvent
+from app.core.auth import auth_service
+from app.core.database import db_manager, get_db
 
 router = APIRouter()
 
@@ -26,8 +28,32 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+async def verify_token(token: str) -> bool:
+    """验证WebSocket连接的Token。"""
+    if not token:
+        return False
+    payload = auth_service.decode_token(token)
+    if not payload:
+        return False
+    if payload.get("type") != "access":
+        return False
+    user_id = payload.get("sub")
+    if not user_id:
+        return False
+    user = await auth_service.get_user(user_id)
+    return user is not None and user.is_active
+
 @router.websocket("/ws/{task_id}")
-async def websocket_endpoint(websocket: WebSocket, task_id: str):
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    task_id: str,
+    token: str = Query(None)
+):
+    """WebSocket端点，需要通过查询参数传递token进行认证。"""
+    if not token or not await verify_token(token):
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+    
     await manager.connect(websocket, task_id)
     
     try:
@@ -44,41 +70,33 @@ async def websocket_endpoint(websocket: WebSocket, task_id: str):
         manager.disconnect(task_id)
 
 async def execute_workflow(task_id: str, project_id: str, user_input: str):
-    from app.api.v1.projects import projects_db
-    
-    if project_id not in projects_db:
-        await manager.send_event(task_id, {
-            "type": "error",
-            "message": "Project not found"
-        })
-        return
-    
-    canvas_data = projects_db[project_id]["canvas"]
+    db = next(get_db())
     
     try:
-        协作图 = CanvasParser.parse(canvas_data)
-    except ValueError as e:
-        await manager.send_event(task_id, {
-            "type": "error",
-            "message": str(e)
-        })
-        return
-    
-    scheduler = Scheduler(协作图)
-    initial_context = {"user_input": user_input}
-    
-    try:
-        result = await scheduler.start(initial_context)
+        project = db_manager.get_project(db, project_id)
+        if not project:
+            await manager.send_event(task_id, {
+                "type": "error",
+                "message": "Project not found"
+            })
+            return
         
-        await manager.send_event(task_id, {
-            "type": "agent-update",
-            "node_id": result.get("node_id"),
-            "status": result.get("status"),
-            "message": result.get("message")
-        })
+        canvas_data = project.canvas_data
         
-        while result.get("next_node_id"):
-            result = await scheduler.schedule_next(result)
+        try:
+            collaboration_graph = CanvasParser.parse(canvas_data)
+        except ValueError as e:
+            await manager.send_event(task_id, {
+                "type": "error",
+                "message": str(e)
+            })
+            return
+        
+        scheduler = Scheduler(collaboration_graph)
+        initial_context = {"user_input": user_input}
+        
+        try:
+            result = await scheduler.start(initial_context)
             
             await manager.send_event(task_id, {
                 "type": "agent-update",
@@ -86,15 +104,27 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str):
                 "status": result.get("status"),
                 "message": result.get("message")
             })
-        
-        await manager.send_event(task_id, {
-            "type": "execution-complete",
-            "task_id": task_id,
-            "result": result
-        })
-        
-    except Exception as e:
-        await manager.send_event(task_id, {
-            "type": "error",
-            "message": str(e)
-        })
+            
+            while result.get("next_node_id"):
+                result = await scheduler.schedule_next(result)
+                
+                await manager.send_event(task_id, {
+                    "type": "agent-update",
+                    "node_id": result.get("node_id"),
+                    "status": result.get("status"),
+                    "message": result.get("message")
+                })
+            
+            await manager.send_event(task_id, {
+                "type": "execution-complete",
+                "task_id": task_id,
+                "result": result
+            })
+            
+        except Exception as e:
+            await manager.send_event(task_id, {
+                "type": "error",
+                "message": str(e)
+            })
+    finally:
+        db.close()

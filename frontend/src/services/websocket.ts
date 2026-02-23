@@ -6,7 +6,10 @@ export class WebSocketService {
 
   connect(taskId: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const wsUrl = `ws://localhost:8000/api/v1/ws/${taskId}`;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const token = localStorage.getItem('access_token');
+      const wsUrl = `${protocol}//${host}/api/v1/ws/${taskId}?token=${token}`;
       
       this.ws = new WebSocket(wsUrl);
 
@@ -45,8 +48,19 @@ export class WebSocketService {
     }
   }
 
-  onMessage(handler: (event: WebSocketEvent) => void) {
+  onMessage(handler: (event: WebSocketEvent) => void): () => void {
     this.messageHandlers.push(handler);
+    
+    return () => {
+      this.offMessage(handler);
+    };
+  }
+
+  offMessage(handler: (event: WebSocketEvent) => void) {
+    const index = this.messageHandlers.indexOf(handler);
+    if (index > -1) {
+      this.messageHandlers.splice(index, 1);
+    }
   }
 
   startExecution(projectId: string, input: string) {

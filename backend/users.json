@@ -1,0 +1,44 @@
+{
+  "users": [
+    {
+      "id": "230613f8-77c5-44d6-bf72-0debeb6c3d35",
+      "username": "testuser",
+      "email": "test@example.com",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$l6cuef4Kd7+eVyTds4/+8g$289E2PMgmjLZLwjavQMYDe7pIZ3nhQQis6+tNJYQdWY",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "2026-02-23T15:00:25.850920",
+      "updated_at": "2026-02-23T15:00:25.850920"
+    },
+    {
+      "id": "e49d04b9-dce7-48db-bf6c-3c5ef604eabe",
+      "username": "testuser2",
+      "email": "test2@example.com",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$iQCuqMTi/UP4dMtF3U/RwQ$uhwmaLyDErlsnOCDEPd9Zj+u4pr5OoAYj2GqwzW5lhU",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "2026-02-23T15:11:32.368915",
+      "updated_at": "2026-02-23T15:11:32.368915"
+    },
+    {
+      "id": "b10f21e4-96c6-45ce-89cf-70fe20a9184d",
+      "username": "Sh4rlock",
+      "email": "1914726785@qq.com",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$QqY4CpNy2LZMp3C/Si9TEA$Vl/vZgv8nwDr5H96cbIMPh8uPQcjLNAyJ6/GA+Jg+JM",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "2026-02-23T17:40:45.615732",
+      "updated_at": "2026-02-23T17:40:45.615732"
+    },
+    {
+      "id": "9a652032-a390-4aa5-bdc9-f7eb136d240c",
+      "username": "testuser123",
+      "email": "test123@example.com",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$V4GW28gS17AEFg40hcJiSQ$u86f+eUC1e4AZaOECa5vjYNlzzZ9lHpTy24bnv1jvCM",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "2026-02-23T19:09:28.901854",
+      "updated_at": "2026-02-23T19:09:28.901854"
+    }
+  ]
+}
