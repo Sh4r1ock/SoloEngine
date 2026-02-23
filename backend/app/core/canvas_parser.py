@@ -1,6 +1,29 @@
+"""
+@file canvas_parser.py
+@description 画布解析器 - 工作流画布数据解析模块
+@author SoloEngine Team
+@date 2026-02-19
+
+功能描述：
+- 解析画布JSON数据
+- 构建执行图
+- 解析节点数据、解析边数据
+- 构建执行依赖图、验证画布结构
+
+使用场景：
+- 工作流执行前的数据验证和转换
+- 将前端画布数据转换为可执行的协作图
+
+注意事项：
+- 支持orchestrator、planner、executor三种节点类型
+- 验证画布数据的完整性和有效性
+"""
+import logging
 from typing import Dict, Any, List
 from pydantic import BaseModel, Field
 from app.models.node import AgentNode, OrchestratorNode, PlannerNode, ExecutorNode
+
+logger = logging.getLogger(__name__)
 
 class NodeData(BaseModel):
     id: str
@@ -24,7 +47,8 @@ class CanvasParser:
         try:
             CanvasData(**canvas_data)
             return True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Canvas validation failed: {e}")
             return False
     
     @staticmethod

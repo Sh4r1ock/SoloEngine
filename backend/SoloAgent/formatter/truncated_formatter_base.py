@@ -13,12 +13,7 @@ from typing import (
 from .formatter_base import FormatterBase
 from ..message import Msg
 from ..token_counter import TokenCounterBase
-# TODO: implement trace_format decorator
-# from ..tracing import trace_format
-
-def trace_format(func):
-    """A dummy trace format decorator."""
-    return func
+from ..tracing import trace_format
 
 
 class TruncatedFormatterBase(FormatterBase, ABC):

@@ -1,10 +1,31 @@
+"""
+@file app.py
+@description FastAPI主应用 - FastAPI应用主模块
+@author SoloEngine Team
+@date 2026-02-19
+
+功能描述：
+- 创建和配置FastAPI应用实例
+- 注册路由和中间件
+- 配置CORS跨域支持
+- 提供项目保存和加载API
+
+使用场景：
+- 作为FastAPI服务器的入口点
+- 配置全局中间件和路由
+
+注意事项：
+- CORS配置允许所有来源（生产环境应限制）
+- 支持热重载开发模式
+"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from frontend_interaction.save_service.flow_saver import FlowSaver
+from app.api.v1 import projects, tools, websocket, config, debug, skills, mcp_servers, auth, export, package, history, marketplace, agentic_flows, agent_tools, debug_project
 
-app = FastAPI(title="Agentic Flow Save Service", version="1.0.0")
+app = FastAPI(title="SoloEngine API", version="1.0.0", description="Agentic Builder API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -100,6 +121,18 @@ async def delete_flow(project_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8901, reload=True)
+app.include_router(config.router)
+app.include_router(debug.router)
+app.include_router(skills.router)
+app.include_router(projects.router)
+app.include_router(tools.router)
+app.include_router(websocket.router)
+app.include_router(mcp_servers.router)
+app.include_router(auth.router)
+app.include_router(export.router)
+app.include_router(package.router)
+app.include_router(history.router)
+app.include_router(marketplace.router)
+app.include_router(agentic_flows.router)
+app.include_router(agent_tools.router)
+app.include_router(debug_project.router)

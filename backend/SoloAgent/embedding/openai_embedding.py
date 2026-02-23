@@ -22,6 +22,8 @@ class OpenAITextEmbedding(EmbeddingModelBase):
         model_name: str,
         dimensions: int = 1024,
         embedding_cache: EmbeddingCacheBase | None = None,
+        batch_size: int = 2048,
+        max_tokens_per_batch: int = 8191,
         **kwargs: Any,
     ) -> None:
         """Initialize the OpenAI text embedding model class.
@@ -36,8 +38,10 @@ class OpenAITextEmbedding(EmbeddingModelBase):
             embedding_cache (`EmbeddingCacheBase | None`, defaults to `None`):
                 The embedding cache class instance, used to cache the
                 embedding results to avoid repeated API calls.
-
-        # TODO: handle batch size limit and token limit
+            batch_size (`int`, defaults to 2048):
+                Maximum number of texts to embed in a single API call.
+            max_tokens_per_batch (`int`, defaults to 8191):
+                Maximum tokens per text in a batch (OpenAI limit).
         """
         import openai
 
@@ -45,6 +49,8 @@ class OpenAITextEmbedding(EmbeddingModelBase):
 
         self.client = openai.AsyncClient(api_key=api_key, **kwargs)
         self.embedding_cache = embedding_cache
+        self.batch_size = batch_size
+        self.max_tokens_per_batch = max_tokens_per_batch
 
     async def __call__(
         self,

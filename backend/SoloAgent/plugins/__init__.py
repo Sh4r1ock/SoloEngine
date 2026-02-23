@@ -4,7 +4,7 @@
 from .memory import VectorMemoryPlugin, BlackholeMemoryPlugin
 from .rag import KnowledgeBaseRAGPlugin
 from .tools import ToolkitExecutor, ToolResponse
-from .mcp import SimpleMCPClient
+from .mcp import MCPClient, MCPServerConfig, MCPClientManager
 from .hooks import *
 from .plan import *
 
@@ -14,5 +14,7 @@ __all__ = [
     "KnowledgeBaseRAGPlugin",
     "ToolkitExecutor",
     "ToolResponse",
-    "SimpleMCPClient",
+    "MCPClient",
+    "MCPServerConfig",
+    "MCPClientManager",
 ]

@@ -8,6 +8,7 @@ from .cache_base import EmbeddingCacheBase
 from .file_cache import FileEmbeddingCache
 from .openai_embedding import OpenAITextEmbedding
 from .ollama_embedding import OllamaTextEmbedding
+from .embedding_service import EmbeddingService, EmbeddingConfig, get_embedding_service
 
 __all__ = [
     "EmbeddingModelBase",
@@ -17,4 +18,7 @@ __all__ = [
     "FileEmbeddingCache",
     "OpenAITextEmbedding",
     "OllamaTextEmbedding",
+    "EmbeddingService",
+    "EmbeddingConfig",
+    "get_embedding_service",
 ]
