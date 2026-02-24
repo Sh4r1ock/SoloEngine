@@ -24,7 +24,7 @@ DEFAULT_MCP_SERVERS = [
         "description": "安全文件操作，支持可配置的访问控制。提供文件读写、目录管理、搜索等功能。",
         "tags": ["filesystem", "file", "official", "anthropic"],
         "timeout": 30,
-        "author": "System",
+        "author": "SoloEngine",
         "source": "https://github.com/modelcontextprotocol/servers",
     },
     {
