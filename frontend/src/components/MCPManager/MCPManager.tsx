@@ -22,6 +22,7 @@ const { Title, Text } = Typography;
 
 interface ServerData {
   id: string;
+  user_id?: string;
   name: string;
   transport: string;
   url?: string;
@@ -31,6 +32,12 @@ interface ServerData {
   headers?: Record<string, string>;
   timeout: number;
   enabled: boolean;
+  is_public?: boolean;
+  is_default?: boolean;
+  author?: string;
+  source?: string;
+  description?: string;
+  tags?: string[];
   version: number;
   created_at?: string;
   updated_at?: string;
@@ -190,20 +197,32 @@ const MCPManager: React.FC = () => {
             <Col xs={24} sm={12} md={8} lg={6} key={server.id}>
               <UnifiedCard
                 name={server.name}
-                description={server.url || server.command || '无地址'}
+                description={server.is_default 
+                  ? (server.description || '系统默认MCP工具')
+                  : (server.url || server.command || '无地址')
+                }
                 icon={<ApiOutlined />}
-                tags={[server.transport.toUpperCase()]}
+                tags={server.is_default 
+                  ? [server.transport.toUpperCase(), ...(server.tags || [])]
+                  : [server.transport.toUpperCase()]
+                }
                 status={server.status}
                 statusText={getStatusText(server.status)}
-                meta1={{ label: '超时', value: `${server.timeout}s` }}
+                meta1={{ 
+                  label: server.is_default ? '作者' : '超时', 
+                  value: server.is_default ? (server.author || 'SoloEngine') : `${server.timeout}s` 
+                }}
                 updatedAt={server.updated_at}
-                onClick={() => handleEditServer(server)}
+                isDefault={server.is_default}
+                onClick={() => !server.is_default && handleEditServer(server)}
                 onPlay={
-                  server.status === 'connected'
-                    ? () => handleDisconnectServer(server.id)
-                    : () => handleConnectServer(server.id)
+                  server.is_default 
+                    ? undefined 
+                    : server.status === 'connected'
+                      ? () => handleDisconnectServer(server.id)
+                      : () => handleConnectServer(server.id)
                 }
-                onDelete={() => handleDeleteServer(server.id)}
+                onDelete={server.is_default ? undefined : () => handleDeleteServer(server.id)}
                 deleteConfirmText="确定要删除此MCP工具吗？"
               />
             </Col>
