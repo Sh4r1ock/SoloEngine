@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
-DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "database", "soloengine.db")
+DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "database", "soloengine.db")
 os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
 engine = create_engine(f"sqlite:///{DATABASE_PATH}", echo=False, connect_args={"check_same_thread": False})
@@ -404,7 +404,7 @@ class EncryptionService:
             except Exception:
                 pass
         
-        key_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", ".encryption_key")
+        key_file = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", ".encryption_key")
         os.makedirs(os.path.dirname(key_file), exist_ok=True)
         
         if os.path.exists(key_file):

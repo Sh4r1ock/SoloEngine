@@ -26,6 +26,7 @@ export interface SkillsPackage {
   user_id?: string;
   name: string;
   version?: string;
+  pkg_version?: string;
   description?: string;
   author?: string;
   tags?: string[];
@@ -33,6 +34,8 @@ export interface SkillsPackage {
   folder_path?: string;
   is_active: boolean;
   is_public?: boolean;
+  is_default?: boolean;
+  source?: string;
   lock_version?: number;
   created_at: string;
   updated_at: string;

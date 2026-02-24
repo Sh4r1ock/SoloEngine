@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: Optional[str] = os.getenv("ENCRYPTION_KEY")
     
     DATABASE_PATH: str = os.path.join(
-        os.path.dirname(__file__), "..", "..", "data", "database", "soloengine.db"
+        os.path.dirname(__file__), "..", "..", "..", "data", "database", "soloengine.db"
     )
     
     JWT_ALGORITHM: str = "HS256"

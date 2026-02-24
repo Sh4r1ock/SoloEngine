@@ -87,32 +87,60 @@ async def list_packages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取用户的所有 Skills 包。"""
+    """获取用户的所有 Skills 包（包含系统默认Skills）。"""
+    from app.utils.default_packages import DEFAULT_SKILLS_PACKAGES
+    
     user_id = current_user.id
     packages = db_manager.get_skills_packages(db, user_id)
+    
+    user_package_names = {p.name for p in packages}
+    
+    result = []
+    
+    for pkg in packages:
+        result.append({
+            "id": pkg.id,
+            "user_id": pkg.user_id,
+            "name": pkg.name,
+            "pkg_version": pkg.pkg_version,
+            "description": pkg.description,
+            "author": pkg.author,
+            "tags": pkg.tags or [],
+            "instructions": pkg.instructions,
+            "folder_path": pkg.folder_path,
+            "is_active": pkg.is_active,
+            "is_public": pkg.is_public,
+            "is_default": False,
+            "version": pkg.version,
+            "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
+            "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
+        })
+    
+    for idx, default_skill in enumerate(DEFAULT_SKILLS_PACKAGES):
+        if default_skill["name"] not in user_package_names:
+            result.append({
+                "id": f"default_{idx}",
+                "user_id": "system",
+                "name": default_skill["name"],
+                "pkg_version": "1.0.0",
+                "description": default_skill.get("description", ""),
+                "author": default_skill.get("author", "SoloEngine"),
+                "tags": default_skill.get("tags", []),
+                "instructions": default_skill.get("instructions", ""),
+                "folder_path": None,
+                "is_active": False,
+                "is_public": True,
+                "is_default": True,
+                "source": default_skill.get("source", ""),
+                "version": 0,
+                "created_at": None,
+                "updated_at": None,
+            })
     
     return {
         "code": 200,
         "message": "Skills packages retrieved",
-        "data": [
-            {
-                "id": pkg.id,
-                "user_id": pkg.user_id,
-                "name": pkg.name,
-                "pkg_version": pkg.pkg_version,
-                "description": pkg.description,
-                "author": pkg.author,
-                "tags": pkg.tags or [],
-                "instructions": pkg.instructions,
-                "folder_path": pkg.folder_path,
-                "is_active": pkg.is_active,
-                "is_public": pkg.is_public,
-                "version": pkg.version,
-                "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
-                "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
-            }
-            for pkg in packages
-        ],
+        "data": result,
     }
 
 
