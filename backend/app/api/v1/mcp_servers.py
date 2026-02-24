@@ -187,34 +187,67 @@ async def list_servers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取用户的所有 MCP 服务器。"""
+    """获取用户的所有 MCP 服务器（包含系统默认MCP）。"""
+    from app.utils.default_packages import DEFAULT_MCP_SERVERS
+    
     user_id = current_user.id
     servers = db_manager.get_mcp_servers(db, user_id)
+    
+    user_server_names = {s.name for s in servers}
+    
+    result = []
+    
+    for server in servers:
+        result.append({
+            "id": server.id,
+            "user_id": server.user_id,
+            "name": server.name,
+            "transport": server.transport,
+            "url": server.url,
+            "command": server.command,
+            "args": server.args or [],
+            "env": server.env or {},
+            "headers": server.headers or {},
+            "timeout": server.timeout,
+            "enabled": server.enabled,
+            "is_public": server.is_public,
+            "is_default": False,
+            "version": server.version,
+            "status": "connected" if server.enabled else "disconnected",
+            "created_at": server.created_at.isoformat() if server.created_at else None,
+            "updated_at": server.updated_at.isoformat() if server.updated_at else None,
+        })
+    
+    for idx, default_mcp in enumerate(DEFAULT_MCP_SERVERS):
+        if default_mcp["name"] not in user_server_names:
+            result.append({
+                "id": f"default_{idx}",
+                "user_id": "system",
+                "name": default_mcp["name"],
+                "transport": default_mcp.get("transport", "stdio"),
+                "url": "",
+                "command": default_mcp.get("command"),
+                "args": default_mcp.get("args", []),
+                "env": default_mcp.get("env", {}),
+                "headers": {},
+                "timeout": default_mcp.get("timeout", 30),
+                "enabled": False,
+                "is_public": True,
+                "is_default": True,
+                "author": default_mcp.get("author", "SoloEngine"),
+                "source": default_mcp.get("source", ""),
+                "description": default_mcp.get("description", ""),
+                "tags": default_mcp.get("tags", []),
+                "version": 0,
+                "status": "disconnected",
+                "created_at": None,
+                "updated_at": None,
+            })
     
     return {
         "code": 200,
         "message": "MCP servers retrieved",
-        "data": [
-            {
-                "id": server.id,
-                "user_id": server.user_id,
-                "name": server.name,
-                "transport": server.transport,
-                "url": server.url,
-                "command": server.command,
-                "args": server.args or [],
-                "env": server.env or {},
-                "headers": server.headers or {},
-                "timeout": server.timeout,
-                "enabled": server.enabled,
-                "is_public": server.is_public,
-                "version": server.version,
-                "status": "connected" if server.enabled else "disconnected",
-                "created_at": server.created_at.isoformat() if server.created_at else None,
-                "updated_at": server.updated_at.isoformat() if server.updated_at else None,
-            }
-            for server in servers
-        ],
+        "data": result,
     }
 
 

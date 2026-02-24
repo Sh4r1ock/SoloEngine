@@ -11,6 +11,7 @@ from ...exception import (
     ToolInvalidArgumentsError,
 )
 from ...types import ToolFunction
+from .calculator import calculator
 
 
 class ToolResponse:
@@ -167,13 +168,14 @@ async def search_tool(query: str, limit: int = 5) -> ToolResponse:
     return ToolResponse(content=f"Search results for '{query}' (limit: {limit})")
 
 async def calculator_tool(expression: str) -> ToolResponse:
-    """Evaluate a mathematical expression."""
-    try:
-        result = eval(expression, {"__builtins__": {}})
-        return ToolResponse(content=f"{expression} = {result}")
-    except Exception as e:
+    """Evaluate a mathematical expression safely."""
+    result = calculator.evaluate(expression)
+    
+    if result["success"]:
+        return ToolResponse(content=f"{expression} = {result['result']}")
+    else:
         return ToolResponse(
-            content=f"Error evaluating expression: {e}",
+            content=f"Error evaluating expression: {result['error']}",
             success=False,
-            error_message=str(e),
+            error_message=result["error"],
         )

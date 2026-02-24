@@ -20,6 +20,10 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
   onEdit,
 }) => {
   const handleToggleActive = async (pkg: SkillsPackage, checked: boolean) => {
+    if (pkg.is_default) {
+      message.warning('默认 Skills 包无法切换状态');
+      return;
+    }
     try {
       if (checked) {
         await skillsApi.activatePackage(pkg.id);
@@ -44,14 +48,15 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
             icon={<FolderOpenOutlined />}
             tags={pkg.tags || pkg.metadata?.tags || []}
             isActive={pkg.is_active}
-            showSwitch={true}
+            isDefault={pkg.is_default}
+            showSwitch={!pkg.is_default}
             onSwitchChange={(checked) => handleToggleActive(pkg, checked)}
             meta1={{ label: '版本', value: `v${pkg.metadata?.version || pkg.pkg_version || '1.0.0'}` }}
             meta2={{ label: '作者', value: pkg.metadata?.author || pkg.author || '未知' }}
             updatedAt={pkg.updated_at}
-            onClick={() => onEdit ? onEdit(pkg) : onViewDetail(pkg)}
+            onClick={() => !pkg.is_default && (onEdit ? onEdit(pkg) : onViewDetail(pkg))}
             onView={() => onViewDetail(pkg)}
-            onDelete={() => onDelete(pkg)}
+            onDelete={pkg.is_default ? undefined : () => onDelete(pkg)}
             deleteConfirmText="确定要删除此Skills包吗？"
           />
         </Col>

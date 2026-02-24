@@ -20,6 +20,7 @@ export interface CardItemProps {
   statusText?: string;
   isTemplate?: boolean;
   isActive?: boolean;
+  isDefault?: boolean;
   meta1?: { label: string; value: string };
   meta2?: { label: string; value: string };
   updatedAt?: string;
@@ -87,6 +88,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
   statusText,
   isTemplate,
   isActive,
+  isDefault,
   meta1,
   meta2,
   updatedAt,
@@ -108,16 +110,18 @@ const UnifiedCard: React.FC<CardItemProps> = ({
         padding: '16px',
         boxShadow: 'var(--shadow-sm)',
         transition: 'all 0.3s',
-        cursor: 'pointer',
+        cursor: onClick ? 'pointer' : 'default',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: `4px solid ${getStatusColor(status || (isActive ? 'active' : undefined))}`,
+        borderLeft: `4px solid ${isDefault ? 'var(--primary-100)' : getStatusColor(status || (isActive ? 'active' : undefined))}`,
       }}
       onClick={onClick}
       onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-base)';
-        e.currentTarget.style.transform = 'translateY(-2px)';
+        if (onClick) {
+          e.currentTarget.style.boxShadow = 'var(--shadow-base)';
+          e.currentTarget.style.transform = 'translateY(-2px)';
+        }
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
@@ -136,6 +140,11 @@ const UnifiedCard: React.FC<CardItemProps> = ({
           {isTemplate && (
             <Tag color="blue" style={{ fontSize: '10px', margin: 0 }}>
               模板
+            </Tag>
+          )}
+          {isDefault && (
+            <Tag color="purple" style={{ fontSize: '10px', margin: 0 }}>
+              默认
             </Tag>
           )}
           {status && statusText && (

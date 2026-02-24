@@ -18,10 +18,77 @@
  * 注意事项：
  * - 支持多种传输协议（stdio、sse等）
  * - 需要正确配置服务器连接参数
+ * - MCP服务独立部署于端口8992
  * 
  * 状态: ✅ 完整实现
  */
-import { api } from './api';
+import axios, { AxiosResponse, AxiosError } from 'axios';
+
+const MCP_SERVICE_URL = 'http://localhost:8992/api/v1';
+const MCP_REQUEST_TIMEOUT = 30000;
+
+export interface ApiResponse<T = any> {
+  code: number;
+  message: string;
+  data: T;
+}
+
+function getCookie(name: string): string | null {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) {
+    return decodeURIComponent(parts.pop()?.split(';').shift() || '');
+  }
+  return null;
+}
+
+const mcpClient = axios.create({
+  baseURL: MCP_SERVICE_URL,
+  timeout: MCP_REQUEST_TIMEOUT,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+mcpClient.interceptors.request.use(
+  (config) => {
+    const token = getCookie('access_token') || localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+mcpClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError) => {
+    console.error('MCP Service API Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
+
+const mcpApiRequest = {
+  get: async <T = any>(url: string, config?: any): Promise<ApiResponse<T>> => {
+    const response = await mcpClient.get(url, config);
+    return response.data;
+  },
+  post: async <T = any>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> => {
+    const response = await mcpClient.post(url, data, config);
+    return response.data;
+  },
+  put: async <T = any>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> => {
+    const response = await mcpClient.put(url, data, config);
+    return response.data;
+  },
+  delete: async <T = any>(url: string, config?: any): Promise<ApiResponse<T>> => {
+    const response = await mcpClient.delete(url, config);
+    return response.data;
+  },
+};
 
 /**
  * MCP服务器接口
@@ -39,6 +106,11 @@ export interface MCPServer {
   timeout?: number;
   enabled?: boolean;
   is_public?: boolean;
+  is_default?: boolean;
+  author?: string;
+  source?: string;
+  description?: string;
+  tags?: string[];
   version?: number;
   status: string;
   created_at?: string;
@@ -48,6 +120,10 @@ export interface MCPServer {
   prompts?: MCPPrompt[];
   error_message?: string;
   lastError?: string;
+  module?: string;
+  function?: string;
+  inputSchema?: Record<string, any>;
+  outputSchema?: Record<string, any>;
 }
 
 export interface MCPTool {
@@ -126,16 +202,17 @@ export interface OpenSourceMCP {
 
 class MCPApi {
   async getServers() {
-    return api.get('/mcp/servers');
+    return mcpApiRequest.get('/mcp/servers');
   }
 
   async getServer(serverId: string) {
-    return api.get(`/mcp/servers/${serverId}`);
+    return mcpApiRequest.get(`/mcp/servers/${serverId}`);
   }
 
   async addServer(config: {
     name: string;
     transport: string;
+    description?: string;
     url?: string;
     command?: string;
     args?: string[];
@@ -143,93 +220,102 @@ class MCPApi {
     headers?: Record<string, string>;
     timeout?: number;
     enabled?: boolean;
+    module?: string;
+    function?: string;
+    inputSchema?: Record<string, any>;
+    outputSchema?: Record<string, any>;
   }) {
-    return api.post('/mcp/servers', config);
+    return mcpApiRequest.post('/mcp/servers', config);
   }
 
   async updateServer(serverId: string, config: Partial<MCPServer> & { version?: number }) {
-    return api.put(`/mcp/servers/${serverId}`, config);
+    return mcpApiRequest.put(`/mcp/servers/${serverId}`, config);
   }
 
   async deleteServer(serverId: string) {
-    return api.delete(`/mcp/servers/${serverId}`);
+    return mcpApiRequest.delete(`/mcp/servers/${serverId}`);
   }
 
   async getServerTools(serverId: string) {
-    return api.get(`/mcp/servers/${serverId}/tools`);
+    return mcpApiRequest.get(`/mcp/servers/${serverId}/tools`);
   }
 
   async testConnection(serverId: string) {
-    return api.post(`/mcp/servers/${serverId}/test`);
+    return mcpApiRequest.post(`/mcp/servers/${serverId}/test`);
   }
 
   async testServer(config: {
     name: string;
     transport: string;
+    description?: string;
     url?: string;
     command?: string;
     args?: string[];
     env?: Record<string, string>;
     headers?: Record<string, string>;
     timeout?: number;
+    module?: string;
+    function?: string;
+    inputSchema?: Record<string, any>;
+    outputSchema?: Record<string, any>;
   }) {
-    return api.post('/mcp/servers/test', config);
+    return mcpApiRequest.post('/mcp/servers/test', config);
   }
 
   async callTool(serverId: string, toolName: string, args: Record<string, any>) {
-    return api.post(`/mcp/servers/${serverId}/tools/${toolName}/call`, {
+    return mcpApiRequest.post(`/mcp/servers/${serverId}/tools/${toolName}/call`, {
       arguments: args,
     });
   }
 
   async importMCP(config: Record<string, any>) {
-    return api.post('/mcp/import', config);
+    return mcpApiRequest.post('/mcp/import', config);
   }
 
   async getResources(serverId: string) {
-    return api.get(`/mcp/servers/${serverId}/resources`);
+    return mcpApiRequest.get(`/mcp/servers/${serverId}/resources`);
   }
 
   async getPrompts(serverId: string) {
-    return api.get(`/mcp/servers/${serverId}/prompts`);
+    return mcpApiRequest.get(`/mcp/servers/${serverId}/prompts`);
   }
 
   async getOpenSourceMCPS() {
-    return api.get('/mcp/open-source');
+    return mcpApiRequest.get('/mcp/open-source');
   }
 
   async connectServer(serverId: string) {
-    return api.post(`/mcp/servers/${serverId}/connect`);
+    return mcpApiRequest.post(`/mcp/servers/${serverId}/connect`);
   }
 
   async disconnectServer(serverId: string) {
-    return api.post(`/mcp/servers/${serverId}/disconnect`);
+    return mcpApiRequest.post(`/mcp/servers/${serverId}/disconnect`);
   }
 
   async getAllTools() {
-    return api.get('/mcp/tools/all');
+    return mcpApiRequest.get('/mcp/tools/all');
   }
 
   async getOpenMCPList() {
-    return api.get('/mcp/open-source');
+    return mcpApiRequest.get('/mcp/open-source');
   }
 
   async importOpenMCP(mcpId: string) {
-    return api.post('/mcp/import', null, { params: { mcp_id: mcpId } });
+    return mcpApiRequest.post('/mcp/import', null, { params: { mcp_id: mcpId } });
   }
 
   /**
    * 创建 Python MCP
    */
   async createPythonMCP(request: CreatePythonMCPRequest) {
-    return api.post('/mcp/servers/python', request);
+    return mcpApiRequest.post('/mcp/servers/python', request);
   }
 
   /**
    * 获取 MCP Python 代码
    */
   async getMCPCode(serverId: string): Promise<MCPCodeResponse> {
-    const response = await api.get(`/mcp/servers/${serverId}/code`);
+    const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/code`);
     return response.data;
   }
 
@@ -237,14 +323,14 @@ class MCPApi {
    * 更新 MCP Python 代码
    */
   async updateMCPCode(serverId: string, code: string) {
-    return api.put(`/mcp/servers/${serverId}/code`, null, { params: { code } });
+    return mcpApiRequest.put(`/mcp/servers/${serverId}/code`, { code });
   }
 
   /**
    * 初始化默认MCP服务器
    */
   async initDefaultMCPS() {
-    return api.post('/mcp/init-defaults');
+    return mcpApiRequest.post('/mcp/init-defaults');
   }
 }
 
