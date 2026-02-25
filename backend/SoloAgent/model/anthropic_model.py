@@ -1,5 +1,39 @@
 # -*- coding: utf-8 -*-
-"""Anthropic Claude chat model class."""
+"""
+Anthropic Claude 聊天模型类。
+
+@file anthropic_model.py
+@description 实现 Anthropic Claude 系列模型的 API 调用
+@author SoloEngine Team
+@date 2026-02-20
+
+功能描述：
+- 支持 Anthropic Claude 系列模型（Claude 3 Opus, Sonnet, Haiku）
+- 支持同步和流式输出
+- 支持工具调用（Tool Use）
+- 支持扩展思考（Extended Thinking）
+- 支持多模态输入（文本、图像）
+
+支持的模型：
+    - claude-3-5-sonnet-20241022: Claude 3.5 Sonnet（最新）
+    - claude-3-opus-20240229: Claude 3 Opus（最强）
+    - claude-3-haiku-20240307: Claude 3 Haiku（最快）
+
+特性：
+    - 扩展思考：支持 Claude 的 thinking 模式
+    - 工具调用：支持 Tool Use 功能
+    - 多模态：支持图像输入
+    - 系统提示：独立的系统消息参数
+
+API 差异：
+    Anthropic API 与 OpenAI API 有以下主要差异：
+    - 系统消息通过单独的 system 参数传递
+    - 消息格式略有不同
+    - 工具调用结果格式不同
+
+状态: ✅ 完整实现
+"""
+
 from datetime import datetime
 from typing import (
     Any,
@@ -52,13 +86,26 @@ else:
 def _convert_anthropic_message_to_solo_format(
     msg: Message,
 ) -> dict:
-    """Convert Anthropic message to SoloEngine message format.
-
+    """
+    将 Anthropic 消息转换为 SoloEngine 格式。
+    
+    Anthropic API 返回的消息格式与 SoloEngine 内部格式不同，
+    此函数负责格式转换。
+    
     Args:
-        msg (Message): Anthropic message object
-
+        msg (Message): Anthropic 消息对象。
+    
     Returns:
-        dict: SoloEngine message format
+        dict: SoloEngine 格式的消息字典，包含：
+            - role: 消息角色
+            - content: 内容块列表
+    
+    Note:
+        支持转换的内容块类型：
+        - TextBlock: 文本内容
+        - ImageBlockParam: 图像内容
+        - ThinkingBlock: 思考过程
+        - ToolResultBlockParam: 工具调用结果
     """
     content = []
 
@@ -70,7 +117,6 @@ def _convert_anthropic_message_to_solo_format(
                     "text": block.text,
                 })
             elif isinstance(block, ImageBlockParam):
-                # Anthropic uses different format for images
                 source = None
                 if isinstance(block.source, dict):
                     if "data" in block.source:
@@ -96,7 +142,6 @@ def _convert_anthropic_message_to_solo_format(
                     "thinking": block.text,
                 })
 
-    # Handle tool results
     if isinstance(msg, dict) and "role" in msg and msg["role"] == "user":
         if "tool_result_blocks" in msg:
             for result in msg["tool_result_blocks"]:
@@ -108,14 +153,12 @@ def _convert_anthropic_message_to_solo_format(
                         "output": None,
                     }
                     if result.content:
-                        # Anthropic returns text blocks as content
                         result_block["output"] = "\n".join(
                             block.text for block in result.content
                             if isinstance(block, TextBlock)
                         )
                     content.append(result_block)
 
-    # For assistant messages with tool_use
     if isinstance(msg, dict) and "role" in msg and msg["role"] == "assistant":
         if "content" in msg:
             for block in msg["content"]:
@@ -134,7 +177,45 @@ def _convert_anthropic_message_to_solo_format(
 
 
 class AnthropicChatModel(ChatModelBase):
-    """The Anthropic Claude chat model class."""
+    """
+    Anthropic Claude 聊天模型类。
+    
+    实现 Anthropic Claude 系列模型的 API 调用，支持同步和流式输出、
+    工具调用、扩展思考等功能。
+    
+    核心功能：
+        1. 模型调用：通过 __call__ 方法调用 Anthropic API
+        2. 流式输出：支持逐步返回生成内容
+        3. 工具调用：支持 Tool Use 功能
+        4. 扩展思考：支持 Claude 的 thinking 模式
+    
+    支持的模型：
+        - Claude 3.5 Sonnet: claude-3-5-sonnet-20241022
+        - Claude 3 Opus: claude-3-opus-20240229
+        - Claude 3 Haiku: claude-3-haiku-20240307
+    
+    API 差异说明：
+        Anthropic API 与 OpenAI API 有以下主要差异：
+        - 系统消息通过单独的 system 参数传递，不在消息列表中
+        - 消息格式略有不同，需要格式转换
+        - 工具调用结果格式不同
+    
+    Example:
+        >>> model = AnthropicChatModel(
+        ...     model_name="claude-3-5-sonnet-20241022",
+        ...     api_key="sk-ant-...",
+        ...     stream=False
+        ... )
+        >>> 
+        >>> messages = [{"role": "user", "content": "你好"}]
+        >>> response = await model(messages)
+        >>> print(response.content[0]["text"])
+    
+    Note:
+        - API 密钥可通过参数或环境变量 ANTHROPIC_API_KEY 提供
+        - 系统消息会被自动提取并使用单独参数传递
+        - 流式输出时返回异步生成器
+    """
 
     def __init__(
         self,
@@ -146,22 +227,33 @@ class AnthropicChatModel(ChatModelBase):
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize Anthropic client.
-
+        """
+        初始化 Anthropic 客户端。
+        
         Args:
-            model_name (str): The name of the model to use
-                (e.g., "claude-3-5-sonnet-20241022", "claude-3-opus-20240229")
-            api_key (str | None): The API key for Anthropic API.
-                If not specified, it will be read from environment variable.
-            stream (bool): Whether to use streaming output or not.
-            api_key_env_var (str): Environment variable name for API key.
-            client_kwargs (dict | None): Extra keyword arguments for Anthropic client.
-            generate_kwargs (dict | None): Extra keyword arguments used in Anthropic API generation.
-            **kwargs (Any): Additional keyword arguments.
+            model_name (str): 模型名称，如：
+                - 'claude-3-5-sonnet-20241022'
+                - 'claude-3-opus-20240229'
+                - 'claude-3-haiku-20240307'
+            api_key (str | None, optional): API 密钥。如果未指定，
+                从环境变量读取。默认为 None。
+            stream (bool, optional): 是否启用流式输出。默认为 True。
+            api_key_env_var (str, optional): API 密钥的环境变量名。
+                默认为 "ANTHROPIC_API_KEY"。
+            client_kwargs (dict | None, optional): 初始化 Anthropic 客户端的
+                额外参数。默认为 None。
+            generate_kwargs (dict | None, optional): API 调用时的额外参数，
+                如 temperature, max_tokens 等。默认为 None。
+            **kwargs: 额外的关键字参数。
+        
+        Raises:
+            ValueError: 当 API 密钥未提供且环境变量未设置时抛出。
+        
+        Note:
+            - client_args 参数已弃用，请使用 client_kwargs
         """
         super().__init__(model_name, stream)
 
-        # Handle deprecated client_args parameter from kwargs
         client_args = kwargs.pop("client_args", None)
         if client_args is not None and client_kwargs is not None:
             raise ValueError(
@@ -183,7 +275,6 @@ class AnthropicChatModel(ChatModelBase):
                 "These will be ignored."
             )
 
-        # Initialize Anthropic client
         import os
         key = api_key or os.environ.get(api_key_env_var)
         if not key:
@@ -208,32 +299,39 @@ class AnthropicChatModel(ChatModelBase):
         structured_model: Type[object] | None = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
-        """Get response from Anthropic messages API by given arguments.
-
-        Args:
-            messages (list[dict]): A list of dictionaries, where 'role' and 'content'
-                fields are required, and 'name' field is optional.
-            tools (list[dict] | None): The tools JSON schemas that model can use.
-            tool_choice (Literal["auto", "none", "any"] | str | None):
-                Controls which (if any) tool is called by the model.
-            structured_model (Type[object] | None):
-                A Pydantic BaseModel class that defines the expected structure
-                for the model's output. When provided, model will be forced
-                to return data that conforms to this schema by automatically
-                converting to a tool function and setting `tool_choice`
-                to enforce its usage.
-            **kwargs (Any): The keyword arguments for Anthropic messages API,
-                e.g., `temperature`, `max_tokens`, `top_p`, etc.
-
-        Returns:
-            ChatResponse | AsyncGenerator[ChatResponse, None]: The response.
-
-        Notes:
-            When `structured_model` is specified, both `tools` and `tool_choice`
-            parameters are ignored, and the model will only perform structured
-            output generation without calling any other tools.
         """
-        # Check messages format
+        调用 Anthropic Messages API 获取响应。
+        
+        这是模型的主要接口方法，支持多种调用模式。
+        
+        Args:
+            messages (list[dict]): 消息列表，每条消息必须包含：
+                - role: 角色（system/user/assistant）
+                - content: 内容（字符串或内容块列表）
+            tools (list[dict] | None, optional): 工具定义列表。
+                默认为 None。
+            tool_choice (Literal["auto", "none", "any"] | str | None, optional):
+                工具选择模式。默认为 None。
+            structured_model (Type[object] | None, optional):
+                结构化输出的模型类。默认为 None。
+            **kwargs: Anthropic API 的额外参数，如：
+                - temperature: 生成温度
+                - max_tokens: 最大输出 token 数
+                - top_p: 核采样参数
+                - top_k: Top-K 采样参数
+        
+        Returns:
+            ChatResponse | AsyncGenerator[ChatResponse, None]:
+                - 如果 stream=False，返回 ChatResponse 对象
+                - 如果 stream=True，返回异步生成器
+        
+        Raises:
+            ValueError: 当消息格式不正确时抛出。
+        
+        Note:
+            - 系统消息会被自动提取并使用单独参数传递
+            - structured_model 模式下会忽略 tools 和 tool_choice
+        """
         if not isinstance(messages, list):
             raise ValueError(
                 f"Anthropic 'messages' field expected type 'list', "
@@ -245,11 +343,8 @@ class AnthropicChatModel(ChatModelBase):
                 "and 'content' key for Anthropic API."
             )
 
-        # Format messages for Anthropic
-        # Anthropic expects messages in a different format
         anthropic_messages: list[Message | dict] = []
 
-        # Add system message first if present
         system_message = None
         if messages and messages[0].get("role") == "system":
             system_message = messages[0]
@@ -257,10 +352,8 @@ class AnthropicChatModel(ChatModelBase):
         else:
             remaining_messages = messages
 
-        # Convert remaining messages to Anthropic format
         anthropic_messages.extend(remaining_messages)
 
-        # Build generation kwargs
         gen_kwargs = {
             "model": self.model_name,
             "max_tokens": kwargs.get("max_tokens", 4096),
@@ -271,15 +364,12 @@ class AnthropicChatModel(ChatModelBase):
             **kwargs,
         }
 
-        # Handle streaming
         if self.stream:
             gen_kwargs["stream"] = True
 
-        # Handle tools
         if tools:
             gen_kwargs["tools"] = tools
 
-        # Handle structured model
         if structured_model:
             if tools:
                 logger.warning(
@@ -288,7 +378,6 @@ class AnthropicChatModel(ChatModelBase):
                     "ignored. The model will only perform structured output "
                     "generation without calling any other tools."
                 )
-            # Anthropic uses beta tool_choice="any" for structured output
             gen_kwargs["tool_choice"] = {"type": "any", "name": "formatted_response"}
             gen_kwargs["betas"] = ["computer-use-2024-10-22"]
 
@@ -296,7 +385,6 @@ class AnthropicChatModel(ChatModelBase):
 
         if self.stream:
             if system_message:
-                # For streaming with system message, we need to use the messages endpoint
                 response = await self.client.messages.create(
                     system=system_message.get("content"),
                     messages=anthropic_messages,
@@ -346,15 +434,20 @@ class AnthropicChatModel(ChatModelBase):
         response: AsyncStream,
         structured_model: Type[object] | None = None,
     ) -> AsyncGenerator[ChatResponse, None]:
-        """Parse Anthropic streaming response and yield ChatResponse objects.
-
+        """
+        解析 Anthropic 流式响应。
+        
+        从 Anthropic 流式响应中提取内容块和使用量信息，
+        逐步生成 ChatResponse 对象。
+        
         Args:
-            start_datetime (datetime): The start datetime of response generation.
-            response (AsyncStream): Anthropic AsyncStream object.
-            structured_model (Type[object] | None): Pydantic model for structured output.
-
+            start_datetime (datetime): 响应生成的开始时间。
+            response (AsyncStream): Anthropic 异步流对象。
+            structured_model (Type[object] | None, optional):
+                结构化输出的模型类。默认为 None。
+        
         Returns:
-            AsyncGenerator[ChatResponse, None]: Generator yielding ChatResponse objects.
+            AsyncGenerator[ChatResponse, None]: 异步生成器。
         """
         usage = None
         text = ""
@@ -395,7 +488,6 @@ class AnthropicChatModel(ChatModelBase):
                                     "name", ""
                                 )
                 elif event.type == "content_block_stop":
-                    # Yield accumulated content when a block ends
                     contents = []
                     if thinking:
                         contents.append(
@@ -431,7 +523,6 @@ class AnthropicChatModel(ChatModelBase):
                     if event.delta.type == "delta" and event.delta.text:
                         text += event.delta.text
                 elif event.type == "message_stop":
-                    # Final event - check if there are any pending contents
                     contents = []
                     if thinking:
                         contents.append(
@@ -465,7 +556,6 @@ class AnthropicChatModel(ChatModelBase):
                         yield res
                 elif event.type == "error":
                     logger.error(f"Anthropic stream error: {event.error}")
-                    # Yield error response
                     yield ChatResponse(
                         content=[],
                         usage=None,
@@ -484,15 +574,19 @@ class AnthropicChatModel(ChatModelBase):
         response: anthropic.types.Message,
         structured_model: Type[object] | None = None,
     ) -> ChatResponse:
-        """Parse Anthropic non-streaming completion response.
-
+        """
+        解析 Anthropic 非流式响应。
+        
+        从 Anthropic Message 对象中提取内容块和使用量信息。
+        
         Args:
-            start_datetime (datetime): The start datetime of response generation.
-            response (Message): Anthropic Message object.
-            structured_model (Type[object] | None): Pydantic model for structured output.
-
+            start_datetime (datetime): 响应生成的开始时间。
+            response (Message): Anthropic Message 对象。
+            structured_model (Type[object] | None, optional):
+                结构化输出的模型类。默认为 None。
+        
         Returns:
-            ChatResponse: The parsed response.
+            ChatResponse: 包含内容块和使用量的响应对象。
         """
         content_blocks: list[
             SoloTextBlock | SoloToolUseBlock | SoloThinkingBlock
@@ -534,7 +628,6 @@ class AnthropicChatModel(ChatModelBase):
 
         metadata: dict | None = None
         if structured_model and response.content:
-            # Extract structured output if available
             try:
                 import json
                 if isinstance(response.content[-1], TextBlock):
