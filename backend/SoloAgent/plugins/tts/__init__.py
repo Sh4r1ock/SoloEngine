@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """TTS plugins for SoloEngine."""
 
-from ..core.interfaces import ITTSModel
+from ...core.interfaces import ITTSModel
 
 __all__ = [
     "ITTSModel",

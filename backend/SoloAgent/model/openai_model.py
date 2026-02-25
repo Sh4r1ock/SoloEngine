@@ -1,6 +1,37 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=too-many-branches
-"""OpenAI Chat model class."""
+"""
+OpenAI 聊天模型类。
+
+@file openai_model.py
+@description 实现 OpenAI GPT 系列模型的 API 调用
+@author SoloEngine Team
+@date 2026-02-20
+
+功能描述：
+- 支持 OpenAI GPT 系列模型（GPT-4, GPT-3.5, GPT-4o, o3-mini 等）
+- 支持同步和流式输出
+- 支持工具调用（Function Calling）
+- 支持结构化输出（Structured Output）
+- 支持音频输入输出
+- 支持推理模式（o3, o4 等模型）
+
+支持的模型：
+    - gpt-4: GPT-4 基础模型
+    - gpt-4-turbo: GPT-4 Turbo 版本
+    - gpt-4o: GPT-4 Omni 多模态模型
+    - gpt-3.5-turbo: GPT-3.5 Turbo 版本
+    - o3-mini: 推理增强模型
+
+特性：
+    - 流式输出：逐步返回生成内容
+    - 工具调用：支持 Function Calling
+    - 结构化输出：强制输出符合 JSON Schema
+    - 推理模式：支持 o3 系列的 reasoning_effort 参数
+
+状态: ✅ 完整实现
+"""
+
 import warnings
 from datetime import datetime
 from typing import (
@@ -39,15 +70,20 @@ else:
 
 
 def _format_audio_data_for_qwen_omni(messages: list[dict]) -> None:
-    """Qwen-omni uses OpenAI-compatible API but requires different audio
-    data format than OpenAI with "data:;base64," prefix.
-    Refer to `Qwen-omni documentation
-    <https://bailian.console.aliyun.com/?tab=doc#/doc/?type=model&url=2867839>`_
-    for more details.
-
+    """
+    为 Qwen-Omni 模型格式化音频数据。
+    
+    Qwen-Omni 使用 OpenAI 兼容的 API，但音频数据格式不同。
+    需要在 base64 数据前添加 "data:;base64," 前缀。
+    
+    参考：https://bailian.console.aliyun.com/?tab=doc#/doc/?type=model&url=2867839
+    
     Args:
-        messages (`list[dict]`):
-            The list of message dictionaries from OpenAI formatter.
+        messages (list[dict]): OpenAI 格式化器生成的消息列表。
+            此函数会原地修改消息中的音频数据格式。
+    
+    Note:
+        此函数会直接修改传入的 messages 列表，不返回新列表。
     """
     for msg in messages:
         if isinstance(msg.get("content"), list):
@@ -64,7 +100,40 @@ def _format_audio_data_for_qwen_omni(messages: list[dict]) -> None:
 
 
 class OpenAIChatModel(ChatModelBase):
-    """The OpenAI chat model class."""
+    """
+    OpenAI 聊天模型类。
+    
+    实现 OpenAI GPT 系列模型的 API 调用，支持同步和流式输出、
+    工具调用、结构化输出等功能。
+    
+    核心功能：
+        1. 模型调用：通过 __call__ 方法调用 OpenAI API
+        2. 流式输出：支持逐步返回生成内容
+        3. 工具调用：支持 Function Calling
+        4. 结构化输出：强制输出符合 Pydantic 模型
+        5. 推理模式：支持 o3 系列模型的推理增强
+    
+    支持的模型：
+        - GPT-4 系列：gpt-4, gpt-4-turbo, gpt-4o, gpt-4o-mini
+        - GPT-3.5 系列：gpt-3.5-turbo
+        - 推理模型：o3-mini, o3-mini-turbo
+    
+    Example:
+        >>> model = OpenAIChatModel(
+        ...     model_name="gpt-4",
+        ...     api_key="sk-...",
+        ...     stream=False
+        ... )
+        >>> 
+        >>> messages = [{"role": "user", "content": "你好"}]
+        >>> response = await model(messages)
+        >>> print(response.content[0]["text"])
+    
+    Note:
+        - API 密钥可通过参数或环境变量 OPENAI_API_KEY 提供
+        - 流式输出时返回异步生成器
+        - 工具调用结果在 content 中以 ToolUseBlock 形式返回
+    """
 
     def __init__(
         self,
@@ -77,37 +146,34 @@ class OpenAIChatModel(ChatModelBase):
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the openai client.
-
+        """
+        初始化 OpenAI 客户端。
+        
         Args:
-            model_name (`str`, default `None`):
-                The name of the model to use in OpenAI API.
-            api_key (`str`, default `None`):
-                The API key for OpenAI API. If not specified, it will
-                be read from the environment variable `OPENAI_API_KEY`.
-            stream (`bool`, default `True`):
-                Whether to use streaming output or not.
-            reasoning_effort (`Literal["low", "medium", "high"] | None`, \
-            optional):
-                Reasoning effort, supported for o3, o4, etc. Please refer to
-                `OpenAI documentation
-                <https://platform.openai.com/docs/guides/reasoning?api-mode=chat>`_
-                for more details.
-            organization (`str`, default `None`):
-                The organization ID for OpenAI API. If not specified, it will
-                be read from the environment variable `OPENAI_ORGANIZATION`.
-            client_kwargs (`dict[str, JSONSerializableObject] | None`, \
-             optional):
-                The extra keyword arguments to initialize the OpenAI client.
-            generate_kwargs (`dict[str, JSONSerializableObject] | None`, \
-             optional):
-                The extra keyword arguments used in OpenAI API generation,
-                e.g. `temperature`, `seed`.
-            **kwargs (`Any`):
-                Additional keyword arguments.
+            model_name (str): 模型名称，如 'gpt-4', 'gpt-4-turbo', 'o3-mini'。
+            api_key (str | None, optional): API 密钥。如果未指定，
+                从环境变量 OPENAI_API_KEY 读取。默认为 None。
+            stream (bool, optional): 是否启用流式输出。默认为 True。
+            reasoning_effort (Literal["low", "medium", "high"] | None, optional):
+                推理强度，仅适用于 o3, o4 等推理模型。
+                参考：https://platform.openai.com/docs/guides/reasoning
+                默认为 None。
+            organization (str, optional): 组织 ID。如果未指定，
+                从环境变量 OPENAI_ORGANIZATION 读取。默认为 None。
+            client_kwargs (dict | None, optional): 初始化 OpenAI 客户端的
+                额外参数。默认为 None。
+            generate_kwargs (dict | None, optional): API 调用时的额外参数，
+                如 temperature, seed 等。默认为 None。
+            **kwargs: 额外的关键字参数（已弃用的参数会被忽略）。
+        
+        Raises:
+            ValueError: 当同时指定 client_args 和 client_kwargs 时抛出。
+        
+        Note:
+            - client_args 参数已弃用，请使用 client_kwargs
+            - 未知的关键字参数会被忽略并记录警告
         """
 
-        # Handle deprecated client_args parameter from kwargs
         client_args = kwargs.pop("client_args", None)
         if client_args is not None and client_kwargs is not None:
             raise ValueError(
@@ -152,48 +218,67 @@ class OpenAIChatModel(ChatModelBase):
         structured_model: Type[BaseModel] | None = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
-        """Get the response from OpenAI chat completions API by the given
-        arguments.
-
+        """
+        调用 OpenAI Chat Completions API 获取响应。
+        
+        这是模型的主要接口方法，支持多种调用模式：
+        1. 普通对话：传入消息列表，获取文本响应
+        2. 工具调用：传入工具定义，模型可调用工具
+        3. 结构化输出：传入 Pydantic 模型，强制输出符合结构
+        
         Args:
-            messages (`list[dict]`):
-                A list of dictionaries, where `role` and `content` fields are
-                required, and `name` field is optional.
-            tools (`list[dict]`, default `None`):
-                The tools JSON schemas that the model can use.
-            tool_choice (`Literal["auto", "none", "required"] | str \
-            | None`, default `None`):
-                Controls which (if any) tool is called by the model.
-                 Can be "auto", "none", "required", or specific tool
-                 name. For more details, please refer to
-                 https://platform.openai.com/docs/api-reference/responses/create#responses_create-tool_choice
-            structured_model (`Type[BaseModel] | None`, default `None`):
-                A Pydantic BaseModel class that defines the expected structure
-                for the model's output. When provided, the model will be forced
-                to return data that conforms to this schema by automatically
-                converting the BaseModel to a tool function and setting
-                `tool_choice` to enforce its usage. This enables structured
-                output generation.
-
-                .. note:: When `structured_model` is specified,
-                    both `tools` and `tool_choice` parameters are ignored,
-                    and the model will only perform structured output
-                    generation without calling any other tools.
-
-                For more details, please refer to the `official document
-                <https://platform.openai.com/docs/guides/structured-outputs>`_
-
-            **kwargs (`Any`):
-                The keyword arguments for OpenAI chat completions API,
-                e.g. `temperature`, `max_tokens`, `top_p`, etc. Please
-                refer to the OpenAI API documentation for more details.
-
+            messages (list[dict]): 消息列表，每条消息必须包含：
+                - role: 角色（system/user/assistant/tool）
+                - content: 内容（字符串或内容块列表）
+                - name: 名称（可选）
+            tools (list[dict] | None, optional): 工具定义列表。
+                每个工具包含 name, description, parameters 字段。
+                默认为 None。
+            tool_choice (Literal["auto", "none", "required"] | str | None, optional):
+                工具选择模式：
+                - "auto": 模型自动决定是否调用工具
+                - "none": 模型不调用任何工具
+                - "required": 模型必须调用工具
+                - 工具名: 强制调用指定工具
+                默认为 None。
+            structured_model (Type[BaseModel] | None, optional):
+                Pydantic 模型类，用于结构化输出。
+                当指定时，tools 和 tool_choice 参数将被忽略。
+                参考：https://platform.openai.com/docs/guides/structured-outputs
+                默认为 None。
+            **kwargs: OpenAI API 的额外参数，如：
+                - temperature: 生成温度（0-2）
+                - max_tokens: 最大输出 token 数
+                - top_p: 核采样参数
+                - seed: 随机种子
+        
         Returns:
-            `ChatResponse | AsyncGenerator[ChatResponse, None]`:
-                The response from the OpenAI chat completions API.
+            ChatResponse | AsyncGenerator[ChatResponse, None]:
+                - 如果 stream=False，返回 ChatResponse 对象
+                - 如果 stream=True，返回异步生成器
+        
+        Raises:
+            ValueError: 当消息格式不正确时抛出。
+        
+        Example:
+            >>> # 普通对话
+            >>> response = await model([{"role": "user", "content": "你好"}])
+            >>> 
+            >>> # 工具调用
+            >>> tools = [{"type": "function", "function": {...}}]
+            >>> response = await model(messages, tools=tools)
+            >>> 
+            >>> # 结构化输出
+            >>> class Answer(BaseModel):
+            ...     text: str
+            ...     confidence: float
+            >>> response = await model(messages, structured_model=Answer)
+        
+        Note:
+            - structured_model 模式下会忽略 tools 和 tool_choice
+            - Qwen-Omni 模型会自动格式化音频数据
         """
 
-        # checking messages
         if not isinstance(messages, list):
             raise ValueError(
                 "OpenAI `messages` field expected type `list`, "
@@ -205,7 +290,6 @@ class OpenAIChatModel(ChatModelBase):
                 "and 'content' key for OpenAI API.",
             )
 
-        # Qwen-omni requires different base64 audio format from openai
         if "omni" in self.model_name.lower():
             _format_audio_data_for_qwen_omni(messages)
 
@@ -223,7 +307,6 @@ class OpenAIChatModel(ChatModelBase):
             kwargs["tools"] = self._format_tools_json_schemas(tools)
 
         if tool_choice:
-            # Handle deprecated "any" option with warning
             if tool_choice == "any":
                 warnings.warn(
                     '"any" is deprecated and will be removed in a future '
@@ -270,7 +353,6 @@ class OpenAIChatModel(ChatModelBase):
                 structured_model,
             )
 
-        # Non-streaming response
         parsed_response = self._parse_openai_completion_response(
             start_datetime,
             response,
@@ -285,27 +367,25 @@ class OpenAIChatModel(ChatModelBase):
         response: AsyncStream,
         structured_model: Type[BaseModel] | None = None,
     ) -> AsyncGenerator[ChatResponse, None]:
-        """Given an OpenAI streaming completion response, extract the content
-         blocks and usages from it and yield ChatResponse objects.
-
+        """
+        解析 OpenAI 流式响应。
+        
+        从 OpenAI 流式响应中提取内容块和使用量信息，
+        逐步生成 ChatResponse 对象。
+        
         Args:
-            start_datetime (`datetime`):
-                The start datetime of the response generation.
-            response (`AsyncStream`):
-                OpenAI AsyncStream object to parse.
-            structured_model (`Type[BaseModel] | None`, default `None`):
-                A Pydantic BaseModel class that defines the expected structure
-                for the model's output.
-
+            start_datetime (datetime): 响应生成的开始时间。
+            response (AsyncStream): OpenAI 异步流对象。
+            structured_model (Type[BaseModel] | None, optional):
+                结构化输出的 Pydantic 模型。默认为 None。
+        
         Returns:
-            `AsyncGenerator[ChatResponse, None]`:
-                An async generator that yields ChatResponse objects containing
-                the content blocks and usage information for each chunk in
-                the streaming response.
-
-        .. note::
-            If `structured_model` is not `None`, the expected structured output
-            will be stored in the metadata of the `ChatResponse`.
+            AsyncGenerator[ChatResponse, None]: 异步生成器，
+                逐步生成 ChatResponse 对象。
+        
+        Note:
+            如果指定了 structured_model，结构化输出会存储在
+            ChatResponse 的 metadata 字段中。
         """
         usage, res = None, None
         text = ""
@@ -441,25 +521,23 @@ class OpenAIChatModel(ChatModelBase):
         response: ChatCompletion,
         structured_model: Type[BaseModel] | None = None,
     ) -> ChatResponse:
-        """Given an OpenAI chat completion response object, extract the content
-            blocks and usages from it.
-
+        """
+        解析 OpenAI 非流式响应。
+        
+        从 OpenAI ChatCompletion 对象中提取内容块和使用量信息。
+        
         Args:
-            start_datetime (`datetime`):
-                The start datetime of the response generation.
-            response (`ChatCompletion`):
-                OpenAI ChatCompletion object to parse.
-            structured_model (`Type[BaseModel] | None`, default `None`):
-                A Pydantic BaseModel class that defines the expected structure
-                for the model's output.
-
+            start_datetime (datetime): 响应生成的开始时间。
+            response (ChatCompletion): OpenAI ChatCompletion 对象。
+            structured_model (Type[BaseModel] | None, optional):
+                结构化输出的 Pydantic 模型。默认为 None。
+        
         Returns:
-            ChatResponse (`ChatResponse`):
-                A ChatResponse object containing the content blocks and usage.
-
-        .. note::
-            If `structured_model` is not `None`, the expected structured output
-            will be stored in the metadata of the `ChatResponse`.
+            ChatResponse: 包含内容块和使用量的响应对象。
+        
+        Note:
+            如果指定了 structured_model，结构化输出会存储在
+            ChatResponse 的 metadata 字段中。
         """
         content_blocks: List[
             TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock
@@ -545,26 +623,41 @@ class OpenAIChatModel(ChatModelBase):
         self,
         schemas: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Format the tools JSON schemas to the OpenAI format."""
+        """
+        格式化工具 JSON Schema。
+        
+        将工具定义转换为 OpenAI API 所需的格式。
+        
+        Args:
+            schemas (list[dict]): 工具定义列表。
+        
+        Returns:
+            list[dict]: 格式化后的工具列表。
+        
+        Note:
+            OpenAI 格式与通用格式相同，此方法保留用于扩展。
+        """
         return schemas
 
     def _format_tool_choice(
         self,
         tool_choice: Literal["auto", "none", "required"] | str | None,
     ) -> str | dict | None:
-        """Format tool_choice parameter for API compatibility.
-
+        """
+        格式化工具选择参数。
+        
+        将工具选择参数转换为 OpenAI API 所需的格式。
+        
         Args:
-            tool_choice (`Literal["auto", "none", "required"] | str \
-            | None`, default `None`):
-                Controls which (if any) tool is called by the model.
-                 Can be "auto", "none", "required", or specific tool name.
-                 For more details, please refer to
-                 https://platform.openai.com/docs/api-reference/responses/create#responses_create-tool_choice
+            tool_choice: 工具选择模式或工具名称。
+        
         Returns:
-            `dict | None`:
-                The formatted tool choice configuration dict, or None if
-                    tool_choice is None.
+            str | dict | None: 格式化后的工具选择配置。
+                - 模式字符串：直接返回
+                - 工具名称：返回 {"type": "function", "function": {"name": ...}}
+        
+        参考：
+            https://platform.openai.com/docs/api-reference/responses/create#responses_create-tool_choice
         """
         if tool_choice is None:
             return None
