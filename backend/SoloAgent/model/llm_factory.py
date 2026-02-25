@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
-"""LLM factory for creating model instances by provider."""
+"""
+LLM 工厂模块。
+
+@file llm_factory.py
+@description 提供统一的 LLM 模型实例创建接口
+@author SoloEngine Team
+@date 2026-02-20
+
+功能描述：
+- 根据提供商名称创建模型实例
+- 管理提供商和模型的映射关系
+- 提供模型可用性查询接口
+
+支持的提供商：
+    - openai: OpenAI GPT 系列
+    - anthropic: Anthropic Claude 系列
+    - qwen: 阿里通义千问系列
+    - ollama: Ollama 本地模型
+
+设计模式：
+    使用工厂模式封装模型创建逻辑，客户端代码无需
+    了解具体模型类的实现细节。
+
+使用场景：
+    - 从配置文件动态创建模型
+    - 切换不同提供商的模型
+    - 查询可用模型列表
+
+状态: ✅ 完整实现
+"""
+
 from typing import Literal, Dict, Any, Type
 
 from .model_base import ChatModelBase
@@ -11,7 +41,21 @@ from ..utils.logging import logger
 
 
 class LLMProvider:
-    """Supported LLM providers."""
+    """
+    LLM 提供商常量定义。
+    
+    定义支持的 LLM 提供商标识符，用于工厂方法中指定提供商。
+    
+    Attributes:
+        OPENAI (str): OpenAI 提供商标识
+        ANTHROPIC (str): Anthropic 提供商标识
+        QWEN (str): 通义千问提供商标识
+        OLLAMA (str): Ollama 本地模型提供商标识
+    
+    Example:
+        >>> provider = LLMProvider.OPENAI
+        >>> model = LLMFactory.create_model(provider, api_key="...")
+    """
 
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
@@ -20,25 +64,65 @@ class LLMProvider:
 
 
 class LLMFactory:
-    """Factory for creating LLM model instances by provider."""
+    """
+    LLM 模型工厂类。
+    
+    提供统一的模型创建接口，根据提供商名称创建对应的模型实例。
+    支持查询可用提供商和模型列表。
+    
+    核心功能：
+        1. 模型实例创建：create_model()
+        2. 提供商查询：get_available_providers()
+        3. 模型列表查询：get_available_models()
+        4. 模型验证：validate_model()
+    
+    支持的提供商：
+        - openai: GPT-4, GPT-3.5, GPT-4o, o3-mini 等
+        - anthropic: Claude 3 系列（Opus, Sonnet, Haiku）
+        - qwen: 通义千问系列（Plus, Turbo, Max, Long）
+        - ollama: 本地模型（Llama, Mistral, Gemma 等）
+    
+    Example:
+        >>> # 创建 OpenAI 模型
+        >>> model = LLMFactory.create_model(
+        ...     provider="openai",
+        ...     model_name="gpt-4",
+        ...     api_key="sk-..."
+        ... )
+        >>> 
+        >>> # 创建 Ollama 本地模型
+        >>> model = LLMFactory.create_model(
+        ...     provider="ollama",
+        ...     model_name="llama2",
+        ...     base_url="http://localhost:11434"
+        ... )
+        >>> 
+        >>> # 查询可用模型
+        >>> models = LLMFactory.get_available_models("openai")
+        >>> print(models)  # ['gpt-4', 'gpt-4-turbo', ...]
+    
+    Note:
+        - 工厂方法都是类方法，无需实例化
+        - 未指定模型名时使用默认模型
+        - 创建失败会抛出异常
+    """
 
-    # Mapping of provider to model class
     _provider_models: Dict[str, Type[ChatModelBase]] = {
         LLMProvider.OPENAI: OpenAIChatModel,
         LLMProvider.ANTHROPIC: AnthropicChatModel,
         LLMProvider.QWEN: QwenChatModel,
         LLMProvider.OLLAMA: OllamaChatModel,
     }
+    """提供商到模型类的映射字典"""
 
-    # Default models for each provider
     _default_models: Dict[str, str] = {
         LLMProvider.OPENAI: "gpt-4",
         LLMProvider.ANTHROPIC: "claude-3-5-sonnet-20241022",
         LLMProvider.QWEN: "qwen-plus",
         LLMProvider.OLLAMA: "llama2",
     }
+    """各提供商的默认模型"""
 
-    # Available models for each provider
     _available_models: Dict[str, list[str]] = {
         LLMProvider.OPENAI: [
             "gpt-4",
@@ -76,6 +160,7 @@ class LLMFactory:
             "gemma:7b",
         ],
     }
+    """各提供商的可用模型列表"""
 
     @classmethod
     def create_model(
@@ -86,32 +171,66 @@ class LLMFactory:
         api_key: str | None = None,
         **kwargs: Any,
     ) -> ChatModelBase:
-        """Create a model instance based on provider.
-
+        """
+        根据提供商创建模型实例。
+        
+        这是工厂的主要方法，根据提供商名称创建对应的模型实例。
+        支持自动选择默认模型和提供商特定参数处理。
+        
         Args:
-            provider (str): The LLM provider name.
-            model_name (str | None): The model name. If not specified,
-                uses the default model for the provider.
-            stream (bool): Whether to use streaming output.
-            api_key (str | None): The API key for the provider.
-            **kwargs: Additional keyword arguments to pass to the model.
-
+            provider (str): 提供商名称，支持：
+                - "openai": OpenAI GPT 系列
+                - "anthropic": Anthropic Claude 系列
+                - "qwen": 通义千问系列
+                - "ollama": Ollama 本地模型
+            model_name (str | None): 模型名称。如果未指定，
+                使用该提供商的默认模型。默认为 None。
+            stream (bool): 是否启用流式输出。默认为 True。
+            api_key (str | None): API 密钥。
+                - OpenAI/Anthropic/Qwen: 必需
+                - Ollama: 不需要
+            **kwargs: 提供商特定参数，如：
+                - OpenAI: organization, reasoning_effort
+                - Ollama: base_url
+        
         Returns:
-            ChatModelBase: An instance of the appropriate model class.
-
+            ChatModelBase: 创建的模型实例。
+        
         Raises:
-            ValueError: If provider is not supported.
+            ValueError: 当提供商不支持时抛出。
+            Exception: 当模型创建失败时抛出。
+        
+        Example:
+            >>> # 使用默认模型
+            >>> model = LLMFactory.create_model("openai", api_key="sk-...")
+            >>> 
+            >>> # 指定模型
+            >>> model = LLMFactory.create_model(
+            ...     "anthropic",
+            ...     model_name="claude-3-opus-20240229",
+            ...     api_key="..."
+            ... )
+            >>> 
+            >>> # Ollama 本地模型
+            >>> model = LLMFactory.create_model(
+            ...     "ollama",
+            ...     model_name="llama2",
+            ...     base_url="http://localhost:11434"
+            ... )
+        
+        Note:
+            - 提供商名称不区分大小写
+            - 未指定模型名时使用默认模型
+            - 创建失败会记录错误日志并重新抛出异常
         """
         provider_lower = provider.lower()
 
-        # Use default model if not specified
         if model_name is None:
             if provider_lower in cls._default_models:
                 model_name = cls._default_models[provider_lower]
             else:
-                model_name = "gpt-4"  # Fallback to OpenAI
+                model_name = "gpt-4"
 
-        # Get model class for provider
         model_class = cls._provider_models.get(provider_lower)
 
         if model_class is None:
@@ -120,7 +239,6 @@ class LLMFactory:
                 f"Supported providers: {', '.join(cls._provider_models.keys())}"
             )
 
-        # Provider-specific parameters
         provider_kwargs = {}
 
         if provider_lower == LLMProvider.OPENAI:
@@ -135,7 +253,6 @@ class LLMFactory:
             provider_kwargs["api_key"] = api_key
 
         elif provider_lower == LLMProvider.OLLAMA:
-            # Ollama doesn't require API key, uses local service
             provider_kwargs["base_url"] = kwargs.get("base_url", "http://localhost:11434")
 
         try:
@@ -151,25 +268,38 @@ class LLMFactory:
 
     @classmethod
     def get_available_providers(cls) -> list[str]:
-        """Get list of available LLM providers.
-
+        """
+        获取可用的 LLM 提供商列表。
+        
         Returns:
-            list[str]: List of provider names.
+            list[str]: 提供商名称列表，如 ['openai', 'anthropic', 'qwen', 'ollama']。
+        
+        Example:
+            >>> providers = LLMFactory.get_available_providers()
+            >>> print(providers)  # ['openai', 'anthropic', 'qwen', 'ollama']
         """
         return list(cls._provider_models.keys())
 
     @classmethod
     def get_available_models(cls, provider: str) -> list[str]:
-        """Get list of available models for a provider.
-
+        """
+        获取指定提供商的可用模型列表。
+        
         Args:
-            provider (str): The provider name.
-
+            provider (str): 提供商名称。
+        
         Returns:
-            list[str]: List of model names.
-
+            list[str]: 该提供商支持的模型名称列表。
+        
         Raises:
-            ValueError: If provider is not supported.
+            ValueError: 当提供商不支持时抛出。
+        
+        Example:
+            >>> models = LLMFactory.get_available_models("openai")
+            >>> print(models)  # ['gpt-4', 'gpt-4-turbo', ...]
+        
+        Note:
+            返回的列表可能不是完整的，实际可用模型取决于 API 密钥权限。
         """
         provider_lower = provider.lower()
 
@@ -183,16 +313,21 @@ class LLMFactory:
 
     @classmethod
     def get_default_model(cls, provider: str) -> str:
-        """Get the default model for a provider.
-
+        """
+        获取指定提供商的默认模型。
+        
         Args:
-            provider (str): The provider name.
-
+            provider (str): 提供商名称。
+        
         Returns:
-            str: The default model name.
-
+            str: 默认模型名称。
+        
         Raises:
-            ValueError: If provider is not supported.
+            ValueError: 当提供商不支持时抛出。
+        
+        Example:
+            >>> default = LLMFactory.get_default_model("openai")
+            >>> print(default)  # 'gpt-4'
         """
         provider_lower = provider.lower()
 
@@ -206,14 +341,23 @@ class LLMFactory:
 
     @classmethod
     def validate_model(cls, provider: str, model_name: str) -> bool:
-        """Validate if a model name is available for a provider.
-
+        """
+        验证模型是否在提供商的可用列表中。
+        
         Args:
-            provider (str): The provider name.
-            model_name (str): The model name to validate.
-
+            provider (str): 提供商名称。
+            model_name (str): 模型名称。
+        
         Returns:
-            bool: True if model is available for the provider.
+            bool: 如果模型在可用列表中返回 True，否则返回 False。
+        
+        Example:
+            >>> LLMFactory.validate_model("openai", "gpt-4")  # True
+            >>> LLMFactory.validate_model("openai", "unknown")  # False
+        
+        Note:
+            此方法仅检查模型是否在预定义列表中，
+            不验证模型是否实际可用（取决于 API 密钥权限）。
         """
         provider_lower = provider.lower()
         available_models = cls._available_models.get(provider_lower, [])
