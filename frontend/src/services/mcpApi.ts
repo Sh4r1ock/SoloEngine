@@ -111,7 +111,6 @@ export interface MCPServer {
   source?: string;
   description?: string;
   tags?: string[];
-  storage_path?: string;
   version?: number;
   status: string;
   created_at?: string;
@@ -121,6 +120,10 @@ export interface MCPServer {
   prompts?: MCPPrompt[];
   error_message?: string;
   lastError?: string;
+  module?: string;
+  function?: string;
+  inputSchema?: Record<string, any>;
+  outputSchema?: Record<string, any>;
 }
 
 export interface MCPTool {
@@ -171,17 +174,6 @@ export interface CreatePythonMCPRequest {
   name: string;
   description?: string;
   tools: PythonMCPTool[];
-}
-
-/**
- * 创建 Python MCP 响应
- */
-export interface CreatePythonMCPResponse {
-  id: string;
-  name: string;
-  transport: string;
-  storage_path: string;
-  main_file: string;
 }
 
 /**
