@@ -213,3 +213,8 @@ __marimo__/
 开发文档/
 执行要求/
 .trae/
+.vscode
+official_mcp_servers/
+test_plans/
+test_sessions/
+tests/

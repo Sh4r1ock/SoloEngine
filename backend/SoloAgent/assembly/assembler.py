@@ -1,5 +1,39 @@
 # -*- coding: utf-8 -*-
-"""Agent assembler for SoloEngine."""
+"""
+Agent 组装器模块。
+
+@file assembler.py
+@description 提供灵活的 Agent 组装功能，支持多种插件配置方式
+@author SoloEngine Team
+@date 2026-02-20
+
+功能描述：
+- 提供统一的 Agent 组装入口（ReActAgent 类）
+- 支持灵活的插件配置方式（字典、列表、实例）
+- 自动处理插件依赖和初始化
+- 支持多种传输协议的 MCP 客户端
+
+配置方式：
+    1. None: 完全禁用该功能
+    2. dict: 使用配置字典创建单个实例
+    3. list[dict]: 创建多个实例
+    4. 实例对象: 直接使用提供的实例
+
+支持的插件类型：
+    - memory_config: 记忆插件配置（向量记忆/黑洞记忆）
+    - rag_config: RAG 插件配置（知识库检索）
+    - tool_configs: 工具配置（本地工具）
+    - mcp_configs: MCP 客户端配置（远程工具）
+    - plan_config: 计划插件配置（任务规划）
+    - tts_config: TTS 插件配置（语音合成）
+
+使用场景：
+    - 快速创建配置好的 Agent 实例
+    - 从配置文件加载 Agent 配置
+    - 动态组装不同功能的 Agent
+
+状态: ✅ 完整实现
+"""
 
 from typing import Optional, List, Dict, Any, Union
 import inspect
@@ -19,7 +53,65 @@ logger = logging.getLogger(__name__)
 
 
 class ReActAgent:
-    """ReAct agent assembler - main user interface."""
+    """
+    ReAct Agent 组装器 - 主要用户接口。
+    
+    这是创建 Agent 的主要入口类，提供了灵活的插件配置方式。
+    内部使用 ReActCore 作为核心引擎，通过组装器模式简化配置。
+    
+    核心功能：
+        1. 插件配置处理：支持多种配置格式（字典、列表、实例）
+        2. MCP 客户端管理：自动创建和连接 MCP 服务器
+        3. 计划上下文注入：将计划状态注入用户消息
+        4. TTS 集成：自动将响应转换为语音
+    
+    配置示例：
+        单个记忆配置：
+            memory_config={"type": "vector", "max_size": 1000}
+        
+        多个 RAG 知识库：
+            rag_config=[
+                {"type": "knowledge_base", "path": "data1"},
+                {"type": "knowledge_base", "path": "data2"}
+            ]
+        
+        多个 MCP 客户端：
+            mcp_configs=[
+                {"type": "stdio", "command": "mcp-server1"},
+                {"type": "http", "url": "http://localhost:8000"}
+            ]
+    
+    生命周期：
+        1. 创建实例：解析配置，创建插件实例
+        2. 连接 MCP：调用 connect_mcp_servers()
+        3. 使用 Agent：调用 reply() 方法
+        4. 断开连接：调用 disconnect_mcp_servers()
+    
+    Example:
+        >>> from SoloAgent.model import OpenAIChatModel
+        >>> from SoloAgent.formatter import OpenAIChatFormatter
+        >>> 
+        >>> model = OpenAIChatModel(model_name="gpt-4")
+        >>> formatter = OpenAIChatFormatter()
+        >>> 
+        >>> agent = ReActAgent(
+        ...     name="assistant",
+        ...     model=model,
+        ...     formatter=formatter,
+        ...     system_prompt="你是一个有帮助的助手。",
+        ...     enable_memory=True,
+        ...     enable_tools=True
+        ... )
+        >>> 
+        >>> await agent.connect_mcp_servers()
+        >>> response = await agent.reply("你好！")
+        >>> await agent.disconnect_mcp_servers()
+    
+    Note:
+        - 使用 MCP 客户端前需要调用 connect_mcp_servers()
+        - 使用完毕后应调用 disconnect_mcp_servers() 清理资源
+        - TTS 功能需要配置 tts_config 参数
+    """
     
     def __init__(
         self,
@@ -39,29 +131,75 @@ class ReActAgent:
         print_hint_msg: bool = False,
         max_iters: int = 10,
     ) -> None:
-        """Initialize ReAct agent assembler.
+        """
+        初始化 ReAct Agent 组装器。
         
-        Flexible plugin configuration:
-        - None: Disable the feature completely
-        - dict: Enable single instance with this configuration
-        - list[dict]: Enable multiple instances
-        - plugin instance: Use the provided instance directly
+        Args:
+            name (str): Agent 名称，用于标识和日志。
+            model (ChatModelBase): LLM 模型实例，用于推理。
+            formatter (FormatterBase): 消息格式化器，将 Msg 对象
+                转换为模型 API 所需的格式。
+            system_prompt (str): 系统提示词，定义 Agent 的角色和行为。
+            
+            memory_config (None | dict | list[dict] | IMemory, optional):
+                记忆插件配置。支持以下格式：
+                - None: 禁用记忆功能
+                - dict: 单个记忆配置，如 {"type": "vector", "max_size": 1000}
+                - list[dict]: 多个记忆配置（使用第一个）
+                - IMemory 实例: 直接使用提供的实例
+                默认为 None。
+            
+            rag_config (None | dict | list[dict] | IRAG, optional):
+                RAG 插件配置。支持以下格式：
+                - None: 禁用 RAG 功能
+                - dict: 单个 RAG 配置
+                - list[dict]: 多个 RAG 配置（使用第一个）
+                - IRAG 实例: 直接使用提供的实例
+                默认为 None。
+            
+            tool_configs (None | dict | list[dict] | IToolExecutor, optional):
+                本地工具配置。支持以下格式：
+                - None: 无本地工具
+                - dict: 单个工具配置
+                - list[dict]: 多个工具配置
+                - IToolExecutor 实例: 直接使用提供的实例
+                默认为 None。
+            
+            mcp_configs (None | dict | list[dict] | list[IMCPClient], optional):
+                MCP 客户端配置。支持以下格式：
+                - None: 无 MCP 客户端
+                - dict: 单个 MCP 配置
+                - list[dict]: 多个 MCP 配置
+                - list[IMCPClient]: 直接使用提供的客户端列表
+                默认为 None。
+            
+            plan_config (None | dict | IPlanNotebook, optional):
+                计划插件配置。支持以下格式：
+                - None: 禁用计划功能
+                - dict: 计划配置，如 {"storage_path": "./plans", "auto_save": True}
+                - IPlanNotebook 实例: 直接使用提供的实例
+                默认为 None。
+            
+            tts_config (None | dict | ITTSModel, optional):
+                TTS 插件配置。支持以下格式：
+                - None: 禁用 TTS 功能
+                - dict: TTS 配置，如 {"provider": "openai", "voice": "alloy"}
+                - ITTSModel 实例: 直接使用提供的实例
+                默认为 None。
+            
+            enable_memory (bool, optional): 当 memory_config 为 None 时，
+                是否启用默认记忆插件。默认为 True。
+            enable_rag (bool, optional): 当 rag_config 为 None 时，
+                是否启用默认 RAG 插件。默认为 False。
+            enable_tools (bool, optional): 当 tool_configs 和 mcp_configs
+                都为 None 时，是否启用默认工具。默认为 False。
+            print_hint_msg (bool, optional): 是否打印调试信息。
+                默认为 False。
+            max_iters (int, optional): 最大迭代次数。默认为 10。
         
-        Examples:
-            # Single memory configuration
-            memory_config={"type": "vector", "max_size": 1000}
-            
-            # Multiple RAG knowledge bases
-            rag_config=[
-                {"type": "knowledge_base", "path": "data1"},
-                {"type": "knowledge_base", "path": "data2"}
-            ]
-            
-            # Multiple MCP clients
-            mcp_configs=[
-                {"type": "stdio", "command": "mcp-server1"},
-                {"type": "http", "url": "http://localhost:8000"}
-            ]
+        Note:
+            - enable_* 参数仅在对应 config 为 None 时生效
+            - MCP 客户端需要单独调用 connect_mcp_servers() 连接
         """
         self.name = name
         
@@ -93,7 +231,24 @@ class ReActAgent:
         self._system_prompt = system_prompt
     
     async def reply(self, message: str) -> str:
-        """Agent reply interface."""
+        """
+        处理用户消息并生成回复。
+        
+        这是 Agent 的主要交互方法，执行以下步骤：
+        1. 如果配置了计划插件，注入计划上下文
+        2. 调用 ReActCore 生成回复
+        3. 如果配置了 TTS 插件，将回复转换为语音
+        
+        Args:
+            message (str): 用户输入消息。
+        
+        Returns:
+            str: Agent 的回复文本。
+        
+        Note:
+            - TTS 转换失败不会影响文本回复
+            - 计划上下文会自动注入到消息开头
+        """
         if self._plan_plugin:
             await self._plan_plugin.initialize_if_needed()
             
@@ -113,6 +268,24 @@ class ReActAgent:
         return response_text
     
     def _inject_plan_context(self, message: str, plan: Dict[str, Any]) -> str:
+        """
+        将计划上下文注入到用户消息中。
+        
+        在消息开头添加当前计划的状态信息，帮助 Agent 了解
+        当前的任务进度和待执行步骤。
+        
+        Args:
+            message (str): 原始用户消息。
+            plan (dict): 当前计划对象，包含：
+                - name: 计划名称
+                - current_step: 当前步骤索引
+                - total_steps: 总步骤数
+                - progress: 完成进度（0-1）
+                - steps: 步骤列表
+        
+        Returns:
+            str: 注入计划上下文后的消息。
+        """
         plan_context = f"""
 当前计划状态:
 - 计划名称: {plan.get('name', '未命名计划')}
@@ -125,6 +298,19 @@ class ReActAgent:
         return f"{plan_context}\n\n用户输入: {message}"
     
     def _format_pending_steps(self, steps: List[Dict[str, Any]]) -> str:
+        """
+        格式化待执行步骤列表。
+        
+        将步骤列表格式化为可读的文本，最多显示 5 个步骤。
+        
+        Args:
+            steps (list): 步骤列表，每个步骤包含：
+                - status: 步骤状态（pending, in_progress, completed）
+                - description: 步骤描述
+        
+        Returns:
+            str: 格式化后的步骤文本。
+        """
         pending = [s for s in steps if s.get('status') == 'pending']
         if not pending:
             return "无待执行步骤"
@@ -143,7 +329,25 @@ class ReActAgent:
         config: Optional[Union[None, Dict[str, Any], List[Dict[str, Any]], IMemory]],
         enable_switch: bool,
     ) -> Optional[IMemory]:
-        """Process memory configuration."""
+        """
+        处理记忆插件配置。
+        
+        根据配置类型创建或返回记忆插件实例。
+        
+        Args:
+            config: 记忆配置，支持多种格式。
+            enable_switch: 当 config 为 None 时是否启用默认记忆。
+        
+        Returns:
+            Optional[IMemory]: 记忆插件实例，如果禁用则返回 None。
+        
+        Raises:
+            TypeError: 当配置类型不支持时抛出。
+        
+        Note:
+            - type="vector": 创建 VectorMemoryPlugin（默认）
+            - type="blackhole": 创建 BlackholeMemoryPlugin（不存储）
+        """
         if config is not None:
             if isinstance(config, IMemory):
                 return config
@@ -170,7 +374,21 @@ class ReActAgent:
         config: Optional[Union[None, Dict[str, Any], List[Dict[str, Any]], IRAG]],
         enable_switch: bool,
     ) -> Optional[IRAG]:
-        """Process RAG configuration."""
+        """
+        处理 RAG 插件配置。
+        
+        根据配置类型创建或返回 RAG 插件实例。
+        
+        Args:
+            config: RAG 配置，支持多种格式。
+            enable_switch: 当 config 为 None 时是否启用默认 RAG。
+        
+        Returns:
+            Optional[IRAG]: RAG 插件实例，如果禁用则返回 None。
+        
+        Raises:
+            TypeError: 当配置类型不支持时抛出。
+        """
         if config is not None:
             if isinstance(config, IRAG):
                 return config
@@ -194,7 +412,25 @@ class ReActAgent:
         mcp_configs: Optional[Union[None, Dict[str, Any], List[Dict[str, Any]], List[IMCPClient]]],
         enable_switch: bool,
     ) -> tuple[Optional[IToolExecutor], List[IMCPClient]]:
-        """Process tools configuration including MCP clients."""
+        """
+        处理工具配置（包括本地工具和 MCP 工具）。
+        
+        合并本地工具和 MCP 工具，创建统一的工具执行器。
+        
+        Args:
+            tool_configs: 本地工具配置。
+            mcp_configs: MCP 客户端配置。
+            enable_switch: 当两者都为 None 时是否启用默认工具。
+        
+        Returns:
+            tuple: (工具执行器, MCP 客户端列表)
+                - 工具执行器: 如果没有工具则返回 None
+                - MCP 客户端列表: 所有创建的 MCP 客户端
+        
+        Note:
+            - MCP 工具会自动从客户端获取并添加到执行器
+            - 默认工具包括 search 和 calculator
+        """
         all_tool_configs = []
         mcp_clients: List[IMCPClient] = []
         
@@ -257,7 +493,17 @@ class ReActAgent:
         self,
         configs: Union[Dict[str, Any], List[Dict[str, Any]], List[IMCPClient]]
     ) -> List[IMCPClient]:
-        """Process MCP client configurations."""
+        """
+        处理 MCP 客户端配置列表。
+        
+        将配置转换为 MCP 客户端实例列表。
+        
+        Args:
+            configs: MCP 配置，支持多种格式。
+        
+        Returns:
+            List[IMCPClient]: MCP 客户端实例列表。
+        """
         clients: List[IMCPClient] = []
         
         if isinstance(configs, list):
@@ -278,7 +524,26 @@ class ReActAgent:
         return clients
     
     def _create_mcp_client(self, config: Dict[str, Any]) -> Optional[IMCPClient]:
-        """Create an MCP client from configuration."""
+        """
+        根据配置创建 MCP 客户端。
+        
+        支持三种传输协议：
+        - stdio: 通过标准输入输出通信
+        - sse: 通过 Server-Sent Events 通信
+        - http: 通过 HTTP/Streamable HTTP 通信
+        
+        Args:
+            config (dict): MCP 客户端配置，包含：
+                - transport: 传输协议类型
+                - command: stdio 命令（stdio 协议）
+                - args: 命令参数（stdio 协议）
+                - url: 服务器 URL（sse/http 协议）
+                - headers: 请求头（sse/http 协议）
+                - timeout: 超时时间（http 协议）
+        
+        Returns:
+            Optional[IMCPClient]: MCP 客户端实例，创建失败返回 None。
+        """
         try:
             transport = config.get("transport", "stdio")
             
@@ -322,7 +587,17 @@ class ReActAgent:
         self,
         config: Optional[Union[None, Dict[str, Any], IPlanNotebook]],
     ) -> Optional[IPlanNotebook]:
-        """Process plan configuration."""
+        """
+        处理计划插件配置。
+        
+        根据配置创建或返回计划插件实例。
+        
+        Args:
+            config: 计划配置，支持多种格式。
+        
+        Returns:
+            Optional[IPlanNotebook]: 计划插件实例，如果禁用则返回 None。
+        """
         if config is None:
             return None
         
@@ -344,7 +619,17 @@ class ReActAgent:
         self,
         config: Optional[Union[None, Dict[str, Any], ITTSModel]],
     ) -> Optional[ITTSModel]:
-        """Process TTS configuration."""
+        """
+        处理 TTS 插件配置。
+        
+        根据配置创建或返回 TTS 插件实例。
+        
+        Args:
+            config: TTS 配置，支持多种格式。
+        
+        Returns:
+            Optional[ITTSModel]: TTS 插件实例，如果禁用则返回 None。
+        """
         if config is None:
             return None
         
@@ -359,7 +644,26 @@ class ReActAgent:
         return None
     
     def _create_tts_plugin(self, config: Dict[str, Any]) -> Optional[ITTSModel]:
-        """Create TTS plugin from configuration."""
+        """
+        根据配置创建 TTS 插件。
+        
+        支持四种 TTS 提供商：
+        - openai: OpenAI TTS API
+        - azure: Azure Cognitive Services
+        - edge: Edge TTS（免费）
+        - local: 本地模型
+        
+        Args:
+            config (dict): TTS 配置，包含：
+                - provider: 提供商类型
+                - api_key: API 密钥（openai）
+                - model: 模型名称（openai）
+                - voice: 语音角色
+                - output_path: 输出路径
+        
+        Returns:
+            Optional[ITTSModel]: TTS 插件实例，创建失败返回 None。
+        """
         try:
             provider = config.get("provider", "openai")
             
@@ -403,14 +707,41 @@ class ReActAgent:
             return None
     
     async def _default_search_tool(self, query: str, limit: int = 5) -> Dict[str, Any]:
-        """Default search tool."""
+        """
+        默认搜索工具。
+        
+        提供基本的搜索功能占位实现。
+        实际使用时应替换为真实的搜索服务。
+        
+        Args:
+            query (str): 搜索查询。
+            limit (int, optional): 结果数量限制。默认为 5。
+        
+        Returns:
+            dict: 搜索结果，包含 content 和 success 字段。
+        """
         return {
             "content": f"Search results for '{query}' (limit: {limit})",
             "success": True,
         }
     
     async def _default_calculator_tool(self, expression: str) -> Dict[str, Any]:
-        """Default calculator tool."""
+        """
+        默认计算器工具。
+        
+        使用 Python eval 函数计算数学表达式。
+        注意：使用受限的 eval 环境，仅支持数学运算。
+        
+        Args:
+            expression (str): 数学表达式，如 "2 + 3 * 4"。
+        
+        Returns:
+            dict: 计算结果，包含 content 和 success 字段。
+        
+        Warning:
+            虽然使用了受限的 eval 环境，但仍需注意安全性。
+            生产环境建议使用更安全的表达式解析器。
+        """
         try:
             result = eval(expression, {"__builtins__": {}})
             return {
@@ -425,7 +756,19 @@ class ReActAgent:
             }
     
     async def connect_mcp_servers(self) -> Dict[str, bool]:
-        """Connect all MCP servers."""
+        """
+        连接所有 MCP 服务器。
+        
+        遍历所有 MCP 客户端并建立连接。
+        应在使用 Agent 前调用此方法。
+        
+        Returns:
+            dict: 连接结果，键为客户端索引，值为是否成功。
+        
+        Example:
+            >>> results = await agent.connect_mcp_servers()
+            >>> print(results)  # {"mcp_client_0": True, "mcp_client_1": False}
+        """
         results = {}
         for i, client in enumerate(self._mcp_clients):
             try:
@@ -437,7 +780,12 @@ class ReActAgent:
         return results
     
     async def disconnect_mcp_servers(self) -> None:
-        """Disconnect all MCP servers."""
+        """
+        断开所有 MCP 服务器连接。
+        
+        清理所有 MCP 客户端资源。
+        应在使用完 Agent 后调用此方法。
+        """
         for client in self._mcp_clients:
             try:
                 await client.disconnect()
@@ -445,13 +793,28 @@ class ReActAgent:
                 logger.warning(f"Failed to disconnect MCP client: {e}")
     
     def get_plan_plugin(self) -> Optional[IPlanNotebook]:
-        """Get the plan plugin instance."""
+        """
+        获取计划插件实例。
+        
+        Returns:
+            Optional[IPlanNotebook]: 计划插件实例，如果未配置则返回 None。
+        """
         return self._plan_plugin
     
     def get_tts_plugin(self) -> Optional[ITTSModel]:
-        """Get the TTS plugin instance."""
+        """
+        获取 TTS 插件实例。
+        
+        Returns:
+            Optional[ITTSModel]: TTS 插件实例，如果未配置则返回 None。
+        """
         return self._tts_plugin
     
     def get_mcp_clients(self) -> List[IMCPClient]:
-        """Get all MCP client instances."""
+        """
+        获取所有 MCP 客户端实例。
+        
+        Returns:
+            List[IMCPClient]: MCP 客户端列表的副本。
+        """
         return self._mcp_clients.copy()

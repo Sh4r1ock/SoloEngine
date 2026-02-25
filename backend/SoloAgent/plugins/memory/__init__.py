@@ -3,8 +3,10 @@
 
 from .vector_memory import VectorMemoryPlugin
 from .blackhole_memory import BlackholeMemoryPlugin
+from .database_memory import DatabaseMemoryPlugin
 
 __all__ = [
     "VectorMemoryPlugin",
     "BlackholeMemoryPlugin",
+    "DatabaseMemoryPlugin",
 ]

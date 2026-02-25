@@ -164,8 +164,12 @@ class PlanMemory:
 class PlanNotebookPlugin(IPlanNotebook):
     """计划笔记本插件。"""
 
-    def __init__(self, storage_path: Optional[str] = None):
+    def __init__(self, storage_path: Optional[str] = None, auto_save: bool = True, max_plans: int = 10):
         self.memory = PlanMemory(storage_path)
+        self._auto_save = auto_save
+        self._max_plans = max_plans
+        self._initialized = False
+        self._current_plan_id: Optional[str] = None
 
     async def create_plan(self, goal: str, **kwargs) -> dict:
         """创建新计划。
@@ -200,9 +204,52 @@ class PlanNotebookPlugin(IPlanNotebook):
         
         self.memory.save(plan)
         
+        self._current_plan_id = plan_id
+        self._initialized = True
+        
         logger.info(f"Created plan: {plan_id} - {goal}")
         
         return self.memory._plan_to_dict(plan)
+
+    async def initialize_if_needed(self) -> None:
+        """初始化计划笔记本（如果尚未初始化）。"""
+        if not self._initialized:
+            plans = self.memory.list_plans(status="active")
+            if plans:
+                self._current_plan_id = plans[0].plan_id
+            self._initialized = True
+            logger.info("PlanNotebookPlugin initialized")
+
+    def get_current_plan(self) -> Optional[Dict[str, Any]]:
+        """获取当前活动计划。
+        
+        Returns:
+            当前计划字典，如果没有活动计划则返回 None。
+        """
+        if not self._current_plan_id:
+            return None
+        
+        plan = self.memory.load(self._current_plan_id)
+        if plan:
+            plan_dict = self.memory._plan_to_dict(plan)
+            completed = sum(1 for s in plan.steps if s.status == "completed")
+            total = len(plan.steps)
+            plan_dict["name"] = plan.goal
+            plan_dict["current_step"] = completed
+            plan_dict["total_steps"] = total
+            plan_dict["progress"] = completed / total if total > 0 else 0
+            return plan_dict
+        return None
+
+    def set_current_plan(self, plan_id: str) -> None:
+        """设置当前活动计划。
+        
+        Args:
+            plan_id: 计划 ID
+        """
+        if self.memory.load(plan_id):
+            self._current_plan_id = plan_id
+            logger.info(f"Set current plan: {plan_id}")
 
     async def update_plan(self, plan_id: str, updates: dict) -> None:
         """更新计划。
