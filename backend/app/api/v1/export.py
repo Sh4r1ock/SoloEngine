@@ -25,7 +25,6 @@ class ExportFormat(BaseModel):
     format: str = Field(default="json", description="导出格式: json, zip")
     include_history: bool = Field(default=False, description="是否包含执行历史")
     include_skills: bool = Field(default=True, description="是否包含 Skills 包")
-    include_mcp_config: bool = Field(default=True, description="是否包含 MCP 配置")
 
 
 class ExportMetadata(BaseModel):
@@ -60,7 +59,6 @@ async def export_project(
     format: str = "json",
     include_history: bool = False,
     include_skills: bool = True,
-    include_mcp_config: bool = True,
     current_user: User = Depends(get_current_user)
 ):
     """导出项目。"""
@@ -86,14 +84,6 @@ async def export_project(
             "metadata": metadata.model_dump(),
             "flow": flow_data,
         }
-
-        if include_mcp_config:
-            mcp_config_file = os.path.join(
-                os.path.dirname(__file__), "..", "..", "..", "mcp_servers.json"
-            )
-            if os.path.exists(mcp_config_file):
-                with open(mcp_config_file, "r", encoding="utf-8") as f:
-                    export_data["mcp_config"] = json.load(f)
 
         if include_skills:
             skills_dir = get_skills_dir()
@@ -122,22 +112,9 @@ async def export_project(
         zip_buffer = io.BytesIO()
 
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            # 添加元数据
             zf.writestr("metadata.json", json.dumps(metadata.model_dump(), indent=2))
-
-            # 添加流程数据
             zf.writestr("flow.json", json.dumps(flow_data, indent=2, ensure_ascii=False))
 
-            # 添加 MCP 配置
-            if include_mcp_config:
-                mcp_config_file = os.path.join(
-                    os.path.dirname(__file__), "..", "..", "..", "mcp_servers.json"
-                )
-                if os.path.exists(mcp_config_file):
-                    with open(mcp_config_file, "r", encoding="utf-8") as f:
-                        zf.writestr("mcp_config.json", f.read())
-
-            # 添加 Skills
             if include_skills:
                 skills_dir = get_skills_dir()
                 if os.path.exists(skills_dir):
@@ -181,16 +158,13 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
         if filename.endswith(".json"):
             import_data = json.loads(content.decode("utf-8"))
 
-            # 检查是否是导出格式
             if "metadata" in import_data and "flow" in import_data:
                 project_name = import_data["metadata"]["project_name"]
                 flow_data = import_data["flow"]
             else:
-                # 直接是流程数据
                 project_name = file.filename.rsplit(".", 1)[0]
                 flow_data = import_data
 
-            # 保存流程
             flows_dir = get_flows_dir()
             os.makedirs(flows_dir, exist_ok=True)
             flow_file = os.path.join(flows_dir, f"{project_name}.json")
@@ -198,15 +172,6 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
             with open(flow_file, "w", encoding="utf-8") as f:
                 json.dump(flow_data, f, indent=2, ensure_ascii=False)
 
-            # 导入 MCP 配置
-            if "mcp_config" in import_data:
-                mcp_config_file = os.path.join(
-                    os.path.dirname(__file__), "..", "..", "..", "mcp_servers.json"
-                )
-                with open(mcp_config_file, "w", encoding="utf-8") as f:
-                    json.dump(import_data["mcp_config"], f, indent=2)
-
-            # 导入 Skills
             if "skills" in import_data:
                 skills_dir = get_skills_dir()
                 os.makedirs(skills_dir, exist_ok=True)
@@ -232,17 +197,14 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
             zip_buffer = io.BytesIO(content)
 
             with zipfile.ZipFile(zip_buffer, "r") as zf:
-                # 读取元数据
                 try:
                     metadata = json.loads(zf.read("metadata.json"))
                     project_name = metadata["project_name"]
                 except:
                     project_name = file.filename.rsplit(".", 1)[0]
 
-                # 读取流程数据
                 flow_data = json.loads(zf.read("flow.json"))
 
-                # 保存流程
                 flows_dir = get_flows_dir()
                 os.makedirs(flows_dir, exist_ok=True)
                 flow_file = os.path.join(flows_dir, f"{project_name}.json")
@@ -250,7 +212,6 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
                 with open(flow_file, "w", encoding="utf-8") as f:
                     json.dump(flow_data, f, indent=2, ensure_ascii=False)
 
-                # 解压 Skills
                 skills_dir = get_skills_dir()
                 os.makedirs(skills_dir, exist_ok=True)
 
@@ -265,17 +226,6 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
                             os.makedirs(os.path.dirname(target_path), exist_ok=True)
                             with open(target_path, "wb") as f:
                                 f.write(zf.read(name))
-
-                # 读取 MCP 配置
-                try:
-                    mcp_config = zf.read("mcp_config.json")
-                    mcp_config_file = os.path.join(
-                        os.path.dirname(__file__), "..", "..", "..", "mcp_servers.json"
-                    )
-                    with open(mcp_config_file, "wb") as f:
-                        f.write(mcp_config)
-                except:
-                    pass
 
                 nodes_count = len(flow_data.get("nodes", []))
                 edges_count = len(flow_data.get("edges", []))

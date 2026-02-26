@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from frontend_interaction.save_service.flow_saver import FlowSaver
-from app.api.v1 import projects, tools, websocket, config, debug, skills, mcp_servers, auth, export, package, history, marketplace, agentic_flows, agent_tools, debug_project
+from app.api.v1 import projects, tools, websocket, config, debug, skills, auth, export, package, history, marketplace, agentic_flows, agent_tools, debug_project
 
 app = FastAPI(title="SoloEngine API", version="1.0.0", description="Agentic Builder API")
 
@@ -127,7 +127,6 @@ app.include_router(skills.router)
 app.include_router(projects.router)
 app.include_router(tools.router)
 app.include_router(websocket.router)
-app.include_router(mcp_servers.router)
 app.include_router(auth.router)
 app.include_router(export.router)
 app.include_router(package.router)

@@ -20,6 +20,7 @@ import { create } from 'zustand';
 import { debugApi, DebugSession, DebugStep, Breakpoint } from '../services/debugApi';
 
 export interface ExtendedDebugSession extends DebugSession {
+  agentId?: string;
   agentName?: string;
   messages?: any[];
   toolCalls?: any[];
@@ -220,6 +221,7 @@ export const useDebugStore = create<DebugState>((set, get) => ({
       input_message: '',
       output_message: '',
       started_at: new Date().toISOString(),
+      agentId: session.agentId,
       agentName: session.agentName,
       messages: session.messages || [],
       toolCalls: session.toolCalls || [],

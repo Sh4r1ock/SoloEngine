@@ -4,6 +4,5 @@ from . import websocket
 from . import config
 from . import debug
 from . import skills
-from . import mcp_servers
 from . import marketplace
 from . import agent_tools
