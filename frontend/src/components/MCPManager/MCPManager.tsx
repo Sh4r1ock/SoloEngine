@@ -5,17 +5,14 @@
  * @date 2026-02-19
  */
 import React, { useEffect, useState } from 'react';
-import { Typography, Button, Space, Modal, message, Empty, Spin, Tag, Row, Col } from 'antd';
+import { Typography, Button, Space, message, Empty, Spin, Row, Col } from 'antd';
 import {
   PlusOutlined,
-  CloudDownloadOutlined,
   ReloadOutlined,
   ApiOutlined,
-  DisconnectOutlined,
 } from '@ant-design/icons';
 import { mcpApi } from '../../services/mcpApi';
 import MCPAddServerModal from './MCPAddServerModal';
-import MCPImportDialog from './MCPImportDialog';
 import UnifiedCard from '../common/UnifiedCard';
 
 const { Title, Text } = Typography;
@@ -25,6 +22,7 @@ interface ServerData {
   user_id?: string;
   name: string;
   transport: string;
+  transport_type?: string;
   url?: string;
   command?: string;
   args?: string[];
@@ -33,6 +31,7 @@ interface ServerData {
   timeout: number;
   enabled: boolean;
   is_public?: boolean;
+  share?: boolean;
   is_default?: boolean;
   author?: string;
   source?: string;
@@ -48,7 +47,6 @@ const MCPManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [servers, setServers] = useState<ServerData[]>([]);
   const [addModalVisible, setAddModalVisible] = useState(false);
-  const [importModalVisible, setImportModalVisible] = useState(false);
   const [editingServer, setEditingServer] = useState<ServerData | null>(null);
 
   const loadServerList = async () => {
@@ -113,10 +111,6 @@ const MCPManager: React.FC = () => {
     loadServerList();
   };
 
-  const handleImport = () => {
-    setImportModalVisible(true);
-  };
-
   const handleSaveServer = () => {
     setAddModalVisible(false);
     setEditingServer(null);
@@ -136,6 +130,10 @@ const MCPManager: React.FC = () => {
     }
   };
 
+  const getTransportType = (server: ServerData) => {
+    return server.transport || server.transport_type || 'stdio';
+  };
+
   return (
     <div style={{ padding: '24px' }}>
       <div style={{
@@ -151,12 +149,6 @@ const MCPManager: React.FC = () => {
           </Text>
         </div>
         <Space>
-          <Button
-            icon={<CloudDownloadOutlined />}
-            onClick={handleImport}
-          >
-            导入 MCP
-          </Button>
           <Button
             icon={<PlusOutlined />}
             type="primary"
@@ -197,32 +189,24 @@ const MCPManager: React.FC = () => {
             <Col xs={24} sm={12} md={8} lg={6} key={server.id}>
               <UnifiedCard
                 name={server.name}
-                description={server.is_default 
-                  ? (server.description || '系统默认MCP工具')
-                  : (server.url || server.command || '无地址')
-                }
+                description={server.description || (server.url || server.command || '无地址')}
                 icon={<ApiOutlined />}
-                tags={server.is_default 
-                  ? [server.transport.toUpperCase(), ...(server.tags || [])]
-                  : [server.transport.toUpperCase()]
-                }
+                tags={[getTransportType(server).toUpperCase()]}
                 status={server.status}
                 statusText={getStatusText(server.status)}
                 meta1={{ 
-                  label: server.is_default ? '作者' : '超时', 
-                  value: server.is_default ? (server.author || 'SoloEngine') : `${server.timeout}s` 
+                  label: '超时', 
+                  value: `${server.timeout}s` 
                 }}
                 updatedAt={server.updated_at}
                 isDefault={server.is_default}
-                onClick={() => !server.is_default && handleEditServer(server)}
+                onClick={() => handleEditServer(server)}
                 onPlay={
-                  server.is_default 
-                    ? undefined 
-                    : server.status === 'connected'
-                      ? () => handleDisconnectServer(server.id)
-                      : () => handleConnectServer(server.id)
+                  server.status === 'connected'
+                    ? () => handleDisconnectServer(server.id)
+                    : () => handleConnectServer(server.id)
                 }
-                onDelete={server.is_default ? undefined : () => handleDeleteServer(server.id)}
+                onDelete={() => handleDeleteServer(server.id)}
                 deleteConfirmText="确定要删除此MCP工具吗？"
               />
             </Col>
@@ -238,15 +222,6 @@ const MCPManager: React.FC = () => {
           setEditingServer(null);
         }}
         onSave={handleSaveServer}
-      />
-
-      <MCPImportDialog
-        visible={importModalVisible}
-        onClose={() => setImportModalVisible(false)}
-        onImport={() => {
-          setImportModalVisible(false);
-          loadServerList();
-        }}
       />
     </div>
   );

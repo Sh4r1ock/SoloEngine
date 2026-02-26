@@ -9,7 +9,10 @@ export interface NodeData {
     system_prompt?: string;
     user_prompt?: string;
     assistant_prompt?: string;
+    llm_config_id?: string;
     model_config?: {
+      config_id?: string;
+      config_name?: string;
       provider: string;
       model: string;
     };

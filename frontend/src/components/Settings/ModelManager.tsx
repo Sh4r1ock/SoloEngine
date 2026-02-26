@@ -359,7 +359,6 @@ const ModelManager: React.FC = () => {
                 <Select 
                   placeholder="选择或输入模型名称" 
                   showSearch
-                  mode="combobox"
                   optionFilterProp="children"
                   filterOption={(input, option) =>
                     (option?.children as unknown as string)?.toLowerCase().includes(input.toLowerCase())
