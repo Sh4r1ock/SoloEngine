@@ -6,7 +6,6 @@ API路由 - MCP服务API端点。
 import os
 import re
 import json
-import uuid
 import logging
 import asyncio
 import shutil
@@ -15,15 +14,17 @@ import zipfile
 import ast
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .database import get_db, mcp_db_manager, MCPServerModel, OptimisticLockError
-from .config import OPEN_SOURCE_MCPS, DEFAULT_MCP_SERVERS, MAX_TOOL_ARGUMENTS_SIZE
+from .database import (
+    get_db, mcp_db_manager, MCPServerModel, MCPStdioConfigModel, 
+    MCPSseConfigModel, MCPHttpConfigModel, OptimisticLockError
+)
+from .config import MAX_TOOL_ARGUMENTS_SIZE
 from .host.registry import MCPServerInfo, ServerStatus, service_registry
 from .host.lifecycle import lifecycle_manager
 from .host.caller import unified_caller
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
 
 MCP_SERVERS_STORAGE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "mcp_service", "mcp_server"
+    os.path.dirname(__file__), "..", "..", "data", "mcp_servers"
 )
 os.makedirs(MCP_SERVERS_STORAGE_DIR, exist_ok=True)
 
@@ -56,6 +57,7 @@ class MCPServerCreate(BaseModel):
     headers: Optional[Dict[str, str]] = Field(None, description="HTTP 头")
     timeout: int = Field(30, description="超时时间（秒）")
     enabled: bool = Field(True, description="是否启用")
+    share: bool = Field(False, description="是否共享")
 
 
 class MCPServerUpdate(BaseModel):
@@ -69,53 +71,98 @@ class MCPServerUpdate(BaseModel):
     headers: Optional[Dict[str, str]] = None
     timeout: Optional[int] = None
     enabled: Optional[bool] = None
+    share: Optional[bool] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
-
-
-class CreatePythonMCPRequest(BaseModel):
-    name: str = Field(..., description="MCP名称")
-    description: str = Field("", description="MCP描述")
-    tools: List[Dict[str, Any]] = Field(default_factory=list, description="工具列表")
 
 
 class CallToolRequest(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict, description="工具参数")
 
 
-class ReadResourceRequest(BaseModel):
-    uri: str = Field(..., description="资源 URI")
+class CreateHttpServerRequest(BaseModel):
+    name: str = Field(..., description="服务器名称")
+    description: Optional[str] = Field(None, description="服务器描述")
+    url: str = Field(..., description="服务器URL")
+    headers: Optional[Dict[str, str]] = Field(None, description="HTTP请求头")
+    timeout: int = Field(30, description="超时时间(秒)")
+    session_id: Optional[str] = Field(None, description="会话ID")
+    enabled: bool = Field(True, description="是否启用")
+    share: bool = Field(False, description="是否共享")
 
 
-class GetPromptRequest(BaseModel):
-    arguments: Optional[Dict[str, Any]] = Field(None, description="提示词参数")
+class CreateSseServerRequest(BaseModel):
+    name: str = Field(..., description="服务器名称")
+    description: Optional[str] = Field(None, description="服务器描述")
+    url: str = Field(..., description="服务器URL")
+    headers: Optional[Dict[str, str]] = Field(None, description="HTTP请求头")
+    timeout: int = Field(30, description="超时时间(秒)")
+    reconnect: bool = Field(True, description="是否自动重连")
+    sse_endpoint: str = Field("/sse", description="SSE端点路径")
+    retry_interval: int = Field(5, description="重试间隔(秒)")
+    max_retries: int = Field(3, description="最大重试次数")
+    enabled: bool = Field(True, description="是否启用")
+    share: bool = Field(False, description="是否共享")
+
+
+class UpdateMCPToolsRequest(BaseModel):
+    tools: str = Field(..., description="工具定义JSON")
+
+
+class UpdateMCPCodeRequest(BaseModel):
+    code: str = Field(..., description="Python代码")
 
 
 def model_to_server_info(server: MCPServerModel) -> MCPServerInfo:
     """将数据库模型转换为服务器信息。"""
+    stdio_cfg = server.stdio_config[0] if server.stdio_config else None
+    sse_cfg = server.sse_config
+    http_cfg = server.http_config
+    
+    command = None
+    args = []
+    env = {}
+    url = None
+    headers = {}
+    timeout = 30
+    
+    if server.transport_type == "stdio" and stdio_cfg:
+        command = stdio_cfg.command
+        args = stdio_cfg.args or []
+        env = stdio_cfg.env or {}
+        timeout = 30
+    elif server.transport_type == "sse" and sse_cfg:
+        url = sse_cfg.url
+        headers = sse_cfg.headers or {}
+        timeout = sse_cfg.timeout or 30
+    elif server.transport_type == "http" and http_cfg:
+        url = http_cfg.url
+        headers = http_cfg.headers or {}
+        timeout = http_cfg.timeout or 30
+    
     return MCPServerInfo(
-        id=server.id,
+        id=server.mcp_server_id,
         user_id=server.user_id,
-        name=server.name,
-        transport=server.transport,
-        url=server.url,
-        command=server.command,
-        args=server.args or [],
-        env=server.env or {},
-        headers=server.headers or {},
-        timeout=server.timeout,
+        name=server.mcp_name,
+        transport=server.transport_type,
+        url=url,
+        command=command,
+        args=args,
+        env=env,
+        headers=headers,
+        timeout=timeout,
         enabled=server.enabled,
-        is_public=server.is_public,
-        is_default=server.is_default,
+        is_public=server.share,
+        is_default=False,
         author=server.author,
-        source=server.source,
+        source="",
         description=server.description,
         tags=server.tags or [],
         version=server.version,
         status=ServerStatus.DISCONNECTED,
         created_at=server.created_at,
         updated_at=server.updated_at,
-        storage_path=server.storage_path,
-        tools=server.tools or [],
+        storage_path=stdio_cfg.storage_path if stdio_cfg else None,
+        tools=[],
     )
 
 
@@ -128,43 +175,14 @@ def get_mock_user_id() -> str:
 async def list_servers(
     db: Session = Depends(get_db)
 ):
-    """获取用户的所有 MCP 服务器（包含系统默认MCP）。"""
+    """获取用户的所有 MCP 服务器。"""
     user_id = get_mock_user_id()
     servers = mcp_db_manager.get_servers(db, user_id)
     
-    user_server_names = {s.name for s in servers}
-    
     result = []
-    
     for server in servers:
         server_info = model_to_server_info(server)
         result.append(server_info.to_dict())
-    
-    for idx, default_mcp in enumerate(DEFAULT_MCP_SERVERS):
-        if default_mcp["name"] not in user_server_names:
-            result.append({
-                "id": f"default_{idx}",
-                "user_id": "system",
-                "name": default_mcp["name"],
-                "transport": default_mcp.get("transport", "stdio"),
-                "url": "",
-                "command": default_mcp.get("command"),
-                "args": default_mcp.get("args", []),
-                "env": default_mcp.get("env", {}),
-                "headers": {},
-                "timeout": default_mcp.get("timeout", 30),
-                "enabled": False,
-                "is_public": True,
-                "is_default": True,
-                "author": default_mcp.get("author", "SoloEngine"),
-                "source": default_mcp.get("source", ""),
-                "description": default_mcp.get("description", ""),
-                "tags": default_mcp.get("tags", []),
-                "version": 0,
-                "status": "disconnected",
-                "created_at": None,
-                "updated_at": None,
-            })
     
     return {
         "code": 200,
@@ -181,25 +199,46 @@ async def add_server(
     """添加 MCP 服务器。"""
     user_id = get_mock_user_id()
     
-    storage_path = None
-    if server.transport == "stdio" and server.args:
-        storage_path = server.args[0] if server.args else None
-    
     new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
-        name=server.name,
-        transport=server.transport,
-        url=server.url,
-        command=server.command,
-        args=server.args,
-        env=server.env,
-        headers=server.headers,
-        timeout=server.timeout,
+        mcp_name=server.name,
+        transport_type=server.transport,
         description=server.description,
-        storage_path=storage_path,
+        enabled=server.enabled,
+        share=server.share,
     )
     
+    if server.transport == "stdio":
+        storage_path = None
+        if server.args:
+            storage_path = server.args[0] if server.args else None
+        mcp_db_manager.create_stdio_config(
+            db=db,
+            mcp_server_id=new_server.mcp_server_id,
+            command=server.command,
+            args=server.args,
+            env=server.env,
+            storage_path=storage_path,
+        )
+    elif server.transport == "sse":
+        mcp_db_manager.create_sse_config(
+            db=db,
+            mcp_server_id=new_server.mcp_server_id,
+            url=server.url,
+            headers=server.headers,
+            timeout=server.timeout,
+        )
+    elif server.transport == "http":
+        mcp_db_manager.create_http_config(
+            db=db,
+            mcp_server_id=new_server.mcp_server_id,
+            url=server.url,
+            headers=server.headers,
+            timeout=server.timeout,
+        )
+    
+    db.refresh(new_server)
     server_info = model_to_server_info(new_server)
     
     return {
@@ -241,25 +280,15 @@ async def update_server(
     
     update_data = {}
     if update.name is not None:
-        update_data["name"] = update.name
+        update_data["mcp_name"] = update.name
     if update.transport is not None:
-        update_data["transport"] = update.transport
-    if update.url is not None:
-        update_data["url"] = update.url
-    if update.command is not None:
-        update_data["command"] = update.command
-    if update.args is not None:
-        update_data["args"] = update.args
-    if update.env is not None:
-        update_data["env"] = update.env
-    if update.headers is not None:
-        update_data["headers"] = update.headers
-    if update.timeout is not None:
-        update_data["timeout"] = update.timeout
-    if update.enabled is not None:
-        update_data["enabled"] = update.enabled
+        update_data["transport_type"] = update.transport
     if update.description is not None:
         update_data["description"] = update.description
+    if update.enabled is not None:
+        update_data["enabled"] = update.enabled
+    if update.share is not None:
+        update_data["share"] = update.share
     
     try:
         server = mcp_db_manager.update_server(
@@ -271,6 +300,38 @@ async def update_server(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
+    if server.transport_type == "stdio":
+        stdio_update = {}
+        if update.command is not None:
+            stdio_update["command"] = update.command
+        if update.args is not None:
+            stdio_update["args"] = update.args
+        if update.env is not None:
+            stdio_update["env"] = update.env
+        if stdio_update:
+            mcp_db_manager.update_stdio_config(db, server_id, **stdio_update)
+    elif server.transport_type == "sse":
+        sse_update = {}
+        if update.url is not None:
+            sse_update["url"] = update.url
+        if update.headers is not None:
+            sse_update["headers"] = update.headers
+        if update.timeout is not None:
+            sse_update["timeout"] = update.timeout
+        if sse_update:
+            mcp_db_manager.update_sse_config(db, server_id, **sse_update)
+    elif server.transport_type == "http":
+        http_update = {}
+        if update.url is not None:
+            http_update["url"] = update.url
+        if update.headers is not None:
+            http_update["headers"] = update.headers
+        if update.timeout is not None:
+            http_update["timeout"] = update.timeout
+        if http_update:
+            mcp_db_manager.update_http_config(db, server_id, **http_update)
+    
+    db.refresh(server)
     server_info = model_to_server_info(server)
     
     return {
@@ -302,156 +363,470 @@ async def delete_server(
     }
 
 
-@router.post("/servers/python")
+@router.post("/servers/create/python")
 async def create_python_mcp(
-    request: CreatePythonMCPRequest,
+    name: str = Form(...),
+    description: str = Form(""),
+    file: UploadFile = File(..., description="Python 文件 (.py)"),
+    tools: str = Form("[]", description="工具定义 JSON 列表"),
     db: Session = Depends(get_db)
 ):
-    """创建Python编写的MCP Server（标准MCP协议）。"""
+    """创建Python MCP（上传Python文件编译）。
+    
+    上传的 Python 文件将被编译为 MCP Server，存储到 mcp_server/{name}/ 目录：
+    - original.py - 原始上传的文件
+    - main.py - 编译后的 MCP Server 代码
+    - __init__.py - 包初始化文件
+    - __main__.py - 模块入口文件
+    """
     user_id = get_mock_user_id()
-    server_name = request.name
     
-    server_dir = get_mcp_server_dir(server_name)
+    if not file.filename.endswith('.py'):
+        raise HTTPException(status_code=400, detail="Only Python files (.py) are allowed")
     
-    tools_code = ""
-    tools_list = []
-    tools_call_handlers = ""
+    safe_name = re.sub(r'[^\w\-]', '_', name)
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid server name")
     
-    for tool in request.tools:
-        tool_name = tool.get("name", "unnamed_tool")
-        tool_description = tool.get("description", "")
-        tool_params = tool.get("parameters", {})
-        
-        params_list = []
-        props = tool_params.get("properties", {})
-        required = tool_params.get("required", [])
-        
-        for prop_name, prop_info in props.items():
-            prop_type = prop_info.get("type", "str")
-            type_map = {"string": "str", "integer": "int", "number": "float", "boolean": "bool", "array": "list", "object": "dict"}
-            py_type = type_map.get(prop_type, "Any")
-            if prop_name in required:
-                params_list.append(f"{prop_name}: {py_type}")
-            else:
-                params_list.append(f"{prop_name}: {py_type} = None")
-        
-        params_str = ", ".join(params_list)
-        
-        tools_code += f'''
-def {tool_name}({params_str}) -> dict:
-    """
-    {tool_description}
-    """
-    import logging
-    logger = logging.getLogger("{server_name}")
-    logger.info(f"Tool {tool_name} called")
-    return {{
-        "tool": "{tool_name}",
-        "status": "executed",
-        "params": {{k: v for k, v in locals().items() if k != 'logger'}}
-    }}
-
-'''
-        
-        tools_list.append(f'''        Tool(
-            name="{tool_name}",
-            description="{tool_description}",
-            inputSchema={json.dumps(tool_params, ensure_ascii=False)},
-        ),''')
-        
-        tools_call_handlers += f'''        case "{tool_name}":
-            result = {tool_name}(**arguments)
-            return [TextContent(type="text", text=json.dumps(result, ensure_ascii=False, indent=2))]
-'''
+    try:
+        tools_list = json.loads(tools) if tools else []
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid tools JSON format")
     
-    tools_list_str = "\n".join(tools_list)
+    server_dir = get_mcp_server_dir(safe_name)
     
-    main_py_content = f'''#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-{server_name} MCP Server - 用户自定义工具
-
-{request.description}
-"""
-
-import json
-import asyncio
-from typing import Sequence
-
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
-
-{tools_code}
-
-async def serve() -> None:
-    server = Server("{server_name}")
-
-    @server.list_tools()
-    async def list_tools() -> list[Tool]:
-        return [
-{tools_list_str}
-        ]
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-        try:
-            match name:
-{tools_call_handlers}
-            case _:
-                raise ValueError(f"Unknown tool: {{name}}")
-        except Exception as e:
-            return [TextContent(type="text", text=json.dumps({{"error": str(e)}}, ensure_ascii=False))]
-
-    options = server.create_initialization_options()
-    async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, options)
-
-if __name__ == "__main__":
-    asyncio.run(serve())
-'''
+    content = await file.read()
+    original_code = content.decode('utf-8')
     
+    try:
+        ast.parse(original_code)
+    except SyntaxError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Python syntax: {e}")
+    
+    original_py_path = os.path.join(server_dir, "original.py")
+    with open(original_py_path, "w", encoding="utf-8") as f:
+        f.write(original_code)
+    
+    mcp_server_code = generate_mcp_server_code(safe_name, description, original_code, tools_list)
     main_py_path = os.path.join(server_dir, "main.py")
     with open(main_py_path, "w", encoding="utf-8") as f:
-        f.write(main_py_content)
+        f.write(mcp_server_code)
     
-    init_py_content = f'''"""{server_name} MCP Server"""
-'''
+    init_py_content = f'"""{safe_name} MCP Server"""\n'
     init_py_path = os.path.join(server_dir, "__init__.py")
     with open(init_py_path, "w", encoding="utf-8") as f:
         f.write(init_py_content)
     
-    main_module_py_content = f'''import asyncio
-from main import serve
+    main_module_py_content = f'''#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import asyncio
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 if __name__ == "__main__":
-    asyncio.run(serve())
+    from main import mcp
+    mcp.run(transport="stdio")
 '''
     main_module_path = os.path.join(server_dir, "__main__.py")
     with open(main_module_path, "w", encoding="utf-8") as f:
         f.write(main_module_py_content)
     
+    tools_json_path = os.path.join(server_dir, "tools.json")
+    with open(tools_json_path, "w", encoding="utf-8") as f:
+        json.dump(tools_list, f, ensure_ascii=False, indent=2)
+    
     new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
-        name=request.name,
-        transport="stdio",
+        mcp_name=name,
+        transport_type="stdio",
+        description=description,
+        author="user",
+    )
+    
+    mcp_db_manager.create_stdio_config(
+        db=db,
+        mcp_server_id=new_server.mcp_server_id,
         command="python",
-        args=["-m", server_name],
-        description=request.description,
+        args=[main_py_path],
         storage_path=server_dir,
     )
     
+    db.refresh(new_server)
+    
     return {
         "code": 200,
-        "message": "Python MCP Server created",
+        "message": "Python MCP Server created successfully",
         "data": {
-            "id": new_server.id,
-            "name": new_server.name,
-            "transport": "stdio",
+            "id": new_server.mcp_server_id,
+            "name": new_server.mcp_name,
+            "transport_type": "stdio",
             "storage_path": server_dir,
             "main_file": main_py_path,
+            "original_file": original_py_path,
+            "tools_count": len(tools_list),
         },
+    }
+
+
+@router.post("/servers/create/stdio")
+async def create_stdio_mcp(
+    name: str = Form(...),
+    description: str = Form("", description="MCP Server 描述"),
+    package: Optional[UploadFile] = File(None, description="MCP Server 包 (.zip)"),
+    files: Optional[List[UploadFile]] = File(None, description="文件夹中的所有文件"),
+    db: Session = Depends(get_db)
+):
+    """创建Stdio MCP（上传ZIP包或文件夹）。
+    
+    上传的 ZIP 包将被解压到 mcp_server 目录，或文件夹中的文件将被存储。
+    ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
+    """
+    user_id = get_mock_user_id()
+    
+    if not package and not files:
+        raise HTTPException(status_code=400, detail="Either package or files must be provided")
+    
+    safe_name = re.sub(r'[^\w\-]', '_', name)
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid server name")
+    
+    server_dir = get_mcp_server_dir(safe_name)
+    
+    main_py_path = None
+    entry_file = None
+    author = "user"
+    
+    if package:
+        if not package.filename.endswith('.zip'):
+            raise HTTPException(status_code=400, detail="Only ZIP packages are allowed")
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            temp_zip_path = os.path.join(temp_dir, "package.zip")
+            with open(temp_zip_path, "wb") as f:
+                content = await package.read()
+                f.write(content)
+            
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(server_dir)
+            
+            for entry in ['main.py', '__main__.py', 'server.py', 'app.py']:
+                candidate = os.path.join(server_dir, entry)
+                if os.path.exists(candidate):
+                    main_py_path = candidate
+                    entry_file = entry
+                    break
+            
+            if not main_py_path:
+                for root, dirs, filenames in os.walk(server_dir):
+                    for filename in filenames:
+                        if filename.endswith('.py') and filename in ['main.py', '__main__.py', 'server.py']:
+                            main_py_path = os.path.join(root, filename)
+                            entry_file = filename
+                            break
+                    if main_py_path:
+                        break
+            
+            if not main_py_path:
+                raise HTTPException(status_code=400, detail="No valid entry file found (main.py, __main__.py, server.py)")
+            
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    elif files:
+        if os.path.exists(server_dir):
+            shutil.rmtree(server_dir)
+        os.makedirs(server_dir, exist_ok=True)
+        
+        for file in files:
+            relative_path = file.filename
+            if not relative_path:
+                continue
+            
+            file_path = os.path.join(server_dir, relative_path)
+            file_dir = os.path.dirname(file_path)
+            os.makedirs(file_dir, exist_ok=True)
+            
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+        
+        for entry in ['main.py', '__main__.py', 'server.py', 'app.py']:
+            candidate = os.path.join(server_dir, entry)
+            if os.path.exists(candidate):
+                main_py_path = candidate
+                entry_file = entry
+                break
+        
+        if not main_py_path:
+            for root, dirs, filenames in os.walk(server_dir):
+                for filename in filenames:
+                    if filename.endswith('.py') and filename in ['main.py', '__main__.py', 'server.py']:
+                        main_py_path = os.path.join(root, filename)
+                        entry_file = filename
+                        break
+                if main_py_path:
+                    break
+        
+        if not main_py_path:
+            raise HTTPException(status_code=400, detail="No valid entry file found (main.py, __main__.py, server.py)")
+    
+    new_server = mcp_db_manager.create_server(
+        db=db,
+        user_id=user_id,
+        mcp_name=name,
+        transport_type="stdio",
+        description=description,
+        author=author,
+    )
+    
+    mcp_db_manager.create_stdio_config(
+        db=db,
+        mcp_server_id=new_server.mcp_server_id,
+        command="python",
+        args=[main_py_path],
+        storage_path=server_dir,
+    )
+    
+    db.refresh(new_server)
+    
+    return {
+        "code": 200,
+        "message": "Stdio MCP Server created successfully",
+        "data": {
+            "id": new_server.mcp_server_id,
+            "name": new_server.mcp_name,
+            "transport_type": "stdio",
+            "storage_path": server_dir,
+            "entry_file": entry_file,
+            "main_file": main_py_path,
+        },
+    }
+
+
+@router.post("/servers/create/http")
+async def create_http_mcp(
+    request: CreateHttpServerRequest,
+    db: Session = Depends(get_db)
+):
+    """创建HTTP MCP（填写HTTP连接配置）。"""
+    user_id = get_mock_user_id()
+    
+    new_server = mcp_db_manager.create_server(
+        db=db,
+        user_id=user_id,
+        mcp_name=request.name,
+        transport_type="http",
+        description=request.description,
+        enabled=request.enabled,
+        share=request.share,
+        author="user",
+    )
+    
+    mcp_db_manager.create_http_config(
+        db=db,
+        mcp_server_id=new_server.mcp_server_id,
+        url=request.url,
+        headers=request.headers,
+        timeout=request.timeout,
+        session_id=request.session_id,
+    )
+    
+    db.refresh(new_server)
+    server_info = model_to_server_info(new_server)
+    
+    return {
+        "code": 200,
+        "message": "HTTP MCP Server created successfully",
+        "data": server_info.to_dict(),
+    }
+
+
+@router.post("/servers/create/sse")
+async def create_sse_mcp(
+    request: CreateSseServerRequest,
+    db: Session = Depends(get_db)
+):
+    """创建SSE MCP（填写SSE连接配置）。"""
+    user_id = get_mock_user_id()
+    
+    new_server = mcp_db_manager.create_server(
+        db=db,
+        user_id=user_id,
+        mcp_name=request.name,
+        transport_type="sse",
+        description=request.description,
+        enabled=request.enabled,
+        share=request.share,
+        author="user",
+    )
+    
+    mcp_db_manager.create_sse_config(
+        db=db,
+        mcp_server_id=new_server.mcp_server_id,
+        url=request.url,
+        headers=request.headers,
+        timeout=request.timeout,
+        reconnect=request.reconnect,
+        sse_endpoint=request.sse_endpoint,
+        retry_interval=request.retry_interval,
+        max_retries=request.max_retries,
+    )
+    
+    db.refresh(new_server)
+    server_info = model_to_server_info(new_server)
+    
+    return {
+        "code": 200,
+        "message": "SSE MCP Server created successfully",
+        "data": server_info.to_dict(),
+    }
+
+
+@router.put("/servers/{server_id}/tools")
+async def update_mcp_tools(
+    server_id: str,
+    request: UpdateMCPToolsRequest,
+    db: Session = Depends(get_db)
+):
+    """保存工具参数定义到tools.json。"""
+    user_id = get_mock_user_id()
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+    
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
+        raise HTTPException(status_code=400, detail="Server does not have storage path")
+    
+    try:
+        tools_list = json.loads(request.tools) if request.tools else []
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid tools JSON format")
+    
+    tools_json_path = os.path.join(stdio_cfg.storage_path, "tools.json")
+    with open(tools_json_path, "w", encoding="utf-8") as f:
+        json.dump(tools_list, f, ensure_ascii=False, indent=2)
+    
+    return {
+        "code": 200,
+        "message": "Tools definition updated",
+        "data": {
+            "server_id": server_id,
+            "tools_count": len(tools_list),
+            "path": tools_json_path,
+        },
+    }
+
+
+@router.get("/servers/{server_id}/tools/json")
+async def get_mcp_tools_json(
+    server_id: str,
+    db: Session = Depends(get_db)
+):
+    """获取tools.json内容。"""
+    user_id = get_mock_user_id()
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+    
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
+        raise HTTPException(status_code=400, detail="Server does not have storage path")
+    
+    tools_json_path = os.path.join(stdio_cfg.storage_path, "tools.json")
+    
+    if not os.path.exists(tools_json_path):
+        return {
+            "code": 200,
+            "message": "Tools file not found, returning empty list",
+            "data": {"tools": [], "path": tools_json_path},
+        }
+    
+    with open(tools_json_path, "r", encoding="utf-8") as f:
+        tools = json.load(f)
+    
+    return {
+        "code": 200,
+        "message": "Tools definition retrieved",
+        "data": {"tools": tools, "path": tools_json_path},
+    }
+
+
+@router.get("/servers/{server_id}/original")
+async def get_mcp_original_code(
+    server_id: str,
+    db: Session = Depends(get_db)
+):
+    """获取original.py内容。"""
+    user_id = get_mock_user_id()
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+    
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
+        raise HTTPException(status_code=400, detail="Server does not have storage path")
+    
+    original_py_path = os.path.join(stdio_cfg.storage_path, "original.py")
+    
+    if not os.path.exists(original_py_path):
+        raise HTTPException(status_code=404, detail=f"Original file not found: {original_py_path}")
+    
+    with open(original_py_path, "r", encoding="utf-8") as f:
+        code = f.read()
+    
+    return {
+        "code": 200,
+        "message": "Original code retrieved",
+        "data": {
+            "server_id": server_id,
+            "name": server.mcp_name,
+            "code": code,
+            "path": original_py_path,
+        },
+    }
+
+
+@router.put("/servers/{server_id}/original")
+async def update_mcp_original_code(
+    server_id: str,
+    request: UpdateMCPCodeRequest,
+    db: Session = Depends(get_db)
+):
+    """更新original.py内容。"""
+    user_id = get_mock_user_id()
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+    
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
+        raise HTTPException(status_code=400, detail="Server does not have storage path")
+    
+    original_py_path = os.path.join(stdio_cfg.storage_path, "original.py")
+    
+    try:
+        ast.parse(request.code)
+    except SyntaxError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid Python syntax: {e}")
+    
+    with open(original_py_path, "w", encoding="utf-8") as f:
+        f.write(request.code)
+    
+    return {
+        "code": 200,
+        "message": "Original code updated",
+        "data": {"server_id": server_id, "path": original_py_path},
     }
 
 
@@ -467,14 +842,13 @@ async def get_mcp_code(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
-    main_py_path = None
-    
-    if server.storage_path:
-        main_py_path = os.path.join(server.storage_path, "main.py")
-    else:
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
         raise HTTPException(status_code=400, detail="Server does not have Python code")
     
-    if not main_py_path or not os.path.exists(main_py_path):
+    main_py_path = os.path.join(stdio_cfg.storage_path, "main.py")
+    
+    if not os.path.exists(main_py_path):
         raise HTTPException(status_code=404, detail=f"MCP code file not found: {main_py_path}")
     
     with open(main_py_path, "r", encoding="utf-8") as f:
@@ -485,15 +859,11 @@ async def get_mcp_code(
         "message": "MCP code retrieved",
         "data": {
             "server_id": server_id,
-            "name": server.name,
+            "name": server.mcp_name,
             "code": code,
             "path": main_py_path,
         },
     }
-
-
-class UpdateMCPCodeRequest(BaseModel):
-    code: str = Field(..., description="Python代码")
 
 
 @router.put("/servers/{server_id}/code")
@@ -509,14 +879,13 @@ async def update_mcp_code(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
-    main_py_path = None
-    
-    if server.storage_path:
-        main_py_path = os.path.join(server.storage_path, "main.py")
-    else:
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    if not stdio_cfg or not stdio_cfg.storage_path:
         raise HTTPException(status_code=400, detail="Server does not have Python code")
     
-    if not main_py_path:
+    main_py_path = os.path.join(stdio_cfg.storage_path, "main.py")
+    
+    if not os.path.exists(main_py_path):
         raise HTTPException(status_code=404, detail="MCP code file not found")
     
     with open(main_py_path, "w", encoding="utf-8") as f:
@@ -526,55 +895,6 @@ async def update_mcp_code(
         "code": 200,
         "message": "MCP code updated",
         "data": {"server_id": server_id, "path": main_py_path},
-    }
-
-
-@router.get("/open-source")
-async def get_open_source_mcps():
-    """获取可用的开源 MCP 列表。"""
-    return {
-        "code": 200,
-        "message": "Open source MCPs retrieved",
-        "data": OPEN_SOURCE_MCPS,
-    }
-
-
-@router.post("/import")
-async def import_open_mcp(
-    mcp_id: str = Query(..., description="MCP ID"),
-    db: Session = Depends(get_db)
-):
-    """导入开源 MCP 配置。"""
-    mcp_config = next((m for m in OPEN_SOURCE_MCPS if m["id"] == mcp_id), None)
-    
-    if not mcp_config:
-        raise HTTPException(status_code=404, detail=f"MCP '{mcp_id}' not found")
-    
-    user_id = get_mock_user_id()
-    
-    new_server = mcp_db_manager.create_server(
-        db=db,
-        user_id=user_id,
-        name=mcp_config["name"],
-        transport=mcp_config["transport"],
-        url="",
-        command=mcp_config.get("command"),
-        args=mcp_config.get("args", []),
-        env=mcp_config.get("env", {}),
-        headers={},
-        timeout=30,
-        description=mcp_config.get("description", ""),
-    )
-    
-    return {
-        "code": 200,
-        "message": "MCP imported successfully",
-        "data": {
-            "id": new_server.id,
-            "name": new_server.name,
-            "transport": new_server.transport,
-            "status": "disconnected",
-        },
     }
 
 
@@ -596,8 +916,7 @@ async def connect_server(
     success = await lifecycle_manager.register_and_connect(server_info)
     
     if success:
-        server.enabled = True
-        db.commit()
+        mcp_db_manager.update_server(db, server_id, user_id, enabled=True)
         
         return {
             "code": 200,
@@ -627,8 +946,7 @@ async def disconnect_server(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
-    server.enabled = False
-    db.commit()
+    mcp_db_manager.update_server(db, server_id, user_id, enabled=False)
     
     try:
         success = await asyncio.wait_for(
@@ -863,45 +1181,6 @@ async def get_server_prompts(
         )
 
 
-@router.post("/init-defaults")
-async def init_default_mcps(
-    db: Session = Depends(get_db)
-):
-    """初始化默认的MCP服务器配置。"""
-    user_id = get_mock_user_id()
-    added_count = 0
-    
-    for mcp_config in DEFAULT_MCP_SERVERS:
-        existing = mcp_db_manager.get_server_by_name(db, user_id, mcp_config["name"])
-        
-        if not existing:
-            new_server = mcp_db_manager.create_server(
-                db=db,
-                user_id=user_id,
-                name=mcp_config["name"],
-                transport=mcp_config.get("transport", "stdio"),
-                url="",
-                command=mcp_config.get("command"),
-                args=mcp_config.get("args", []),
-                env=mcp_config.get("env", {}),
-                headers={},
-                timeout=mcp_config.get("timeout", 30),
-                is_default=True,
-                author=mcp_config.get("author", "SoloEngine"),
-                source=mcp_config.get("source", ""),
-                description=mcp_config.get("description", ""),
-                tags=mcp_config.get("tags", []),
-            )
-            if new_server:
-                added_count += 1
-    
-    return {
-        "code": 200,
-        "message": f"Initialized {added_count} default MCP servers",
-        "data": {"added_count": added_count},
-    }
-
-
 @router.get("/health")
 async def health_check():
     """健康检查端点。"""
@@ -910,122 +1189,65 @@ async def health_check():
         "message": "MCP Service is running",
         "data": {
             "service": "mcp-service",
-            "version": "1.0.0",
+            "version": "2.0.0",
             "port": 8992,
         },
     }
 
 
-@router.post("/servers/upload/python")
-async def upload_python_mcp(
-    name: str = Form(..., description="MCP Server 名称"),
-    description: str = Form("", description="MCP Server 描述"),
-    file: UploadFile = File(..., description="Python 文件 (.py)"),
-    tools: str = Form("[]", description="工具定义 JSON 列表"),
+@router.get("/servers/{server_id}/files")
+async def get_server_files(
+    server_id: str,
     db: Session = Depends(get_db)
 ):
-    """上传 Python 文件编译为 MCP Server。
-    
-    上传的 Python 文件将被编译为 MCP Server，存储到 mcp_server/{name}/ 目录：
-    - original.py - 原始上传的文件
-    - main.py - 编译后的 MCP Server 代码
-    - __init__.py - 包初始化文件
-    - __main__.py - 模块入口文件
-    
-    tools 参数格式（JSON字符串）：
-    [
-        {
-            "function_name": "main",
-            "description": "工具描述",
-            "parameters": [
-                {
-                    "name": "param1",
-                    "type": "string",
-                    "description": "参数描述",
-                    "required": true
-                }
-            ]
-        }
-    ]
-    """
+    """获取 MCP Server 的文件列表。"""
     user_id = get_mock_user_id()
+    server = mcp_db_manager.get_server(db, server_id, user_id)
     
-    if not file.filename.endswith('.py'):
-        raise HTTPException(status_code=400, detail="Only Python files (.py) are allowed")
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
-    safe_name = re.sub(r'[^\w\-]', '_', name)
-    if not safe_name:
-        raise HTTPException(status_code=400, detail="Invalid server name")
+    stdio_cfg = mcp_db_manager.get_stdio_config(db, server_id)
+    storage_path = stdio_cfg.storage_path if stdio_cfg else None
     
-    try:
-        tools_list = json.loads(tools) if tools else []
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid tools JSON format")
+    if not storage_path or not os.path.exists(storage_path):
+        return {
+            "code": 200,
+            "message": "No files found",
+            "data": [],
+        }
     
-    server_dir = get_mcp_server_dir(safe_name)
-    
-    content = await file.read()
-    original_code = content.decode('utf-8')
-    
-    try:
-        ast.parse(original_code)
-    except SyntaxError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid Python syntax: {e}")
-    
-    original_py_path = os.path.join(server_dir, "original.py")
-    with open(original_py_path, "w", encoding="utf-8") as f:
-        f.write(original_code)
-    
-    mcp_server_code = generate_mcp_server_code(safe_name, description, original_code, tools_list)
-    main_py_path = os.path.join(server_dir, "main.py")
-    with open(main_py_path, "w", encoding="utf-8") as f:
-        f.write(mcp_server_code)
-    
-    init_py_content = f'"""{safe_name} MCP Server"""\n'
-    init_py_path = os.path.join(server_dir, "__init__.py")
-    with open(init_py_path, "w", encoding="utf-8") as f:
-        f.write(init_py_content)
-    
-    main_module_py_content = f'''#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-import asyncio
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-if __name__ == "__main__":
-    from main import mcp
-    mcp.run(transport="stdio")
-'''
-    main_module_path = os.path.join(server_dir, "__main__.py")
-    with open(main_module_path, "w", encoding="utf-8") as f:
-        f.write(main_module_py_content)
-    
-    new_server = mcp_db_manager.create_server(
-        db=db,
-        user_id=user_id,
-        name=name,
-        transport="stdio",
-        command="python",
-        args=[main_py_path],
-        description=description,
-        storage_path=server_dir,
-        tools=tools_list,
-    )
+    files = []
+    if os.path.isfile(storage_path):
+        stat = os.stat(storage_path)
+        files.append({
+            "name": os.path.basename(storage_path),
+            "path": storage_path,
+            "type": "file",
+            "size": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        })
+    else:
+        for root, dirs, filenames in os.walk(storage_path):
+            for filename in filenames:
+                if filename.startswith('.'):
+                    continue
+                filepath = os.path.join(root, filename)
+                relpath = os.path.relpath(filepath, storage_path)
+                stat = os.stat(filepath)
+                files.append({
+                    "name": filename,
+                    "path": filepath,
+                    "relative_path": relpath,
+                    "type": "file",
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                })
     
     return {
         "code": 200,
-        "message": "Python MCP Server compiled successfully",
-        "data": {
-            "id": new_server.id,
-            "name": new_server.name,
-            "transport": "stdio",
-            "storage_path": server_dir,
-            "main_file": main_py_path,
-            "original_file": original_py_path,
-            "tools_count": len(tools_list),
-        },
+        "message": "Files retrieved",
+        "data": files,
     }
 
 
@@ -1121,259 +1343,3 @@ if __name__ == "__main__":
 '''
     
     return mcp_code
-
-
-@router.post("/servers/upload/package")
-async def upload_mcp_package(
-    name: str = Form(..., description="MCP Server 名称"),
-    description: str = Form("", description="MCP Server 描述"),
-    package: UploadFile = File(..., description="MCP Server 包 (.zip)"),
-    db: Session = Depends(get_db)
-):
-    """上传第三方 MCP Server 包。
-    
-    上传的 ZIP 包将被解压到 mcp_server 目录，并自动配置。
-    ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
-    """
-    user_id = get_mock_user_id()
-    
-    if not package.filename.endswith('.zip'):
-        raise HTTPException(status_code=400, detail="Only ZIP packages are allowed")
-    
-    safe_name = re.sub(r'[^\w\-]', '_', name)
-    if not safe_name:
-        raise HTTPException(status_code=400, detail="Invalid server name")
-    
-    server_dir = get_mcp_server_dir(safe_name)
-    
-    temp_dir = tempfile.mkdtemp()
-    try:
-        temp_zip_path = os.path.join(temp_dir, "package.zip")
-        with open(temp_zip_path, "wb") as f:
-            content = await package.read()
-            f.write(content)
-        
-        with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
-            zip_ref.extractall(server_dir)
-        
-        main_py_path = None
-        entry_file = None
-        
-        for entry in ['main.py', '__main__.py', 'server.py', 'app.py']:
-            candidate = os.path.join(server_dir, entry)
-            if os.path.exists(candidate):
-                main_py_path = candidate
-                entry_file = entry
-                break
-        
-        if not main_py_path:
-            for root, dirs, files in os.walk(server_dir):
-                for file in files:
-                    if file.endswith('.py') and file in ['main.py', '__main__.py', 'server.py']:
-                        main_py_path = os.path.join(root, file)
-                        entry_file = file
-                        break
-                if main_py_path:
-                    break
-        
-        if not main_py_path:
-            raise HTTPException(status_code=400, detail="No valid entry file found (main.py, __main__.py, server.py)")
-        
-        requirements_path = os.path.join(server_dir, "requirements.txt")
-        if os.path.exists(requirements_path):
-            logger.info(f"Found requirements.txt for {name}")
-        
-        new_server = mcp_db_manager.create_server(
-            db=db,
-            user_id=user_id,
-            name=name,
-            transport="stdio",
-            command="python",
-            args=[main_py_path],
-            description=description,
-            storage_path=server_dir,
-        )
-        
-        return {
-            "code": 200,
-            "message": "MCP Server package uploaded successfully",
-            "data": {
-                "id": new_server.id,
-                "name": new_server.name,
-                "transport": "stdio",
-                "storage_path": server_dir,
-                "entry_file": entry_file,
-                "main_file": main_py_path,
-                "original_filename": package.filename,
-            },
-        }
-        
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Invalid ZIP file")
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-@router.post("/servers/upload/folder")
-async def upload_mcp_folder(
-    name: str = Form(..., description="MCP Server 名称"),
-    description: str = Form("", description="MCP Server 描述"),
-    files: List[UploadFile] = File(..., description="文件夹中的所有文件"),
-    db: Session = Depends(get_db)
-):
-    """上传文件夹作为 MCP Server。
-    
-    上传的文件夹将被存储到 mcp_server/{name}/ 目录。
-    需要包含 main.py 或 __main__.py 或 server.py 作为入口文件。
-    
-    注意：前端需要将文件夹中的所有文件递归上传，保持相对路径结构。
-    """
-    user_id = get_mock_user_id()
-    
-    safe_name = re.sub(r'[^\w\-]', '_', name)
-    if not safe_name:
-        raise HTTPException(status_code=400, detail="Invalid server name")
-    
-    server_dir = get_mcp_server_dir(safe_name)
-    
-    if os.path.exists(server_dir):
-        shutil.rmtree(server_dir)
-    os.makedirs(server_dir, exist_ok=True)
-    
-    file_structure = {}
-    
-    for file in files:
-        relative_path = file.filename
-        if not relative_path:
-            continue
-        
-        file_path = os.path.join(server_dir, relative_path)
-        file_dir = os.path.dirname(file_path)
-        os.makedirs(file_dir, exist_ok=True)
-        
-        content = await file.read()
-        with open(file_path, "wb") as f:
-            f.write(content)
-        
-        file_structure[relative_path] = {
-            "size": len(content),
-            "type": "file"
-        }
-    
-    main_py_path = None
-    entry_file = None
-    
-    for entry in ['main.py', '__main__.py', 'server.py', 'app.py']:
-        candidate = os.path.join(server_dir, entry)
-        if os.path.exists(candidate):
-            main_py_path = candidate
-            entry_file = entry
-            break
-    
-    if not main_py_path:
-        for root, dirs, filenames in os.walk(server_dir):
-            for filename in filenames:
-                if filename.endswith('.py') and filename in ['main.py', '__main__.py', 'server.py']:
-                    main_py_path = os.path.join(root, filename)
-                    entry_file = filename
-                    break
-            if main_py_path:
-                break
-    
-    if not main_py_path:
-        raise HTTPException(status_code=400, detail="No valid entry file found (main.py, __main__.py, server.py)")
-    
-    new_server = mcp_db_manager.create_server(
-        db=db,
-        user_id=user_id,
-        name=name,
-        transport="stdio",
-        command="python",
-        args=[main_py_path],
-        description=description,
-        storage_path=server_dir,
-    )
-    
-    return {
-        "code": 200,
-        "message": "MCP Server folder uploaded successfully",
-        "data": {
-            "id": new_server.id,
-            "name": new_server.name,
-            "transport": "stdio",
-            "storage_path": server_dir,
-            "entry_file": entry_file,
-            "main_file": main_py_path,
-            "files_count": len(file_structure),
-            "file_structure": file_structure,
-        },
-    }
-
-
-@router.post("/servers/import-local")
-async def import_local_mcp(
-    name: str = Form(..., description="MCP Server 名称"),
-    path: str = Form(..., description="本地 MCP Server 路径"),
-    description: str = Form("", description="MCP Server 描述"),
-    command: str = Form("python", description="启动命令"),
-    db: Session = Depends(get_db)
-):
-    """导入本地已有的 MCP Server（已废弃，    请使用 upload/python 或 upload/folder 接口代替。
-    """
-    raise HTTPException(
-        status_code=410, 
-        detail="This endpoint is deprecated. Please use /servers/upload/python or /servers/upload/folder instead."
-    )
-
-
-@router.get("/servers/{server_id}/files")
-async def get_server_files(
-    server_id: str,
-    db: Session = Depends(get_db)
-):
-    """获取 MCP Server 的文件列表。"""
-    user_id = get_mock_user_id()
-    server = mcp_db_manager.get_server(db, server_id, user_id)
-    
-    if not server:
-        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
-    if not server.storage_path or not os.path.exists(server.storage_path):
-        return {
-            "code": 200,
-            "message": "No files found",
-            "data": [],
-        }
-    
-    files = []
-    if os.path.isfile(server.storage_path):
-        stat = os.stat(server.storage_path)
-        files.append({
-            "name": os.path.basename(server.storage_path),
-            "path": server.storage_path,
-            "type": "file",
-            "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        })
-    else:
-        for root, dirs, filenames in os.walk(server.storage_path):
-            for filename in filenames:
-                if filename.startswith('.'):
-                    continue
-                filepath = os.path.join(root, filename)
-                relpath = os.path.relpath(filepath, server.storage_path)
-                stat = os.stat(filepath)
-                files.append({
-                    "name": filename,
-                    "path": filepath,
-                    "relative_path": relpath,
-                    "type": "file",
-                    "size": stat.st_size,
-                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                })
-    
-    return {
-        "code": 200,
-        "message": "Files retrieved",
-        "data": files,
-    }

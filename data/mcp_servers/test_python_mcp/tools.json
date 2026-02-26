@@ -1,0 +1,20 @@
+[
+  {
+    "function_name": "main",
+    "description": "测试工具",
+    "parameters": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "查询关键词",
+        "required": true
+      },
+      {
+        "name": "limit",
+        "type": "integer",
+        "description": "返回数量",
+        "required": false
+      }
+    ]
+  }
+]
