@@ -16,7 +16,7 @@
  * - 自定义 Python MCP 开发
  * 
  * 注意事项：
- * - 支持多种传输协议（stdio、sse等）
+ * - 支持多种传输协议（stdio、sse、http）
  * - 需要正确配置服务器连接参数
  * - MCP服务独立部署于端口8992
  * 
@@ -90,14 +90,12 @@ const mcpApiRequest = {
   },
 };
 
-/**
- * MCP服务器接口
- */
 export interface MCPServer {
   id: string;
   user_id?: string;
   name: string;
   transport: string;
+  transport_type?: string;
   url?: string;
   command?: string;
   args?: string[];
@@ -106,6 +104,7 @@ export interface MCPServer {
   timeout?: number;
   enabled?: boolean;
   is_public?: boolean;
+  share?: boolean;
   is_default?: boolean;
   author?: string;
   source?: string;
@@ -124,6 +123,8 @@ export interface MCPServer {
   function?: string;
   inputSchema?: Record<string, any>;
   outputSchema?: Record<string, any>;
+  python_code?: string;
+  storage_path?: string;
 }
 
 export interface MCPTool {
@@ -151,12 +152,10 @@ export interface MCPPrompt {
   server_name?: string;
 }
 
-/**
- * Python MCP 工具定义
- */
 export interface PythonMCPTool {
   name: string;
   description?: string;
+  function_name?: string;
   parameters?: {
     type: string;
     properties: Record<string, {
@@ -167,18 +166,6 @@ export interface PythonMCPTool {
   };
 }
 
-/**
- * 创建 Python MCP 请求
- */
-export interface CreatePythonMCPRequest {
-  name: string;
-  description?: string;
-  tools: PythonMCPTool[];
-}
-
-/**
- * MCP 代码响应
- */
 export interface MCPCodeResponse {
   server_id: string;
   name: string;
@@ -186,18 +173,29 @@ export interface MCPCodeResponse {
   path: string;
 }
 
-/**
- * 开源 MCP 配置
- */
-export interface OpenSourceMCP {
-  id: string;
+export interface CreateHttpServerRequest {
   name: string;
-  description: string;
-  transport: string;
-  command?: string;
-  args?: string[];
-  env?: Record<string, string>;
-  category: string;
+  description?: string;
+  url: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+  session_id?: string;
+  enabled?: boolean;
+  share?: boolean;
+}
+
+export interface CreateSseServerRequest {
+  name: string;
+  description?: string;
+  url: string;
+  headers?: Record<string, string>;
+  timeout?: number;
+  reconnect?: boolean;
+  sse_endpoint?: string;
+  retry_interval?: number;
+  max_retries?: number;
+  enabled?: boolean;
+  share?: boolean;
 }
 
 class MCPApi {
@@ -220,10 +218,7 @@ class MCPApi {
     headers?: Record<string, string>;
     timeout?: number;
     enabled?: boolean;
-    module?: string;
-    function?: string;
-    inputSchema?: Record<string, any>;
-    outputSchema?: Record<string, any>;
+    share?: boolean;
   }) {
     return mcpApiRequest.post('/mcp/servers', config);
   }
@@ -254,10 +249,6 @@ class MCPApi {
     env?: Record<string, string>;
     headers?: Record<string, string>;
     timeout?: number;
-    module?: string;
-    function?: string;
-    inputSchema?: Record<string, any>;
-    outputSchema?: Record<string, any>;
   }) {
     return mcpApiRequest.post('/mcp/servers/test', config);
   }
@@ -268,20 +259,12 @@ class MCPApi {
     });
   }
 
-  async importMCP(config: Record<string, any>) {
-    return mcpApiRequest.post('/mcp/import', config);
-  }
-
   async getResources(serverId: string) {
     return mcpApiRequest.get(`/mcp/servers/${serverId}/resources`);
   }
 
   async getPrompts(serverId: string) {
     return mcpApiRequest.get(`/mcp/servers/${serverId}/prompts`);
-  }
-
-  async getOpenSourceMCPS() {
-    return mcpApiRequest.get('/mcp/open-source');
   }
 
   async connectServer(serverId: string) {
@@ -296,41 +279,85 @@ class MCPApi {
     return mcpApiRequest.get('/mcp/tools/all');
   }
 
-  async getOpenMCPList() {
-    return mcpApiRequest.get('/mcp/open-source');
+  async createPythonMCP(name: string, description: string, code: string, tools: any[]) {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('tools', JSON.stringify(tools));
+    
+    const blob = new Blob([code], { type: 'text/x-python' });
+    formData.append('file', blob, 'original.py');
+    
+    return mcpApiRequest.post('/mcp/servers/create/python', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   }
 
-  async importOpenMCP(mcpId: string) {
-    return mcpApiRequest.post('/mcp/import', null, { params: { mcp_id: mcpId } });
+  async createStdioMCP(name: string, description: string, packageFile?: File, files?: File[]) {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description);
+    
+    if (packageFile) {
+      formData.append('package', packageFile);
+    }
+    
+    if (files && files.length > 0) {
+      files.forEach(file => {
+        formData.append('files', file);
+      });
+    }
+    
+    return mcpApiRequest.post('/mcp/servers/create/stdio', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
   }
 
-  /**
-   * 创建 Python MCP
-   */
-  async createPythonMCP(request: CreatePythonMCPRequest) {
-    return mcpApiRequest.post('/mcp/servers/python', request);
+  async createHttpMCP(request: CreateHttpServerRequest) {
+    return mcpApiRequest.post('/mcp/servers/create/http', request);
   }
 
-  /**
-   * 获取 MCP Python 代码
-   */
+  async createSseMCP(request: CreateSseServerRequest) {
+    return mcpApiRequest.post('/mcp/servers/create/sse', request);
+  }
+
   async getMCPCode(serverId: string): Promise<MCPCodeResponse> {
     const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/code`);
     return response.data;
   }
 
-  /**
-   * 更新 MCP Python 代码
-   */
+  async getMCPOriginalCode(serverId: string): Promise<MCPCodeResponse> {
+    const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/original`);
+    return response.data;
+  }
+
+  async updateMCPOriginalCode(serverId: string, code: string) {
+    return mcpApiRequest.put(`/mcp/servers/${serverId}/original`, { code });
+  }
+
+  async getMCPToolsJson(serverId: string) {
+    const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/tools/json`);
+    return response.data;
+  }
+
+  async updateMCPTools(serverId: string, tools: any[]) {
+    const formData = new FormData();
+    formData.append('tools', JSON.stringify(tools));
+    return mcpApiRequest.put(`/mcp/servers/${serverId}/tools`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  }
+
   async updateMCPCode(serverId: string, code: string) {
     return mcpApiRequest.put(`/mcp/servers/${serverId}/code`, { code });
   }
 
-  /**
-   * 初始化默认MCP服务器
-   */
-  async initDefaultMCPS() {
-    return mcpApiRequest.post('/mcp/init-defaults');
+  async getServerFiles(serverId: string) {
+    return mcpApiRequest.get(`/mcp/servers/${serverId}/files`);
+  }
+
+  async healthCheck() {
+    return mcpApiRequest.get('/mcp/health');
   }
 }
 

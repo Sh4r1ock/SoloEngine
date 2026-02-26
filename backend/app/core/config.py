@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     SKILLS_ROOT_DIR: str = os.path.join(
         os.path.dirname(__file__), "..", "..", "skills"
     )
-    MCP_ROOT_DIR: str = os.path.join(
-        os.path.dirname(__file__), "..", "..", "mcp_servers"
-    )
     
     MAX_DEBUG_SESSIONS: int = 100
     DEBUG_SESSION_TIMEOUT: int = 3600

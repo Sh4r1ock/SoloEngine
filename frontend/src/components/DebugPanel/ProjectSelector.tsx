@@ -137,8 +137,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onProjectChange }) =>
         ref={fileInputRef}
         type="file"
         style={{ display: 'none' }}
-        webkitdirectory=""
-        directory=""
+        {...({ webkitdirectory: '', directory: '' } as any)}
         onChange={handleFolderChange}
       />
       

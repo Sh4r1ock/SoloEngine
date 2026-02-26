@@ -144,7 +144,7 @@ const AgenticFlowList: React.FC = () => {
             <Col xs={24} sm={12} md={8} lg={6} key={flow.id}>
               <UnifiedCard
                 name={flow.name}
-                description={flow.description}
+                description={flow.description || undefined}
                 isTemplate={flow.is_template}
                 updatedAt={flow.updated_at}
                 onClick={() => navigate(`/editor/${flow.id}`)}

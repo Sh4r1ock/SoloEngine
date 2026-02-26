@@ -77,7 +77,6 @@ class UserModel(Base):
 
     agentic_flows = relationship("AgenticFlowModel", back_populates="user", cascade="all, delete-orphan")
     skills_packages = relationship("SkillsPackageModel", back_populates="user", cascade="all, delete-orphan")
-    mcp_servers = relationship("MCPServerModel", back_populates="user", cascade="all, delete-orphan")
 
 
 class AgenticFlowModel(Base):
@@ -231,29 +230,6 @@ class SkillsPackageModel(Base):
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="skills_packages")
-
-
-class MCPServerModel(Base):
-    """MCP服务器配置模型。"""
-    __tablename__ = "mcp_servers"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    transport = Column(String(50), nullable=False)
-    url = Column(String(500), nullable=True)
-    command = Column(String(500), nullable=True)
-    args = Column(JSON, nullable=True)
-    env = Column(JSON, nullable=True)
-    headers = Column(JSON, nullable=True)
-    timeout = Column(Integer, default=30)
-    enabled = Column(Boolean, default=True)
-    is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    version = Column(Integer, nullable=False, default=1)
-
-    user = relationship("UserModel", back_populates="mcp_servers")
 
 
 class ProjectModel(Base):
@@ -659,69 +635,6 @@ class DatabaseManager:
         package = self.get_skills_package(db, package_id, user_id)
         if package:
             package.is_active = False
-            db.commit()
-            return True
-        return False
-
-    def create_mcp_server(self, db: Session, user_id: str, name: str, 
-                          transport: str, url: str = None, command: str = None,
-                          args: List[str] = None, env: Dict = None, 
-                          headers: Dict = None, timeout: int = 30) -> MCPServerModel:
-        """创建MCP服务器配置。"""
-        server = MCPServerModel(
-            user_id=user_id,
-            name=name,
-            transport=transport,
-            url=url,
-            command=command,
-            args=args or [],
-            env=env or {},
-            headers=headers or {},
-            timeout=timeout,
-        )
-        db.add(server)
-        db.commit()
-        db.refresh(server)
-        return server
-
-    def get_mcp_servers(self, db: Session, user_id: str) -> List[MCPServerModel]:
-        """获取用户的MCP服务器。"""
-        return db.query(MCPServerModel).filter(
-            MCPServerModel.user_id == user_id
-        ).order_by(MCPServerModel.updated_at.desc()).all()
-
-    def get_mcp_server(self, db: Session, server_id: str, user_id: str = None) -> Optional[MCPServerModel]:
-        """获取MCP服务器。"""
-        query = db.query(MCPServerModel).filter(MCPServerModel.id == server_id)
-        if user_id:
-            query = query.filter(MCPServerModel.user_id == user_id)
-        return query.first()
-
-    def update_mcp_server(self, db: Session, server_id: str, user_id: str,
-                          version: int = None, **kwargs) -> Optional[MCPServerModel]:
-        """更新MCP服务器配置（带乐观锁）。"""
-        server = self.get_mcp_server(db, server_id, user_id)
-        if not server:
-            return None
-        
-        if version is not None and server.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {server.version}"
-            )
-        
-        for key, value in kwargs.items():
-            if hasattr(server, key):
-                setattr(server, key, value)
-        server.version = (server.version or 0) + 1
-        db.commit()
-        db.refresh(server)
-        return server
-
-    def delete_mcp_server(self, db: Session, server_id: str, user_id: str) -> bool:
-        """删除MCP服务器。"""
-        server = self.get_mcp_server(db, server_id, user_id)
-        if server:
-            db.delete(server)
             db.commit()
             return True
         return False

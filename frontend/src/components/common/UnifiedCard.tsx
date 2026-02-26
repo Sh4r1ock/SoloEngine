@@ -157,7 +157,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
               size="small"
               checked={isActive}
               onChange={onSwitchChange}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(checked, e) => e?.stopPropagation?.()}
               checkedChildren={<CheckCircleOutlined />}
             />
           )}

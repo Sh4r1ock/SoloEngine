@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, Select, InputNumber, Switch, message, Button, Divider, Space, Alert, Card, Row, Col, Tag } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import React, { useEffect, useState, useRef } from 'react';
+import { Modal, Form, Input, Select, InputNumber, Switch, message, Button, Divider, Alert, Card, Row, Col, Tag, Tabs, Upload, Radio } from 'antd';
+import { PlusOutlined, DeleteOutlined, UploadOutlined, FolderOpenOutlined, FileZipOutlined, ApiOutlined, CloudServerOutlined, CodeOutlined } from '@ant-design/icons';
 import { MCPServer } from '../../services/mcpApi';
-import { mcpApi } from '../../services/mcpApi';
+import { mcpApi, CreateHttpServerRequest, CreateSseServerRequest } from '../../services/mcpApi';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -10,7 +10,7 @@ const { TextArea } = Input;
 const defaultPythonTemplate = `# -*- coding: utf-8 -*-
 """
 自定义MCP工具模块
-用户只需要定义 main() 函数
+主函数名必须为 main
 """
 
 def main(query: str, limit: int = 10) -> dict:
@@ -46,18 +46,14 @@ interface ParameterConfig {
     default?: string;
 }
 
-interface OutputFieldConfig {
-    name: string;
-    type: string;
-    description: string;
-}
-
 interface MCPAddServerModalProps {
     visible: boolean;
     server: MCPServer | null;
     onClose: () => void;
     onSave: () => void;
 }
+
+type CreateType = 'python' | 'stdio' | 'http' | 'sse';
 
 const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     visible,
@@ -66,12 +62,13 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     onSave,
 }) => {
     const [form] = Form.useForm();
-    const [testing, setTesting] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [transportType, setTransportType] = useState<string>('python');
+    const [createType, setCreateType] = useState<CreateType>('python');
     const [inputParams, setInputParams] = useState<ParameterConfig[]>([]);
-    const [outputFields, setOutputFields] = useState<OutputFieldConfig[]>([]);
     const [pythonCode, setPythonCode] = useState(defaultPythonTemplate);
+    const [stdioUploadType, setStdioUploadType] = useState<'zip' | 'folder'>('zip');
+    const [fileList, setFileList] = useState<any[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         if (visible) {
@@ -79,60 +76,57 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 form.setFieldsValue({
                     name: server.name,
                     description: server.description || '',
-                    transport: server.transport,
-                    url: server.url,
-                    command: server.command,
-                    args: server.args ? server.args.join('\n') : '',
-                    env: server.env ? Object.entries(server.env).map(([k, v]) => `${k}=${v}`).join('\n') : '',
-                    headers: server.headers ? Object.entries(server.headers).map(([k, v]) => `${k}=${v}`).join('\n') : '',
                     timeout: server.timeout || 30,
                     enabled: server.enabled !== false,
-                    module: server.module || '',
-                    function: server.function || 'main',
+                    share: server.share || false,
                 });
-                setTransportType(server.transport || 'python');
                 
-                if (server.inputSchema?.properties) {
-                    const params: ParameterConfig[] = Object.entries(server.inputSchema.properties).map(([name, schema]: [string, any]) => ({
-                        name,
-                        type: schema.type || 'string',
-                        description: schema.description || '',
-                        required: server.inputSchema.required?.includes(name) || false,
-                        default: schema.default,
-                    }));
-                    setInputParams(params);
-                }
+                const transport = server.transport || server.transport_type || 'stdio';
+                setCreateType(transport as CreateType);
                 
-                if (server.outputSchema?.properties) {
-                    const fields: OutputFieldConfig[] = Object.entries(server.outputSchema.properties).map(([name, schema]: [string, any]) => ({
-                        name,
-                        type: schema.type || 'string',
-                        description: schema.description || '',
-                    }));
-                    setOutputFields(fields);
-                }
-                
-                if (server.python_code) {
-                    setPythonCode(server.python_code);
+                if (transport === 'http' || transport === 'sse') {
+                    form.setFieldsValue({
+                        url: server.url,
+                        headers: server.headers ? Object.entries(server.headers).map(([k, v]) => `${k}=${v}`).join('\n') : '',
+                    });
+                    
+                    if (transport === 'sse') {
+                        form.setFieldsValue({
+                            reconnect: true,
+                            sse_endpoint: '/sse',
+                            retry_interval: 5,
+                            max_retries: 3,
+                        });
+                    }
+                } else if (transport === 'stdio') {
+                    form.setFieldsValue({
+                        command: server.command,
+                        args: server.args ? server.args.join('\n') : '',
+                        env: server.env ? Object.entries(server.env).map(([k, v]) => `${k}=${v}`).join('\n') : '',
+                    });
                 }
             } else {
                 form.resetFields();
                 form.setFieldsValue({
-                    transport: 'python',
                     timeout: 30,
                     enabled: true,
-                    function: 'main',
+                    share: false,
+                    reconnect: true,
+                    sse_endpoint: '/sse',
+                    retry_interval: 5,
+                    max_retries: 3,
                 });
-                setTransportType('python');
+                setCreateType('python');
                 setInputParams([]);
-                setOutputFields([]);
                 setPythonCode(defaultPythonTemplate);
+                setFileList([]);
             }
         }
     }, [visible, server, form]);
 
-    const handleTransportChange = (value: string) => {
-        setTransportType(value);
+    const handleCreateTypeChange = (e: any) => {
+        setCreateType(e.target.value);
+        setFileList([]);
     };
 
     const addInputParam = () => {
@@ -149,187 +143,121 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         setInputParams(newParams);
     };
 
-    const addOutputField = () => {
-        setOutputFields([...outputFields, { name: '', type: 'string', description: '' }]);
-    };
-
-    const removeOutputField = (index: number) => {
-        setOutputFields(outputFields.filter((_, i) => i !== index));
-    };
-
-    const updateOutputField = (index: number, field: keyof OutputFieldConfig, value: any) => {
-        const newFields = [...outputFields];
-        newFields[index] = { ...newFields[index], [field]: value };
-        setOutputFields(newFields);
-    };
-
-    const buildInputSchema = () => {
-        const properties: Record<string, any> = {};
-        const required: string[] = [];
-        
-        inputParams.forEach(param => {
-            if (param.name) {
-                properties[param.name] = {
-                    type: param.type,
-                    description: param.description,
-                };
-                if (param.default !== undefined && param.default !== '') {
-                    properties[param.name].default = param.default;
-                }
-                if (param.required) {
-                    required.push(param.name);
-                }
-            }
-        });
-        
-        return {
-            type: 'object',
-            properties,
-            required: required.length > 0 ? required : undefined,
-        };
-    };
-
-    const buildOutputSchema = () => {
-        const properties: Record<string, any> = {};
-        
-        outputFields.forEach(field => {
-            if (field.name) {
-                properties[field.name] = {
-                    type: field.type,
-                    description: field.description,
-                };
-            }
-        });
-        
-        return {
-            type: 'object',
-            properties,
-        };
-    };
-
-    const handleTest = async () => {
-        try {
-            const values = await form.validateFields();
-            setTesting(true);
-
-            const config: any = {
-                name: values.name,
-                transport: values.transport,
-                timeout: values.timeout,
-            };
-
-            if (values.description) {
-                config.description = values.description;
-            }
-
-            if (values.transport === 'http' || values.transport === 'sse') {
-                config.url = values.url;
-                if (values.headers) {
-                    config.headers = {};
-                    values.headers.split('\n').forEach((line: string) => {
-                        const [key, ...valueParts] = line.split('=');
-                        if (key && valueParts.length > 0) {
-                            config.headers[key.trim()] = valueParts.join('=').trim();
-                        }
-                    });
-                }
-            } else if (values.transport === 'stdio') {
-                config.command = values.command;
-                if (values.args) {
-                    config.args = values.args.split('\n').filter((a: string) => a.trim());
-                }
-                if (values.env) {
-                    config.env = {};
-                    values.env.split('\n').forEach((line: string) => {
-                        const [key, ...valueParts] = line.split('=');
-                        if (key && valueParts.length > 0) {
-                            config.env[key.trim()] = valueParts.join('=').trim();
-                        }
-                    });
-                }
-            } else if (values.transport === 'python') {
-                config.module = values.module;
-                config.function = values.function || 'main';
-                config.inputSchema = buildInputSchema();
-                config.outputSchema = buildOutputSchema();
-            }
-
-            const response = await mcpApi.testServer(config);
-            if (response.code === 200) {
-                if (response.data?.connected) {
-                    message.success(`连接测试成功！发现 ${response.data?.tools_count || 0} 个工具`);
-                } else {
-                    message.warning('连接测试失败：' + (response.data?.error || '未知错误'));
-                }
-            } else {
-                message.error('连接测试失败：' + response.message);
-            }
-        } catch (error) {
-            message.error('连接测试失败：' + String(error));
-        } finally {
-            setTesting(false);
-        }
-    };
-
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
             setSaving(true);
 
-            const config: any = {
-                name: values.name,
-                transport: values.transport,
-                timeout: values.timeout,
-                enabled: values.enabled,
-            };
-
-            if (values.description) {
-                config.description = values.description;
-            }
-
-            if (values.transport === 'http' || values.transport === 'sse') {
-                config.url = values.url;
+            if (createType === 'python') {
+                const tools = [{
+                    function_name: 'main',
+                    description: values.description || 'MCP工具',
+                    parameters: inputParams.map(p => ({
+                        name: p.name,
+                        type: p.type,
+                        description: p.description,
+                        required: p.required,
+                        default: p.default,
+                    })),
+                }];
+                
+                const response = await mcpApi.createPythonMCP(
+                    values.name,
+                    values.description || '',
+                    pythonCode,
+                    tools
+                );
+                
+                if (response.code === 200) {
+                    message.success('Python MCP 创建成功！');
+                    onSave();
+                } else {
+                    message.error('创建失败：' + response.message);
+                }
+            } else if (createType === 'stdio') {
+                if (fileList.length === 0) {
+                    message.error('请上传 ZIP 包或文件夹');
+                    return;
+                }
+                
+                const packageFile = stdioUploadType === 'zip' ? fileList[0].originFileObj : null;
+                const files = stdioUploadType === 'folder' ? fileList.map(f => f.originFileObj) : null;
+                
+                const response = await mcpApi.createStdioMCP(
+                    values.name,
+                    values.description || '',
+                    packageFile,
+                    files
+                );
+                
+                if (response.code === 200) {
+                    message.success('Stdio MCP 创建成功！');
+                    onSave();
+                } else {
+                    message.error('创建失败：' + response.message);
+                }
+            } else if (createType === 'http') {
+                const headers: Record<string, string> = {};
                 if (values.headers) {
-                    config.headers = {};
                     values.headers.split('\n').forEach((line: string) => {
                         const [key, ...valueParts] = line.split('=');
                         if (key && valueParts.length > 0) {
-                            config.headers[key.trim()] = valueParts.join('=').trim();
+                            headers[key.trim()] = valueParts.join('=').trim();
                         }
                     });
                 }
-            } else if (values.transport === 'stdio') {
-                config.command = values.command;
-                if (values.args) {
-                    config.args = values.args.split('\n').filter((a: string) => a.trim());
+                
+                const request: CreateHttpServerRequest = {
+                    name: values.name,
+                    description: values.description,
+                    url: values.url,
+                    headers,
+                    timeout: values.timeout,
+                    session_id: values.session_id,
+                    enabled: values.enabled,
+                    share: values.share,
+                };
+                
+                const response = await mcpApi.createHttpMCP(request);
+                if (response.code === 200) {
+                    message.success('HTTP MCP 创建成功！');
+                    onSave();
+                } else {
+                    message.error('创建失败：' + response.message);
                 }
-                if (values.env) {
-                    config.env = {};
-                    values.env.split('\n').forEach((line: string) => {
+            } else if (createType === 'sse') {
+                const headers: Record<string, string> = {};
+                if (values.headers) {
+                    values.headers.split('\n').forEach((line: string) => {
                         const [key, ...valueParts] = line.split('=');
                         if (key && valueParts.length > 0) {
-                            config.env[key.trim()] = valueParts.join('=').trim();
+                            headers[key.trim()] = valueParts.join('=').trim();
                         }
                     });
                 }
-            } else if (values.transport === 'python') {
-                config.module = values.module;
-                config.function = values.function || 'main';
-                config.inputSchema = buildInputSchema();
-                config.outputSchema = buildOutputSchema();
-            }
-
-            if (server) {
-                await mcpApi.updateServer(server.id, { ...config, version: server.version });
-                message.success('MCP 工具已更新');
-            } else {
-                const response = await mcpApi.addServer(config);
+                
+                const request: CreateSseServerRequest = {
+                    name: values.name,
+                    description: values.description,
+                    url: values.url,
+                    headers,
+                    timeout: values.timeout,
+                    reconnect: values.reconnect,
+                    sse_endpoint: values.sse_endpoint,
+                    retry_interval: values.retry_interval,
+                    max_retries: values.max_retries,
+                    enabled: values.enabled,
+                    share: values.share,
+                };
+                
+                const response = await mcpApi.createSseMCP(request);
                 if (response.code === 200) {
-                    message.success('MCP 工具已添加');
+                    message.success('SSE MCP 创建成功！');
+                    onSave();
+                } else {
+                    message.error('创建失败：' + response.message);
                 }
             }
-
-            onSave();
         } catch (error) {
             message.error('保存失败：' + String(error));
         } finally {
@@ -337,9 +265,326 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         }
     };
 
+    const renderCreateTypeSelector = () => (
+        <Card size="small" style={{ marginBottom: 16 }}>
+            <Radio.Group value={createType} onChange={handleCreateTypeChange}>
+                <Radio.Button value="python">
+                    <CodeOutlined /> Python Function
+                </Radio.Button>
+                <Radio.Button value="stdio">
+                    <FolderOpenOutlined /> Stdio
+                </Radio.Button>
+                <Radio.Button value="http">
+                    <ApiOutlined /> HTTP
+                </Radio.Button>
+                <Radio.Button value="sse">
+                    <CloudServerOutlined /> SSE
+                </Radio.Button>
+            </Radio.Group>
+        </Card>
+    );
+
+    const renderBasicInfo = () => (
+        <Card title="基本信息" size="small" style={{ marginBottom: 16 }}>
+            <Row gutter={16}>
+                <Col span={12}>
+                    <Form.Item
+                        label="服务名称"
+                        name="name"
+                        rules={[{ required: true, message: '请输入服务名称' }]}
+                    >
+                        <Input placeholder="例如: my_tool" />
+                    </Form.Item>
+                </Col>
+                <Col span={12}>
+                    <Form.Item label="服务描述" name="description">
+                        <Input placeholder="例如: 查询数据库工具" />
+                    </Form.Item>
+                </Col>
+            </Row>
+        </Card>
+    );
+
+    const renderPythonConfig = () => (
+        <Card title="Python Function 配置" size="small" style={{ marginBottom: 16 }}>
+            <Alert
+                message="自定义 Python 函数"
+                description="在下方代码编辑器中编写 Python 代码，主函数名必须为 main()。配置输入参数 Schema 后点击保存创建 MCP 工具。"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+            />
+            
+            <Tabs
+                defaultActiveKey="code"
+                items={[
+                    {
+                        key: 'code',
+                        label: 'Python 代码',
+                        children: (
+                            <>
+                                <div style={{ marginBottom: 8 }}>
+                                    <span style={{ color: '#666', fontSize: 12 }}>original.py</span>
+                                </div>
+                                <TextArea
+                                    value={pythonCode}
+                                    onChange={(e) => setPythonCode(e.target.value)}
+                                    rows={15}
+                                    style={{ 
+                                        fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+                                        fontSize: 13,
+                                        lineHeight: 1.5,
+                                        backgroundColor: '#1e1e1e',
+                                        color: '#d4d4d4',
+                                        border: '1px solid #333',
+                                    }}
+                                    placeholder="编写 Python 代码..."
+                                />
+                            </>
+                        ),
+                    },
+                    {
+                        key: 'params',
+                        label: '输入参数配置',
+                        children: (
+                            <>
+                                <Divider orientation="left" style={{ margin: '8px 0 16px 0' }}>
+                                    输入参数 Schema
+                                </Divider>
+                                
+                                {inputParams.map((param, index) => (
+                                    <Row gutter={8} key={index} style={{ marginBottom: 8 }}>
+                                        <Col span={5}>
+                                            <Input
+                                                placeholder="参数名"
+                                                value={param.name}
+                                                onChange={(e) => updateInputParam(index, 'name', e.target.value)}
+                                            />
+                                        </Col>
+                                        <Col span={4}>
+                                            <Select
+                                                value={param.type}
+                                                onChange={(v) => updateInputParam(index, 'type', v)}
+                                            >
+                                                <Option value="string">string</Option>
+                                                <Option value="integer">integer</Option>
+                                                <Option value="number">number</Option>
+                                                <Option value="boolean">boolean</Option>
+                                                <Option value="array">array</Option>
+                                                <Option value="object">object</Option>
+                                            </Select>
+                                        </Col>
+                                        <Col span={6}>
+                                            <Input
+                                                placeholder="描述"
+                                                value={param.description}
+                                                onChange={(e) => updateInputParam(index, 'description', e.target.value)}
+                                            />
+                                        </Col>
+                                        <Col span={3}>
+                                            <Tag
+                                                color={param.required ? 'blue' : 'default'}
+                                                style={{ cursor: 'pointer' }}
+                                                onClick={() => updateInputParam(index, 'required', !param.required)}
+                                            >
+                                                {param.required ? '必填' : '可选'}
+                                            </Tag>
+                                        </Col>
+                                        <Col span={4}>
+                                            <Input
+                                                placeholder="默认值"
+                                                value={param.default}
+                                                onChange={(e) => updateInputParam(index, 'default', e.target.value)}
+                                            />
+                                        </Col>
+                                        <Col span={2}>
+                                            <Button
+                                                type="text"
+                                                danger
+                                                icon={<DeleteOutlined />}
+                                                onClick={() => removeInputParam(index)}
+                                            />
+                                        </Col>
+                                    </Row>
+                                ))}
+                                <Button type="dashed" onClick={addInputParam} icon={<PlusOutlined />} block>
+                                    添加输入参数
+                                </Button>
+                            </>
+                        ),
+                    },
+                ]}
+            />
+        </Card>
+    );
+
+    const renderStdioConfig = () => (
+        <Card title="Stdio 配置（上传 ZIP 包或文件夹）" size="small" style={{ marginBottom: 16 }}>
+            <Alert
+                message="上传 MCP Server"
+                description="上传 ZIP 包或文件夹，ZIP 包应包含 main.py 或 __main__.py 作为入口文件。"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+            />
+            
+            <Radio.Group value={stdioUploadType} onChange={(e) => { setStdioUploadType(e.target.value); setFileList([]); }} style={{ marginBottom: 16 }}>
+                <Radio.Button value="zip">
+                    <FileZipOutlined /> ZIP 包
+                </Radio.Button>
+                <Radio.Button value="folder">
+                    <FolderOpenOutlined /> 文件夹
+                </Radio.Button>
+            </Radio.Group>
+            
+            {stdioUploadType === 'zip' ? (
+                <Upload
+                    accept=".zip"
+                    fileList={fileList}
+                    beforeUpload={(file) => {
+                        setFileList([file]);
+                        return false;
+                    }}
+                    onRemove={() => setFileList([])}
+                    maxCount={1}
+                >
+                    <Button icon={<UploadOutlined />}>选择 ZIP 包</Button>
+                </Upload>
+            ) : (
+                <div>
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            setFileList(files.map(f => ({
+                                uid: f.name,
+                                name: f.name,
+                                status: 'done',
+                                originFileObj: f,
+                            })));
+                        }}
+                    />
+                    <Button icon={<FolderOpenOutlined />} onClick={() => fileInputRef.current?.click()}>
+                        选择文件夹
+                    </Button>
+                    {fileList.length > 0 && (
+                        <div style={{ marginTop: 8 }}>
+                            <span>已选择 {fileList.length} 个文件</span>
+                        </div>
+                    )}
+                </div>
+            )}
+        </Card>
+    );
+
+    const renderHttpConfig = () => (
+        <Card title="HTTP 连接配置" size="small" style={{ marginBottom: 16 }}>
+            <Form.Item
+                label="服务器 URL"
+                name="url"
+                rules={[{ required: true, message: '请输入服务器 URL' }]}
+            >
+                <Input placeholder="例如: http://localhost:3000/mcp" />
+            </Form.Item>
+
+            <Form.Item
+                label="请求头"
+                name="headers"
+                extra="每行一个，格式: key=value"
+            >
+                <TextArea
+                    rows={3}
+                    placeholder="Authorization=Bearer xxx&#10;X-Custom-Header=value"
+                />
+            </Form.Item>
+
+            <Form.Item label="会话ID" name="session_id">
+                <Input placeholder="可选，用于持久会话" />
+            </Form.Item>
+        </Card>
+    );
+
+    const renderSseConfig = () => (
+        <Card title="SSE 连接配置" size="small" style={{ marginBottom: 16 }}>
+            <Form.Item
+                label="服务器 URL"
+                name="url"
+                rules={[{ required: true, message: '请输入服务器 URL' }]}
+            >
+                <Input placeholder="例如: http://localhost:3000" />
+            </Form.Item>
+
+            <Form.Item
+                label="请求头"
+                name="headers"
+                extra="每行一个，格式: key=value"
+            >
+                <TextArea
+                    rows={3}
+                    placeholder="Authorization=Bearer xxx&#10;X-Custom-Header=value"
+                />
+            </Form.Item>
+
+            <Row gutter={16}>
+                <Col span={12}>
+                    <Form.Item label="SSE 端点" name="sse_endpoint">
+                        <Input placeholder="/sse" />
+                    </Form.Item>
+                </Col>
+                <Col span={12}>
+                    <Form.Item label="自动重连" name="reconnect" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+            </Row>
+
+            <Row gutter={16}>
+                <Col span={12}>
+                    <Form.Item label="重试间隔(秒)" name="retry_interval">
+                        <InputNumber min={1} max={60} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+                <Col span={12}>
+                    <Form.Item label="最大重试次数" name="max_retries">
+                        <InputNumber min={1} max={10} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+            </Row>
+        </Card>
+    );
+
+    const renderOtherConfig = () => (
+        <Card title="其他配置" size="small" style={{ marginBottom: 16 }}>
+            <Row gutter={16}>
+                <Col span={8}>
+                    <Form.Item
+                        label="超时时间（秒）"
+                        name="timeout"
+                        rules={[{ required: true, message: '请输入超时时间' }]}
+                    >
+                        <InputNumber min={1} max={300} style={{ width: '100%' }} />
+                    </Form.Item>
+                </Col>
+                <Col span={8}>
+                    <Form.Item label="启用" name="enabled" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+                <Col span={8}>
+                    <Form.Item label="共享" name="share" valuePropName="checked">
+                        <Switch />
+                    </Form.Item>
+                </Col>
+            </Row>
+        </Card>
+    );
+
     return (
         <Modal
-            title={server ? '编辑 MCP 工具' : '新建 MCP'}
+            title={server ? '编辑 MCP' : '新建 MCP'}
             open={visible}
             onCancel={onClose}
             onOk={handleSave}
@@ -349,271 +594,15 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
             width={900}
         >
             <Form form={form} layout="vertical">
-                <Card title="基本信息" size="small" style={{ marginBottom: 16 }}>
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                label="服务名称"
-                                name="name"
-                                rules={[{ required: true, message: '请输入服务名称' }]}
-                            >
-                                <Input placeholder="例如: my_tool" />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                label="类型"
-                                name="transport"
-                                rules={[{ required: true, message: '请选择类型' }]}
-                            >
-                                <Select onChange={handleTransportChange}>
-                                    <Option value="python">自定义 Python 函数</Option>
-                                    <Option value="stdio">Stdio (本地进程)</Option>
-                                    <Option value="http">HTTP</Option>
-                                    <Option value="sse">SSE (Server-Sent Events)</Option>
-                                </Select>
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                    <Form.Item
-                        label="服务描述"
-                        name="description"
-                    >
-                        <Input placeholder="例如: 查询数据库工具" />
-                    </Form.Item>
-                </Card>
-
-                {transportType === 'python' && (
-                    <Card title="Python 类型配置" size="small" style={{ marginBottom: 16 }}>
-                        <Alert
-                            message="自定义 Python 函数"
-                            description="用户只需要定义 main() 函数，系统会自动包装为 MCP 工具。通过下方配置输入输出参数 Schema。"
-                            type="info"
-                            showIcon
-                            style={{ marginBottom: 16 }}
-                        />
-                        <Row gutter={16}>
-                            <Col span={12}>
-                                <Form.Item
-                                    label="Python 模块"
-                                    name="module"
-                                    rules={[{ required: true, message: '请输入 Python 模块名' }]}
-                                    extra="模块路径，如: my_tool 或 tools.database"
-                                >
-                                    <Input placeholder="my_tool" />
-                                </Form.Item>
-                            </Col>
-                            <Col span={12}>
-                                <Form.Item
-                                    label="函数名"
-                                    name="function"
-                                    extra="默认为 main"
-                                >
-                                    <Input placeholder="main" />
-                                </Form.Item>
-                            </Col>
-                        </Row>
-
-                        <Divider orientation="left" style={{ margin: '16px 0' }}>
-                            输入参数配置
-                        </Divider>
-                        
-                        {inputParams.map((param, index) => (
-                            <Row gutter={8} key={index} style={{ marginBottom: 8 }}>
-                                <Col span={5}>
-                                    <Input
-                                        placeholder="参数名"
-                                        value={param.name}
-                                        onChange={(e) => updateInputParam(index, 'name', e.target.value)}
-                                    />
-                                </Col>
-                                <Col span={4}>
-                                    <Select
-                                        value={param.type}
-                                        onChange={(v) => updateInputParam(index, 'type', v)}
-                                    >
-                                        <Option value="string">string</Option>
-                                        <Option value="integer">integer</Option>
-                                        <Option value="number">number</Option>
-                                        <Option value="boolean">boolean</Option>
-                                        <Option value="array">array</Option>
-                                        <Option value="object">object</Option>
-                                    </Select>
-                                </Col>
-                                <Col span={6}>
-                                    <Input
-                                        placeholder="描述"
-                                        value={param.description}
-                                        onChange={(e) => updateInputParam(index, 'description', e.target.value)}
-                                    />
-                                </Col>
-                                <Col span={3}>
-                                    <Tag
-                                        color={param.required ? 'blue' : 'default'}
-                                        style={{ cursor: 'pointer' }}
-                                        onClick={() => updateInputParam(index, 'required', !param.required)}
-                                    >
-                                        {param.required ? '必填' : '可选'}
-                                    </Tag>
-                                </Col>
-                                <Col span={4}>
-                                    <Input
-                                        placeholder="默认值"
-                                        value={param.default}
-                                        onChange={(e) => updateInputParam(index, 'default', e.target.value)}
-                                    />
-                                </Col>
-                                <Col span={2}>
-                                    <Button
-                                        type="text"
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        onClick={() => removeInputParam(index)}
-                                    />
-                                </Col>
-                            </Row>
-                        ))}
-                        <Button type="dashed" onClick={addInputParam} icon={<PlusOutlined />} block>
-                            添加输入参数
-                        </Button>
-
-                        <Divider orientation="left" style={{ margin: '16px 0' }}>
-                            输出参数配置
-                        </Divider>
-                        
-                        {outputFields.map((field, index) => (
-                            <Row gutter={8} key={index} style={{ marginBottom: 8 }}>
-                                <Col span={6}>
-                                    <Input
-                                        placeholder="字段名"
-                                        value={field.name}
-                                        onChange={(e) => updateOutputField(index, 'name', e.target.value)}
-                                    />
-                                </Col>
-                                <Col span={5}>
-                                    <Select
-                                        value={field.type}
-                                        onChange={(v) => updateOutputField(index, 'type', v)}
-                                    >
-                                        <Option value="string">string</Option>
-                                        <Option value="integer">integer</Option>
-                                        <Option value="number">number</Option>
-                                        <Option value="boolean">boolean</Option>
-                                        <Option value="array">array</Option>
-                                        <Option value="object">object</Option>
-                                    </Select>
-                                </Col>
-                                <Col span={11}>
-                                    <Input
-                                        placeholder="描述"
-                                        value={field.description}
-                                        onChange={(e) => updateOutputField(index, 'description', e.target.value)}
-                                    />
-                                </Col>
-                                <Col span={2}>
-                                    <Button
-                                        type="text"
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        onClick={() => removeOutputField(index)}
-                                    />
-                                </Col>
-                            </Row>
-                        ))}
-                        <Button type="dashed" onClick={addOutputField} icon={<PlusOutlined />} block>
-                            添加输出字段
-                        </Button>
-                    </Card>
-                )}
-
-                {(transportType === 'http' || transportType === 'sse') && (
-                    <Card title={`${transportType.toUpperCase()} 类型配置`} size="small" style={{ marginBottom: 16 }}>
-                        <Form.Item
-                            label="服务器 URL"
-                            name="url"
-                            rules={[{ required: true, message: '请输入服务器 URL' }]}
-                        >
-                            <Input placeholder="例如: http://localhost:3000/sse" />
-                        </Form.Item>
-
-                        <Form.Item
-                            label="请求头"
-                            name="headers"
-                            extra="每行一个，格式: key=value"
-                        >
-                            <TextArea
-                                rows={3}
-                                placeholder="Authorization=Bearer xxx&#10;X-Custom-Header=value"
-                            />
-                        </Form.Item>
-                    </Card>
-                )}
-
-                {transportType === 'stdio' && (
-                    <Card title="Stdio 类型配置" size="small" style={{ marginBottom: 16 }}>
-                        <Form.Item
-                            label="命令"
-                            name="command"
-                            rules={[{ required: true, message: '请输入命令' }]}
-                        >
-                            <Input placeholder="例如: npx" />
-                        </Form.Item>
-
-                        <Form.Item
-                            label="参数"
-                            name="args"
-                            extra="每行一个参数"
-                        >
-                            <TextArea
-                                rows={3}
-                                placeholder="-y&#10;@modelcontextprotocol/server-github"
-                            />
-                        </Form.Item>
-
-                        <Form.Item
-                            label="环境变量"
-                            name="env"
-                            extra="每行一个，格式: key=value"
-                        >
-                            <TextArea
-                                rows={3}
-                                placeholder="GITHUB_TOKEN=xxx&#10;DEBUG=true"
-                            />
-                        </Form.Item>
-                    </Card>
-                )}
-
-                <Card title="其他配置" size="small" style={{ marginBottom: 16 }}>
-                    <Row gutter={16}>
-                        <Col span={12}>
-                            <Form.Item
-                                label="超时时间（秒）"
-                                name="timeout"
-                                rules={[{ required: true, message: '请输入超时时间' }]}
-                            >
-                                <InputNumber min={1} max={300} style={{ width: '100%' }} />
-                            </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                            <Form.Item
-                                label="启用"
-                                name="enabled"
-                                valuePropName="checked"
-                            >
-                                <Switch />
-                            </Form.Item>
-                        </Col>
-                    </Row>
-                </Card>
-
-                <Space>
-                    <Button onClick={handleTest} loading={testing}>
-                        测试连接
-                    </Button>
-                    <span style={{ color: '#999', fontSize: 12 }}>
-                        测试连接将尝试验证工具配置是否正确
-                    </span>
-                </Space>
+                {renderCreateTypeSelector()}
+                {renderBasicInfo()}
+                
+                {createType === 'python' && renderPythonConfig()}
+                {createType === 'stdio' && renderStdioConfig()}
+                {createType === 'http' && renderHttpConfig()}
+                {createType === 'sse' && renderSseConfig()}
+                
+                {renderOtherConfig()}
             </Form>
         </Modal>
     );
