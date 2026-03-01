@@ -33,6 +33,7 @@ class MCPServerModel(Base):
     user_id = Column(String(36), nullable=False, index=True)
     mcp_name = Column(String(255), nullable=False)
     transport_type = Column(String(50), nullable=False)
+    source_type = Column(String(50), nullable=True)  # 源类型: python_function, stdio, http, sse
     description = Column(Text, nullable=True)
     enabled = Column(Boolean, default=True)
     share = Column(Boolean, default=False)
@@ -128,12 +129,14 @@ class MCPDatabaseManager:
         share: bool = False,
         author: str = None,
         tags: List[str] = None,
+        source_type: str = None,
     ) -> MCPServerModel:
         """创建MCP服务器配置。"""
         server = MCPServerModel(
             user_id=user_id,
             mcp_name=mcp_name,
             transport_type=transport_type,
+            source_type=source_type or transport_type,  # 默认source_type与transport_type相同
             description=description,
             enabled=enabled,
             share=share,

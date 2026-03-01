@@ -452,28 +452,47 @@ const Canvas: React.FC = () => {
     setIsDragging(false);
     setDraggingNodeInfo(null);
     pushHistory();
+    // 拖拽结束后触发自动保存
+    setTimeout(() => {
+      useCanvasStore.getState().autoSave();
+    }, 0);
   }, [setIsDragging, pushHistory]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // 如果在输入框中，不处理快捷键
+      const activeElement = document.activeElement;
+      if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+      
       if (event.key === 'Delete' || event.key === 'Backspace') {
         if (selectedNodeIds.length > 0) {
-          const activeElement = document.activeElement;
-          if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {
-            return;
-          }
+          event.preventDefault();
           handleDeleteSelected();
         }
       }
       
       if (event.ctrlKey || event.metaKey) {
-        if (event.key === 'a') {
+        if (event.key === 'a' || event.key === 'A') {
           event.preventDefault();
           setSelectedNodeIds(nodes.map(n => n.id));
         }
-        if (event.key === 'd' && selectedNodeIds.length > 0) {
+        if (event.key === 'd' || event.key === 'D') {
+          if (selectedNodeIds.length > 0) {
+            event.preventDefault();
+            handleDuplicateSelected();
+          }
+        }
+        // Ctrl+Z 撤销
+        if (event.key === 'z' || event.key === 'Z') {
           event.preventDefault();
-          handleDuplicateSelected();
+          useCanvasStore.getState().undo();
+        }
+        // Ctrl+Y 重做
+        if (event.key === 'y' || event.key === 'Y') {
+          event.preventDefault();
+          useCanvasStore.getState().redo();
         }
       }
     };
@@ -519,10 +538,12 @@ const Canvas: React.FC = () => {
               snapGrid={[20, 20]}
               fitView
               selectionMode={SelectionMode.Partial}
-              selectionOnDrag
-              panOnDrag={[1, 2]}
+              selectionOnDrag={false}
+              panOnDrag={true}
               selectNodesOnDrag={false}
               multiSelectionKeyCode="Shift"
+              panOnScroll
+              panOnScrollMode="free"
             >
               <Controls />
               <MiniMap />
@@ -540,15 +561,15 @@ const Canvas: React.FC = () => {
               <Panel position="top-left">
                 {selectedNodeIds.length > 0 && (
                   <div style={{
-                    background: 'white',
+                    background: 'var(--bg-100)',
                     padding: '8px 12px',
-                    borderRadius: 8,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                    borderRadius: 'var(--radius-base)',
+                    boxShadow: 'var(--shadow-base)',
                     display: 'flex',
                     gap: 8,
                     alignItems: 'center',
                   }}>
-                    <span style={{ fontSize: 12, color: '#666' }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-200)' }}>
                       已选择 {selectedNodeIds.length} 个节点
                     </span>
                     <Tooltip title="复制">

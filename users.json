@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "id": "86c58462-da44-45a4-8904-5687f45cf49e",
+      "username": "testadmin",
+      "email": "testadmin@example.com",
+      "hashed_password": "$argon2id$v=19$m=65536,t=3,p=4$2b4NjI38XF7DtQLbWG/hiw$9YDfhLMD3/U71N3WY9p7Qb6fKZdHIyO8GSGV//HDWs8",
+      "is_active": true,
+      "is_superuser": false,
+      "created_at": "2026-03-02T00:08:03.398685",
+      "updated_at": "2026-03-02T00:08:03.398685"
+    }
+  ]
+}

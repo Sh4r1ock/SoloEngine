@@ -421,6 +421,48 @@ pre {
   font-weight: var(--font-weight-semibold);
 }
 
+.ant-tabs-content-holder {
+  flex: 1;
+}
+
+.ant-tabs-content {
+  height: 100%;
+}
+
+.ant-tabs-tabpane {
+  height: 100%;
+}
+
+.ant-table-wrapper .ant-spin-nested-loading,
+.ant-table-wrapper .ant-spin-container,
+.ant-table-wrapper .ant-table,
+.ant-table-wrapper .ant-table-container,
+.ant-table-wrapper .ant-table-content,
+.ant-table-wrapper .ant-table-body {
+  height: 100% !important;
+}
+
+.ant-table-wrapper table {
+  height: 100% !important;
+}
+
+.ant-table-wrapper .ant-table-tbody {
+  height: calc(100% - 55px) !important;
+}
+
+.ant-table-wrapper .ant-table-placeholder {
+  height: 100% !important;
+}
+
+.ant-table-wrapper .ant-table-placeholder > td {
+  vertical-align: middle !important;
+  padding: 0 !important;
+}
+
+.ant-empty-normal {
+  margin: 0 auto !important;
+}
+
 .ant-menu-item {
   transition: all var(--duration-fast) var(--ease-in-out);
 }

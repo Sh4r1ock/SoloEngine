@@ -19,12 +19,12 @@ mcp = FastMCP("test_python_mcp")
 
 
 @mcp.tool()
-def main_tool(query: str, limit: int = None) -> str:
-    """测试工具"""
+def main_tool() -> str:
+    """Python测试MCP"""
     import json
     from original import main
     
-    result = main(query=query, limit=limit)
+    result = main()
     
     if isinstance(result, dict):
         return json.dumps(result, ensure_ascii=False)

@@ -32,16 +32,17 @@ const LLMPage: React.FC = () => {
           使用统计
         </span>
       ),
-      children: (
-        <Card>
-          <LLMConfig />
-        </Card>
-      ),
+      children: <LLMConfig />,
     },
   ];
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div style={{ 
+      padding: '24px', 
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+    }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -61,7 +62,13 @@ const LLMPage: React.FC = () => {
 
       <Divider style={{ margin: '0 0 24px 0' }} />
 
-      <Tabs defaultActiveKey="models" items={items} />
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <Tabs 
+          defaultActiveKey="models" 
+          items={items}
+          style={{ height: '100%' }}
+        />
+      </div>
     </div>
   );
 };

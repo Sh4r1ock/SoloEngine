@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db, db_manager, AgenticFlowModel, AgenticFlowRunModel, OptimisticLockError
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
+from app.core.agenticflow_storage import agenticflow_storage
 
 logger = logging.getLogger(__name__)
 
@@ -60,24 +61,28 @@ async def list_flows(
     user_id = current_user.id
     flows = db_manager.get_agentic_flows(db, user_id)
     
+    data = []
+    for flow in flows:
+        canvas_data = agenticflow_storage.load_canvas(flow.id)
+        if canvas_data is None:
+            canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+        data.append({
+            "id": flow.id,
+            "user_id": flow.user_id,
+            "name": flow.name,
+            "description": flow.description,
+            "canvas_data": canvas_data,
+            "is_template": flow.is_template,
+            "is_active": flow.is_active,
+            "version": flow.version,
+            "created_at": flow.created_at.isoformat() if flow.created_at else None,
+            "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
+        })
+    
     return {
         "code": 200,
         "message": "AgenticFlows retrieved",
-        "data": [
-            {
-                "id": flow.id,
-                "user_id": flow.user_id,
-                "name": flow.name,
-                "description": flow.description,
-                "canvas_data": flow.canvas_data,
-                "is_template": flow.is_template,
-                "is_active": flow.is_active,
-                "version": flow.version,
-                "created_at": flow.created_at.isoformat() if flow.created_at else None,
-                "updated_at": flow.updated_at.isoformat() if flow.updated_at else None,
-            }
-            for flow in flows
-        ],
+        "data": data,
     }
 
 
@@ -95,8 +100,11 @@ async def create_flow(
         user_id=user_id,
         name=request.name,
         description=request.description,
-        canvas_data=request.canvas_data,
+        canvas_data=None,
     )
+    
+    if request.canvas_data:
+        agenticflow_storage.save_canvas(flow.id, request.canvas_data)
     
     return {
         "code": 200,
@@ -106,7 +114,7 @@ async def create_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
-            "canvas_data": flow.canvas_data,
+            "canvas_data": request.canvas_data or {"nodes": [], "edges": []},
             "is_template": flow.is_template,
             "is_active": flow.is_active,
             "created_at": flow.created_at.isoformat() if flow.created_at else None,
@@ -128,6 +136,10 @@ async def get_flow(
     if not flow:
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
     
+    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    if canvas_data is None:
+        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+    
     return {
         "code": 200,
         "message": "AgenticFlow retrieved",
@@ -136,7 +148,7 @@ async def get_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
-            "canvas_data": flow.canvas_data,
+            "canvas_data": canvas_data,
             "is_template": flow.is_template,
             "is_active": flow.is_active,
             "version": flow.version,
@@ -161,8 +173,6 @@ async def update_flow(
         update_data["name"] = request.name
     if request.description is not None:
         update_data["description"] = request.description
-    if request.canvas_data is not None:
-        update_data["canvas_data"] = request.canvas_data
     
     try:
         flow = db_manager.update_agentic_flow(
@@ -174,6 +184,13 @@ async def update_flow(
     if not flow:
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
     
+    if request.canvas_data is not None:
+        agenticflow_storage.save_canvas(flow_id, request.canvas_data)
+    
+    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    if canvas_data is None:
+        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+    
     return {
         "code": 200,
         "message": "AgenticFlow updated",
@@ -182,7 +199,7 @@ async def update_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
-            "canvas_data": flow.canvas_data,
+            "canvas_data": canvas_data,
             "is_template": flow.is_template,
             "is_active": flow.is_active,
             "version": flow.version,
@@ -205,6 +222,8 @@ async def delete_flow(
     if not success:
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
     
+    agenticflow_storage.delete_canvas(flow_id)
+    
     return {
         "code": 200,
         "message": "AgenticFlow deleted",
@@ -225,10 +244,14 @@ async def get_canvas(
     if not flow:
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
     
+    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    if canvas_data is None:
+        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+    
     return {
         "code": 200,
         "message": "Canvas data retrieved",
-        "data": flow.canvas_data or {"nodes": [], "edges": []},
+        "data": canvas_data,
     }
 
 
@@ -242,12 +265,14 @@ async def save_canvas(
     """保存AgenticFlow的画布数据。"""
     user_id = current_user.id
     
-    flow = db_manager.update_agentic_flow(
-        db, flow_id, user_id, canvas_data=request.canvas_data
-    )
+    flow = db_manager.get_agentic_flow(db, flow_id, user_id)
     
     if not flow:
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+    
+    if request.canvas_data is not None:
+        agenticflow_storage.save_canvas(flow_id, request.canvas_data)
+        db_manager.update_agentic_flow(db, flow_id, user_id)
     
     return {
         "code": 200,

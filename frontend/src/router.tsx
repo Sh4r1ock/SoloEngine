@@ -6,6 +6,7 @@ import ProtectedRoute from './components/Auth/ProtectedRoute';
 const EditorPage = lazy(() => import('./pages/Editor/EditorPage'));
 const MainMenu = lazy(() => import('./pages/MainMenu/MainMenu'));
 const DebugPage = lazy(() => import('./pages/Debug/DebugPage'));
+const RunPage = lazy(() => import('./pages/Run/RunPage'));
 const MarketplacePage = lazy(() => import('./pages/Marketplace/MarketplacePage'));
 const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
@@ -94,6 +95,26 @@ const router = createBrowserRouter([
       <ProtectedRoute>
         <Suspense fallback={<LoadingFallback />}>
           <DebugPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/run/:projectId',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LoadingFallback />}>
+          <RunPage />
+        </Suspense>
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/run',
+    element: (
+      <ProtectedRoute>
+        <Suspense fallback={<LoadingFallback />}>
+          <RunPage />
         </Suspense>
       </ProtectedRoute>
     ),

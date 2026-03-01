@@ -1,0 +1,32 @@
+{
+  "flow_id": "3706ede3-2171-4e08-9f8a-d55628991e8e",
+  "canvas_data": {
+    "nodes": [
+      {
+        "id": "node_1772380596347",
+        "type": "agent",
+        "position": {
+          "x": 1080,
+          "y": 200
+        },
+        "data": {
+          "name": "新规划者",
+          "desc": "",
+          "agentType": "planner",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "openai",
+            "model": "gpt-4"
+          },
+          "skills": []
+        },
+        "width": 222,
+        "height": 124
+      }
+    ],
+    "edges": []
+  },
+  "updated_at": "2026-03-01T15:56:37.377434"
+}

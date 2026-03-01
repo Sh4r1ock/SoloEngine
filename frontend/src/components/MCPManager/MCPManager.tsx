@@ -131,7 +131,8 @@ const MCPManager: React.FC = () => {
   };
 
   const getTransportType = (server: ServerData) => {
-    return server.transport || server.transport_type || 'stdio';
+    // 优先使用source字段（表示原始类型：python_function, stdio, http, sse）
+    return server.source || server.transport || server.transport_type || 'stdio';
   };
 
   return (
