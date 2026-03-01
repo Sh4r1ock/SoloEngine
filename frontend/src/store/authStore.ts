@@ -38,8 +38,8 @@ interface AuthState {
   loading: boolean;
   error: string | null;
 
-  login: (username: string, password: string) => Promise<boolean>;
-  register: (username: string, email: string, password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (username: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   loadUser: () => Promise<void>;
@@ -53,7 +53,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: false,
   error: null,
 
-  login: async (username: string, password: string) => {
+  login: async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     set({ loading: true, error: null });
     try {
       const response = await authApi.login(username, password);
@@ -66,33 +66,59 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ token, isAuthenticated: true, loading: false });
         
         await get().loadUser();
-        return true;
+        return { success: true };
       } else {
-        set({ error: response.message || '登录失败', loading: false });
-        return false;
+        const errorMsg = response.message || '登录失败';
+        set({ error: errorMsg, loading: false });
+        return { success: false, error: errorMsg };
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+    } catch (error: any) {
+      let errorMessage = '登录失败';
+      const detail = error?.response?.data?.detail;
+      
+      if (detail) {
+        if (detail.includes('per')) {
+          errorMessage = '登录请求过于频繁，请稍后再试';
+        } else {
+          errorMessage = detail;
+        }
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       set({ error: errorMessage, loading: false });
-      return false;
+      return { success: false, error: errorMessage };
     }
   },
 
-  register: async (username: string, email: string, password: string) => {
+  register: async (username: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     set({ loading: true, error: null });
     try {
       const response = await authApi.register(username, email, password);
       if (response.code === 200) {
         set({ loading: false });
-        return true;
+        return { success: true };
       } else {
-        set({ error: response.message || '注册失败', loading: false });
-        return false;
+        const errorMsg = response.message || '注册失败';
+        set({ error: errorMsg, loading: false });
+        return { success: false, error: errorMsg };
       }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
+    } catch (error: any) {
+      let errorMessage = '注册失败';
+      const detail = error?.response?.data?.detail;
+      
+      if (detail) {
+        if (detail.includes('per')) {
+          errorMessage = '注册请求过于频繁，请稍后再试';
+        } else {
+          errorMessage = detail;
+        }
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      
       set({ error: errorMessage, loading: false });
-      return false;
+      return { success: false, error: errorMessage };
     }
   },
 

@@ -32,10 +32,12 @@ const RegisterPage: React.FC = () => {
 
     setLoading(true);
     try {
-      const success = await register(values.username, values.email, values.password);
-      if (success) {
+      const result = await register(values.username, values.email, values.password);
+      if (result.success) {
         message.success('注册成功，请登录');
         navigate('/login', { replace: true });
+      } else {
+        message.error(result.error || '注册失败');
       }
     } finally {
       setLoading(false);

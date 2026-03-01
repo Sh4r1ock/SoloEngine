@@ -190,6 +190,92 @@ class LLMUsageTracker:
             "time_range_hours": time_range_hours,
         }
 
+    def get_daily_statistics(
+        self,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        provider: str | None = None,
+        model_name: str | None = None,
+    ) -> dict:
+        """Get usage statistics grouped by day.
+
+        Args:
+            start_date (str | None): Start date in YYYY-MM-DD format.
+            end_date (str | None): End date in YYYY-MM-DD format.
+            provider (str | None): Filter by provider.
+            model_name (str | None): Filter by model name.
+
+        Returns:
+            dict: Daily statistics with total summary.
+        """
+        today = datetime.now().date()
+        
+        if start_date:
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        else:
+            start_dt = datetime.combine(today - timedelta(days=6), datetime.min.time())
+        
+        if end_date:
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+        else:
+            end_dt = datetime.now()
+
+        filtered_records = [
+            r for r in self.records
+            if start_dt <= datetime.fromisoformat(r.timestamp) <= end_dt
+        ]
+
+        if provider:
+            filtered_records = [r for r in filtered_records if r.provider == provider]
+
+        if model_name:
+            filtered_records = [r for r in filtered_records if r.model_name == model_name]
+
+        daily_data = defaultdict(lambda: {"requests": 0, "tokens": 0, "time": 0.0})
+        
+        for record in filtered_records:
+            day = datetime.fromisoformat(record.timestamp).strftime("%Y-%m-%d")
+            daily_data[day]["requests"] += 1
+            daily_data[day]["tokens"] += record.total_tokens
+            daily_data[day]["time"] += record.time_seconds
+
+        current_date = start_dt.date()
+        end_date_obj = end_dt.date() if isinstance(end_dt, datetime) else end_dt
+        while current_date <= end_date_obj:
+            day_str = current_date.strftime("%Y-%m-%d")
+            if day_str not in daily_data:
+                daily_data[day_str] = {"requests": 0, "tokens": 0, "time": 0.0}
+            current_date += timedelta(days=1)
+
+        sorted_days = sorted(daily_data.keys())
+        daily_stats = []
+        for day in sorted_days:
+            data = daily_data[day]
+            daily_stats.append({
+                "date": day,
+                "requests": data["requests"],
+                "tokens": data["tokens"],
+                "avg_time": data["time"] / data["requests"] if data["requests"] > 0 else 0,
+            })
+
+        total_requests = sum(d["requests"] for d in daily_stats)
+        total_tokens = sum(d["tokens"] for d in daily_stats)
+        total_time = sum(daily_data[d]["time"] for d in sorted_days)
+
+        return {
+            "daily": daily_stats,
+            "summary": {
+                "total_requests": total_requests,
+                "total_tokens": total_tokens,
+                "avg_tokens_per_request": total_tokens / total_requests if total_requests > 0 else 0,
+                "avg_time_per_request": total_time / total_requests if total_requests > 0 else 0,
+            },
+            "date_range": {
+                "start": sorted_days[0] if sorted_days else None,
+                "end": sorted_days[-1] if sorted_days else None,
+            },
+        }
+
     def get_provider_statistics(self) -> Dict[str, dict]:
         """Get statistics grouped by provider.
 

@@ -27,10 +27,12 @@ const LoginPage: React.FC = () => {
   const handleSubmit = async (values: { username: string; password: string }) => {
     setLoading(true);
     try {
-      const success = await login(values.username, values.password);
-      if (success) {
+      const result = await login(values.username, values.password);
+      if (result.success) {
         message.success('登录成功');
         navigate('/mainmenu', { replace: true });
+      } else {
+        message.error(result.error || '登录失败');
       }
     } finally {
       setLoading(false);

@@ -81,16 +81,27 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     share: server.share || false,
                 });
                 
-                const transport = server.transport || server.transport_type || 'stdio';
-                setCreateType(transport as CreateType);
+                // 使用source_type来确定创建类型，如果没有则使用transport
+                const sourceType = server.source || server.transport || server.transport_type || 'stdio';
                 
-                if (transport === 'http' || transport === 'sse') {
+                // 如果是python_function类型，显示为python编辑模式
+                if (sourceType === 'python_function') {
+                    setCreateType('python');
+                    // 加载原始Python代码
+                    loadPythonCode(server.id);
+                    // 加载工具定义
+                    loadToolsConfig(server.id);
+                } else {
+                    setCreateType(sourceType as CreateType);
+                }
+                
+                if (sourceType === 'http' || sourceType === 'sse') {
                     form.setFieldsValue({
                         url: server.url,
                         headers: server.headers ? Object.entries(server.headers).map(([k, v]) => `${k}=${v}`).join('\n') : '',
                     });
                     
-                    if (transport === 'sse') {
+                    if (sourceType === 'sse') {
                         form.setFieldsValue({
                             reconnect: true,
                             sse_endpoint: '/sse',
@@ -98,7 +109,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                             max_retries: 3,
                         });
                     }
-                } else if (transport === 'stdio') {
+                } else if (sourceType === 'stdio') {
                     form.setFieldsValue({
                         command: server.command,
                         args: server.args ? server.args.join('\n') : '',
@@ -123,6 +134,43 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
             }
         }
     }, [visible, server, form]);
+
+    const loadPythonCode = async (serverId: string) => {
+        try {
+            const response = await mcpApi.getMCPOriginalCode(serverId);
+            if (response && response.code) {
+                setPythonCode(response.code);
+            }
+        } catch (error) {
+            console.error('加载Python代码失败:', error);
+        }
+    };
+
+    const loadToolsConfig = async (serverId: string) => {
+        try {
+            const response = await mcpApi.getMCPToolsJson(serverId);
+            if (response && response.tools && response.tools.length > 0) {
+                // 将tools.json转换为inputParams格式
+                const tools = response.tools;
+                const params: ParameterConfig[] = [];
+                tools.forEach((tool: any) => {
+                    if (tool.parameters && tool.parameters.properties) {
+                        Object.entries(tool.parameters.properties).forEach(([key, value]: [string, any]) => {
+                            params.push({
+                                name: key,
+                                type: value.type || 'string',
+                                description: value.description || '',
+                                required: tool.parameters.required?.includes(key) || false,
+                            });
+                        });
+                    }
+                });
+                setInputParams(params);
+            }
+        } catch (error) {
+            console.error('加载工具配置失败:', error);
+        }
+    };
 
     const handleCreateTypeChange = (e: any) => {
         setCreateType(e.target.value);
@@ -161,18 +209,35 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     })),
                 }];
                 
-                const response = await mcpApi.createPythonMCP(
-                    values.name,
-                    values.description || '',
-                    pythonCode,
-                    tools
-                );
+                // 判断是更新还是创建：如果server存在且source_type是python_function，则是更新
+                const isUpdate = server && (server.source === 'python_function' || server.source_type === 'python_function');
                 
-                if (response.code === 200) {
-                    message.success('Python MCP 创建成功！');
-                    onSave();
+                if (isUpdate) {
+                    // 更新现有的Python MCP
+                    const updateResponse = await mcpApi.updateMCPOriginalCode(server.id, pythonCode);
+                    const toolsResponse = await mcpApi.updateMCPTools(server.id, tools);
+                    
+                    if (updateResponse.code === 200 && toolsResponse.code === 200) {
+                        message.success('Python MCP 更新成功！');
+                        onSave();
+                    } else {
+                        message.error('更新失败：' + (updateResponse.message || toolsResponse.message));
+                    }
                 } else {
-                    message.error('创建失败：' + response.message);
+                    // 创建新的Python MCP
+                    const response = await mcpApi.createPythonMCP(
+                        values.name,
+                        values.description || '',
+                        pythonCode,
+                        tools
+                    );
+                    
+                    if (response.code === 200) {
+                        message.success('Python MCP 创建成功！');
+                        onSave();
+                    } else {
+                        message.error('创建失败：' + response.message);
+                    }
                 }
             } else if (createType === 'stdio') {
                 if (fileList.length === 0) {

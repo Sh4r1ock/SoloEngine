@@ -454,6 +454,33 @@ async def get_usage(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/usage/daily")
+async def get_daily_usage(
+    start_date: str = Query(default=None, description="开始日期 YYYY-MM-DD"),
+    end_date: str = Query(default=None, description="结束日期 YYYY-MM-DD"),
+    provider: str = Query(default=None),
+    model_name: str = Query(default=None),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """获取按天统计的LLM使用数据。"""
+    try:
+        stats = _tracker.get_daily_statistics(
+            start_date=start_date,
+            end_date=end_date,
+            provider=provider,
+            model_name=model_name,
+        )
+
+        return {
+            "code": 200,
+            "message": "success",
+            "data": stats,
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/usage/recent")
 async def get_recent_usage(
     limit: int = Query(default=100, ge=1, le=500),

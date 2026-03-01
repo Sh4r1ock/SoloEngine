@@ -2,30 +2,42 @@
 """JWT 认证服务。"""
 
 import os
-import json
-import uuid
 import logging
 from typing import Dict, Optional, Any
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
-from pathlib import Path
 
 try:
     import jwt
     from jwt.exceptions import InvalidTokenError
-    from pwdlib import PasswordHash
     HAS_AUTH_DEPS = True
 except ImportError:
     HAS_AUTH_DEPS = False
     InvalidTokenError = Exception
 
 from app.models.auth import User, Token
+from app.core.database import db_manager, get_db, UserModel, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
 
+def _user_model_to_dataclass(user_model: UserModel) -> User:
+    """将数据库模型转换为 dataclass。"""
+    return User(
+        id=user_model.id,
+        username=user_model.username,
+        email=user_model.email,
+        hashed_password=user_model.hashed_password,
+        is_active=user_model.is_active,
+        is_superuser=user_model.is_superuser,
+        created_at=user_model.created_at.isoformat() if user_model.created_at else "",
+        updated_at=user_model.updated_at.isoformat() if user_model.updated_at else "",
+        last_login=user_model.last_login.isoformat() if user_model.last_login else None,
+    )
+
+
 class AuthService:
-    """认证服务。"""
+    """认证服务 - 使用数据库存储用户。"""
 
     def __init__(
         self,
@@ -33,7 +45,6 @@ class AuthService:
         algorithm: str = "HS256",
         access_token_expire_minutes: int = 30,
         refresh_token_expire_days: int = 7,
-        users_file: Optional[str] = None,
     ):
         if not HAS_AUTH_DEPS:
             logger.warning("Auth dependencies not installed. Install with: pip install pyjwt[crypto] pwdlib[argon2]")
@@ -50,78 +61,6 @@ class AuthService:
         self.algorithm = algorithm
         self.access_token_expire_minutes = access_token_expire_minutes
         self.refresh_token_expire_days = refresh_token_expire_days
-        
-        self.users_file = Path(users_file) if users_file else Path("users.json")
-        self._users: Dict[str, User] = {}
-        self._load_users()
-
-        if HAS_AUTH_DEPS:
-            self.password_hash = PasswordHash.recommended()
-        else:
-            self.password_hash = None
-
-    def _load_users(self):
-        """加载用户数据。"""
-        if self.users_file.exists():
-            try:
-                with open(self.users_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for user_data in data.get("users", []):
-                        user = User(
-                            id=user_data["id"],
-                            username=user_data["username"],
-                            email=user_data["email"],
-                            hashed_password=user_data["hashed_password"],
-                            is_active=user_data.get("is_active", True),
-                            is_superuser=user_data.get("is_superuser", False),
-                            created_at=user_data.get("created_at", datetime.now().isoformat()),
-                            updated_at=user_data.get("updated_at", datetime.now().isoformat()),
-                        )
-                        self._users[user.username] = user
-                        self._users[user.email] = user
-            except Exception as e:
-                logger.error(f"Failed to load users: {e}")
-
-    def _save_users(self):
-        """保存用户数据。"""
-        unique_users = {}
-        for user in self._users.values():
-            if user.id not in unique_users:
-                unique_users[user.id] = user
-
-        data = {
-            "users": [
-                {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "hashed_password": user.hashed_password,
-                    "is_active": user.is_active,
-                    "is_superuser": user.is_superuser,
-                    "created_at": user.created_at,
-                    "updated_at": user.updated_at,
-                }
-                for user in unique_users.values()
-            ]
-        }
-
-        try:
-            with open(self.users_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"Failed to save users: {e}")
-
-    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        """验证密码。"""
-        if self.password_hash:
-            return self.password_hash.verify(plain_password, hashed_password)
-        return plain_password == hashed_password
-
-    def hash_password(self, password: str) -> str:
-        """哈希密码。"""
-        if self.password_hash:
-            return self.password_hash.hash(password)
-        return password
 
     def create_access_token(
         self,
@@ -194,28 +133,27 @@ class AuthService:
         is_superuser: bool = False,
     ) -> User:
         """注册用户。"""
-        if username in self._users:
-            raise ValueError(f"Username '{username}' already exists")
-        if email in self._users:
-            raise ValueError(f"Email '{email}' already exists")
+        db = next(get_db())
+        try:
+            existing_user = db_manager.get_user_by_username(db, username)
+            if existing_user:
+                raise ValueError(f"Username '{username}' already exists")
+            
+            existing_email = db.query(UserModel).filter(UserModel.email == email).first()
+            if existing_email:
+                raise ValueError(f"Email '{email}' already exists")
 
-        user_id = str(uuid.uuid4())
-        hashed_password = self.hash_password(password)
-
-        user = User(
-            id=user_id,
-            username=username,
-            email=email,
-            hashed_password=hashed_password,
-            is_superuser=is_superuser,
-        )
-
-        self._users[username] = user
-        self._users[email] = user
-        self._save_users()
-
-        logger.info(f"Registered user: {username}")
-        return user
+            user_model = db_manager.create_user(
+                db,
+                username=username,
+                email=email,
+                password=password,
+                is_superuser=is_superuser,
+            )
+            logger.info(f"Registered user: {username}")
+            return _user_model_to_dataclass(user_model)
+        finally:
+            db.close()
 
     async def authenticate_user(
         self,
@@ -223,17 +161,14 @@ class AuthService:
         password: str,
     ) -> Optional[User]:
         """验证用户。"""
-        user = self._users.get(username)
-        if not user:
-            return None
-
-        if not self.verify_password(password, user.hashed_password):
-            return None
-
-        if not user.is_active:
-            return None
-
-        return user
+        db = next(get_db())
+        try:
+            user_model = db_manager.authenticate_user(db, username, password)
+            if not user_model:
+                return None
+            return _user_model_to_dataclass(user_model)
+        finally:
+            db.close()
 
     async def login(self, username: str, password: str) -> Optional[Token]:
         """用户登录。"""
@@ -264,12 +199,7 @@ class AuthService:
         if not user_id:
             return None
 
-        user = None
-        for u in self._users.values():
-            if u.id == user_id:
-                user = u
-                break
-
+        user = await self.get_user(user_id)
         if not user or not user.is_active:
             return None
 
@@ -285,14 +215,25 @@ class AuthService:
 
     async def get_user(self, user_id: str) -> Optional[User]:
         """获取用户。"""
-        for user in self._users.values():
-            if user.id == user_id:
-                return user
-        return None
+        db = next(get_db())
+        try:
+            user_model = db_manager.get_user_by_id(db, user_id)
+            if not user_model:
+                return None
+            return _user_model_to_dataclass(user_model)
+        finally:
+            db.close()
 
     async def get_user_by_username(self, username: str) -> Optional[User]:
         """通过用户名获取用户。"""
-        return self._users.get(username)
+        db = next(get_db())
+        try:
+            user_model = db_manager.get_user_by_username(db, username)
+            if not user_model:
+                return None
+            return _user_model_to_dataclass(user_model)
+        finally:
+            db.close()
 
     async def update_user(
         self,
@@ -302,43 +243,57 @@ class AuthService:
         is_active: Optional[bool] = None,
     ) -> Optional[User]:
         """更新用户。"""
-        user = await self.get_user(user_id)
-        if not user:
-            return None
+        db = next(get_db())
+        try:
+            user_model = db_manager.get_user_by_id(db, user_id)
+            if not user_model:
+                return None
 
-        if email:
-            user.email = email
-        if password:
-            user.hashed_password = self.hash_password(password)
-        if is_active is not None:
-            user.is_active = is_active
+            if email:
+                existing_email = db.query(UserModel).filter(
+                    UserModel.email == email,
+                    UserModel.id != user_id
+                ).first()
+                if existing_email:
+                    raise ValueError(f"Email '{email}' already exists")
+                user_model.email = email
+            
+            if password:
+                user_model.hashed_password = hash_password(password)
+            
+            if is_active is not None:
+                user_model.is_active = is_active
 
-        user.updated_at = datetime.now().isoformat()
-        self._save_users()
-
-        return user
+            user_model.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(user_model)
+            
+            return _user_model_to_dataclass(user_model)
+        finally:
+            db.close()
 
     async def delete_user(self, user_id: str) -> bool:
         """删除用户。"""
-        user = await self.get_user(user_id)
-        if not user:
-            return False
+        db = next(get_db())
+        try:
+            user_model = db_manager.get_user_by_id(db, user_id)
+            if not user_model:
+                return False
 
-        if user.username in self._users:
-            del self._users[user.username]
-        if user.email in self._users:
-            del self._users[user.email]
-
-        self._save_users()
-        return True
+            db.delete(user_model)
+            db.commit()
+            return True
+        finally:
+            db.close()
 
     async def list_users(self) -> list:
         """列出用户。"""
-        unique_users = {}
-        for user in self._users.values():
-            if user.id not in unique_users:
-                unique_users[user.id] = user
-        return list(unique_users.values())
+        db = next(get_db())
+        try:
+            users = db.query(UserModel).all()
+            return [_user_model_to_dataclass(u) for u in users]
+        finally:
+            db.close()
 
 
 auth_service = AuthService()

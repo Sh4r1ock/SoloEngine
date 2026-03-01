@@ -74,11 +74,45 @@ export interface FileWriteResponse {
   mode: string;
 }
 
+export interface BrowseItem {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: string;
+}
+
+export interface BrowseResponse {
+  current_path: string;
+  parent_path: string;
+  items: BrowseItem[];
+}
+
+export interface WorkspaceRoot {
+  name: string;
+  path: string;
+}
+
+export interface WorkspaceRootsResponse {
+  roots: WorkspaceRoot[];
+  system: string;
+}
+
 export const debugProjectApi = {
   async selectFolder(folderPath: string): Promise<{ code: number; data: SelectFolderResponse }> {
     const response = await api.post('/debug-project/select-folder', {
       folder_path: folderPath,
     });
+    return response.data;
+  },
+
+  async browseDirectory(path: string = ''): Promise<{ code: number; data: BrowseResponse | WorkspaceRootsResponse }> {
+    const response = await api.get('/debug-project/browse', { params: { path } });
+    return response.data;
+  },
+
+  async openNativeFolderDialog(title: string = '选择项目文件夹'): Promise<{ code: number; data: SelectFolderResponse | null }> {
+    const response = await api.get('/debug-project/native-folder-dialog', { params: { title } });
     return response.data;
   },
 
