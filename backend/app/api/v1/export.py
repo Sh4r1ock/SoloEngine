@@ -13,8 +13,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Response, Depend
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..api.v1.auth import get_current_user
-from ..core.auth import User
+from .auth import get_current_user
+from ...core.database import UserModel as User
 
 logger = logging.getLogger(__name__)
 

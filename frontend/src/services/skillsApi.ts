@@ -76,8 +76,9 @@ class SkillsApi {
     description?: string;
     author?: string;
     tags?: string[];
+    pkg_version?: string;
   }) {
-    return api.post('/skills/packages', data);
+    return api.post('/skills/packages', { ...data, pkg_version: data.pkg_version || '1.0.0' });
   }
 
   async updatePackage(packageId: string, data: Partial<SkillsPackage>) {
@@ -124,6 +125,26 @@ class SkillsApi {
 
   async initDefaultSkills() {
     return api.post('/skills/init-defaults');
+  }
+
+  async getPackageFiles(packageId: string) {
+    return api.get(`/skills/packages/${packageId}/files`);
+  }
+
+  async getFileContent(packageId: string, filePath: string) {
+    return api.get(`/skills/packages/${packageId}/files/content?file_path=${encodeURIComponent(filePath)}`);
+  }
+
+  async saveFile(packageId: string, filePath: string, content: string) {
+    return api.post(`/skills/packages/${packageId}/files/save`, { file_path: filePath, content });
+  }
+
+  async createFileOrFolder(packageId: string, filePath: string, isDirectory: boolean) {
+    return api.post(`/skills/packages/${packageId}/files/create`, { file_path: filePath, is_directory: isDirectory });
+  }
+
+  async deleteFileOrFolder(packageId: string, filePath: string) {
+    return api.post(`/skills/packages/${packageId}/files/delete`, { file_path: filePath });
   }
 }
 

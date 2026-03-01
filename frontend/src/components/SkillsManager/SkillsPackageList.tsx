@@ -1,6 +1,6 @@
 import React from 'react';
-import { Row, Col, message, Popconfirm } from 'antd';
-import { FolderOpenOutlined } from '@ant-design/icons';
+import { Row, Col, message } from 'antd';
+import { FolderOpenOutlined, EditOutlined } from '@ant-design/icons';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import UnifiedCard from '../common/UnifiedCard';
 
@@ -9,7 +9,7 @@ interface SkillsPackageListProps {
   onDelete: (pkg: SkillsPackage) => void;
   onViewDetail: (pkg: SkillsPackage) => void;
   onRefresh?: () => void;
-  onEdit?: (pkg: SkillsPackage) => void;
+  onEditInfo?: (pkg: SkillsPackage) => void;
 }
 
 const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
@@ -17,13 +17,9 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
   onDelete,
   onViewDetail,
   onRefresh,
-  onEdit,
+  onEditInfo,
 }) => {
   const handleToggleActive = async (pkg: SkillsPackage, checked: boolean) => {
-    if (pkg.is_default) {
-      message.warning('默认 Skills 包无法切换状态');
-      return;
-    }
     try {
       if (checked) {
         await skillsApi.activatePackage(pkg.id);
@@ -49,14 +45,15 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
             tags={pkg.tags || pkg.metadata?.tags || []}
             isActive={pkg.is_active}
             isDefault={pkg.is_default}
-            showSwitch={!pkg.is_default}
+            showSwitch={true}
             onSwitchChange={(checked) => handleToggleActive(pkg, checked)}
             meta1={{ label: '版本', value: `v${pkg.metadata?.version || pkg.pkg_version || '1.0.0'}` }}
             meta2={{ label: '作者', value: pkg.metadata?.author || pkg.author || '未知' }}
             updatedAt={pkg.updated_at}
-            onClick={() => !pkg.is_default && (onEdit ? onEdit(pkg) : onViewDetail(pkg))}
+            onClick={() => onViewDetail(pkg)}
             onView={() => onViewDetail(pkg)}
-            onDelete={pkg.is_default ? undefined : () => onDelete(pkg)}
+            onEdit={() => onEditInfo?.(pkg)}
+            onDelete={() => onDelete(pkg)}
             deleteConfirmText="确定要删除此Skills包吗？"
           />
         </Col>

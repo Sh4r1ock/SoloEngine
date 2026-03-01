@@ -139,6 +139,19 @@ def model_to_server_info(server: MCPServerModel) -> MCPServerInfo:
         headers = http_cfg.headers or {}
         timeout = http_cfg.timeout or 30
     
+    # 确定source_type：优先使用数据库中的source_type，否则根据transport_type推断
+    source_type = server.source_type
+    if not source_type:
+        # 如果没有source_type，检查是否是Python Function（通过检查是否有original.py）
+        if server.transport_type == "stdio" and stdio_cfg and stdio_cfg.storage_path:
+            original_py_path = os.path.join(stdio_cfg.storage_path, "original.py")
+            if os.path.exists(original_py_path):
+                source_type = "python_function"
+            else:
+                source_type = "stdio"
+        else:
+            source_type = server.transport_type
+    
     return MCPServerInfo(
         id=server.mcp_server_id,
         user_id=server.user_id,
@@ -154,7 +167,7 @@ def model_to_server_info(server: MCPServerModel) -> MCPServerInfo:
         is_public=server.share,
         is_default=False,
         author=server.author,
-        source="",
+        source=source_type,  # 使用source_type作为source
         description=server.description,
         tags=server.tags or [],
         version=server.version,
@@ -182,6 +195,13 @@ async def list_servers(
     result = []
     for server in servers:
         server_info = model_to_server_info(server)
+        
+        # 从service_registry获取实际连接状态
+        registered_server = await service_registry.get_server(server.mcp_server_id)
+        if registered_server:
+            server_info.status = registered_server.status
+            server_info.error_message = registered_server.error_message
+        
         result.append(server_info.to_dict())
     
     return {
@@ -442,6 +462,7 @@ if __name__ == "__main__":
         user_id=user_id,
         mcp_name=name,
         transport_type="stdio",
+        source_type="python_function",  # 标记为Python Function类型
         description=description,
         author="user",
     )
@@ -694,7 +715,7 @@ async def update_mcp_tools(
     request: UpdateMCPToolsRequest,
     db: Session = Depends(get_db)
 ):
-    """保存工具参数定义到tools.json。"""
+    """保存工具参数定义到tools.json，并自动重新编译MCP Server代码。"""
     user_id = get_mock_user_id()
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
@@ -714,9 +735,28 @@ async def update_mcp_tools(
     with open(tools_json_path, "w", encoding="utf-8") as f:
         json.dump(tools_list, f, ensure_ascii=False, indent=2)
     
+    # 读取original.py获取原始代码
+    original_py_path = os.path.join(stdio_cfg.storage_path, "original.py")
+    original_code = ""
+    if os.path.exists(original_py_path):
+        with open(original_py_path, "r", encoding="utf-8") as f:
+            original_code = f.read()
+    
+    # 重新编译MCP Server代码
+    if original_code:
+        mcp_server_code = generate_mcp_server_code(
+            server.mcp_name,
+            server.description or "",
+            original_code,
+            tools_list
+        )
+        main_py_path = os.path.join(stdio_cfg.storage_path, "main.py")
+        with open(main_py_path, "w", encoding="utf-8") as f:
+            f.write(mcp_server_code)
+    
     return {
         "code": 200,
-        "message": "Tools definition updated",
+        "message": "Tools definition updated and MCP Server recompiled",
         "data": {
             "server_id": server_id,
             "tools_count": len(tools_list),
@@ -802,7 +842,7 @@ async def update_mcp_original_code(
     request: UpdateMCPCodeRequest,
     db: Session = Depends(get_db)
 ):
-    """更新original.py内容。"""
+    """更新original.py内容，并自动重新编译MCP Server代码。"""
     user_id = get_mock_user_id()
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
@@ -814,19 +854,42 @@ async def update_mcp_original_code(
         raise HTTPException(status_code=400, detail="Server does not have storage path")
     
     original_py_path = os.path.join(stdio_cfg.storage_path, "original.py")
+    tools_json_path = os.path.join(stdio_cfg.storage_path, "tools.json")
     
     try:
         ast.parse(request.code)
     except SyntaxError as e:
         raise HTTPException(status_code=400, detail=f"Invalid Python syntax: {e}")
     
+    # 保存原始代码
     with open(original_py_path, "w", encoding="utf-8") as f:
         f.write(request.code)
     
+    # 读取tools.json获取工具定义
+    tools = []
+    if os.path.exists(tools_json_path):
+        with open(tools_json_path, "r", encoding="utf-8") as f:
+            tools = json.load(f)
+    
+    # 重新编译MCP Server代码
+    mcp_server_code = generate_mcp_server_code(
+        server.mcp_name,
+        server.description or "",
+        request.code,
+        tools
+    )
+    main_py_path = os.path.join(stdio_cfg.storage_path, "main.py")
+    with open(main_py_path, "w", encoding="utf-8") as f:
+        f.write(mcp_server_code)
+    
     return {
         "code": 200,
-        "message": "Original code updated",
-        "data": {"server_id": server_id, "path": original_py_path},
+        "message": "Original code updated and MCP Server recompiled",
+        "data": {
+            "server_id": server_id,
+            "path": original_py_path,
+            "main_path": main_py_path,
+        },
     }
 
 

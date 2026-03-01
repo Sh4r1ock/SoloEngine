@@ -4,34 +4,21 @@ from pathlib import Path
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import projects, tools, websocket, config, auth, agent_tools, skills, debug, agentic_flows
+import sys
+from pathlib import Path
 
-app = FastAPI(title="Agentic AI Platform", version="1.0.0")
+backend_dir = Path(__file__).parent.parent
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+parent_app_path = backend_dir / "app.py"
+if parent_app_path.exists():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_app_module", parent_app_path)
+    _app_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(_app_module)
+    app = _app_module.app
+else:
+    raise ImportError("app.py not found in backend directory")
 
-app.include_router(auth.router)
-app.include_router(agentic_flows.router)
-app.include_router(projects.router, prefix="/api/v1", tags=["projects"])
-app.include_router(tools.router, prefix="/api/v1", tags=["tools"])
-app.include_router(config.router)
-app.include_router(agent_tools.router)
-app.include_router(skills.router)
-app.include_router(debug.router)
-app.include_router(websocket.router, prefix="/api/v1", tags=["websocket"])
-
-@app.get("/")
-async def root():
-    return {"message": "Agentic AI Platform API"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
+__all__ = ["app"]

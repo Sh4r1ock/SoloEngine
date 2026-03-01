@@ -283,7 +283,7 @@ const ModelManager: React.FC = () => {
   const currentProvider = providers.find(p => p.name === selectedProvider);
 
   return (
-    <div>
+    <div style={{ height: '100%' }}>
       <Card
         title={
           <Space>
@@ -301,6 +301,8 @@ const ModelManager: React.FC = () => {
             </Button>
           </Space>
         }
+        style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+        styles={{ body: { flex: 1, overflow: 'auto', padding: 0 } }}
       >
         <Table
           columns={columns}
@@ -308,6 +310,24 @@ const ModelManager: React.FC = () => {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 10 }}
+          style={{ height: '100%' }}
+          locale={{
+            emptyText: (
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                height: '100%',
+                minHeight: 200,
+                color: 'rgba(0, 0, 0, 0.45)',
+              }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
+                  <div>暂无数据</div>
+                </div>
+              </div>
+            )
+          }}
         />
       </Card>
 

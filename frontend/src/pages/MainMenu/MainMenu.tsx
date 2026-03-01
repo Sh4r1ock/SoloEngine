@@ -194,6 +194,7 @@ const MainMenu: React.FC = () => {
       <Content style={{
         background: 'var(--bg-secondary)',
         overflow: 'auto',
+        height: 'calc(100vh - 56px)',
       }}>
         {renderContent()}
       </Content>

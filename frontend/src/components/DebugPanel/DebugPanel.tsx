@@ -338,7 +338,7 @@ const DebugPanel: React.FC = () => {
   ];
 
   return (
-    <Layout style={{ height: '100%', background: '#fff' }}>
+    <Layout style={{ height: '100%', background: 'var(--bg-100)' }}>
       <Header
         style={{
           background: 'var(--bg-100)',
@@ -418,7 +418,7 @@ const DebugPanel: React.FC = () => {
         <Sider
           width={280}
           style={{
-            background: '#fff',
+            background: 'var(--bg-100)',
             borderRight: '1px solid var(--border-color-light)',
           }}
         >
@@ -561,7 +561,7 @@ const DebugPanel: React.FC = () => {
                                   maxWidth: '80%',
                                   padding: '8px 12px',
                                   borderRadius: 8,
-                                  background: msg.role === 'user' ? 'var(--primary-50)' : 'var(--bg-200)',
+                                  background: msg.role === 'user' ? 'var(--primary-300)' : 'var(--bg-200)',
                                   textAlign: 'left',
                                 }}
                               >
