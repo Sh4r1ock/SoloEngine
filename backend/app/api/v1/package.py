@@ -7,9 +7,9 @@ from fastapi import APIRouter, HTTPException, Response, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from ..core.packager import packager, PackageConfig, PackageResult
-from ..api.v1.auth import get_current_user
-from ..core.auth import User
+from ...core.packager import packager, PackageConfig, PackageResult
+from .auth import get_current_user
+from ...core.database import UserModel as User
 
 logger = logging.getLogger(__name__)
 

@@ -39,7 +39,7 @@ from app.core.auth import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["projects"])
+router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
 
 class ProjectCreate(BaseModel):

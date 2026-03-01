@@ -7,6 +7,7 @@ import {
   EyeOutlined,
   ApiOutlined,
   CheckCircleOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 
 const { Text, Paragraph } = Typography;
@@ -25,12 +26,13 @@ export interface CardItemProps {
   meta2?: { label: string; value: string };
   updatedAt?: string;
   showSwitch?: boolean;
-  onPlay?: () => void;
+  onPlay?: (e?: React.MouseEvent) => void;
   onCopy?: () => void;
   onView?: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
   onSwitchChange?: (checked: boolean) => void;
-  onClick?: () => void;
+  onClick?: (e?: React.MouseEvent) => void;
   deleteConfirmText?: string;
   deleteWarning?: string;
 }
@@ -96,6 +98,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
   onPlay,
   onCopy,
   onView,
+  onEdit,
   onDelete,
   onSwitchChange,
   onClick,
@@ -116,7 +119,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
         flexDirection: 'column',
         borderLeft: `4px solid ${isDefault ? 'var(--primary-100)' : getStatusColor(status || (isActive ? 'active' : undefined))}`,
       }}
-      onClick={onClick}
+      onClick={(e) => onClick?.(e)}
       onMouseEnter={(e) => {
         if (onClick) {
           e.currentTarget.style.boxShadow = 'var(--shadow-base)';
@@ -222,7 +225,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
             icon={<PlayCircleOutlined />}
             onClick={(e) => {
               e.stopPropagation();
-              onPlay();
+              onPlay(e as unknown as React.MouseEvent);
             }}
             style={{ color: 'var(--accent-100)' }}
           />
@@ -249,6 +252,18 @@ const UnifiedCard: React.FC<CardItemProps> = ({
               onView();
             }}
             style={{ color: 'var(--accent-100)' }}
+          />
+        )}
+        {onEdit && (
+          <Button
+            type="text"
+            size="small"
+            icon={<EditOutlined />}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            style={{ color: 'var(--primary-100)' }}
           />
         )}
         {onDelete && (

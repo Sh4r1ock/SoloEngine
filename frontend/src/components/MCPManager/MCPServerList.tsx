@@ -57,6 +57,17 @@ const MCPServerList: React.FC<MCPServerListProps> = ({
     }
   };
 
+  const getTransportColor = (transport: string) => {
+    switch (transport) {
+      case 'python_function': return 'purple';
+      case 'stdio': return 'blue';
+      case 'http': return 'green';
+      case 'sse': return 'orange';
+      case 'websocket': return 'purple';
+      default: return 'default';
+    }
+  };
+
   return (
     <Row gutter={[16, 16]}>
       {servers.map((server) => (
@@ -87,8 +98,8 @@ const MCPServerList: React.FC<MCPServerListProps> = ({
                     >
                       {getStatusText(server.status)}
                     </Tag>
-                    <Tag color={server.transport === 'websocket' ? 'purple' : 'blue'}>
-                      {server.transport.toUpperCase()}
+                    <Tag color={getTransportColor(server.source || server.transport)}>
+                      {(server.source || server.transport).toUpperCase()}
                     </Tag>
                   </div>
                 </div>

@@ -48,23 +48,34 @@ const DebugPage: React.FC = () => {
         alignItems: 'center',
         gap: '12px',
         padding: '8px 16px',
-        background: '#fff',
-        borderBottom: '1px solid #f0f0f0',
+        background: 'var(--sidebar-bg)',
+        borderBottom: '1px solid var(--sidebar-hover)',
+        height: '56px',
       }}>
         <Button
           icon={<HomeOutlined />}
           onClick={handleGoHome}
+          style={{
+            borderColor: 'rgba(255, 255, 255, 0.3)',
+            color: 'rgba(255, 255, 255, 0.85)',
+            background: 'rgba(255, 255, 255, 0.1)',
+          }}
         >
           主菜单
         </Button>
         <Button
           icon={<ArrowLeftOutlined />}
           onClick={handleGoBack}
+          style={{
+            borderColor: 'rgba(255, 255, 255, 0.3)',
+            color: 'rgba(255, 255, 255, 0.85)',
+            background: 'rgba(255, 255, 255, 0.1)',
+          }}
         >
           返回编辑器
         </Button>
         {projectId && (
-          <span style={{ color: '#666', fontSize: 14 }}>
+          <span style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: 14 }}>
             当前项目: {projectId}
           </span>
         )}

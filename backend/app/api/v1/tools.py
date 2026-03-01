@@ -21,7 +21,7 @@ from app.core.tool_registry import tool_registry
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 
-router = APIRouter(tags=["tools"])
+router = APIRouter(prefix="/api/v1/tools", tags=["tools"])
 
 
 class RegisterToolRequest(BaseModel):

@@ -43,7 +43,7 @@ from app.schemas.response import AgentUpdateEvent, ToolCallEvent, ResponseStream
 from app.core.auth import auth_service
 from app.core.database import db_manager, get_db
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1")
 
 
 class ConnectionManager:

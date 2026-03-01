@@ -15,7 +15,7 @@
  */
 
 import { create } from 'zustand';
-import { debugProjectApi, ProjectInfo, RecentProjectInfo, FileInfo } from '../services/debugProjectApi';
+import { debugProjectApi, ProjectInfo, RecentProjectInfo, FileInfo, SelectFolderResponse } from '../services/debugProjectApi';
 
 interface DebugProjectState {
   currentProject: ProjectInfo | null;
@@ -26,6 +26,9 @@ interface DebugProjectState {
   error: string | null;
 
   selectFolder: (folderPath: string) => Promise<boolean>;
+  openNativeFolderDialog: () => Promise<SelectFolderResponse | null>;
+  setProjectFromDialog: (data: SelectFolderResponse) => void;
+  setProjectLoading: (loading: boolean) => void;
   loadCurrentProject: () => Promise<void>;
   loadRecentProjects: () => Promise<void>;
   switchProject: (projectId: string) => Promise<boolean>;
@@ -66,6 +69,48 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
       set({ loading: false, error: errorMsg });
       return false;
     }
+  },
+
+  openNativeFolderDialog: async () => {
+    set({ loading: true, error: null });
+    try {
+      const response = await debugProjectApi.openNativeFolderDialog('选择项目文件夹');
+      if (response.code === 200 && response.data) {
+        set({
+          currentProject: {
+            id: response.data.project_id,
+            name: response.data.project_name,
+            folder_path: response.data.folder_path,
+          },
+          recentProjects: response.data.recent_projects,
+          loading: false,
+          currentPath: '',
+        });
+        return response.data;
+      }
+      set({ loading: false });
+      return null;
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || error.message || '选择文件夹失败';
+      set({ loading: false, error: errorMsg });
+      return null;
+    }
+  },
+
+  setProjectFromDialog: (data: SelectFolderResponse) => {
+    set({
+      currentProject: {
+        id: data.project_id,
+        name: data.project_name,
+        folder_path: data.folder_path,
+      },
+      recentProjects: data.recent_projects,
+      currentPath: '',
+    });
+  },
+
+  setProjectLoading: (loading: boolean) => {
+    set({ loading });
   },
 
   loadCurrentProject: async () => {

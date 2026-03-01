@@ -24,6 +24,9 @@ from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 from frontend_interaction.save_service.flow_saver import FlowSaver
 from app.api.v1 import projects, tools, websocket, config, debug, skills, auth, export, package, history, marketplace, agentic_flows, agent_tools, debug_project
+import logging
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SoloEngine API", version="1.0.0", description="Agentic Builder API")
 
@@ -34,6 +37,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时执行初始化操作。"""
+    from app.core.database import SessionLocal
+    from app.api.v1.skills import sync_system_skills
+    
+    db = SessionLocal()
+    try:
+        count = sync_system_skills(db)
+        logger.info(f"System skills synchronized successfully: {count} skills")
+    except Exception as e:
+        logger.error(f"Failed to sync system skills: {e}")
+    finally:
+        db.close()
 
 flow_saver = FlowSaver()
 

@@ -4,21 +4,25 @@
  * @author SoloEngine Team
  * @date 2026-02-23
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Layout, Tree, Input, Button, message, Modal, Empty, Typography, Popconfirm, Spin } from 'antd';
+import { Layout, Tree, Input, Button, message, Modal, Empty, Typography, Spin, Dropdown, Tooltip } from 'antd';
+import type { MenuProps, TreeProps } from 'antd';
 import {
   FileOutlined,
   FolderOutlined,
   FileMarkdownOutlined,
   FileTextOutlined,
-  PlusOutlined,
   DeleteOutlined,
   SaveOutlined,
   ArrowLeftOutlined,
   ReloadOutlined,
   FolderAddOutlined,
   FileAddOutlined,
+  MoreOutlined,
+  EditOutlined,
+  UndoOutlined,
+  RedoOutlined,
 } from '@ant-design/icons';
 import { skillsApi } from '../../services/skillsApi';
 
@@ -31,233 +35,376 @@ interface FileNode {
   title: string;
   isLeaf?: boolean;
   children?: FileNode[];
-  content?: string;
   description?: string;
 }
 
-const FILE_TEMPLATES: Record<string, { content: string; description: string }> = {
-  'SKILL.md': {
-    content: `---
-name: skill-name
-version: 1.0.0
-description: 在此描述这个Skills包的功能和用途
-author: 作者名称
-tags:
-  - tag1
-  - tag2
----
+interface PackageInfo {
+  id: string;
+  name: string;
+  description?: string;
+  author?: string;
+  tags?: string[];
+  pkg_version?: string;
+  is_default?: boolean;
+}
 
-# Skills 包说明
+interface HistoryState {
+  content: string;
+  timestamp: number;
+}
 
-## 概述
-简要描述这个Skills包的功能和用途。
-
-## 使用场景
-- 场景1：描述
-- 场景2：描述
-
-## 最佳实践
-1. 实践建议1
-2. 实践建议2
-
-## 示例
-提供一些使用示例...
-`,
-    description: 'Skills包的核心说明文件，定义技能的元数据、描述和使用指南',
-  },
-  'skills/': {
-    content: `# Skills 脚本目录
-
-此目录用于存放技能的具体实现脚本。
-
-## 建议的文件结构
-- \`main.py\`: 主入口脚本
-- \`utils.py\`: 工具函数
-- \`helpers.py\`: 辅助函数
-`,
-    description: '存放技能实现脚本的目录',
-  },
-  'templates/': {
-    content: `# 模板文件目录
-
-此目录用于存放模板文件，`,
-    description: '存放模板文件的目录',
-  },
-  'resources/': {
-    content: `# 资源文件目录
-
-此目录用于存放资源文件（如配置文件、数据文件等）
-`,
-    description: '存放资源文件的目录',
-  },
-};
+const MAX_HISTORY_SIZE = 100;
 
 const SkillsEditorPage: React.FC = () => {
   const { packageId } = useParams<{ packageId: string }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [packageInfo, setPackageInfo] = useState<any>(null);
+  const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState('');
   const [newItemModalVisible, setNewItemModalVisible] = useState(false);
   const [newItemType, setNewItemType] = useState<'file' | 'folder'>('file');
   const [newItemName, setNewItemName] = useState('');
+  const [newItemParent, setNewItemParent] = useState<string>('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [folderDescModalVisible, setFolderDescModalVisible] = useState(false);
+  const [selectedFolder, setSelectedFolder] = useState<string>('');
+  const [folderDescription, setFolderDescription] = useState('');
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const textAreaRef = useRef<any>(null);
+  
+  const [history, setHistory] = useState<HistoryState[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const isUndoRedoAction = useRef(false);
 
-  const loadPackageInfo = async () => {
+  const loadPackageData = useCallback(async () => {
     if (!packageId) return;
     setLoading(true);
     try {
-      const response = await skillsApi.getPackage(packageId);
-      if (response.code === 200) {
-        setPackageInfo(response.data);
-        initDefaultFileTree();
+      const [pkgRes, filesRes] = await Promise.all([
+        skillsApi.getPackage(packageId),
+        skillsApi.getPackageFiles(packageId),
+      ]);
+      
+      if (pkgRes.code === 200) {
+        setPackageInfo(pkgRes.data);
+      }
+      
+      if (filesRes.code === 200 && filesRes.data?.files) {
+        setFileTree(filesRes.data.files);
+        const allFolderKeys = getAllFolderKeys(filesRes.data.files);
+        setExpandedKeys(allFolderKeys);
+      } else if (filesRes.code === 400 && filesRes.data?.need_activate) {
+        message.warning('请先激活此Skills包后再编辑');
+        setTimeout(() => {
+          window.close();
+        }, 1500);
       }
     } catch (error) {
       message.error('加载Skills包信息失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [packageId]);
 
-  const initDefaultFileTree = () => {
-    const defaultTree: FileNode[] = [
-      {
-        key: 'SKILL.md',
-        title: 'SKILL.md',
-        isLeaf: true,
-        content: FILE_TEMPLATES['SKILL.md'].content,
-        description: FILE_TEMPLATES['SKILL.md'].description,
-      },
-      {
-        key: 'skills',
-        title: 'skills/',
-        isLeaf: false,
-        children: [
-          { key: 'skills/main.py', title: 'main.py', isLeaf: true, content: '# 主入口脚本\n\n# 在此编写主要的技能逻辑', description: '主入口脚本' },
-          { key: 'skills/utils.py', title: 'utils.py', isLeaf: true, content: '# 工具函数\n\n# 在此编写工具函数', description: '工具函数' },
-        ],
-        description: FILE_TEMPLATES['skills/'].description,
-      },
-      {
-        key: 'templates',
-        title: 'templates/',
-        isLeaf: false,
-        children: [],
-        description: FILE_TEMPLATES['templates/'].description,
-      },
-      {
-        key: 'resources',
-        title: 'resources/',
-        isLeaf: false,
-        children: [],
-        description: FILE_TEMPLATES['resources/'].description,
-      },
-    ];
-    setFileTree(defaultTree);
-  };
-
-  const handleFileSelect = (selectedKeys: React.Key[]) => {
-    if (selectedKeys.length > 0) {
-      const key = selectedKeys[0] as string;
-      setSelectedFile(key);
-      const node = findNodeByKey(fileTree, key);
-      if (node && node.isLeaf) {
-        setFileContent(node.content || '');
-      } else {
-        setFileContent('');
-      }
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  const findNodeByKey = (nodes: FileNode[], key: string): FileNode | null => {
+  const getAllFolderKeys = (nodes: FileNode[], parentKey: string = ''): string[] => {
+    const keys: string[] = [];
     for (const node of nodes) {
-      if (node.key === key) return node;
-      if (node.children) {
-        const found = findNodeByKey(node.children, key);
-        if (found) return found;
+      if (!node.isLeaf) {
+        keys.push(node.key);
+        if (node.children) {
+          keys.push(...getAllFolderKeys(node.children, node.key));
+        }
       }
     }
-    return null;
+    return keys;
   };
 
-  const handleSave = async () => {
-    if (!selectedFile) {
-      message.warning('请先选择一个文件');
-      return;
+  const loadFileContent = useCallback(async (filePath: string) => {
+    if (!packageId) return;
+    try {
+      const res = await skillsApi.getFileContent(packageId, filePath);
+      if (res.code === 200) {
+        const content = res.data?.content || '';
+        setFileContent(content);
+        setHasUnsavedChanges(false);
+        setHistory([{ content, timestamp: Date.now() }]);
+        setHistoryIndex(0);
+      }
+    } catch (error) {
+      message.error('加载文件内容失败');
+      setFileContent('');
     }
+  }, [packageId]);
+
+  const handleSave = useCallback(async (showMessage = true) => {
+    if (!packageId || !selectedFile) return;
     setSaving(true);
     try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      message.success('文件已保存');
-      setHasUnsavedChanges(false);
+      const res = await skillsApi.saveFile(packageId, selectedFile, fileContent);
+      if (res.code === 200) {
+        setHasUnsavedChanges(false);
+        if (showMessage) {
+          message.success('文件已保存');
+        }
+      }
     } catch (error) {
-      message.error('保存失败');
+      if (showMessage) {
+        message.error('保存失败');
+      }
     } finally {
       setSaving(false);
     }
+  }, [packageId, selectedFile, fileContent]);
+
+  useEffect(() => {
+    if (hasUnsavedChanges && selectedFile) {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      autoSaveTimerRef.current = setTimeout(() => {
+        handleSave(false);
+      }, 2000);
+    }
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [fileContent, hasUnsavedChanges, selectedFile, handleSave]);
+
+  const handleFileSelect: TreeProps['onSelect'] = (selectedKeys, info) => {
+    if (selectedKeys.length > 0) {
+      const key = selectedKeys[0] as string;
+      const node = info.node;
+      
+      if (node.isLeaf) {
+        if (hasUnsavedChanges && selectedFile) {
+          handleSave(false);
+        }
+        setSelectedFile(key);
+        loadFileContent(key);
+      } else {
+        const isExpanded = expandedKeys.includes(key);
+        if (isExpanded) {
+          setExpandedKeys(expandedKeys.filter(k => k !== key));
+        } else {
+          setExpandedKeys([...expandedKeys, key]);
+        }
+      }
+    }
   };
 
-  const handleCreateItem = () => {
-    if (!newItemName.trim()) {
+  const handleExpand: TreeProps['onExpand'] = (expandedKeys) => {
+    setExpandedKeys(expandedKeys as string[]);
+  };
+
+  const handleCreateItem = async () => {
+    if (!packageId || !newItemName.trim()) {
       message.warning('请输入名称');
       return;
     }
-    message.success(`${newItemType === 'folder' ? '文件夹' : '文件'} "${newItemName}" 已创建`);
-    setNewItemModalVisible(false);
-    setNewItemName('');
+    
+    const filePath = newItemParent 
+      ? `${newItemParent}/${newItemName}` 
+      : newItemName;
+    
+    try {
+      const res = await skillsApi.createFileOrFolder(
+        packageId, 
+        filePath, 
+        newItemType === 'folder'
+      );
+      if (res.code === 200) {
+        message.success(`${newItemType === 'folder' ? '文件夹' : '文件'} "${newItemName}" 已创建`);
+        setNewItemModalVisible(false);
+        setNewItemName('');
+        setNewItemParent('');
+        loadPackageData();
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '创建失败');
+    }
   };
 
-  const handleDeleteItem = () => {
-    if (!selectedFile) {
-      message.warning('请先选择要删除的项目');
-      return;
-    }
-    const isSkillMd = selectedFile === 'SKILL.md';
+  const handleDeleteItem = async (filePath: string) => {
+    if (!packageId) return;
+    
+    const isSkillMd = filePath === 'SKILL.md';
     
     Modal.confirm({
       title: isSkillMd ? '删除核心文件' : '删除项目',
       content: isSkillMd 
         ? 'SKILL.md 是Skills包的核心文件，删除后可能影响Skills包的功能。确定要删除吗？'
-        : '确定要删除此项目吗？',
+        : '确定要删除此项目吗？此操作不可恢复。',
       okText: '确定',
       cancelText: '取消',
-      onOk: () => {
-        message.success('已删除');
-        setSelectedFile(null);
-        setFileContent('');
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await skillsApi.deleteFileOrFolder(packageId, filePath);
+          if (res.code === 200) {
+            message.success('已删除');
+            if (selectedFile === filePath) {
+              setSelectedFile(null);
+              setFileContent('');
+              setHasUnsavedChanges(false);
+            }
+            loadPackageData();
+          }
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || '删除失败');
+        }
       },
     });
   };
 
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return;
+    isUndoRedoAction.current = true;
+    const newIndex = historyIndex - 1;
+    setHistoryIndex(newIndex);
+    setFileContent(history[newIndex].content);
+    setHasUnsavedChanges(true);
+  }, [canUndo, historyIndex, history]);
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo) return;
+    isUndoRedoAction.current = true;
+    const newIndex = historyIndex + 1;
+    setHistoryIndex(newIndex);
+    setFileContent(history[newIndex].content);
+    setHasUnsavedChanges(true);
+  }, [canRedo, historyIndex, history]);
+
   const handleContentChange = (newContent: string) => {
     setFileContent(newContent);
     setHasUnsavedChanges(true);
+    
+    if (!isUndoRedoAction.current) {
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push({
+        content: newContent,
+        timestamp: Date.now(),
+      });
+      
+      if (newHistory.length > MAX_HISTORY_SIZE) {
+        newHistory.shift();
+      }
+      
+      setHistory(newHistory);
+      setHistoryIndex(newHistory.length - 1);
+    }
+    
+    isUndoRedoAction.current = false;
   };
 
-  useEffect(() => {
-    loadPackageInfo();
-  }, [packageId]);
+  const getContextMenuItems = (node: any): MenuProps['items'] => {
+    const items: MenuProps['items'] = [
+      {
+        key: 'newFile',
+        icon: <FileAddOutlined />,
+        label: '新建文件',
+        onClick: () => {
+          setNewItemType('file');
+          setNewItemParent(node.isLeaf ? '' : node.key);
+          setNewItemModalVisible(true);
+        },
+      },
+      {
+        key: 'newFolder',
+        icon: <FolderAddOutlined />,
+        label: '新建文件夹',
+        onClick: () => {
+          setNewItemType('folder');
+          setNewItemParent(node.isLeaf ? '' : node.key);
+          setNewItemModalVisible(true);
+        },
+      },
+    ];
+
+    if (!node.isLeaf) {
+      items.push({
+        key: 'description',
+        icon: <EditOutlined />,
+        label: '添加备注',
+        onClick: () => {
+          setSelectedFolder(node.key);
+          setFolderDescription(node.description || '');
+          setFolderDescModalVisible(true);
+        },
+      });
+    }
+
+    if (node.key !== '') {
+      items.push({
+        key: 'delete',
+        icon: <DeleteOutlined />,
+        label: '删除',
+        danger: true,
+        onClick: () => handleDeleteItem(node.key),
+      });
+    }
+
+    return items;
+  };
 
   const renderTreeNodes = (nodes: FileNode[]): any[] => {
     return nodes.map(node => ({
       key: node.key,
       title: (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {node.isLeaf ? (
-            node.key.endsWith('.md') ? <FileMarkdownOutlined style={{ color: '#1890ff' }} /> : <FileTextOutlined />
-          ) : (
-            <FolderOutlined style={{ color: '#faad14' }} />
-          )}
-          <span>{node.title}</span>
-        </span>
+        <Dropdown
+          menu={{ items: getContextMenuItems(node) }}
+          trigger={['contextMenu']}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {node.isLeaf ? (
+              node.key.endsWith('.md') ? <FileMarkdownOutlined style={{ color: '#1890ff' }} /> : <FileTextOutlined />
+            ) : (
+              <FolderOutlined style={{ color: '#faad14' }} />
+            )}
+            <span>{node.title}</span>
+          </span>
+        </Dropdown>
       ),
       isLeaf: node.isLeaf,
       children: node.children ? renderTreeNodes(node.children) : undefined,
+      description: node.description,
     }));
   };
+
+  useEffect(() => {
+    loadPackageData();
+  }, [loadPackageData]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (selectedFile) {
+          handleSave(true);
+        }
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        handleUndo();
+      }
+      
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedFile, handleSave, handleUndo, handleRedo]);
 
   if (loading) {
     return (
@@ -268,15 +415,15 @@ const SkillsEditorPage: React.FC = () => {
   }
 
   return (
-    <Layout style={{ height: '100vh', background: '#fff' }}>
+    <Layout style={{ height: '100vh', background: '#f5f5f5' }}>
       <div style={{
-        height: 48,
-        borderBottom: '1px solid var(--border-color-light)',
+        height: 56,
+        borderBottom: '1px solid #e8e8e8',
         display: 'flex',
         alignItems: 'center',
         padding: '0 16px',
         gap: 16,
-        background: 'var(--bg-100)',
+        background: '#fff',
       }}>
         <Button
           type="text"
@@ -290,26 +437,51 @@ const SkillsEditorPage: React.FC = () => {
             {packageInfo?.name || 'Skills 编辑器'}
           </Title>
         </div>
+        <Tooltip title="撤销 (Ctrl+Z)">
+          <Button
+            icon={<UndoOutlined />}
+            onClick={handleUndo}
+            disabled={!canUndo}
+          >
+            撤销
+          </Button>
+        </Tooltip>
+        <Tooltip title="重做 (Ctrl+Y)">
+          <Button
+            icon={<RedoOutlined />}
+            onClick={handleRedo}
+            disabled={!canRedo}
+            style={{ marginRight: 8 }}
+          >
+            重做
+          </Button>
+        </Tooltip>
+        <Button
+          icon={<ReloadOutlined />}
+          onClick={loadPackageData}
+          title="刷新"
+        >
+          刷新
+        </Button>
         <Button
           icon={<SaveOutlined />}
           type="primary"
-          onClick={handleSave}
+          onClick={() => handleSave(true)}
           loading={saving}
-          disabled={!selectedFile || !hasUnsavedChanges}
         >
-          {hasUnsavedChanges ? '保存' : '已保存'}
+          保存
         </Button>
       </div>
       
       <Layout>
         <Sider
-          width={260}
+          width={280}
           style={{
-            background: 'var(--bg-200)',
-            borderRight: '1px solid var(--border-color-light)',
+            background: '#fff',
+            borderRight: '1px solid #e8e8e8',
           }}
         >
-          <div style={{ padding: '12px', borderBottom: '1px solid var(--border-color-light)' }}>
+          <div style={{ padding: '12px', borderBottom: '1px solid #e8e8e8' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text strong style={{ fontSize: 13 }}>资源管理器</Text>
               <div style={{ display: 'flex', gap: 4 }}>
@@ -317,106 +489,97 @@ const SkillsEditorPage: React.FC = () => {
                   size="small"
                   type="text"
                   icon={<FileAddOutlined />}
-                  onClick={() => { setNewItemType('file'); setNewItemModalVisible(true); }}
+                  onClick={() => { 
+                    setNewItemType('file'); 
+                    setNewItemParent('');
+                    setNewItemModalVisible(true); 
+                  }}
                   title="新建文件"
                 />
                 <Button
                   size="small"
                   type="text"
                   icon={<FolderAddOutlined />}
-                  onClick={() => { setNewItemType('folder'); setNewItemModalVisible(true); }}
+                  onClick={() => { 
+                    setNewItemType('folder'); 
+                    setNewItemParent('');
+                    setNewItemModalVisible(true); 
+                  }}
                   title="新建文件夹"
                 />
               </div>
             </div>
           </div>
           
-          <div style={{ padding: '8px' }}>
-            <Tree
-              showLine
-              selectedKeys={selectedFile ? [selectedFile] : []}
-              onSelect={handleFileSelect}
-              treeData={renderTreeNodes(fileTree)}
-              style={{ background: 'transparent', fontSize: 13 }}
-            />
+          <div style={{ padding: '8px', overflow: 'auto', height: 'calc(100vh - 150px)' }}>
+            {fileTree.length > 0 ? (
+              <Tree
+                showLine
+                selectedKeys={selectedFile ? [selectedFile] : []}
+                expandedKeys={expandedKeys}
+                onSelect={handleFileSelect}
+                onExpand={handleExpand}
+                treeData={renderTreeNodes(fileTree)}
+                style={{ background: 'transparent', fontSize: 13 }}
+              />
+            ) : (
+              <Empty description="暂无文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
           </div>
-          
-          {selectedFile && (
-            <div style={{ padding: '8px', borderTop: '1px solid var(--border-color-light)' }}>
-              <Popconfirm
-                title={
-                  selectedFile === 'SKILL.md' 
-                    ? 'SKILL.md 是核心文件，不建议删除'
-                    : '确定要删除此项目吗？'
-                }
-                onConfirm={handleDeleteItem}
-                okText="确定"
-                cancelText="取消"
-              >
-                <Button
-                  size="small"
-                  danger
-                  type="text"
-                  icon={<DeleteOutlined />}
-                  block
-                >
-                  删除选中项
-                </Button>
-              </Popconfirm>
-            </div>
-          )}
         </Sider>
         
-        <Content style={{ display: 'flex', flexDirection: 'column' }}>
+        <Content style={{ display: 'flex', flexDirection: 'column', background: '#fff' }}>
           {selectedFile ? (
             <>
               <div style={{
                 padding: '8px 16px',
-                borderBottom: '1px solid var(--border-color-light)',
-                background: 'var(--bg-200)',
+                borderBottom: '1px solid #e8e8e8',
+                background: '#fafafa',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
               }}>
                 <Text style={{ fontSize: 13 }}>
                   <FileOutlined style={{ marginRight: 8 }} />
                   {selectedFile}
+                  {hasUnsavedChanges && <Text type="warning" style={{ marginLeft: 8 }}>(未保存)</Text>}
                 </Text>
+                <Dropdown
+                  menu={{
+                    items: [
+                      {
+                        key: 'delete',
+                        icon: <DeleteOutlined />,
+                        label: '删除文件',
+                        danger: true,
+                        onClick: () => handleDeleteItem(selectedFile),
+                      },
+                    ],
+                  }}
+                >
+                  <Button type="text" icon={<MoreOutlined />} size="small" />
+                </Dropdown>
               </div>
-              {selectedFile === 'SKILL.md' || selectedFile.endsWith('.md') ? (
-                <TextArea
-                  value={fileContent}
-                  onChange={(e) => handleContentChange(e.target.value)}
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    borderRadius: 0,
-                    fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    padding: 16,
-                    resize: 'none',
-                    backgroundColor: '#fff',
-                    color: '#333',
-                  }}
-                  placeholder="在此输入Markdown内容..."
-                />
-              ) : (
-                <TextArea
-                  value={fileContent}
-                  onChange={(e) => handleContentChange(e.target.value)}
-                  style={{
-                    flex: 1,
-                    border: 'none',
-                    borderRadius: 0,
-                    fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    padding: 16,
-                    resize: 'none',
-                    backgroundColor: '#1e1e1e',
-                    color: '#d4d4d4',
-                  }}
-                  placeholder="在此输入代码..."
-                />
-              )}
+              
+              <TextArea
+                ref={textAreaRef}
+                value={fileContent}
+                onChange={(e) => handleContentChange(e.target.value)}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: 0,
+                  fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
+                  fontSize: 14,
+                  lineHeight: 1.6,
+                  padding: 16,
+                  resize: 'none',
+                  backgroundColor: '#ffffff',
+                  color: '#333',
+                }}
+                placeholder={selectedFile.endsWith('.md') ? "在此输入Markdown内容..." : "在此输入代码..."}
+                spellCheck={false}
+              />
             </>
           ) : (
             <div style={{
@@ -425,12 +588,12 @@ const SkillsEditorPage: React.FC = () => {
               flexDirection: 'column',
               justifyContent: 'center',
               alignItems: 'center',
-              color: 'var(--text-200)',
+              color: '#999',
             }}>
-              <FileMarkdownOutlined style={{ fontSize: 64, marginBottom: 16, color: 'var(--bg-300)' }} />
+              <FileMarkdownOutlined style={{ fontSize: 64, marginBottom: 16, color: '#d9d9d9' }} />
               <Text type="secondary">从左侧选择文件开始编辑</Text>
               <Text type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
-                点击文件可以查看和编辑内容
+                右键点击文件夹或文件可进行更多操作
               </Text>
             </div>
           )}
@@ -444,16 +607,58 @@ const SkillsEditorPage: React.FC = () => {
         onCancel={() => {
           setNewItemModalVisible(false);
           setNewItemName('');
+          setNewItemParent('');
         }}
         okText="创建"
         cancelText="取消"
       >
+        {newItemParent && (
+          <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+            位置: {newItemParent}/
+          </Text>
+        )}
         <Input
           placeholder={newItemType === 'folder' ? '文件夹名称' : '文件名称（如：example.py）'}
           value={newItemName}
           onChange={(e) => setNewItemName(e.target.value)}
           onPressEnter={handleCreateItem}
           autoFocus
+        />
+      </Modal>
+
+      <Modal
+        title="文件夹备注"
+        open={folderDescModalVisible}
+        onOk={() => {
+          setFileTree(prev => {
+            const updateNode = (nodes: FileNode[]): FileNode[] => {
+              return nodes.map(node => {
+                if (node.key === selectedFolder) {
+                  return { ...node, description: folderDescription };
+                }
+                if (node.children) {
+                  return { ...node, children: updateNode(node.children) };
+                }
+                return node;
+              });
+            };
+            return updateNode(prev);
+          });
+          setFolderDescModalVisible(false);
+          message.success('备注已添加');
+        }}
+        onCancel={() => {
+          setFolderDescModalVisible(false);
+          setFolderDescription('');
+        }}
+        okText="保存"
+        cancelText="取消"
+      >
+        <TextArea
+          placeholder="输入文件夹备注说明..."
+          value={folderDescription}
+          onChange={(e) => setFolderDescription(e.target.value)}
+          rows={4}
         />
       </Modal>
     </Layout>

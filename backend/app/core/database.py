@@ -45,7 +45,7 @@ try:
 except ImportError:
     HAS_PWDLIB = False
 
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, Index
+from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, or_, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 
@@ -211,15 +211,20 @@ class ToolCallRecordModel(Base):
 
 
 class SkillsPackageModel(Base):
-    """Skills包模型。"""
+    """Skills包模型。
+    
+    系统skill和用户skill共用此表：
+    - author='system': 系统skill，folder_path指向 data/system_skills/{skill_name}
+    - author=用户名: 用户skill，folder_path指向 data/skills/{user_id}/{skill_name}
+    """
     __tablename__ = "skills_packages"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     pkg_version = Column(String(50), nullable=False, default="1.0.0")
     description = Column(Text, nullable=True)
-    author = Column(String(255), nullable=True)
+    author = Column(String(255), nullable=False, default="system", index=True)
     tags = Column(JSON, nullable=True)
     instructions = Column(Text, nullable=True)
     folder_path = Column(String(500), nullable=True)
@@ -590,6 +595,8 @@ class DatabaseManager:
             pkg_version=pkg_version,
             author=author,
             tags=tags or [],
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
         )
         db.add(package)
         db.commit()
@@ -597,10 +604,9 @@ class DatabaseManager:
         return package
 
     def get_skills_packages(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
-        """获取用户的Skills包。"""
+        """获取用户的Skills包（包括停用和启用的）。"""
         return db.query(SkillsPackageModel).filter(
-            SkillsPackageModel.user_id == user_id,
-            SkillsPackageModel.is_active == True
+            SkillsPackageModel.user_id == user_id
         ).order_by(SkillsPackageModel.updated_at.desc()).all()
 
     def get_skills_package(self, db: Session, package_id: str, user_id: str = None) -> Optional[SkillsPackageModel]:
@@ -631,10 +637,10 @@ class DatabaseManager:
         return package
 
     def delete_skills_package(self, db: Session, package_id: str, user_id: str) -> bool:
-        """删除Skills包。"""
+        """删除Skills包（物理删除）。"""
         package = self.get_skills_package(db, package_id, user_id)
         if package:
-            package.is_active = False
+            db.delete(package)
             db.commit()
             return True
         return False
@@ -1069,6 +1075,51 @@ class DatabaseManager:
                 db.delete(project)
             db.commit()
 
+    def get_system_skills(self, db: Session) -> List[SkillsPackageModel]:
+        """获取所有系统skill（author='system'）。"""
+        return db.query(SkillsPackageModel).filter(
+            SkillsPackageModel.author == "system",
+            SkillsPackageModel.is_active == True
+        ).order_by(SkillsPackageModel.name).all()
+
+    def get_user_skills(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
+        """获取用户的所有skill。"""
+        return db.query(SkillsPackageModel).filter(
+            SkillsPackageModel.user_id == user_id,
+            SkillsPackageModel.is_active == True
+        ).order_by(SkillsPackageModel.name).all()
+
+    def get_all_skills_for_user(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
+        """获取用户可见的所有skill（系统skill + 用户skill）。
+        
+        注意：is_active只控制skill是否可用，不影响显示。
+        按创建时间降序排列。
+        """
+        return db.query(SkillsPackageModel).filter(
+            or_(
+                SkillsPackageModel.author == "system",
+                SkillsPackageModel.user_id == user_id
+            )
+        ).order_by(SkillsPackageModel.created_at.desc()).all()
+
+    def create_system_skill(self, db: Session, name: str, folder_path: str,
+                            description: str = None, tags: List[str] = None,
+                            instructions: str = None, pkg_version: str = "1.0.0") -> SkillsPackageModel:
+        """创建系统skill。"""
+        skill = SkillsPackageModel(
+            name=name,
+            folder_path=folder_path,
+            description=description,
+            author="system",
+            tags=tags or [],
+            instructions=instructions,
+            pkg_version=pkg_version,
+            is_public=True,
+        )
+        db.add(skill)
+        db.commit()
+        db.refresh(skill)
+        return skill
 
 db_manager = DatabaseManager()
 

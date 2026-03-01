@@ -147,8 +147,22 @@ const AgenticFlowList: React.FC = () => {
                 description={flow.description || undefined}
                 isTemplate={flow.is_template}
                 updatedAt={flow.updated_at}
-                onClick={() => navigate(`/editor/${flow.id}`)}
-                onPlay={() => navigate(`/debug/${flow.id}`)}
+                onClick={(e?: React.MouseEvent) => {
+                  // Ctrl+左键点击时在新标签页打开
+                  if (e?.ctrlKey || e?.metaKey) {
+                    window.open(`/editor/${flow.id}`, '_blank');
+                  } else {
+                    navigate(`/editor/${flow.id}`);
+                  }
+                }}
+                onPlay={(e?: React.MouseEvent) => {
+                  // Ctrl+左键点击时在新标签页打开
+                  if (e?.ctrlKey || e?.metaKey) {
+                    window.open(`/debug/${flow.id}`, '_blank');
+                  } else {
+                    navigate(`/debug/${flow.id}`);
+                  }
+                }}
                 onCopy={() => handleDuplicate(flow)}
                 onDelete={() => handleDelete(flow.id)}
                 deleteConfirmText="确定要删除此Agentic吗？"

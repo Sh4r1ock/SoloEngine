@@ -21,9 +21,11 @@ import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData } from '../types/canvas';
 import { projectApi } from '../services/api';
 import { localStorageService } from '../services/localStorage';
+import { agenticFlowApi } from '../services/agenticFlowApi';
 
 const MAX_HISTORY_SIZE = 30;
 const DEBOUNCE_DELAY = 500;
+const AUTO_SAVE_DELAY = 1000;
 
 const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
   let timeout: ReturnType<typeof setTimeout> | null = null;
@@ -103,12 +105,19 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   historyIndex: 0,
   isDragging: false,
 
-  autoSave: debounce(() => {
-    const { nodes, edges, isDragging } = get();
+  autoSave: debounce(async () => {
+    const { nodes, edges, currentProject, isDragging } = get();
     if (isDragging) return;
-    const defaultProjectName = 'default_flow';
-    localStorageService.saveFlow(defaultProjectName, nodes, edges);
-  }, DEBOUNCE_DELAY),
+    
+    const flowId = currentProject?.id;
+    if (!flowId) return;
+    
+    try {
+      await agenticFlowApi.saveCanvas(flowId, { nodes, edges });
+    } catch (error) {
+      console.error('Auto save failed:', error);
+    }
+  }, AUTO_SAVE_DELAY),
 
   pushHistory: () => {
     const { nodes, edges, history, historyIndex } = get();
@@ -132,8 +141,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
       const { nodes, edges } = history[newIndex];
-      set({ nodes, edges, historyIndex: newIndex });
-      get().autoSave();
+      set({ nodes: structuredClone(nodes), edges: structuredClone(edges), historyIndex: newIndex });
+      // 延迟触发自动保存，确保状态已更新
+      setTimeout(() => get().autoSave(), 0);
     }
   },
 
@@ -142,8 +152,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
       const { nodes, edges } = history[newIndex];
-      set({ nodes, edges, historyIndex: newIndex });
-      get().autoSave();
+      set({ nodes: structuredClone(nodes), edges: structuredClone(edges), historyIndex: newIndex });
+      // 延迟触发自动保存，确保状态已更新
+      setTimeout(() => get().autoSave(), 0);
     }
   },
 

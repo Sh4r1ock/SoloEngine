@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Button, Space, Modal, message, Empty, Spin, Input } from 'antd';
+import { Typography, Button, Space, Modal, message, Empty, Spin, Input, Select } from 'antd';
 import {
   PlusOutlined,
   UploadOutlined,
@@ -16,11 +16,11 @@ import {
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import SkillsPackageList from './SkillsPackageList';
 import SkillsCreateModal from './SkillsCreateModal';
-import SkillsPackageDetail from './SkillsPackageDetail';
 import SkillsImportDialog from './SkillsImportDialog';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
+const { TextArea } = Input;
 
 const SkillsManager: React.FC = () => {
   const navigate = useNavigate();
@@ -28,10 +28,14 @@ const SkillsManager: React.FC = () => {
   const [packages, setPackages] = useState<SkillsPackage[]>([]);
   const [filteredPackages, setFilteredPackages] = useState<SkillsPackage[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<SkillsPackage | null>(null);
-  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [editInfoModalVisible, setEditInfoModalVisible] = useState(false);
+  const [editingPackage, setEditingPackage] = useState<SkillsPackage | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editTags, setEditTags] = useState<string[]>([]);
 
   const loadPackages = async () => {
     setLoading(true);
@@ -82,30 +86,64 @@ const SkillsManager: React.FC = () => {
     loadPackages();
   };
 
-  useEffect(() => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      setFilteredPackages(
-        packages.filter(pkg => {
-          const matchesName = pkg.name.toLowerCase().includes(query);
-          const matchesDesc = pkg.description?.toLowerCase().includes(query);
-          const matchesTags = pkg.tags?.some(tag =>
-            tag.toLowerCase().includes(query)
-          );
-          return matchesName || matchesDesc || matchesTags;
-        })
-      );
-    } else {
-      setFilteredPackages(packages);
-    }
-  }, [searchQuery, packages]);
-
-  const handleViewDetail = (pkg: SkillsPackage) => {
-    setSelectedPackage(pkg);
-    setDetailModalVisible(true);
+  const handleEditInfo = (pkg: SkillsPackage) => {
+    setEditingPackage(pkg);
+    setEditName(pkg.name || '');
+    setEditDescription(pkg.description || '');
+    setEditTags(pkg.tags || []);
+    setEditInfoModalVisible(true);
   };
 
-  const handleEdit = (pkg: SkillsPackage) => {
+  const handleSaveEditInfo = async () => {
+    if (!editingPackage || !editName.trim()) {
+      message.warning('包名称不能为空');
+      return;
+    }
+    
+    try {
+      const res = await skillsApi.updatePackage(editingPackage.id, {
+        name: editName,
+        description: editDescription,
+        tags: editTags,
+      });
+      
+      if (res.code === 200) {
+        message.success('基本信息已更新');
+        setEditInfoModalVisible(false);
+        setEditingPackage(null);
+        loadPackages();
+      }
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || '更新失败';
+      message.error(errorMsg);
+    }
+  };
+
+  useEffect(() => {
+    let result = packages;
+
+    if (statusFilter !== 'all') {
+      result = result.filter(pkg =>
+        statusFilter === 'active' ? pkg.is_active : !pkg.is_active
+      );
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(pkg => {
+        const matchesName = pkg.name.toLowerCase().includes(query);
+        const matchesDesc = pkg.description?.toLowerCase().includes(query);
+        const matchesTags = pkg.tags?.some(tag =>
+          tag.toLowerCase().includes(query)
+        );
+        return matchesName || matchesDesc || matchesTags;
+      });
+    }
+
+    setFilteredPackages(result);
+  }, [searchQuery, statusFilter, packages]);
+
+  const handleViewDetail = (pkg: SkillsPackage) => {
     const url = `/skills-editor/${pkg.id}`;
     window.open(url, '_blank', 'width=1400,height=900,menubar=no,toolbar=no,location=no,status=no');
   };
@@ -131,10 +169,20 @@ const SkillsManager: React.FC = () => {
         <Space>
           <Search
             placeholder="搜索 Skills 包..."
-            style={{ width: 300 }}
+            style={{ width: 250 }}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             allowClear
+          />
+          <Select
+            value={statusFilter}
+            onChange={setStatusFilter}
+            style={{ width: 120 }}
+            options={[
+              { label: '全部状态', value: 'all' },
+              { label: '已启用', value: 'active' },
+              { label: '已停用', value: 'inactive' },
+            ]}
           />
           <Button
             icon={<UploadOutlined />}
@@ -184,7 +232,7 @@ const SkillsManager: React.FC = () => {
           onDelete={handleDelete}
           onViewDetail={handleViewDetail}
           onRefresh={handleRefresh}
-          onEdit={handleEdit}
+          onEditInfo={handleEditInfo}
         />
       )}
 
@@ -206,16 +254,52 @@ const SkillsManager: React.FC = () => {
         }}
       />
 
-      {selectedPackage && (
-        <SkillsPackageDetail
-          visible={detailModalVisible}
-          package={selectedPackage}
-          onClose={() => {
-            setDetailModalVisible(false);
-            setSelectedPackage(null);
-          }}
-        />
-      )}
+      <Modal
+        title="编辑基本信息"
+        open={editInfoModalVisible}
+        onOk={handleSaveEditInfo}
+        onCancel={() => {
+          setEditInfoModalVisible(false);
+          setEditingPackage(null);
+        }}
+        okText="保存"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>包名称:</label>
+          <Input
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            placeholder="请输入包名称"
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>描述:</label>
+          <TextArea
+            value={editDescription}
+            onChange={(e) => setEditDescription(e.target.value)}
+            placeholder="请输入描述"
+            rows={3}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>作者:</label>
+          <Input
+            value={editingPackage?.author || ''}
+            disabled
+            placeholder="作者信息"
+          />
+          <Text type="secondary" style={{ fontSize: 12 }}>作者信息不可修改</Text>
+        </div>
+        <div>
+          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>标签:</label>
+          <Input
+            value={editTags.join(', ')}
+            onChange={(e) => setEditTags(e.target.value.split(',').map(t => t.trim()).filter(t => t))}
+            placeholder="输入标签，用逗号分隔"
+          />
+        </div>
+      </Modal>
     </div>
   );
 };

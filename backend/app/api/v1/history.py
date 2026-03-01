@@ -5,10 +5,11 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
+from typing import Any
 
-from ..core.history_manager import history_manager, ExecutionStatus
-from ..api.v1.auth import get_current_user
-from ..core.auth import User
+from ...core.history_manager import history_manager, ExecutionStatus
+from .auth import get_current_user
+from ...core.database import UserModel as User
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class CompleteStepRequest(BaseModel):
 class AddToolCallRequest(BaseModel):
     tool_name: str
     arguments: dict
-    result: Optional[any] = None
+    result: Optional[Any] = None
     error: Optional[str] = None
 
 

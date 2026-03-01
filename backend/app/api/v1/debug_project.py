@@ -603,3 +603,211 @@ async def check_file_exists(
     except Exception as e:
         logger.error(f"Failed to check file existence: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/workspace-roots")
+async def get_workspace_roots():
+    """获取可用的工作区根目录列表。"""
+    import platform
+    from pathlib import Path
+    
+    home = str(Path.home())
+    user_name = os.path.basename(home)
+    system = platform.system()
+    
+    roots = []
+    
+    if system == "Windows":
+        possible_roots = [
+            ("桌面", os.path.join(home, "Desktop")),
+            ("文档", os.path.join(home, "Documents")),
+            ("下载", os.path.join(home, "Downloads")),
+            ("用户目录", home),
+        ]
+        for drive in ["C:", "D:", "E:", "F:"]:
+            if os.path.exists(drive + "\\"):
+                possible_roots.append((f"{drive} 盘", drive + "\\"))
+    else:
+        possible_roots = [
+            ("主目录", home),
+            ("文档", os.path.join(home, "Documents")),
+            ("下载", os.path.join(home, "Downloads")),
+            ("/home", "/home"),
+            ("/opt", "/opt"),
+        ]
+    
+    for name, path in possible_roots:
+        if os.path.exists(path) and os.path.isdir(path):
+            roots.append({
+                "name": name,
+                "path": path,
+            })
+    
+    return {
+        "code": 200,
+        "message": "Workspace roots retrieved",
+        "data": {
+            "roots": roots,
+            "system": system,
+        }
+    }
+
+
+@router.get("/browse")
+async def browse_directory(
+    path: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """浏览目录内容，返回子目录和文件列表。"""
+    import platform
+    
+    if not path:
+        return await get_workspace_roots()
+    
+    try:
+        abs_path = os.path.abspath(path)
+        
+        if not os.path.exists(abs_path):
+            raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+        
+        if not os.path.isdir(abs_path):
+            raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
+        
+        items = []
+        for item in Path(abs_path).iterdir():
+            try:
+                if item.name.startswith('.'):
+                    continue
+                
+                stat = item.stat()
+                items.append({
+                    "name": item.name,
+                    "path": str(item),
+                    "is_dir": item.is_dir(),
+                    "size": stat.st_size if item.is_file() else 0,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                })
+            except PermissionError:
+                continue
+            except Exception as e:
+                logger.warning(f"Failed to stat {item}: {e}")
+        
+        items.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        
+        parent_path = str(Path(abs_path).parent) if abs_path != Path(abs_path).root else ""
+        
+        return {
+            "code": 200,
+            "message": "Directory browsed successfully",
+            "data": {
+                "current_path": abs_path,
+                "parent_path": parent_path,
+                "items": items,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to browse directory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/native-folder-dialog")
+async def open_native_folder_dialog(
+    title: str = "选择项目文件夹",
+    initialdir: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """打开原生文件夹选择对话框。"""
+    import threading
+    import tkinter as tk
+    from tkinter import filedialog
+    
+    result = {"folder_path": None}
+    
+    def open_dialog():
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.wm_attributes('-topmost', 1)
+            
+            folder_path = filedialog.askdirectory(
+                title=title,
+                initialdir=initialdir if initialdir else None
+            )
+            
+            result["folder_path"] = folder_path if folder_path else None
+            root.destroy()
+        except Exception as e:
+            logger.error(f"Failed to open folder dialog: {e}")
+            result["error"] = str(e)
+    
+    dialog_thread = threading.Thread(target=open_dialog)
+    dialog_thread.start()
+    dialog_thread.join(timeout=60)
+    
+    if result.get("error"):
+        raise HTTPException(status_code=500, detail=result["error"])
+    
+    if not result.get("folder_path"):
+        return {
+            "code": 200,
+            "message": "No folder selected",
+            "data": None
+        }
+    
+    folder_path = result["folder_path"]
+    
+    project_name = os.path.basename(folder_path)
+    
+    existing_project = db_manager.get_debug_project_by_path(db, current_user.id, folder_path)
+    
+    if existing_project:
+        existing_project.last_accessed_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing_project)
+        project = existing_project
+        is_new = False
+    else:
+        project = db_manager.create_debug_project(
+            db=db,
+            user_id=current_user.id,
+            name=project_name,
+            folder_path=folder_path,
+        )
+        is_new = True
+    
+    _active_project_sessions[current_user.id] = project.id
+    
+    db_manager.add_recent_project(
+        db=db,
+        user_id=current_user.id,
+        project_id=project.id,
+        folder_path=folder_path,
+        project_name=project_name,
+    )
+    
+    recent_projects = db_manager.get_recent_projects(db, current_user.id, limit=10)
+    
+    return {
+        "code": 200,
+        "message": "Folder selected successfully",
+        "data": {
+            "project_id": project.id,
+            "project_name": project.name,
+            "folder_path": project.folder_path,
+            "is_new": is_new,
+            "recent_projects": [
+                {
+                    "id": rp.id,
+                    "project_id": rp.project_id,
+                    "project_name": rp.project_name,
+                    "folder_path": rp.folder_path,
+                    "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
+                }
+                for rp in recent_projects
+            ]
+        }
+    }

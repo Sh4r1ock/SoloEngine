@@ -10,13 +10,17 @@
     "preview": "npx vite preview"
   },
   "dependencies": {
+    "@playwright/test": "^1.58.2",
+    "antd": "^5.11.7",
+    "axios": "^1.6.2",
+    "dayjs": "^1.11.19",
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
     "reactflow": "^11.10.1",
-    "zustand": "^4.4.7",
-    "antd": "^5.11.7",
-    "axios": "^1.6.2"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

@@ -21,14 +21,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layout, Button, Modal, Input, message } from 'antd';
-import { PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined, SettingOutlined, BugOutlined, HomeOutlined } from '@ant-design/icons';
+import { PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined, HomeOutlined } from '@ant-design/icons';
 import Canvas from '../../components/Canvas/Canvas';
 import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
 import Preview from '../../components/Preview/Preview';
-import SettingsModal from '../../components/Settings/SettingsModal';
 import { useCanvasStore } from '../../store/canvasStore';
 import { projectApi } from '../../services/api';
 import { localStorageService } from '../../services/localStorage';
+import { agenticFlowApi } from '../../services/agenticFlowApi';
 
 const { Header, Content, Sider } = Layout;
 
@@ -47,9 +47,7 @@ const EditorPage: React.FC = () => {
     selectedNode,
     setSelectedNode,
     isPreviewOpen,
-    isSettingsOpen,
     setPreviewOpen,
-    setSettingsOpen
   } = useCanvasStore();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -67,14 +65,15 @@ const EditorPage: React.FC = () => {
        */
       const loadProject = async () => {
         try {
-          const flowData = await localStorageService.loadFlowFromFile(projectId);
-          if (flowData) {
-            useCanvasStore.getState().setNodes(flowData.nodes || []);
-            useCanvasStore.getState().setEdges(flowData.edges || []);
+          const flow = await agenticFlowApi.getFlow(projectId);
+          if (flow) {
+            const canvasData = flow.canvas_data || { nodes: [], edges: [] };
+            useCanvasStore.getState().setNodes(canvasData.nodes || []);
+            useCanvasStore.getState().setEdges(canvasData.edges || []);
             setCurrentProject({ 
               id: projectId, 
-              name: projectId,
-              canvas: { nodes: flowData.nodes || [], edges: flowData.edges || [] }
+              name: flow.name,
+              canvas: canvasData
             });
           }
         } catch (error) {
@@ -112,14 +111,18 @@ const EditorPage: React.FC = () => {
   /**
    * 处理保存项目
    * 
-   * @description 保存当前画布数据到本地存储
+   * @description 保存当前画布数据到服务器
    * @returns {Promise<void>}
    */
   const handleSave = async () => {
     const { nodes, edges } = useCanvasStore.getState();
-    const defaultProjectName = projectId || currentProject?.name || 'default_flow';
+    const flowId = projectId || currentProject?.id;
+    if (!flowId) {
+      message.error('无法保存：缺少项目ID');
+      return;
+    }
     try {
-      await localStorageService.saveFlowToFile(defaultProjectName, nodes, edges);
+      await agenticFlowApi.saveCanvas(flowId, { nodes, edges });
       message.success('保存成功');
     } catch (error) {
       message.error('保存失败');
@@ -183,16 +186,14 @@ const EditorPage: React.FC = () => {
   };
 
   /**
-   * 跳转到调试页面
+   * 运行项目
    * 
-   * @description 导航到调试页面进行工作流调试
+   * @description 在新标签页打开运行面板
    */
-  const handleGoToDebug = () => {
-    if (projectId) {
-      navigate(`/debug/${projectId}`);
-    } else {
-      navigate('/debug');
-    }
+  const handleRun = () => {
+    const id = currentProject?.id || projectId;
+    const url = id ? `/run/${id}` : '/run';
+    window.open(url, '_blank');
   };
 
   useEffect(() => {
@@ -234,58 +235,57 @@ const EditorPage: React.FC = () => {
         display: 'flex', 
         alignItems: 'center', 
         justifyContent: 'space-between', 
-        background: 'linear-gradient(135deg, var(--primary-50), var(--bg-200))',
-        borderBottom: '1px solid var(--bg-300)',
+        background: 'var(--sidebar-bg)',
+        borderBottom: '1px solid var(--sidebar-hover)',
         padding: '0 24px',
-        boxShadow: '0 2px 10px rgba(0, 0, 0, 0.05)',
-        height: '64px',
+        height: '56px',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+          onClick={handleGoHome}
+        >
           <div style={{
-            width: '36px',
-            height: '36px',
-            background: 'linear-gradient(135deg, var(--primary-100), var(--accent-100))',
-            borderRadius: '8px',
+            width: '32px',
+            height: '32px',
+            background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
+            borderRadius: 'var(--radius-base)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             color: 'white',
-            fontSize: '16px',
+            fontSize: '14px',
             fontWeight: 'bold',
-            boxShadow: '0 2px 8px rgba(63, 81, 181, 0.2)',
-            cursor: 'pointer',
-          }} onClick={handleGoHome}>
+          }}>
             SE
           </div>
           
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ 
-              color: 'var(--primary-100)', 
-              fontSize: '18px', 
-              fontWeight: 700,
-              lineHeight: 1.2
-            }}>
-              SoloEngine
-            </div>
-            {currentProject && (
-              <div style={{ 
-                color: 'var(--text-200)', 
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                <span style={{ 
-                  width: '6px', 
-                  height: '6px', 
-                  backgroundColor: 'var(--accent-100)',
-                  borderRadius: '50%',
-                  display: 'inline-block'
-                }} />
-                <span>{currentProject.name}</span>
-              </div>
-            )}
+          <div style={{ 
+            color: '#fff', 
+            fontSize: '16px', 
+            fontWeight: 600,
+          }}>
+            SoloEngine
           </div>
+          
+          {currentProject && (
+            <div style={{ 
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginLeft: '4px',
+            }}>
+              <span style={{ 
+                width: '6px', 
+                height: '6px', 
+                backgroundColor: 'var(--accent-100)',
+                borderRadius: '50%',
+              }} />
+              <span style={{
+                color: 'rgba(255, 255, 255, 0.7)', 
+                fontSize: '14px',
+              }}>{currentProject.name}</span>
+            </div>
+          )}
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -294,68 +294,35 @@ const EditorPage: React.FC = () => {
             onClick={handleGoHome}
             style={{
               height: '36px',
-              borderColor: 'var(--bg-400)',
-              color: 'var(--text-100)'
+              borderColor: 'rgba(255, 255, 255, 0.3)',
+              color: 'rgba(255, 255, 255, 0.85)',
+              background: 'rgba(255, 255, 255, 0.1)',
             }}
           >
             主菜单
           </Button>
-          {currentProject && (
-            <div style={{
-              backgroundColor: 'var(--bg-100)',
-              border: '1px solid var(--bg-300)',
-              borderRadius: '8px',
-              padding: '6px 12px',
-              fontSize: '14px',
-              color: 'var(--text-100)',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)'
-            }}>
-              {currentProject.name}
-            </div>
-          )}
           <Button
             icon={<SaveOutlined />}
             onClick={handleSave}
             style={{
               height: '36px',
-              borderColor: 'var(--primary-100)',
-              color: 'var(--primary-100)'
+              borderColor: 'var(--primary-200)',
+              color: '#fff',
+              background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
             }}
           >
             保存
           </Button>
           <Button
-            icon={<SettingOutlined />}
-            onClick={() => setSettingsOpen(true)}
-            style={{
-              height: '36px',
-              borderColor: 'var(--bg-400)',
-              color: 'var(--text-100)'
-            }}
-          >
-            设置
-          </Button>
-          <Button
-            icon={<BugOutlined />}
-            onClick={handleGoToDebug}
-            style={{
-              height: '36px',
-              borderColor: 'var(--accent-100)',
-              color: 'var(--accent-100)'
-            }}
-          >
-            调试
-          </Button>
-          <Button
             type="primary"
             icon={<PlayCircleOutlined />}
-            onClick={handleGoToDebug}
+            onClick={handleRun}
             style={{
               background: 'var(--success)',
               borderColor: 'var(--success)',
               height: '36px',
               fontWeight: 600,
-              boxShadow: '0 2px 6px rgba(76, 175, 80, 0.2)'
+              boxShadow: '0 2px 6px rgba(76, 175, 80, 0.3)'
             }}
           >
             运行
@@ -363,8 +330,8 @@ const EditorPage: React.FC = () => {
         </div>
       </Header>
 
-      <Layout style={{ height: 'calc(100vh - 64px)' }}>
-        <Content style={{ background: '#f5f5f5' }}>
+      <Layout style={{ height: 'calc(100vh - 56px)' }}>
+        <Content style={{ background: 'var(--bg-secondary)' }}>
           <Canvas />
         </Content>
 
@@ -372,9 +339,9 @@ const EditorPage: React.FC = () => {
           <Sider
             width={panelWidth}
             style={{
-              background: '#FFFFFF',
-              borderLeft: '1px solid #cccccc',
-              boxShadow: '-2px 0 8px rgba(0, 0, 0, 0.06)',
+              background: 'var(--bg-100)',
+              borderLeft: '1px solid var(--border-color-light)',
+              boxShadow: 'var(--shadow-lg)',
             }}
             trigger={null}
           >
@@ -395,6 +362,7 @@ const EditorPage: React.FC = () => {
                   fontSize: 14,
                   padding: 4,
                   zIndex: 10,
+                  color: 'var(--text-200)',
                 }}
               />
               <div
@@ -407,7 +375,7 @@ const EditorPage: React.FC = () => {
                   bottom: 0,
                   width: 4,
                   cursor: 'col-resize',
-                  background: '#f5f5f5',
+                  background: 'var(--bg-200)',
                   transition: isPanelDragging ? 'none' : 'background 0.2s',
                   display: 'flex',
                   alignItems: 'center',
@@ -417,7 +385,7 @@ const EditorPage: React.FC = () => {
                 <DragOutlined 
                   style={{ 
                     fontSize: 12, 
-                    color: '#5c5c5c',
+                    color: 'var(--text-200)',
                     transform: 'rotate(90deg)',
                   }} 
                 />
@@ -450,11 +418,6 @@ const EditorPage: React.FC = () => {
       <Preview 
         visible={isPreviewOpen} 
         onClose={() => setPreviewOpen(false)} 
-      />
-      
-      <SettingsModal
-        visible={isSettingsOpen}
-        onClose={() => setSettingsOpen(false)}
       />
     </Layout>
   );

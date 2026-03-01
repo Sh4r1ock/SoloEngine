@@ -212,6 +212,7 @@ __marimo__/
 开发计划/
 开发文档/
 执行要求/
+.idea/
 .vscode/
 .trae/
 .vscode
@@ -219,3 +220,5 @@ official_mcp_servers/
 test_plans/
 test_sessions/
 tests/
+npm_cache/
+test_screenshots/
