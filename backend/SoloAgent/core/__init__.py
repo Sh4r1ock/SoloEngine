@@ -9,7 +9,7 @@ from .interfaces import (
     IPlanNotebook,
     ITTSModel,
 )
-from .react_core import ReActCore, CompletionReason, CompletionDetectionMode
+from .react_core import ReActCore, CompletionReason, StopReason
 
 __all__ = [
     "IMemory",
@@ -20,5 +20,5 @@ __all__ = [
     "ITTSModel",
     "ReActCore",
     "CompletionReason",
-    "CompletionDetectionMode",
+    "StopReason",
 ]
