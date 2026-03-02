@@ -43,7 +43,6 @@ from ...exception import (
     ToolInvalidArgumentsError,
 )
 from ...types import ToolFunction
-from .calculator import calculator
 
 
 class ToolResponse:
@@ -441,31 +440,3 @@ async def search_tool(query: str, limit: int = 5) -> ToolResponse:
         这是一个示例工具，返回模拟的搜索结果。
     """
     return ToolResponse(content=f"Search results for '{query}' (limit: {limit})")
-
-
-async def calculator_tool(expression: str) -> ToolResponse:
-    """
-    计算器工具。
-    
-    安全地计算数学表达式的结果。
-    使用受限的 eval 环境执行计算。
-    
-    Args:
-        expression (str): 数学表达式，如 "2 + 3 * 4"。
-    
-    Returns:
-        ToolResponse: 计算结果响应。
-    
-    Note:
-        使用 calculator 模块进行安全计算。
-    """
-    result = calculator.evaluate(expression)
-    
-    if result["success"]:
-        return ToolResponse(content=f"{expression} = {result['result']}")
-    else:
-        return ToolResponse(
-            content=f"Error evaluating expression: {result['error']}",
-            success=False,
-            error_message=result["error"],
-        )

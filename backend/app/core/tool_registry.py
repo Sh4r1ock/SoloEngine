@@ -21,8 +21,7 @@ import os
 import subprocess
 import httpx
 from datetime import datetime
-
-from SoloAgent.plugins.tools.calculator import calculator
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -344,13 +343,16 @@ class ToolRegistry:
         return datetime.now().strftime(format)
     
     async def _calculator_tool(self, expression: str) -> str:
-        """计算器工具实现 - 使用安全计算器模块。"""
-        result = calculator.evaluate(expression)
-        
-        if result["success"]:
-            return f"{expression} = {result['result']}"
-        else:
-            return f"Error: {result['error']}"
+        """计算器工具实现 - 使用安全计算。"""
+        try:
+            allowed_chars = re.compile(r'^[\d+\-*/().\s]+$')
+            if not allowed_chars.match(expression):
+                return f"Error: Invalid characters in expression"
+            
+            result = eval(expression, {"__builtins__": {}}, {})
+            return f"{expression} = {result}"
+        except Exception as e:
+            return f"Error: {str(e)}"
 
 
 tool_registry = ToolRegistry()
