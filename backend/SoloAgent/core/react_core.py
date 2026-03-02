@@ -10,7 +10,7 @@ ReAct 核心微内核模块。
 功能描述：
 - 实现推理-行动循环的核心逻辑
 - 支持多轮迭代直到任务完成
-- 自动检测任务完成条件
+- 自动检测任务完成条件（支持多模型 API）
 - 集成记忆、RAG、工具执行等插件
 
 ReAct 架构说明：
@@ -19,6 +19,13 @@ ReAct 架构说明：
     1. Thought（思考）：分析当前状态，决定下一步行动
     2. Action（行动）：执行工具调用或生成回复
     3. Observation（观察）：获取行动结果，更新状态
+
+多模型任务完成检测：
+    不同模型使用不同的 API 字段表示任务完成：
+    - Claude: stop_reason = "end_turn" (完成) / "tool_use" (工具调用)
+    - OpenAI/GLM/DeepSeek: finish_reason = "stop" (完成) / "tool_calls" (工具调用)
+    
+    本模块统一处理这些差异，提供一致的任务完成检测接口。
 
 设计理念：
     - 微内核架构：核心只负责控制流，功能通过插件接口扩展
@@ -42,16 +49,6 @@ from ..message import Msg, ToolUseBlock, ToolResultBlock, TextBlock
 from ..model import ChatModelBase, ChatResponse
 from ..formatter import FormatterBase
 from .interfaces import IMemory, IRAG, IToolExecutor
-from ..plugins.tools.finish_function_calling import (
-    check_finish_by_function_calling,
-)
-from ..plugins.tools.finish_structured import (
-    check_finish_by_structured_output,
-)
-from ..plugins.tools.finish_markers import (
-    CompletionMarkers,
-    check_finish_by_markers,
-)
 
 
 class CompletionReason(Enum):
@@ -61,35 +58,77 @@ class CompletionReason(Enum):
     定义 Agent 任务结束的各种原因，用于分析和调试。
     
     Attributes:
-        TASK_COMPLETED: 任务正常完成，Agent 认为已给出最终答案
+        TASK_COMPLETED: 任务正常完成，模型返回了最终答案
         MAX_ITERATIONS: 达到最大迭代次数限制，强制终止
         USER_SATISFIED: 用户表示满意，任务完成
         NO_MORE_ACTIONS: 没有更多行动可执行，自然终止
         ERROR_ENCOUNTERED: 遇到无法恢复的错误
-        EXPLICIT_FINISH: Agent 显式调用了结束指令（finish 工具）
+        TOOL_CALL: 模型请求工具调用
     """
     TASK_COMPLETED = "task_completed"
     MAX_ITERATIONS = "max_iterations"
     USER_SATISFIED = "user_satisfied"
     NO_MORE_ACTIONS = "no_more_actions"
     ERROR_ENCOUNTERED = "error_encountered"
-    EXPLICIT_FINISH = "explicit_finish"
+    TOOL_CALL = "tool_call"
 
 
-class CompletionDetectionMode(Enum):
+class StopReason(Enum):
     """
-    任务完成检测模式枚举。
+    多模型停止原因枚举。
     
-    定义不同的任务完成检测方式，由前端选择。
+    统一不同模型的停止原因表示：
+    - Claude: stop_reason 字段
+    - OpenAI/GLM/DeepSeek: finish_reason 字段
     
     Attributes:
-        FUNCTION_CALLING: 工具调用模式（默认）。LLM 通过调用 finish 工具表示任务完成。
-        STRUCTURED_OUTPUT: 结构化输出模式。解析 JSON 输出中的 action 字段判断。
-        TEXT_MARKERS: 文本标记词模式。通过关键词检测判断任务完成。
+        END_TURN: 任务完成，模型返回最终答案
+        TOOL_USE: 模型请求工具调用
+        MAX_TOKENS: 达到最大 token 限制
+        STOP_SEQUENCE: 遇到停止序列
+        UNKNOWN: 未知原因
     """
-    FUNCTION_CALLING = "function_calling"
-    STRUCTURED_OUTPUT = "structured_output"
-    TEXT_MARKERS = "text_markers"
+    END_TURN = "end_turn"
+    TOOL_USE = "tool_use"
+    MAX_TOKENS = "max_tokens"
+    STOP_SEQUENCE = "stop_sequence"
+    UNKNOWN = "unknown"
+    
+    @classmethod
+    def from_api_response(cls, response: ChatResponse) -> "StopReason":
+        """
+        从 API 响应中解析停止原因。
+        
+        支持多种模型的响应格式：
+        - Claude: response.stop_reason
+        - OpenAI/GLM/DeepSeek: response.finish_reason
+        
+        Args:
+            response: LLM API 响应对象。
+        
+        Returns:
+            StopReason: 统一的停止原因枚举值。
+        """
+        stop_reason = getattr(response, "stop_reason", None)
+        finish_reason = getattr(response, "finish_reason", None)
+        
+        reason = stop_reason or finish_reason
+        
+        if reason is None:
+            return cls.UNKNOWN
+        
+        reason_str = str(reason).lower()
+        
+        if reason_str in ("end_turn", "stop"):
+            return cls.END_TURN
+        elif reason_str in ("tool_use", "tool_calls"):
+            return cls.TOOL_USE
+        elif reason_str in ("max_tokens", "length"):
+            return cls.MAX_TOKENS
+        elif reason_str == "stop_sequence":
+            return cls.STOP_SEQUENCE
+        
+        return cls.UNKNOWN
 
 
 class ReActCore:
@@ -104,7 +143,7 @@ class ReActCore:
         2. 从记忆和 RAG 检索相关上下文
         3. 进入推理-行动循环：
            a. 调用 LLM 进行推理
-           b. 检查是否需要工具调用
+           b. 检查 API 返回的停止原因（支持多模型）
            c. 执行工具调用（如果有）
            d. 检查是否达到完成条件
         4. 返回最终响应
@@ -116,10 +155,10 @@ class ReActCore:
         - rag: RAG 插件（可选，用于知识检索）
         - tool_executor: 工具执行器（可选，用于工具调用）
     
-    完成检测模式：
-        - FUNCTION_CALLING（默认）：LLM 通过调用 finish 工具表示任务完成
-        - STRUCTURED_OUTPUT：解析 JSON 输出中的 action 字段判断
-        - TEXT_MARKERS：通过多语言关键词检测判断任务完成
+    多模型支持：
+        自动检测不同模型的停止原因：
+        - Claude: stop_reason = "end_turn" / "tool_use"
+        - OpenAI/GLM/DeepSeek: finish_reason = "stop" / "tool_calls"
     
     Example:
         >>> from SoloAgent.model import OpenAIChatModel
@@ -134,7 +173,6 @@ class ReActCore:
         ...     formatter=formatter,
         ...     system_prompt="你是一个有帮助的助手。",
         ...     max_iters=10,
-        ...     completion_detection_mode=CompletionDetectionMode.FUNCTION_CALLING,
         ... )
         >>> 
         >>> response = await core.reply("请帮我分析这段代码")
@@ -157,8 +195,6 @@ class ReActCore:
         tool_executor: Optional[IToolExecutor] = None,
         max_iters: int = 10,
         print_hint_msg: bool = False,
-        completion_detection_mode: CompletionDetectionMode = CompletionDetectionMode.FUNCTION_CALLING,
-        completion_markers: Optional[CompletionMarkers] = None,
     ) -> None:
         """
         初始化 ReAct 核心微内核。
@@ -180,18 +216,12 @@ class ReActCore:
                 默认为 10。
             print_hint_msg (bool, optional): 是否打印调试信息。
                 默认为 False。
-            completion_detection_mode (CompletionDetectionMode, optional): 
-                任务完成检测模式。默认为 FUNCTION_CALLING。
-                - FUNCTION_CALLING: LLM 通过调用 finish 工具表示任务完成
-                - STRUCTURED_OUTPUT: 解析 JSON 输出判断
-                - TEXT_MARKERS: 通过关键词检测判断
-            completion_markers (CompletionMarkers, optional): 多语言标记词配置。
-                仅在 TEXT_MARKERS 模式下使用。默认为英文标记词。
         
         Note:
             - model 和 formatter 是必需的
             - 插件参数都是可选的，按需注入
             - max_iters 应根据任务复杂度调整
+            - 任务完成检测通过 API 响应的 stop_reason/finish_reason 自动判断
         """
         self.name = name
         self.model = model
@@ -202,13 +232,10 @@ class ReActCore:
         self.tool_executor = tool_executor
         self.max_iters = max_iters
         self.print_hint_msg = print_hint_msg
-        self.completion_detection_mode = completion_detection_mode
-        self.completion_markers = completion_markers or CompletionMarkers.english()
         
         self._conversation_history: List[Msg] = []
         self._iteration_count = 0
         self._last_tool_results: List[Dict[str, Any]] = []
-        self._finish_answer: Optional[str] = None
         
     async def reply(self, message: str | Msg) -> Msg:
         """
@@ -483,12 +510,10 @@ class ReActCore:
         """
         检查任务是否完成。
         
-        根据配置的检测模式判断是否应该结束推理-行动循环。
-        
-        检测模式：
-            - FUNCTION_CALLING: 检测 finish 工具调用
-            - STRUCTURED_OUTPUT: 解析 JSON 输出中的 action 字段
-            - TEXT_MARKERS: 通过关键词检测判断
+        通过 API 响应的停止原因判断是否应该结束推理-行动循环。
+        支持多种模型的响应格式：
+        - Claude: stop_reason = "end_turn" / "tool_use"
+        - OpenAI/GLM/DeepSeek: finish_reason = "stop" / "tool_calls"
         
         Args:
             response (ChatResponse | str): LLM 响应或文本。
@@ -498,199 +523,46 @@ class ReActCore:
             dict: 检查结果，包含：
                 - should_complete (bool): 是否应该结束
                 - reason (CompletionReason): 结束原因
-                - confidence (float): 置信度（可选）
-        """
-        if self.completion_detection_mode == CompletionDetectionMode.FUNCTION_CALLING:
-            return self._check_completion_function_calling(response, iteration)
-        elif self.completion_detection_mode == CompletionDetectionMode.STRUCTURED_OUTPUT:
-            return self._check_completion_structured_output(response, iteration)
-        else:
-            return self._check_completion_text_markers(response, iteration)
-    
-    def _check_completion_function_calling(
-        self, 
-        response: Union[ChatResponse, str], 
-        iteration: int
-    ) -> dict:
-        """
-        Function Calling 模式的任务完成检测。
-        
-        使用 finish_function_calling 插件检测任务完成。
-        
-        Args:
-            response (ChatResponse | str): LLM 响应。
-            iteration (int): 当前迭代次数。
-        
-        Returns:
-            dict: 检查结果。
-        """
-        result = check_finish_by_function_calling(response)
-        
-        if result["is_finished"]:
-            self._finish_answer = result["answer"]
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.EXPLICIT_FINISH,
-                "confidence": 1.0
-            }
-        
-        if result["has_other_tools"]:
-            return {"should_complete": False, "reason": None}
-        
-        if iteration >= self.max_iters - 1:
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.MAX_ITERATIONS,
-                "confidence": 0.8
-            }
-        
-        reasoning_text = self._extract_text(response)
-        if reasoning_text.strip() and self._looks_like_final_answer(reasoning_text):
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.TASK_COMPLETED,
-                "confidence": 0.7
-            }
-        
-        return {"should_complete": False, "reason": None}
-    
-    def _check_completion_structured_output(
-        self, 
-        response: Union[ChatResponse, str], 
-        iteration: int
-    ) -> dict:
-        """
-        Structured Output 模式的任务完成检测。
-        
-        使用 finish_structured 插件检测任务完成。
-        
-        Args:
-            response (ChatResponse | str): LLM 响应。
-            iteration (int): 当前迭代次数。
-        
-        Returns:
-            dict: 检查结果。
-        """
-        reasoning_text = self._extract_text(response)
-        result = check_finish_by_structured_output(reasoning_text)
-        
-        if result["is_finished"]:
-            self._finish_answer = result["answer"]
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.EXPLICIT_FINISH,
-                "confidence": 1.0
-            }
-        
-        if result["has_other_action"]:
-            return {"should_complete": False, "reason": None}
-        
-        if iteration >= self.max_iters - 1:
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.MAX_ITERATIONS,
-                "confidence": 0.8
-            }
-        
-        if reasoning_text.strip() and self._looks_like_final_answer(reasoning_text):
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.TASK_COMPLETED,
-                "confidence": 0.7
-            }
-        
-        return {"should_complete": False, "reason": None}
-    
-    def _check_completion_text_markers(
-        self, 
-        response: Union[ChatResponse, str], 
-        iteration: int
-    ) -> dict:
-        """
-        Text Markers 模式的任务完成检测。
-        
-        使用 finish_markers 插件检测任务完成。
-        
-        Args:
-            response (ChatResponse | str): LLM 响应。
-            iteration (int): 当前迭代次数。
-        
-        Returns:
-            dict: 检查结果。
         """
         if isinstance(response, ChatResponse):
+            stop_reason = StopReason.from_api_response(response)
+            
+            if stop_reason == StopReason.END_TURN:
+                return {
+                    "should_complete": True,
+                    "reason": CompletionReason.TASK_COMPLETED
+                }
+            
+            if stop_reason == StopReason.TOOL_USE:
+                return {"should_complete": False, "reason": CompletionReason.TOOL_CALL}
+            
+            if stop_reason == StopReason.MAX_TOKENS:
+                return {
+                    "should_complete": True,
+                    "reason": CompletionReason.MAX_ITERATIONS
+                }
+            
             has_tool_calls = any(
                 isinstance(block, dict) and block.get("type") == "tool_use"
                 for block in response.content
             )
             if has_tool_calls:
-                return {"should_complete": False, "reason": None}
-        
-        reasoning_text = self._extract_text(response)
-        result = check_finish_by_markers(reasoning_text, self.completion_markers)
-        
-        if result["is_finished"]:
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.TASK_COMPLETED,
-                "confidence": result["confidence"]
-            }
-        
-        if result["has_continuation"]:
-            return {"should_complete": False, "reason": None}
+                return {"should_complete": False, "reason": CompletionReason.TOOL_CALL}
+            
+            reasoning_text = self._extract_text(response)
+            if reasoning_text.strip() and self._looks_like_final_answer(reasoning_text):
+                return {
+                    "should_complete": True,
+                    "reason": CompletionReason.TASK_COMPLETED
+                }
         
         if iteration >= self.max_iters - 1:
             return {
                 "should_complete": True,
-                "reason": CompletionReason.MAX_ITERATIONS,
-                "confidence": 0.8
-            }
-        
-        if reasoning_text.strip() and self._looks_like_final_answer(reasoning_text):
-            return {
-                "should_complete": True,
-                "reason": CompletionReason.TASK_COMPLETED,
-                "confidence": 0.7
+                "reason": CompletionReason.MAX_ITERATIONS
             }
         
         return {"should_complete": False, "reason": None}
-    
-    def _calculate_completion_confidence(self, text: str) -> float:
-        """
-        计算任务完成的置信度。
-        
-        基于多个信号综合评估任务是否完成：
-        - 强标记词（如 "final answer"）权重更高
-        - 弱标记词（如 "done"）权重较低
-        - 结构化输出（如编号列表）增加置信度
-        - 因果词（如 "therefore"）增加置信度
-        
-        Args:
-            text (str): LLM 输出文本。
-        
-        Returns:
-            float: 完成置信度，范围 [0, 1]。
-        """
-        confidence = 0.0
-        text_lower = text.lower()
-        
-        strong_markers = ["final answer", "task completed", "conclusion:"]
-        for marker in strong_markers:
-            if marker in text_lower:
-                confidence += 0.4
-        
-        weak_markers = ["answer:", "result:", "done", "finished"]
-        for marker in weak_markers:
-            if marker in text_lower:
-                confidence += 0.2
-        
-        if re.search(r'\d+\.\s+\w+', text):
-            confidence += 0.1
-        
-        if re.search(r'(therefore|thus|hence|so),', text_lower):
-            confidence += 0.15
-        
-        return min(confidence, 1.0)
     
     def _looks_like_final_answer(self, text: str) -> bool:
         """
@@ -774,10 +646,9 @@ class ReActCore:
         从推理结果中提取或生成最终答案。
         
         处理逻辑：
-            1. 如果有 finish 工具提供的答案，直接返回
-            2. 尝试提取显式的最终答案
-            3. 如果提取失败，截取推理文本前 500 字符
-            4. 如果没有推理文本，返回默认消息
+            1. 尝试提取显式的最终答案
+            2. 如果提取失败，截取推理文本前 500 字符
+            3. 如果没有推理文本，返回默认消息
         
         Args:
             response (ChatResponse | str): 推理结果。
@@ -787,9 +658,6 @@ class ReActCore:
         Returns:
             str: 最终响应文本。
         """
-        if self._finish_answer:
-            return self._finish_answer
-        
         reasoning_text = self._extract_text(response)
         
         if reasoning_text:
@@ -841,7 +709,6 @@ class ReActCore:
         - 对话历史
         - 迭代计数
         - 工具调用结果
-        - finish 工具答案
         - 记忆存储（如果配置了记忆插件）
         
         Warning:
@@ -850,7 +717,6 @@ class ReActCore:
         self._conversation_history.clear()
         self._iteration_count = 0
         self._last_tool_results = []
-        self._finish_answer = None
         
         if self.memory:
             await self.memory.clear()
