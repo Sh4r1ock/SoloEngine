@@ -206,6 +206,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Node.js
+node_modules/
+.npm-cache/
+npm_cache/
+*.log
+
 # 自定义忽略文件夹
 备份文件/
 代码审查/
@@ -220,6 +226,5 @@ official_mcp_servers/
 test_plans/
 test_sessions/
 tests/
-npm_cache/
 test_screenshots/
-SoloEngine.zip/
+SoloEngine.zip
