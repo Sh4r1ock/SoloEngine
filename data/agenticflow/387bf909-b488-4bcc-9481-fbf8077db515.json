@@ -7,7 +7,7 @@
         "type": "agent",
         "position": {
           "x": 1040,
-          "y": 320
+          "y": 240
         },
         "data": {
           "name": "新协调者",
@@ -23,10 +23,87 @@
           "skills": []
         },
         "width": 222,
-        "height": 124
+        "height": 124,
+        "selected": false,
+        "positionAbsolute": {
+          "x": 1040,
+          "y": 240
+        },
+        "dragging": false
+      },
+      {
+        "id": "node_1772635894610",
+        "type": "agent",
+        "position": {
+          "x": 920,
+          "y": 440
+        },
+        "data": {
+          "name": "新节点",
+          "desc": "",
+          "agentType": "executor",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "openai",
+            "model": "gpt-4"
+          },
+          "skills": []
+        },
+        "width": 222,
+        "height": 124,
+        "selected": false,
+        "dragging": false,
+        "positionAbsolute": {
+          "x": 920,
+          "y": 440
+        }
+      },
+      {
+        "id": "node_1772635913796",
+        "type": "agent",
+        "position": {
+          "x": 1220,
+          "y": 440
+        },
+        "data": {
+          "name": "新节点",
+          "desc": "",
+          "agentType": "executor",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "openai",
+            "model": "gpt-4"
+          },
+          "skills": []
+        },
+        "width": 222,
+        "height": 124,
+        "selected": false,
+        "positionAbsolute": {
+          "x": 1220,
+          "y": 440
+        },
+        "dragging": false
       }
     ],
-    "edges": []
+    "edges": [
+      {
+        "id": "e_node_1772380591835_node_1772635894610",
+        "source": "node_1772380591835",
+        "target": "node_1772635894610",
+        "label": "调用"
+      },
+      {
+        "id": "e_node_1772380591835_node_1772635913796",
+        "source": "node_1772380591835",
+        "target": "node_1772635913796",
+        "label": "调用"
+      }
+    ]
   },
-  "updated_at": "2026-03-01T18:05:07.396415"
+  "updated_at": "2026-03-04T14:52:05.382258"
 }

@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 class FileManager:
     def __init__(self, base_dir: str = None):
         if base_dir is None:
-            base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', '..', 'frontend', 'saved_flows')
+            base_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', '..', 'data', 'agenticflow')
         self.base_dir = Path(base_dir)
         self.ensure_saved_flows_dir()
 

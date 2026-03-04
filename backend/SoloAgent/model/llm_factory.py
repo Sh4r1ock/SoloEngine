@@ -51,6 +51,8 @@ class LLMProvider:
         ANTHROPIC (str): Anthropic 提供商标识
         QWEN (str): 通义千问提供商标识
         OLLAMA (str): Ollama 本地模型提供商标识
+        DEEPSEEK (str): DeepSeek 提供商标识
+        ZHIPU (str): 智谱 GLM 提供商标识
     
     Example:
         >>> provider = LLMProvider.OPENAI
@@ -61,6 +63,8 @@ class LLMProvider:
     ANTHROPIC = "anthropic"
     QWEN = "qwen"
     OLLAMA = "ollama"
+    DEEPSEEK = "deepseek"
+    ZHIPU = "zhipu"
 
 
 class LLMFactory:
@@ -112,6 +116,8 @@ class LLMFactory:
         LLMProvider.ANTHROPIC: AnthropicChatModel,
         LLMProvider.QWEN: QwenChatModel,
         LLMProvider.OLLAMA: OllamaChatModel,
+        LLMProvider.DEEPSEEK: OpenAIChatModel,
+        LLMProvider.ZHIPU: OpenAIChatModel,
     }
     """提供商到模型类的映射字典"""
 
@@ -120,6 +126,8 @@ class LLMFactory:
         LLMProvider.ANTHROPIC: "claude-3-5-sonnet-20241022",
         LLMProvider.QWEN: "qwen-plus",
         LLMProvider.OLLAMA: "llama2",
+        LLMProvider.DEEPSEEK: "deepseek-chat",
+        LLMProvider.ZHIPU: "glm-4",
     }
     """各提供商的默认模型"""
 
@@ -158,6 +166,17 @@ class LLMFactory:
             "mistral",
             "gemma:2b",
             "gemma:7b",
+        ],
+        LLMProvider.DEEPSEEK: [
+            "deepseek-chat",
+            "deepseek-coder",
+            "deepseek-reasoner",
+        ],
+        LLMProvider.ZHIPU: [
+            "glm-4",
+            "glm-4-plus",
+            "glm-4-air",
+            "glm-4-flash",
         ],
     }
     """各提供商的可用模型列表"""
@@ -254,6 +273,12 @@ class LLMFactory:
 
         elif provider_lower == LLMProvider.OLLAMA:
             provider_kwargs["base_url"] = kwargs.get("base_url", "http://localhost:11434")
+
+        elif provider_lower in [LLMProvider.DEEPSEEK, LLMProvider.ZHIPU]:
+            provider_kwargs["api_key"] = api_key
+            base_url = kwargs.pop("base_url", None)
+            if base_url:
+                provider_kwargs["client_kwargs"] = {"base_url": base_url}
 
         try:
             return model_class(

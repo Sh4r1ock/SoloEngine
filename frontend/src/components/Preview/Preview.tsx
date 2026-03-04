@@ -113,7 +113,9 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
           }}>
             {isRunning && (
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <Spin tip="执行中..." />
+                <Spin tip="执行中...">
+                  <div style={{ padding: 20 }} />
+                </Spin>
               </div>
             )}
 
