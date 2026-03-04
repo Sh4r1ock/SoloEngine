@@ -27,7 +27,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from dataclasses import dataclass
 
-from app.core.database import db_manager, SessionLocal
+from app.core.database import db_manager, get_db_context
 from app.core.agent_executor import AgentExecutor, AgentConfig, AgentExecutorFactory
 
 logger = logging.getLogger(__name__)
@@ -183,8 +183,7 @@ class JSONWorkflowExecutor:
     async def execute(self, input_message: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         context = context or {}
 
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             self.execution_id = os.urandom(16).hex()
             execution_record = db_manager.create_execution(
                 db,
@@ -209,7 +208,7 @@ class JSONWorkflowExecutor:
 
             results = {}
             for entry_node_id in entry_nodes:
-                result = await self._execute_node(entry_node_id, input_message, context, db)
+                result = await self._execute_node(entry_node_id, input_message, context)
                 results[entry_node_id] = result
 
             output = self._aggregate_results(results)
@@ -227,35 +226,15 @@ class JSONWorkflowExecutor:
                 "node_results": results
             }
 
-        except Exception as e:
-            logger.error(f"Workflow execution failed: {e}")
-            if self.execution_id:
-                try:
-                    db_manager.update_execution(
-                        db, self.execution_id,
-                        status="failed",
-                        error=str(e)
-                    )
-                except Exception as db_error:
-                    logger.error(f"Failed to update execution status: {db_error}")
-            raise
-        finally:
-            db.close()
-
     async def _execute_node(self, node_id: str, input_message: str, 
-                            context: Dict[str, Any], db=None) -> Dict[str, Any]:
+                            context: Dict[str, Any]) -> Dict[str, Any]:
         node_data = self.nodes.get(node_id)
         executor = self.executors.get(node_id)
 
         if not node_data or not executor:
             return {"error": f"Node {node_id} not found"}
 
-        should_close_db = False
-        if db is None:
-            db = SessionLocal()
-            should_close_db = True
-        
-        try:
+        with get_db_context() as db:
             db_manager.add_execution_step(
                 db,
                 execution_id=self.execution_id,
@@ -273,15 +252,11 @@ class JSONWorkflowExecutor:
             downstream_nodes = self.get_downstream_nodes(node_id)
             for downstream_id in downstream_nodes:
                 child_input = self._prepare_child_input(node_id, downstream_id, result)
-                child_result = await self._execute_node(downstream_id, child_input, context, db)
+                child_result = await self._execute_node(downstream_id, child_input, context)
                 result["child_results"] = result.get("child_results", [])
                 result["child_results"].append(child_result)
 
             return result
-
-        finally:
-            if should_close_db:
-                db.close()
 
     def _prepare_child_input(self, parent_id: str, child_id: str, 
                              parent_result: Dict[str, Any]) -> str:

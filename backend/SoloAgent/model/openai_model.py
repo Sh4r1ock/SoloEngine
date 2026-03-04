@@ -610,11 +610,26 @@ class OpenAIChatModel(ChatModelBase):
                 output_tokens=response.usage.completion_tokens,
                 time=(datetime.now() - start_datetime).total_seconds(),
             )
+        
+        stop_reason = None
+        finish_reason = None
+        if response.choices:
+            choice = response.choices[0]
+            finish_reason = getattr(choice, 'finish_reason', None)
+            if finish_reason:
+                if finish_reason == "stop":
+                    stop_reason = "end_turn"
+                elif finish_reason == "tool_calls":
+                    stop_reason = "tool_use"
+                else:
+                    stop_reason = finish_reason
 
         parsed_response = ChatResponse(
             content=content_blocks,
             usage=usage,
             metadata=metadata,
+            stop_reason=stop_reason,
+            finish_reason=finish_reason,
         )
 
         return parsed_response

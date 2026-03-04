@@ -43,7 +43,9 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
         height: '100vh',
         background: '#f5f5f5',
       }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" tip="加载中...">
+          <div style={{ padding: 50 }} />
+        </Spin>
       </div>
     );
   }

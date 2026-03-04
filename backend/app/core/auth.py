@@ -16,7 +16,7 @@ except ImportError:
     InvalidTokenError = Exception
 
 from app.models.auth import User, Token
-from app.core.database import db_manager, get_db, UserModel, hash_password, verify_password
+from app.core.database import db_manager, get_db_context, UserModel, hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
@@ -133,8 +133,7 @@ class AuthService:
         is_superuser: bool = False,
     ) -> User:
         """注册用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             existing_user = db_manager.get_user_by_username(db, username)
             if existing_user:
                 raise ValueError(f"Username '{username}' already exists")
@@ -152,8 +151,6 @@ class AuthService:
             )
             logger.info(f"Registered user: {username}")
             return _user_model_to_dataclass(user_model)
-        finally:
-            db.close()
 
     async def authenticate_user(
         self,
@@ -161,14 +158,11 @@ class AuthService:
         password: str,
     ) -> Optional[User]:
         """验证用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             user_model = db_manager.authenticate_user(db, username, password)
             if not user_model:
                 return None
             return _user_model_to_dataclass(user_model)
-        finally:
-            db.close()
 
     async def login(self, username: str, password: str) -> Optional[Token]:
         """用户登录。"""
@@ -215,25 +209,19 @@ class AuthService:
 
     async def get_user(self, user_id: str) -> Optional[User]:
         """获取用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             user_model = db_manager.get_user_by_id(db, user_id)
             if not user_model:
                 return None
             return _user_model_to_dataclass(user_model)
-        finally:
-            db.close()
 
     async def get_user_by_username(self, username: str) -> Optional[User]:
         """通过用户名获取用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             user_model = db_manager.get_user_by_username(db, username)
             if not user_model:
                 return None
             return _user_model_to_dataclass(user_model)
-        finally:
-            db.close()
 
     async def update_user(
         self,
@@ -243,8 +231,7 @@ class AuthService:
         is_active: Optional[bool] = None,
     ) -> Optional[User]:
         """更新用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             user_model = db_manager.get_user_by_id(db, user_id)
             if not user_model:
                 return None
@@ -269,13 +256,10 @@ class AuthService:
             db.refresh(user_model)
             
             return _user_model_to_dataclass(user_model)
-        finally:
-            db.close()
 
     async def delete_user(self, user_id: str) -> bool:
         """删除用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             user_model = db_manager.get_user_by_id(db, user_id)
             if not user_model:
                 return False
@@ -283,17 +267,12 @@ class AuthService:
             db.delete(user_model)
             db.commit()
             return True
-        finally:
-            db.close()
 
     async def list_users(self) -> list:
         """列出用户。"""
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             users = db.query(UserModel).all()
             return [_user_model_to_dataclass(u) for u in users]
-        finally:
-            db.close()
 
 
 auth_service = AuthService()

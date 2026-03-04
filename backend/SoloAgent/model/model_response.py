@@ -26,12 +26,13 @@
     - type: 响应类型
     - usage: Token 使用量统计
     - metadata: 额外元数据
+    - stop_reason: 停止原因（end_turn, tool_use, max_tokens 等）
 
 状态: ✅ 完整实现
 """
 
 from dataclasses import dataclass, field
-from typing import Literal, Sequence
+from typing import Literal, Sequence, Optional
 
 from .model_usage import ChatUsage
 from ..utils import _get_timestamp, DictMixin
@@ -138,3 +139,45 @@ class ChatResponse(DictMixin):
     - 自定义标签
     - 其他提供商特定信息
     """
+    
+    stop_reason: Optional[str] = field(default_factory=lambda: None)
+    """
+    停止原因。
+    
+    表示模型停止生成的原因：
+    - "end_turn": 正常结束，模型返回了完整回复
+    - "tool_use": 模型请求调用工具
+    - "max_tokens": 达到最大 token 限制
+    - "stop_sequence": 遇到停止序列
+    
+    不同 API 使用不同的字段名：
+    - Claude: stop_reason
+    - OpenAI/GLM/DeepSeek: finish_reason
+    
+    本字段统一存储这些值。
+    """
+    
+    finish_reason: Optional[str] = field(default_factory=lambda: None)
+    """
+    完成原因（OpenAI 格式）。
+    
+    与 stop_reason 含义相同，用于兼容 OpenAI 格式。
+    """
+    
+    def get_text_content(self) -> str:
+        """
+        获取文本内容。
+        
+        从内容块中提取所有文本内容并合并。
+        
+        Returns:
+            str: 合并后的文本内容。
+        """
+        texts = []
+        for block in self.content:
+            if isinstance(block, dict):
+                if block.get("type") == "text":
+                    texts.append(block.get("text", ""))
+            elif hasattr(block, 'text'):
+                texts.append(block.text)
+        return "".join(texts)

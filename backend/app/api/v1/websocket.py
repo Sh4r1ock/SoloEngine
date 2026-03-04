@@ -41,7 +41,7 @@ from app.core.canvas_parser import CanvasParser
 from app.core.scheduler import Scheduler
 from app.schemas.response import AgentUpdateEvent, ToolCallEvent, ResponseStreamingEvent, ExecutionCompleteEvent
 from app.core.auth import auth_service
-from app.core.database import db_manager, get_db
+from app.core.database import db_manager, get_db_context_async
 
 router = APIRouter(prefix="/api/v1")
 
@@ -259,11 +259,9 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str):
     Note:
         - 执行过程是异步的
         - 错误会通过 WebSocket 推送给客户端
-        - 数据库连接会在执行完成后关闭
+        - 数据库连接会在执行完成后自动关闭
     """
-    db = next(get_db())
-    
-    try:
+    async with get_db_context_async() as db:
         project = db_manager.get_project(db, project_id)
         if not project:
             await manager.send_event(task_id, {
@@ -317,5 +315,3 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str):
                 "type": "error",
                 "message": str(e)
             })
-    finally:
-        db.close()

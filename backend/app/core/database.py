@@ -28,6 +28,7 @@ import uuid
 import hashlib
 import base64
 import secrets
+from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -329,6 +330,40 @@ def init_db():
 
 def get_db() -> Session:
     """获取数据库会话。"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_context():
+    """获取数据库会话的上下文管理器。
+    
+    用于非 FastAPI 依赖注入场景，确保会话自动关闭。
+    
+    Example:
+        with get_db_context() as db:
+            user = db.query(UserModel).first()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def get_db_context_async():
+    """获取数据库会话的异步上下文管理器。
+    
+    用于异步函数中，确保会话自动关闭。
+    
+    Example:
+        async with get_db_context_async() as db:
+            user = db.query(UserModel).first()
+    """
     db = SessionLocal()
     try:
         yield db
