@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "calc_server": {
+      "command": "python",
+      "args": ["data/mcp_servers/calc_server/main.py"],
+      "env": {}
+    },
+    "test_python_mcp": {
+      "command": "python",
+      "args": ["data/mcp_servers/test_python_mcp/main.py"],
+      "env": {}
+    }
+  }
+}

@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from collections import OrderedDict
 from threading import Lock
 
-from app.core.database import db_manager, SessionLocal, AgentModel, AgentMemoryModel
+from app.core.database import db_manager, get_db_context, AgentModel, AgentMemoryModel
 from SoloAgent.assembly.assembler import ReActAgent
 from SoloAgent.model import ChatModelBase
 from SoloAgent.formatter import FormatterBase
@@ -87,8 +87,7 @@ class PersistentMemory(IMemory):
         self._cache: List[Any] = []
 
     async def add(self, msg) -> None:
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             db_manager.add_memory(
                 db,
                 user_id=self.user_id,
@@ -100,12 +99,9 @@ class PersistentMemory(IMemory):
                 metadata={"source": "persistent_memory"}
             )
             self._cache.append(msg)
-        finally:
-            db.close()
 
     async def retrieve(self, query: str, limit: int = 5) -> List:
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             memories = db_manager.get_memories(
                 db, 
                 user_id=self.user_id,
@@ -118,8 +114,6 @@ class PersistentMemory(IMemory):
                 Msg(name=m.role, role=m.role, content=m.content)
                 for m in memories
             ]
-        finally:
-            db.close()
 
     async def clear(self) -> None:
         self._cache.clear()
@@ -180,8 +174,7 @@ class AgentExecutor:
         self._register_to_database()
 
     def _register_to_database(self):
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             existing = db_manager.get_agent(db, self.agent_id)
             if not existing:
                 db_manager.create_agent(
@@ -199,8 +192,6 @@ class AgentExecutor:
                         "agentic_flow_id": self.agentic_flow_id,
                     }
                 )
-        finally:
-            db.close()
 
     async def initialize(self):
         if self._is_initialized:
@@ -256,11 +247,9 @@ class AgentExecutor:
         if not self._is_initialized:
             await self.initialize()
 
-        db = SessionLocal()
-        execution_record = None
         start_time = datetime.now()
 
-        try:
+        with get_db_context() as db:
             if self.agentic_flow_id:
                 run = db_manager.create_run(
                     db,
@@ -273,37 +262,36 @@ class AgentExecutor:
                 if self._memory and isinstance(self._memory, PersistentMemory):
                     self._memory.set_run_id(self._run_id)
 
-            if self.agent_type == "orchestrator":
-                result = await self._execute_as_orchestrator(input_message, context)
-            elif self.agent_type == "planner":
-                result = await self._execute_as_planner(input_message, context)
-            else:
-                result = await self._execute_as_executor(input_message, context)
+            try:
+                if self.agent_type == "orchestrator":
+                    result = await self._execute_as_orchestrator(input_message, context)
+                elif self.agent_type == "planner":
+                    result = await self._execute_as_planner(input_message, context)
+                else:
+                    result = await self._execute_as_executor(input_message, context)
 
-            end_time = datetime.now()
-            duration_ms = int((end_time - start_time).total_seconds() * 1000)
+                end_time = datetime.now()
+                duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
-            if self._run_id:
-                db_manager.update_run(
-                    db, self._run_id,
-                    status="completed",
-                    output_message=result.get("output", ""),
-                    duration_ms=duration_ms
-                )
+                if self._run_id:
+                    db_manager.update_run(
+                        db, self._run_id,
+                        status="completed",
+                        output_message=result.get("output", ""),
+                        duration_ms=duration_ms
+                    )
 
-            return result
+                return result
 
-        except Exception as e:
-            logger.error(f"Agent execution failed: {e}")
-            if self._run_id:
-                db_manager.update_run(
-                    db, self._run_id,
-                    status="failed",
-                    error=str(e)
-                )
-            raise
-        finally:
-            db.close()
+            except Exception as e:
+                logger.error(f"Agent execution failed: {e}")
+                if self._run_id:
+                    db_manager.update_run(
+                        db, self._run_id,
+                        status="failed",
+                        error=str(e)
+                    )
+                raise
 
     async def _execute_as_orchestrator(self, input_message: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
         context = context or {}
@@ -385,13 +373,12 @@ class AgentExecutor:
         if not self._tool_executor:
             raise RuntimeError("Tool executor not initialized")
 
-        db = SessionLocal()
-        try:
-            start_time = datetime.now()
-            result = await self._tool_executor.execute({"name": tool_name, "arguments": arguments})
-            end_time = datetime.now()
-            duration_ms = int((end_time - start_time).total_seconds() * 1000)
+        start_time = datetime.now()
+        result = await self._tool_executor.execute({"name": tool_name, "arguments": arguments})
+        end_time = datetime.now()
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
+        with get_db_context() as db:
             if self._run_id:
                 db_manager.add_tool_call(
                     db,
@@ -402,13 +389,10 @@ class AgentExecutor:
                     duration_ms=duration_ms
                 )
 
-            return result
-        finally:
-            db.close()
+        return result
 
     async def add_memory(self, role: str, content: str, metadata: Dict = None):
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             db_manager.add_memory(
                 db,
                 user_id=self.user_id,
@@ -419,12 +403,9 @@ class AgentExecutor:
                 content=content,
                 metadata=metadata
             )
-        finally:
-            db.close()
 
     async def get_memories(self, limit: int = 100) -> List[Dict]:
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             memories = db_manager.get_memories(
                 db, 
                 user_id=self.user_id,
@@ -444,8 +425,6 @@ class AgentExecutor:
                 }
                 for m in memories
             ]
-        finally:
-            db.close()
 
     async def add_execution_step(
         self, 
@@ -459,8 +438,7 @@ class AgentExecutor:
         error: str = None,
         duration_ms: int = None
     ):
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             if self._run_id:
                 db_manager.add_execution_step(
                     db,
@@ -475,8 +453,6 @@ class AgentExecutor:
                     error=error,
                     duration_ms=duration_ms
                 )
-        finally:
-            db.close()
 
     async def connect_mcp_server(self, server_config: Dict[str, Any]) -> bool:
         if not self._mcp_manager:
@@ -510,8 +486,7 @@ class AgentExecutor:
         return tools
 
     def get_execution_history(self, limit: int = 10) -> List[Dict]:
-        db = SessionLocal()
-        try:
+        with get_db_context() as db:
             runs = db_manager.get_runs(
                 db, 
                 flow_id=self.agentic_flow_id,
@@ -531,8 +506,6 @@ class AgentExecutor:
                 }
                 for r in runs
             ]
-        finally:
-            db.close()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
