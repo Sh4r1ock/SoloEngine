@@ -11,7 +11,7 @@
 import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import asyncio
 import uuid
@@ -147,7 +147,7 @@ class ServiceRegistry:
         
         self._servers[server_id].status = status
         self._servers[server_id].error_message = error_message
-        self._servers[server_id].updated_at = datetime.utcnow()
+        self._servers[server_id].updated_at = datetime.now(timezone.utc)
         return True
     
     async def update_server_info(
@@ -165,7 +165,7 @@ class ServiceRegistry:
             if hasattr(server, key):
                 setattr(server, key, value)
         
-        server.updated_at = datetime.utcnow()
+        server.updated_at = datetime.now(timezone.utc)
         return server
     
     async def server_exists(self, server_id: str) -> bool:

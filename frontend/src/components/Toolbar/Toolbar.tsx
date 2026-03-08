@@ -8,7 +8,7 @@ interface ToolbarProps {
 }
 
 const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
-  const { addNode, setSettingsOpen, snapToGrid, setSnapToGrid } = useCanvasStore();
+  const { addNodeWithDefaultConfig, setSettingsOpen, snapToGrid, setSnapToGrid } = useCanvasStore();
   const [pendingAdd, setPendingAdd] = useState(false);
 
   const handleDragStart = (event: React.DragEvent) => {
@@ -20,7 +20,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
     setPendingAdd(true);
   };
 
-  const handleCanvasClick = (event: React.MouseEvent) => {
+  const handleCanvasClick = async (event: React.MouseEvent) => {
     if (pendingAdd && reactFlowInstance) {
       const position = reactFlowInstance.project({
         x: event.clientX,
@@ -40,15 +40,11 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
           system_prompt: '',
           user_prompt: '',
           assistant_prompt: '',
-          model_config: {
-            provider: 'openai',
-            model: 'gpt-4',
-          },
           skills: [],
         },
       };
 
-      addNode(newNode as any);
+      await addNodeWithDefaultConfig(newNode as any);
       setPendingAdd(false);
     }
   };

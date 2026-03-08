@@ -5,6 +5,7 @@
 import os
 import json
 import logging
+import re
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,8 @@ class ConfigLoader:
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.7,
     ) -> Dict[str, Any]:
         """加载 LLM 配置
         
@@ -45,11 +48,15 @@ class ConfigLoader:
             "model": model,
             "api_key": api_key,
             "base_url": base_url,
-            "temperature": 0.7,
-            "max_tokens": 4096,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         
-        if api_key and base_url:
+        if api_key:
+            if not base_url:
+                default_configs = cls._get_default_llm_configs()
+                if provider in default_configs:
+                    config["base_url"] = default_configs[provider].get("base_url")
             return config
         
         cache_key = f"{provider}:{user_id or 'default'}"
@@ -59,8 +66,7 @@ class ConfigLoader:
             return config
         
         try:
-            from ...app.core.database import get_db
-            from ...app.models.llm_config import LLMConfigModel
+            from app.core.database import get_db, LLMConfigModel
             
             db = next(get_db())
             query = db.query(LLMConfigModel).filter(
@@ -124,7 +130,7 @@ class ConfigLoader:
         """加载技能配置
         
         优先级：
-        1. 系统技能目录 (data/system_skills)
+        1. 系统技能目录 (data/system_skills) - 支持 SKILL.md 和 skill.json
         2. 数据库中的用户技能
         """
         if skill_name in cls._skill_configs:
@@ -137,24 +143,37 @@ class ConfigLoader:
             "tools": [],
         }
         
-        system_skill_path = os.path.join(
+        base_path = os.path.join(
             os.path.dirname(__file__),
-            "..", "..", "..", "..", "data", "system_skills",
-            skill_name, "skill.json"
+            "..", "..", "..", "data", "system_skills",
+            skill_name
         )
         
-        if os.path.exists(system_skill_path):
+        skill_json_path = os.path.join(base_path, "skill.json")
+        skill_md_path = os.path.join(base_path, "SKILL.md")
+        
+        if os.path.exists(skill_json_path):
             try:
-                with open(system_skill_path, "r", encoding="utf-8") as f:
+                with open(skill_json_path, "r", encoding="utf-8") as f:
                     skill_data = json.load(f)
                     config.update(skill_data)
-                    logger.info(f"Loaded skill '{skill_name}' from system_skills")
+                    logger.info(f"Loaded skill '{skill_name}' from skill.json")
             except Exception as e:
-                logger.warning(f"Failed to load skill '{skill_name}' from file: {e}")
+                logger.warning(f"Failed to load skill '{skill_name}' from skill.json: {e}")
+        
+        elif os.path.exists(skill_md_path):
+            try:
+                with open(skill_md_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    parsed = cls._parse_skill_md(content)
+                    config.update(parsed)
+                    config["instructions"] = content
+                    logger.info(f"Loaded skill '{skill_name}' from SKILL.md")
+            except Exception as e:
+                logger.warning(f"Failed to load skill '{skill_name}' from SKILL.md: {e}")
         
         try:
-            from ...app.core.database import get_db
-            from ...app.models.skill import SkillsPackageModel
+            from app.core.database import get_db, SkillsPackageModel
             
             db = next(get_db())
             skill = db.query(SkillsPackageModel).filter(
@@ -174,6 +193,32 @@ class ConfigLoader:
         return config
     
     @classmethod
+    def _parse_skill_md(cls, content: str) -> Dict[str, Any]:
+        """解析 SKILL.md 文件（YAML frontmatter 格式）"""
+        config = {
+            "name": "",
+            "description": "",
+            "system_prompt": "",
+            "tools": [],
+        }
+        
+        frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+        if frontmatter_match:
+            frontmatter = frontmatter_match.group(1)
+            for line in frontmatter.split('\n'):
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key == 'name':
+                        config['name'] = value
+                    elif key == 'description':
+                        config['description'] = value
+                        config['system_prompt'] = value
+        
+        return config
+    
+    @classmethod
     async def load_mcp_config(cls, server_name: str) -> Dict[str, Any]:
         """加载 MCP 服务器配置"""
         if server_name in cls._mcp_configs:
@@ -189,11 +234,11 @@ class ConfigLoader:
         mcp_config_paths = [
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "..", "..", "..", "data", "mcp_config.json"
+                "..", "..", "..", "data", "mcp_config.json"
             ),
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "..", "..", "..", "..", "data", "mcp_config.json"
+                "..", "..", "..", "..", "data", "mcp_config.json"
             ),
         ]
         
@@ -214,7 +259,7 @@ class ConfigLoader:
         if not config.get("command"):
             server_main_path = os.path.join(
                 os.path.dirname(__file__),
-                "..", "..", "..", "..", "data", "mcp_servers", server_name, "main.py"
+                "..", "..", "..", "data", "mcp_servers", server_name, "main.py"
             )
             if os.path.exists(server_main_path):
                 config["command"] = sys.executable

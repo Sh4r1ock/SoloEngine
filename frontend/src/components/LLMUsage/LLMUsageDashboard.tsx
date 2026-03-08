@@ -6,6 +6,7 @@ import {
   NumberOutlined,
   ApiOutlined,
 } from '@ant-design/icons';
+import { formatDateTime } from '../../utils/timezone';
 
 const { Title, Text } = Typography;
 
@@ -109,7 +110,7 @@ const LLMUsageDashboard: React.FC<LLMUsageDashboardProps> = ({
                       </Col>
                       <Col>
                         <Text type="secondary">
-                          {new Date(record.timestamp).toLocaleString()}
+                          {formatDateTime(record.timestamp)}
                         </Text>
                       </Col>
                     </Row>

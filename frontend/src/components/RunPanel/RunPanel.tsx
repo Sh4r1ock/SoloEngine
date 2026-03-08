@@ -18,16 +18,20 @@ import {
   LockOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
-import { useDebugStore } from '../../store/debugStore';
+import { useRunStore } from '../../store/runStore';
+import { useRunProjectStore } from '../../store/runProjectStore';
 import { agentToolsApi } from '../../services/agentToolsApi';
-import FileExplorer from '../DebugPanel/FileExplorer';
-import { useDebugProjectStore } from '../../store/debugProjectStore';
-import { debugProjectApi, RecentProjectInfo } from '../../services/debugProjectApi';
+import { runApi } from '../../services/runApi';
+import { runProjectApi, RecentProjectInfo } from '../../services/runProjectApi';
+import { useRunWebSocket, ExecutionEvent } from '../../hooks/useRunWebSocket';
+import FileExplorer from './FileExplorer';
 import { useNavigate } from 'react-router-dom';
 
 const { Header } = Layout;
 const { Text } = Typography;
 const { TextArea } = Input;
+
+const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 interface LLMMessage {
   id: string;
@@ -60,28 +64,60 @@ interface AgenticPanel {
   content?: string;
 }
 
+type CallType = 'tool' | 'skill' | 'mcp' | 'child_agent';
+
+interface CallRecord {
+  id: string;
+  type: CallType;
+  name: string;
+  status: 'success' | 'error' | 'pending' | 'running';
+  duration?: number;
+  arguments?: Record<string, any>;
+  result?: any;
+  error?: string;
+  timestamp: string;
+  startTime?: number;
+  endTime?: number;
+  output?: string;
+  callId?: string;
+  metadata?: Record<string, any>;
+  childCalls?: CallRecord[];
+}
+
+interface ChildAgentOutput {
+  id: string;
+  name: string;
+  output: string;
+  status: string;
+  calls: CallRecord[];
+  startTime?: number;
+  endTime?: number;
+  duration?: number;
+  input?: string;
+  agentType?: string;
+}
+
 const RunPanel: React.FC = () => {
   const navigate = useNavigate();
   const {
     activeSessionId,
     sessions,
-    isDebugging,
-    startDebugging,
-    stopDebugging,
+    isRunning,
+    startRunning,
+    stopRunning,
     addSession,
-  } = useDebugStore();
+    setActiveSession,
+  } = useRunStore();
 
   const {
     currentProject,
     recentProjects,
     loading: projectLoading,
-    selectFolder,
     loadCurrentProject,
     loadRecentProjects,
     switchProject,
     openNativeFolderDialog,
-    setProjectLoading,
-  } = useDebugProjectStore();
+  } = useRunProjectStore();
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -114,8 +150,16 @@ const RunPanel: React.FC = () => {
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartRatios, setDragStartRatios] = useState<number[]>([]);
   
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [callRecords, setCallRecords] = useState<CallRecord[]>([]);
+  const [childAgentOutputs, setChildAgentOutputs] = useState<ChildAgentOutput[]>([]);
+  const [streamingContent, setStreamingContent] = useState('');
+  const [canvasData, setCanvasData] = useState<any>(null);
+  const [flowId, setFlowId] = useState<string | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const streamingRef = useRef<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -123,25 +167,406 @@ const RunPanel: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [llmMessages]);
+  }, [llmMessages, streamingContent]);
 
   useEffect(() => {
     loadCurrentProject();
     loadRecentProjects();
   }, []);
 
-  const createNewTask = useCallback((name?: string) => {
-    const newTask: Task = {
-      id: `task_${Date.now()}`,
-      name: name || `任务 ${tasks.length + 1}`,
-      createdAt: new Date().toISOString(),
-      messages: [],
-    };
-    setTasks(prev => [...prev, newTask]);
-    setActiveTaskId(newTask.id);
-    setLlmMessages([]);
-    return newTask;
-  }, [tasks.length]);
+  const handleExecutionEvent = useCallback((event: ExecutionEvent) => {
+    console.log('Execution event:', event);
+
+    switch (event.event_type) {
+      case 'execution_start':
+        setCallRecords([]);
+        setChildAgentOutputs([]);
+        setStreamingContent('');
+        streamingRef.current = '';
+        break;
+
+      case 'agent_start':
+        console.log(`Agent started: ${event.agent_name} (${event.agent_id})`);
+        break;
+
+      case 'agent_complete':
+        if (event.content) {
+          setLlmMessages(prev => [...prev, {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: event.content || '',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+
+      case 'tool_call':
+        setCallRecords(prev => {
+          const callId = event.tool_call_id || event.tool_name || generateId();
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'tool');
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: 'running',
+              startTime: updated[existingIndex].startTime || Date.now(),
+              metadata: event.metadata,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'tool',
+            name: event.tool_name || 'unknown',
+            status: 'running',
+            arguments: event.tool_args,
+            result: event.tool_result,
+            timestamp: event.timestamp,
+            startTime: Date.now(),
+            metadata: event.metadata,
+          }];
+        });
+        
+        const toolName = event.tool_name?.toLowerCase() || '';
+        if (toolName.includes('write') || toolName.includes('edit')) {
+          openAgenticPanel('editor');
+        } else if (toolName.includes('browser') || toolName.includes('navigate')) {
+          openAgenticPanel('browser');
+        } else if (toolName.includes('read') || toolName.includes('file')) {
+          openAgenticPanel('document');
+        } else if (toolName.includes('terminal') || toolName.includes('shell') || toolName.includes('bash')) {
+          openAgenticPanel('terminal');
+        }
+        break;
+
+      case 'tool_result':
+        setCallRecords(prev => {
+          const callId = event.tool_call_id || event.tool_name;
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'tool');
+          const endTime = Date.now();
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            const startTime = updated[existingIndex].startTime || endTime;
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: event.error ? 'error' : 'success',
+              result: event.tool_result,
+              error: event.error,
+              endTime,
+              duration: endTime - startTime,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'tool',
+            name: event.tool_name || 'unknown',
+            status: event.error ? 'error' : 'success',
+            arguments: event.tool_args,
+            result: event.tool_result,
+            error: event.error,
+            timestamp: event.timestamp,
+            startTime: endTime,
+            endTime,
+            duration: 0,
+          }];
+        });
+        break;
+
+      case 'skill_call':
+        setCallRecords(prev => {
+          const callId = event.skill_call_id || event.skill_name || generateId();
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'skill');
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: 'running',
+              startTime: updated[existingIndex].startTime || Date.now(),
+              metadata: event.metadata,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'skill',
+            name: event.skill_name || 'unknown',
+            status: 'running',
+            arguments: event.skill_args,
+            result: event.skill_result,
+            timestamp: event.timestamp,
+            startTime: Date.now(),
+            metadata: event.metadata,
+          }];
+        });
+        break;
+
+      case 'skill_result':
+        setCallRecords(prev => {
+          const callId = event.skill_call_id || event.skill_name;
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'skill');
+          const endTime = Date.now();
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            const startTime = updated[existingIndex].startTime || endTime;
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: event.error ? 'error' : 'success',
+              result: event.skill_result,
+              error: event.error,
+              endTime,
+              duration: endTime - startTime,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'skill',
+            name: event.skill_name || 'unknown',
+            status: event.error ? 'error' : 'success',
+            arguments: event.skill_args,
+            result: event.skill_result,
+            error: event.error,
+            timestamp: event.timestamp,
+            startTime: endTime,
+            endTime,
+            duration: 0,
+          }];
+        });
+        break;
+
+      case 'mcp_call':
+        setCallRecords(prev => {
+          const callId = event.mcp_call_id || event.mcp_name || generateId();
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'mcp');
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: 'running',
+              startTime: updated[existingIndex].startTime || Date.now(),
+              metadata: { ...event.metadata, mcp_server: event.mcp_server },
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'mcp',
+            name: event.mcp_name || 'unknown',
+            status: 'running',
+            arguments: event.mcp_args,
+            result: event.mcp_result,
+            timestamp: event.timestamp,
+            startTime: Date.now(),
+            metadata: { ...event.metadata, mcp_server: event.mcp_server },
+          }];
+        });
+        break;
+
+      case 'mcp_result':
+        setCallRecords(prev => {
+          const callId = event.mcp_call_id || event.mcp_name;
+          const existingIndex = prev.findIndex(r => r.callId === callId && r.type === 'mcp');
+          const endTime = Date.now();
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            const startTime = updated[existingIndex].startTime || endTime;
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: event.error ? 'error' : 'success',
+              result: event.mcp_result,
+              error: event.error,
+              endTime,
+              duration: endTime - startTime,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: generateId(),
+            callId,
+            type: 'mcp',
+            name: event.mcp_name || 'unknown',
+            status: event.error ? 'error' : 'success',
+            arguments: event.mcp_args,
+            result: event.mcp_result,
+            error: event.error,
+            timestamp: event.timestamp,
+            startTime: endTime,
+            endTime,
+            duration: 0,
+          }];
+        });
+        break;
+
+      case 'child_agent_start':
+        setChildAgentOutputs(prev => {
+          const existingIndex = prev.findIndex(ca => ca.id === event.child_agent_id);
+          
+          if (existingIndex >= 0) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              status: 'running',
+              startTime: Date.now(),
+              input: event.child_agent_input,
+              agentType: event.child_agent_type,
+            };
+            return updated;
+          }
+          
+          return [...prev, {
+            id: event.child_agent_id || generateId(),
+            name: event.child_agent_name || 'Unknown Agent',
+            output: '',
+            status: 'running',
+            calls: [],
+            startTime: Date.now(),
+            input: event.child_agent_input,
+            agentType: event.child_agent_type,
+          }];
+        });
+        break;
+
+      case 'child_agent_complete':
+        setChildAgentOutputs(prev => {
+          const endTime = Date.now();
+          return prev.map(ca => {
+            if (ca.id === event.child_agent_id) {
+              const startTime = ca.startTime || endTime;
+              return {
+                ...ca,
+                output: event.content || event.child_agent_output || '',
+                status: event.error ? 'error' : 'completed',
+                endTime,
+                duration: endTime - startTime,
+              };
+            }
+            return ca;
+          });
+        });
+        break;
+
+      case 'stream':
+        streamingRef.current += event.content || '';
+        setStreamingContent(streamingRef.current);
+        break;
+
+      case 'thinking':
+        console.log(`Agent thinking: ${event.content}`);
+        break;
+
+      case 'action':
+        console.log(`Agent action: ${event.content}`);
+        break;
+
+      case 'observation':
+        console.log(`Agent observation: ${event.content}`);
+        break;
+
+      case 'execution_complete':
+        stopRunning();
+        if (streamingRef.current) {
+          setLlmMessages(prev => [...prev, {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: streamingRef.current,
+            timestamp: new Date().toISOString(),
+          }]);
+          setStreamingContent('');
+          streamingRef.current = '';
+        }
+        break;
+
+      case 'agent_error':
+      case 'execution_error':
+        message.error(event.error || 'Execution failed');
+        stopRunning();
+        break;
+    }
+  }, [stopRunning]);
+
+  const handleStream = useCallback((content: string) => {
+    streamingRef.current += content;
+    setStreamingContent(streamingRef.current);
+  }, []);
+
+  const handleWebSocketMessage = useCallback((msg: any) => {
+    console.log('WebSocket message:', msg);
+    if (msg.type === 'execution_result') {
+      stopRunning();
+      if (streamingRef.current) {
+        setLlmMessages(prev => [...prev, {
+          id: `msg_${Date.now()}`,
+          role: 'assistant',
+          content: streamingRef.current,
+          timestamp: new Date().toISOString(),
+        }]);
+        setStreamingContent('');
+        streamingRef.current = '';
+      }
+    }
+  }, [stopRunning]);
+
+  const { isConnected, connectionStatus, executeFlow } = useRunWebSocket({
+    sessionId,
+    onMessage: handleWebSocketMessage,
+    onEvent: handleExecutionEvent,
+    onStream: handleStream,
+    onError: () => {
+      message.error('WebSocket connection error');
+    },
+    autoReconnect: true,
+  });
+
+  const createNewTask = useCallback(async (name?: string) => {
+    try {
+      const sessionData = await runApi.createSession({
+        flowId: flowId || undefined,
+        canvasData: canvasData || undefined,
+        projectName: currentProject?.name,
+      });
+      
+      setSessionId(sessionData.session_id);
+      
+      const newTask: Task = {
+        id: sessionData.session_id,
+        name: name || `任务 ${tasks.length + 1}`,
+        createdAt: new Date().toISOString(),
+        messages: [],
+      };
+      setTasks(prev => [...prev, newTask]);
+      setActiveTaskId(newTask.id);
+      setLlmMessages([]);
+      setCallRecords([]);
+      setChildAgentOutputs([]);
+      setStreamingContent('');
+      streamingRef.current = '';
+      addSession({ id: sessionData.session_id, status: 'running' });
+      
+      return newTask;
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      message.error('创建会话失败');
+      return null;
+    }
+  }, [tasks.length, flowId, canvasData, currentProject, addSession]);
 
   const handleSwitchTask = (taskId: string) => {
     setActiveTaskId(taskId);
@@ -188,11 +613,38 @@ const RunPanel: React.FC = () => {
   const handleSendLLMMessage = async () => {
     if (!llmInput.trim()) return;
     
+    let currentSessionId = sessionId;
     let currentTaskId = activeTaskId;
+    let needWaitConnection = false;
     
+    if (!currentSessionId) {
+      try {
+        const sessionData = await runApi.createSession({
+          flowId: flowId || undefined,
+          canvasData: canvasData || undefined,
+          projectName: currentProject?.name,
+        });
+        currentSessionId = sessionData.session_id;
+        setSessionId(currentSessionId);
+        addSession({ id: currentSessionId, status: 'running' });
+        needWaitConnection = true;
+      } catch (error) {
+        console.error('Failed to create session:', error);
+        message.error('创建会话失败');
+        return;
+      }
+    }
+
     if (!currentTaskId) {
-      const newTask = createNewTask();
+      const newTask: Task = {
+        id: currentSessionId || `task_${Date.now()}`,
+        name: `任务 ${tasks.length + 1}`,
+        createdAt: new Date().toISOString(),
+        messages: [],
+      };
+      setTasks(prev => [...prev, newTask]);
       currentTaskId = newTask.id;
+      setActiveTaskId(currentTaskId);
     }
 
     const userMessage: LLMMessage = {
@@ -210,51 +662,98 @@ const RunPanel: React.FC = () => {
         : t
     ));
     
+    const userInput = llmInput;
     setLlmInput('');
     setLlmLoading(true);
+    startRunning();
 
     try {
-      const conversationHistory = llmMessages.map(msg => ({
-        role: msg.role,
-        content: msg.content,
-      }));
-
-      const response = await agentToolsApi.llmChat({
-        message: llmInput,
-        model: 'gpt-4',
-        temperature: 0.7,
-        max_tokens: 4096,
-        conversation_history: conversationHistory,
-      });
-
-      if (response.code === 200) {
-        const assistantMessage: LLMMessage = {
-          id: `msg_${Date.now()}`,
-          role: 'assistant',
-          content: response.data.content,
-          timestamp: new Date().toISOString(),
-          tokens: response.data.tokens_used?.total_tokens || response.data.tokens_used?.completion_tokens,
+      let currentCanvasData = canvasData;
+      if (!currentCanvasData || !currentCanvasData.nodes || currentCanvasData.nodes.length === 0) {
+        currentCanvasData = {
+          nodes: [{
+            id: 'default_agent',
+            type: 'executor',
+            data: {
+              name: 'Assistant',
+              system_prompt: 'You are a helpful assistant.',
+              tools: [],
+            },
+          }],
+          edges: [],
         };
-        setLlmMessages(prev => [...prev, assistantMessage]);
-        
-        setTasks(prev => prev.map(t => 
-          t.id === currentTaskId 
-            ? { ...t, messages: [...t.messages, assistantMessage] }
-            : t
-        ));
+        setCanvasData(currentCanvasData);
+      }
+
+      if (needWaitConnection) {
+        await new Promise<void>((resolve) => {
+          const checkConnection = () => {
+            if (isConnected) {
+              resolve();
+            } else {
+              setTimeout(checkConnection, 100);
+            }
+          };
+          setTimeout(() => {
+            if (!isConnected) {
+              resolve();
+            }
+          }, 3000);
+          checkConnection();
+        });
+      }
+
+      if (isConnected) {
+        const sent = executeFlow(currentCanvasData, userInput, flowId || undefined);
+        if (!sent) {
+          throw new Error('WebSocket发送消息失败');
+        }
       } else {
-        throw new Error('LLM请求失败');
+        const response = await runApi.executeWorkflow(
+          currentCanvasData,
+          userInput,
+          currentProject?.name
+        );
+        
+        if (response.output) {
+          const assistantMessage: LLMMessage = {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: response.output,
+            timestamp: new Date().toISOString(),
+          };
+          setLlmMessages(prev => [...prev, assistantMessage]);
+          
+          setTasks(prev => prev.map(t => 
+            t.id === currentTaskId 
+              ? { ...t, messages: [...t.messages, assistantMessage] }
+              : t
+          ));
+        } else if (response.error) {
+          throw new Error(response.error);
+        }
       }
     } catch (error: any) {
-      message.error('发送消息失败: ' + (error.message || '未知错误'));
+      let errorMessage = '未知错误';
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      message.error('发送消息失败: ' + errorMessage);
       setLlmMessages(prev => prev.filter(m => m.id !== userMessage.id));
     } finally {
       setLlmLoading(false);
+      stopRunning();
     }
   };
 
   const clearLLMMessages = () => {
     setLlmMessages([]);
+    setCallRecords([]);
+    setChildAgentOutputs([]);
     if (activeTaskId) {
       setTasks(prev => prev.map(t => 
         t.id === activeTaskId 
@@ -780,7 +1279,7 @@ const RunPanel: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
           }}>
-            {llmMessages.length === 0 ? (
+            {llmMessages.length === 0 && !streamingContent ? (
               <div style={{ 
                 flex: 1,
                 display: 'flex', 
@@ -873,6 +1372,38 @@ const RunPanel: React.FC = () => {
                     </div>
                   </div>
                 ))}
+                {streamingContent && (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 10,
+                      background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <RobotOutlined style={{ color: '#fff', fontSize: 14 }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <Text strong style={{ fontSize: 12, color: 'var(--text-100)' }}>Assistant</Text>
+                        <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>正在输出...</Text>
+                      </div>
+                      <div style={{
+                        padding: '12px 14px',
+                        borderRadius: 10,
+                        background: 'var(--bg-100)',
+                        border: '1px solid var(--bg-300)',
+                      }}>
+                        <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.65, fontSize: 13, color: 'var(--text-100)' }}>
+                          {streamingContent}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -930,7 +1461,7 @@ const RunPanel: React.FC = () => {
                   size="small"
                   icon={<SendOutlined style={{ fontSize: 12 }} />}
                   onClick={handleSendLLMMessage}
-                  loading={llmLoading}
+                  loading={llmLoading || isRunning}
                   disabled={!llmInput.trim()}
                   style={{
                     borderRadius: 6,
@@ -1219,7 +1750,32 @@ const RunPanel: React.FC = () => {
           </div>
           
           <div style={{ flex: 1, overflow: 'auto' }}>
-            <FileExplorer onFileEdit={() => {}} />
+            {currentProject ? (
+              <FileExplorer onFileEdit={() => {}} />
+            ) : (
+              <div style={{ 
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 32,
+              }}>
+                <div style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  background: 'var(--bg-200)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 10,
+                }}>
+                  <FolderOutlined style={{ fontSize: 20, color: 'var(--text-300)' }} />
+                </div>
+                <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>请先选择项目</Text>
+              </div>
+            )}
           </div>
         </div>
       </div>

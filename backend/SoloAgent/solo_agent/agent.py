@@ -39,8 +39,9 @@ class SoloAgent:
         self._mcp_clients: List["MCPClient"] = []
         self._tools: Dict[str, Any] = {}
         self._child_agents: Dict[str, "SoloAgent"] = {}
-        
         self._message_history: List[Dict[str, Any]] = []
+        self._last_tool_calls: List[Dict[str, Any]] = []
+        self._stream_callback: Optional[callable] = None
         
     @property
     def name(self) -> str:
@@ -58,11 +59,26 @@ class SoloAgent:
     def agent_type(self) -> str:
         return self.config.agent_type
     
+    @property
+    def last_tool_calls(self) -> List[Dict[str, Any]]:
+        return self._last_tool_calls
+    
+    def set_last_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> None:
+        self._last_tool_calls = tool_calls or []
+    
     def set_child_agents(self, agents: Dict[str, "SoloAgent"]) -> None:
         self._child_agents = agents
+        if agents:
+            self.config.child_agents = list(agents.keys())
     
     def get_child_agent(self, agent_id: str) -> Optional["SoloAgent"]:
         return self._child_agents.get(agent_id)
+    
+    def set_stream_callback(self, callback: callable) -> None:
+        """设置流式输出回调函数"""
+        self._stream_callback = callback
+        if self._core:
+            self._core.stream_callback = callback
     
     async def initialize(self) -> None:
         if self._initialized:
@@ -81,6 +97,8 @@ class SoloAgent:
             user_id=self.config.user_id,
             api_key=self.config.api_key,
             base_url=self.config.base_url,
+            max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
         )
         
         provider = llm_config.get("provider", self.config.provider).lower()
@@ -88,13 +106,13 @@ class SoloAgent:
         openai_compatible_providers = ["deepseek", "zhipu", "qwen"]
         
         if provider in openai_compatible_providers:
-            self._llm = self._create_openai_compatible_model(llm_config, stream=False)
+            self._llm = self._create_openai_compatible_model(llm_config, stream=True)
         else:
             self._llm = LLMFactory.create_model(
                 provider=provider,
                 model_name=llm_config.get("model", self.config.model),
                 api_key=llm_config.get("api_key"),
-                stream=False,
+                stream=True,
             )
         
         tool_configs = []
@@ -115,8 +133,13 @@ class SoloAgent:
             from .tools import create_task_tool_config
             task_config = create_task_tool_config(self)
             tool_configs.append(task_config)
+            logger.info(f"[Child Agents] Added Task tool for child agents: {self.config.child_agents}")
         
         toolkit_executor = ToolkitExecutor(tool_configs) if tool_configs else None
+        
+        if toolkit_executor:
+            available_tools = toolkit_executor.get_available_tools()
+            logger.info(f"[Toolkit] Available tools: {[t.get('function', {}).get('name') for t in available_tools]}")
         
         if self.config.memory:
             await self._init_memory()
@@ -129,6 +152,8 @@ class SoloAgent:
             formatter=formatter,
             system_prompt=self.config.system_prompt,
             max_iters=self.config.max_iters,
+            stream_callback=self._stream_callback,
+            memory=self._memory_plugin,
         )
         
         if toolkit_executor:
@@ -229,6 +254,12 @@ class SoloAgent:
         """
         from ..model.openai_model import OpenAIChatModel
         
+        generate_kwargs = {}
+        if "max_tokens" in llm_config:
+            generate_kwargs["max_tokens"] = llm_config["max_tokens"]
+        if "temperature" in llm_config:
+            generate_kwargs["temperature"] = llm_config["temperature"]
+        
         return OpenAIChatModel(
             model_name=llm_config.get("model", self.config.model),
             api_key=llm_config.get("api_key"),
@@ -236,6 +267,7 @@ class SoloAgent:
             client_kwargs={
                 "base_url": llm_config.get("base_url"),
             } if llm_config.get("base_url") else None,
+            generate_kwargs=generate_kwargs if generate_kwargs else None,
         )
     
     async def _init_memory(self) -> None:
@@ -286,6 +318,10 @@ class SoloAgent:
             raise RuntimeError("Agent core not initialized")
         
         response = await self._core.reply(message)
+        
+        # 从 core 获取工具调用信息
+        if hasattr(self._core, '_last_tool_results'):
+            self._last_tool_calls = self._core._last_tool_results.copy() if self._core._last_tool_results else []
         
         response_text = response.get_text_content() if hasattr(response, 'get_text_content') else str(response)
         
@@ -377,10 +413,49 @@ class SoloAgent:
         if child is None:
             raise ValueError(f"Child agent '{agent_id}' not found")
         
+        logger.info(f"[call_subagent] Calling child agent '{agent_id}' with message: {message[:100]}...")
+        
         if not child._initialized:
             await child.initialize()
         
-        return await child.reply(message)
+        result = await child.reply(message)
+        
+        # 提取文本内容
+        if hasattr(result, 'content'):
+            content = result.content
+        elif isinstance(result, dict):
+            content = result.get('content', str(result))
+        else:
+            content = str(result)
+        
+        logger.info(f"[call_subagent] Child agent '{agent_id}' returned: {content[:200]}...")
+        return content
+    
+    def interrupt(self) -> None:
+        """
+        中断当前正在进行的模型输出。
+        
+        调用此方法后，流式输出会立即停止，API 不再发送请求。
+        这是一个真实的中断，不会消耗额外的 token。
+        
+        Example:
+            >>> # 在另一个线程中调用
+            >>> agent.interrupt()
+        """
+        if hasattr(self, '_core') and self._core:
+            self._core.interrupt()
+            logger.info(f"[SoloAgent] Interrupt requested for agent '{self.config.name}'")
+    
+    def is_interrupted(self) -> bool:
+        """
+        检查是否已被中断。
+        
+        Returns:
+            bool: 如果已被中断返回 True，否则返回 False。
+        """
+        if hasattr(self, '_core') and self._core:
+            return self._core.is_interrupted()
+        return False
     
     async def close(self) -> None:
         for client in self._mcp_clients:

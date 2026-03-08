@@ -22,7 +22,7 @@ const ImportHandler: React.FC<ImportHandlerProps> = ({ onImport }) => {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.post('/api/v1/export/import', formData, {
+      const response = await api.post('/export/import', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },

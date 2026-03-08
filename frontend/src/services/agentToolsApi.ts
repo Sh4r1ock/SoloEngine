@@ -18,17 +18,22 @@ import { api } from './api';
 
 export interface LLMChatRequest {
   message: string;
+  config_id?: string;
   model?: string;
   provider?: string;
   temperature?: number;
   max_tokens?: number;
   system_prompt?: string;
   conversation_history?: Array<{ role: string; content: string }>;
+  project_id?: string;
 }
 
 export interface LLMChatResponse {
   content: string;
   model: string;
+  provider: string;
+  config_id?: string;
+  config_name?: string;
   tokens_used: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -37,6 +42,7 @@ export interface LLMChatResponse {
     output_tokens?: number;
   };
   finish_reason: string;
+  project_id?: string;
 }
 
 export interface BrowserNavigateRequest {
@@ -71,30 +77,33 @@ export interface DocumentSearchRequest {
 export interface DocumentSummarizeRequest {
   content: string;
   max_length?: number;
+  config_id?: string;
 }
 
 export const agentToolsApi = {
-  async llmChat(request: LLMChatRequest): Promise<{ code: number; data: LLMChatResponse }> {
+  async llmChat(request: LLMChatRequest): Promise<{ code: number; message: string; data: LLMChatResponse }> {
     const response = await api.post('/agent-tools/llm/chat', {
       message: request.message,
-      model: request.model || 'gpt-4',
-      provider: request.provider || 'openai',
-      temperature: request.temperature ?? 0.7,
-      max_tokens: request.max_tokens || 4096,
+      config_id: request.config_id,
+      model: request.model,
+      provider: request.provider,
+      temperature: request.temperature,
+      max_tokens: request.max_tokens,
       system_prompt: request.system_prompt,
       conversation_history: request.conversation_history,
+      project_id: request.project_id,
     });
     return response.data;
   },
 
-  async browserNavigate(request: BrowserNavigateRequest): Promise<{ code: number; data: any }> {
+  async browserNavigate(request: BrowserNavigateRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/browser/navigate', {
       url: request.url,
     });
     return response.data;
   },
 
-  async browserAction(request: BrowserActionRequest): Promise<{ code: number; data: any }> {
+  async browserAction(request: BrowserActionRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/browser/action', {
       action_type: request.action_type,
       selector: request.selector,
@@ -104,7 +113,7 @@ export const agentToolsApi = {
     return response.data;
   },
 
-  async documentRead(request: DocumentReadRequest): Promise<{ code: number; data: any }> {
+  async documentRead(request: DocumentReadRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/document/read', {
       filename: request.filename,
       encoding: request.encoding || 'utf-8',
@@ -112,7 +121,7 @@ export const agentToolsApi = {
     return response.data;
   },
 
-  async documentWrite(request: DocumentWriteRequest): Promise<{ code: number; data: any }> {
+  async documentWrite(request: DocumentWriteRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/document/write', {
       filename: request.filename,
       content: request.content,
@@ -122,7 +131,7 @@ export const agentToolsApi = {
     return response.data;
   },
 
-  async documentSearch(request: DocumentSearchRequest): Promise<{ code: number; data: any }> {
+  async documentSearch(request: DocumentSearchRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/document/search', {
       path: request.path || '.',
       pattern: request.pattern,
@@ -131,10 +140,11 @@ export const agentToolsApi = {
     return response.data;
   },
 
-  async documentSummarize(request: DocumentSummarizeRequest): Promise<{ code: number; data: any }> {
+  async documentSummarize(request: DocumentSummarizeRequest): Promise<{ code: number; message: string; data: any }> {
     const response = await api.post('/agent-tools/document/summarize', {
       content: request.content,
       max_length: request.max_length || 500,
+      config_id: request.config_id,
     });
     return response.data;
   },
