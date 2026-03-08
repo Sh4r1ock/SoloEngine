@@ -9,6 +9,7 @@ import {
   DeleteOutlined,
 } from '@ant-design/icons';
 import { api } from '../../services/api';
+import { formatDateTime } from '../../utils/timezone';
 
 const { Text, Title } = Typography;
 
@@ -40,7 +41,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ projectName, onSelect }) => {
       if (projectName) {
         params.project_name = projectName;
       }
-      const response = await api.get('/api/v1/history/list', { params });
+      const response = await api.get('/history/list', { params });
       if (response.code === 200) {
         setRecords(response.data);
       }
@@ -70,7 +71,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ projectName, onSelect }) => {
 
   const handleDelete = async (executionId: string) => {
     try {
-      const response = await api.delete(`/api/v1/history/${executionId}`);
+      const response = await api.delete(`/history/${executionId}`);
       if (response.code === 200) {
         message.success('删除成功');
         loadRecords();
@@ -127,7 +128,7 @@ const HistoryList: React.FC<HistoryListProps> = ({ projectName, onSelect }) => {
             description={
               <Space direction="vertical" size={0}>
                 <Text type="secondary">
-                  开始: {new Date(record.start_time).toLocaleString()}
+                  开始: {formatDateTime(record.start_time)}
                 </Text>
                 {record.duration_ms && (
                   <Text type="secondary">

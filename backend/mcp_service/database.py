@@ -8,6 +8,7 @@ import uuid
 import logging
 from datetime import datetime
 from typing import Optional, List
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -99,6 +100,23 @@ def init_db():
 
 def get_db() -> Session:
     """获取数据库会话。"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_context():
+    """获取数据库会话的上下文管理器。
+    
+    用于非 FastAPI 依赖注入场景，确保会话自动关闭。
+    
+    Example:
+        with get_db_context() as db:
+            server = db.query(MCPServerModel).first()
+    """
     db = SessionLocal()
     try:
         yield db

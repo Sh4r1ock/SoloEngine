@@ -6,7 +6,8 @@
  */
 import React from 'react';
 import { Typography, Card, Tabs, Divider } from 'antd';
-import { SettingOutlined, ToolOutlined, SafetyOutlined, BellOutlined } from '@ant-design/icons';
+import { SettingOutlined, ToolOutlined, SafetyOutlined, BellOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import TimezoneSettings from '../../components/Settings/TimezoneSettings';
 
 const { Title, Text } = Typography;
 
@@ -22,9 +23,30 @@ const SettingsPage: React.FC = () => {
       ),
       children: (
         <Card>
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-            常规设置功能开发中...
+          <div style={{ padding: '20px' }}>
+            <Typography.Title level={5} style={{ marginBottom: 16 }}>基本配置</Typography.Title>
+            <Typography.Text type="secondary">
+              常规系统配置选项，包括界面语言、主题等设置。
+            </Typography.Text>
+            <Divider style={{ margin: '24px 0' }} />
+            <Typography.Text type="secondary">
+              更多常规设置功能开发中...
+            </Typography.Text>
           </div>
+        </Card>
+      ),
+    },
+    {
+      key: 'timezone',
+      label: (
+        <span>
+          <ClockCircleOutlined />
+          时区设置
+        </span>
+      ),
+      children: (
+        <Card>
+          <TimezoneSettings />
         </Card>
       ),
     },

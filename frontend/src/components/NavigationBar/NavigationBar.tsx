@@ -49,9 +49,9 @@ const NavigationBar: React.FC<NavigationBarProps> = ({
       label: 'Skills 管理',
     },
     {
-      key: 'debug',
+      key: 'run',
       icon: <BugOutlined />,
-      label: '调试面板',
+      label: '运行面板',
     },
     {
       key: 'settings',

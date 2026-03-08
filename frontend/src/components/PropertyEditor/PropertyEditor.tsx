@@ -31,7 +31,7 @@ import { useMCPStore } from '../../store/mcpStore';
 import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import { mcpApi, MCPTool } from '../../services/mcpApi';
-import { debugApi } from '../../services/debugApi';
+import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
 
@@ -185,7 +185,12 @@ const PropertyPanel: React.FC = () => {
   const [previewVisible, setPreviewVisible] = useState(false);
   
   const [selectedLLMConfig, setSelectedLLMConfig] = useState<LLMConfig | null>(null);
+  const selectedLLMConfigRef = useRef<LLMConfig | null>(null);
   const [hasNoConfig, setHasNoConfig] = useState(false);
+
+  useEffect(() => {
+    selectedLLMConfigRef.current = selectedLLMConfig;
+  }, [selectedLLMConfig]);
 
   useEffect(() => {
     if (selectedNode) {
@@ -204,14 +209,58 @@ const PropertyPanel: React.FC = () => {
       if (selectedNode.data.llm_config_id) {
         llmApi.getConfig(selectedNode.data.llm_config_id).then(config => {
           setSelectedLLMConfig(config);
-        }).catch(() => {
+          selectedLLMConfigRef.current = config;
+        }).catch((error) => {
+          console.warn('Failed to load LLM config:', error);
           setSelectedLLMConfig(null);
+          selectedLLMConfigRef.current = null;
         });
-      } else {
-        setSelectedLLMConfig(null);
+      } else if (!selectedNode.data.model_config?.config_id) {
+        llmApi.getDefaultConfig().then(config => {
+          if (config) {
+            setSelectedLLMConfig(config);
+            selectedLLMConfigRef.current = config;
+            form.setFieldsValue({ llm_config_id: config.id });
+            updateNode(selectedNode.id, {
+              llm_config_id: config.id,
+              model_config: {
+                config_id: config.id,
+                config_name: config.name,
+                provider: config.provider,
+                model: config.model_name,
+              },
+            });
+          } else {
+            setSelectedLLMConfig(null);
+            selectedLLMConfigRef.current = null;
+          }
+        }).catch((error) => {
+          console.warn('Failed to load default LLM config:', error);
+          setSelectedLLMConfig(null);
+          selectedLLMConfigRef.current = null;
+        });
+      } else if (selectedNode.data.model_config) {
+        setSelectedLLMConfig({
+          id: selectedNode.data.model_config.config_id || '',
+          name: selectedNode.data.model_config.config_name || '',
+          provider: selectedNode.data.model_config.provider,
+          model_name: selectedNode.data.model_config.model,
+          temperature: 0.7,
+          max_tokens: 2048,
+          top_p: 1.0,
+          frequency_penalty: 0,
+          presence_penalty: 0,
+          timeout: 60,
+          extra_params: {},
+          is_default: false,
+          is_active: true,
+          version: 1,
+          user_id: '',
+        } as LLMConfig);
+        selectedLLMConfigRef.current = null;
       }
     }
-  }, [selectedNode, form]);
+  }, [selectedNode, form, updateNode]);
 
   const loadSkillsPackages = async () => {
     setLoadingSkills(true);
@@ -265,6 +314,7 @@ const PropertyPanel: React.FC = () => {
 
     try {
       const values = form.getFieldsValue();
+      const currentConfig = selectedLLMConfigRef.current;
 
       updateNode(selectedNode.id, {
         name: values.name,
@@ -274,21 +324,19 @@ const PropertyPanel: React.FC = () => {
         user_prompt: values.user_prompt,
         assistant_prompt: values.assistant_prompt,
         llm_config_id: values.llm_config_id,
-        model_config: selectedLLMConfig ? {
-          config_id: selectedLLMConfig.id,
-          config_name: selectedLLMConfig.name,
-          provider: selectedLLMConfig.provider,
-          model: selectedLLMConfig.model_name,
+        model_config: currentConfig ? {
+          config_id: currentConfig.id,
+          config_name: currentConfig.name,
+          provider: currentConfig.provider,
+          model: currentConfig.model_name,
         } : undefined,
         skills: values.skills || [],
         mcp_tools: values.mcp_tools || [],
       });
-
-      await saveCanvas();
     } catch (error) {
       message.error('保存失败，请重试');
     }
-  }, [selectedNode, form, updateNode, saveCanvas, selectedLLMConfig]);
+  }, [selectedNode, form, updateNode]);
 
   const handleValuesChange = () => {
     if (saveTimeoutRef.current !== null) {
@@ -356,7 +404,7 @@ const PropertyPanel: React.FC = () => {
         edges: []
       };
 
-      const result = await debugApi.executeNode(
+      const result = await runApi.executeNode(
         canvasData,
         selectedNode.id,
         testInput,
@@ -384,6 +432,7 @@ const PropertyPanel: React.FC = () => {
 
   const handleLLMConfigChange = (configId: string, config: LLMConfig | null) => {
     setSelectedLLMConfig(config);
+    selectedLLMConfigRef.current = config;
     form.setFieldsValue({ llm_config_id: configId });
     handleValuesChange();
   };
@@ -529,7 +578,7 @@ const PropertyPanel: React.FC = () => {
                 type="link" 
                 size="small" 
                 icon={<SettingOutlined />}
-                onClick={() => window.open('/mainmenu/settings', '_blank')}
+                onClick={() => window.open('/mainmenu/llm', '_blank')}
               >
                 管理配置
               </Button>

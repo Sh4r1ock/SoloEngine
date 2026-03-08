@@ -1,0 +1,108 @@
+{
+  "flow_id": "bb7480c7-8058-4b52-bf4b-776f3c28ebeb",
+  "canvas_data": {
+    "nodes": [
+      {
+        "id": "orchestrator_1",
+        "type": "agent",
+        "position": {
+          "x": 500,
+          "y": 200
+        },
+        "data": {
+          "name": "协调者",
+          "desc": "负责协调多个执行者完成复杂任务",
+          "agentType": "orchestrator",
+          "system_prompt": "你是一个协调者Agent，负责分析用户需求并分配任务给合适的执行者。\n\n你有两个执行者可以调用：\n1. 文件助手 (file_helper) - 擅长文件读写操作\n2. 搜索助手 (search_helper) - 擅长代码搜索和内容查找\n\n当用户提出任务时，请分析任务类型，选择合适的执行者来完成。\n\n调用执行者时，请使用Task工具，传入agent_id和message参数。",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "api_key": "sk-eead4e31663d42e4ad09584dc4346779",
+            "base_url": "https://api.deepseek.com"
+          },
+          "skills": [],
+          "tools": [
+            "Task"
+          ],
+          "memory": true
+        }
+      },
+      {
+        "id": "file_helper",
+        "type": "agent",
+        "position": {
+          "x": 300,
+          "y": 400
+        },
+        "data": {
+          "name": "文件助手",
+          "desc": "负责文件读写操作",
+          "agentType": "executor",
+          "system_prompt": "你是一个文件操作助手，擅长文件的读取、写入和管理。\n\n你可以使用以下工具：\n- Read: 读取文件内容\n- Write: 写入文件\n- LS: 列出目录内容\n- DeleteFile: 删除文件\n\n请根据用户的需求，使用合适的工具完成任务。完成后请汇报结果。",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "api_key": "sk-eead4e31663d42e4ad09584dc4346779",
+            "base_url": "https://api.deepseek.com"
+          },
+          "skills": [],
+          "tools": [
+            "Read",
+            "Write",
+            "LS",
+            "DeleteFile"
+          ],
+          "memory": true
+        }
+      },
+      {
+        "id": "search_helper",
+        "type": "agent",
+        "position": {
+          "x": 700,
+          "y": 400
+        },
+        "data": {
+          "name": "搜索助手",
+          "desc": "负责代码搜索和内容查找",
+          "agentType": "executor",
+          "system_prompt": "你是一个搜索助手，擅长在代码库中搜索和查找内容。\n\n你可以使用以下工具：\n- Grep: 使用正则表达式搜索文件内容\n- Glob: 使用通配符匹配文件名\n- SearchCodebase: 智能搜索代码库\n\n请根据用户的需求，使用合适的工具完成搜索任务。完成后请汇报搜索结果。",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "model_config": {
+            "provider": "deepseek",
+            "model": "deepseek-chat",
+            "api_key": "sk-eead4e31663d42e4ad09584dc4346779",
+            "base_url": "https://api.deepseek.com"
+          },
+          "skills": [],
+          "tools": [
+            "Grep",
+            "Glob",
+            "SearchCodebase"
+          ],
+          "memory": true
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_orchestrator_file",
+        "source": "orchestrator_1",
+        "target": "file_helper",
+        "label": "文件任务"
+      },
+      {
+        "id": "e_orchestrator_search",
+        "source": "orchestrator_1",
+        "target": "search_helper",
+        "label": "搜索任务"
+      }
+    ]
+  },
+  "updated_at": "2026-03-06T04:49:28.903529"
+}

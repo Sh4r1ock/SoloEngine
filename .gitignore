@@ -228,3 +228,8 @@ test_sessions/
 tests/
 test_screenshots/
 SoloEngine.zip
+软件著作权/
+专利/
+
+# 数据目录
+data/packages/

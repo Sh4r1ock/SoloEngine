@@ -17,7 +17,6 @@ import {
   InputNumber,
   Switch,
   message,
-  Popconfirm,
   Tag,
   Tooltip,
   Divider,
@@ -33,9 +32,9 @@ import {
   StarFilled,
   ApiOutlined,
   ReloadOutlined,
-  GlobalOutlined,
 } from '@ant-design/icons';
 import { llmApi, LLMConfig, ProviderConfig, CreateLLMConfigRequest } from '../../services/llmApi';
+import { formatDateTime } from '../../utils/timezone';
 
 const { Option } = Select;
 
@@ -115,12 +114,32 @@ const ModelManager: React.FC = () => {
   };
 
   const handleDelete = async (configId: string) => {
-    try {
-      await llmApi.deleteConfig(configId);
-      message.success('删除成功');
-      loadConfigs();
-    } catch (error) {
-      message.error('删除失败');
+    const config = configs.find(c => c.id === configId);
+    
+    if (config?.is_default) {
+      Modal.confirm({
+        title: '删除默认配置',
+        content: '您正在删除默认模型配置。删除后，新创建的节点将不会自动应用模型配置。确定要删除吗？',
+        okText: '确定删除',
+        cancelText: '取消',
+        onOk: async () => {
+          try {
+            await llmApi.deleteConfig(configId);
+            message.success('删除成功');
+            loadConfigs();
+          } catch (error) {
+            message.error('删除失败');
+          }
+        },
+      });
+    } else {
+      try {
+        await llmApi.deleteConfig(configId);
+        message.success('删除成功');
+        loadConfigs();
+      } catch (error) {
+        message.error('删除失败');
+      }
     }
   };
 
@@ -241,7 +260,7 @@ const ModelManager: React.FC = () => {
       title: '更新时间',
       dataIndex: 'updated_at',
       key: 'updated_at',
-      render: (date: string) => date ? new Date(date).toLocaleString() : '-',
+      render: (date: string) => formatDateTime(date),
     },
     {
       title: '操作',
@@ -264,16 +283,14 @@ const ModelManager: React.FC = () => {
               />
             </Tooltip>
           )}
-          <Popconfirm
-            title="确定要删除此配置吗？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="确定"
-            cancelText="取消"
-          >
-            <Tooltip title="删除">
-              <Button type="text" danger icon={<DeleteOutlined />} />
-            </Tooltip>
-          </Popconfirm>
+          <Tooltip title="删除">
+            <Button 
+              type="text" 
+              danger 
+              icon={<DeleteOutlined />} 
+              onClick={() => handleDelete(record.id)}
+            />
+          </Tooltip>
         </Space>
       ),
     },
@@ -340,7 +357,7 @@ const ModelManager: React.FC = () => {
         okText="保存"
         cancelText="取消"
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" requiredMark="optional">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -406,12 +423,7 @@ const ModelManager: React.FC = () => {
 
           <Form.Item
             name="base_url"
-            label={
-              <Space>
-                <GlobalOutlined />
-                <span>自定义API地址 (Base URL)</span>
-              </Space>
-            }
+            label="Base URL"
             extra="支持自定义OpenAI兼容的API地址，如DeepSeek、智谱AI等"
           >
             <Input placeholder="例如: https://api.deepseek.com/v1" />
@@ -435,7 +447,7 @@ const ModelManager: React.FC = () => {
 
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Item name="temperature" label="温度 (Temperature)">
+              <Form.Item name="temperature" label="温度">
                 <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
@@ -469,7 +481,12 @@ const ModelManager: React.FC = () => {
             </Col>
           </Row>
 
-          <Form.Item name="is_default" label="设为默认" valuePropName="checked">
+          <Form.Item 
+            name="is_default" 
+            label="设为默认" 
+            valuePropName="checked"
+            extra="设为默认后，新创建的节点将自动使用此模型配置。每个用户只能有一个默认配置。"
+          >
             <Switch />
           </Form.Item>
 

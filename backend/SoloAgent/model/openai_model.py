@@ -393,9 +393,9 @@ class OpenAIChatModel(ChatModelBase):
         audio = ""
         tool_calls = OrderedDict()
         metadata: dict | None = None
-        contents: List[
-            TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock
-        ] = []
+        last_text = ""  # 记录上次输出的文本，用于计算增量
+        last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
+        finish_reason = None  # 记录 finish_reason
 
         async with response as stream:
             async for item in stream:
@@ -414,21 +414,120 @@ class OpenAIChatModel(ChatModelBase):
                     )
 
                 if not chunk.choices:
-                    if usage and contents:
-                        res = ChatResponse(
-                            content=contents,
-                            usage=usage,
-                            metadata=metadata,
-                        )
-                        yield res
+                    if usage:
+                        # 最后一个 chunk，yield 完整响应
+                        contents = []
+                        if thinking:
+                            contents.append(
+                                ThinkingBlock(
+                                    type="thinking",
+                                    thinking=thinking,
+                                ),
+                            )
+                        if text:
+                            contents.append(
+                                TextBlock(
+                                    type="text",
+                                    text=text,
+                                ),
+                            )
+                        for tool_call in tool_calls.values():
+                            contents.append(
+                                ToolUseBlock(
+                                    type=tool_call["type"],
+                                    id=tool_call["id"],
+                                    name=tool_call["name"],
+                                    input=_json_loads_with_repair(
+                                        tool_call["input"] or "{}",
+                                    ),
+                                ),
+                            )
+                        if contents:
+                            # 设置 stop_reason
+                            stop_reason = None
+                            if finish_reason:
+                                if finish_reason == "stop":
+                                    stop_reason = "end_turn"
+                                elif finish_reason == "tool_calls":
+                                    stop_reason = "tool_use"
+                                else:
+                                    stop_reason = finish_reason
+                            res = ChatResponse(
+                                content=contents,
+                                usage=usage,
+                                metadata=metadata,
+                                stop_reason=stop_reason,
+                                finish_reason=finish_reason,
+                            )
+                            yield res
                     continue
 
                 choice = chunk.choices[0]
+                
+                # 记录 finish_reason
+                if hasattr(choice, 'finish_reason') and choice.finish_reason:
+                    finish_reason = choice.finish_reason
+                    logger.info(f"[Stream] finish_reason detected: {finish_reason}")
+                    
+                    # 当检测到 finish_reason 时，立即 yield 最终响应
+                    # 这处理了 MAX_TOKENS 和 tool_calls 等情况
+                    if finish_reason in ("length", "max_tokens", "tool_calls", "stop"):
+                        contents = []
+                        if thinking:
+                            contents.append(
+                                ThinkingBlock(
+                                    type="thinking",
+                                    thinking=thinking,
+                                ),
+                            )
+                        if text:
+                            contents.append(
+                                TextBlock(
+                                    type="text",
+                                    text=text,
+                                ),
+                            )
+                        for tool_call in tool_calls.values():
+                            contents.append(
+                                ToolUseBlock(
+                                    type=tool_call["type"],
+                                    id=tool_call["id"],
+                                    name=tool_call["name"],
+                                    input=_json_loads_with_repair(
+                                        tool_call["input"] or "{}",
+                                    ),
+                                ),
+                            )
+                        if contents:
+                            # 设置 stop_reason
+                            stop_reason = None
+                            if finish_reason == "stop":
+                                stop_reason = "end_turn"
+                            elif finish_reason == "tool_calls":
+                                stop_reason = "tool_use"
+                            else:
+                                stop_reason = finish_reason
+                            res = ChatResponse(
+                                content=contents,
+                                usage=usage,
+                                metadata=metadata,
+                                stop_reason=stop_reason,
+                                finish_reason=finish_reason,
+                            )
+                            logger.info(f"[Stream] Yielding final response with {len(contents)} blocks, stop_reason={stop_reason}")
+                            yield res
 
-                thinking += (
-                    getattr(choice.delta, "reasoning_content", None) or ""
-                )
-                text += choice.delta.content or ""
+                delta_dict = choice.delta.model_dump() if hasattr(choice.delta, 'model_dump') else {}
+                delta_thinking = delta_dict.get("reasoning_content") or ""
+                delta_text = choice.delta.content or ""
+                
+                if delta_thinking:
+                    logger.info(f"[Stream Chunk] thinking='{delta_thinking[:50]}...'")
+                elif delta_text:
+                    logger.info(f"[Stream Chunk] text='{delta_text}'")
+                
+                thinking += delta_thinking
+                text += delta_text
 
                 if (
                     hasattr(choice.delta, "audio")
@@ -456,15 +555,19 @@ class OpenAIChatModel(ChatModelBase):
                             "input": tool_call.function.arguments or "",
                         }
 
+                # 构建增量内容
                 contents = []
 
-                if thinking:
+                # 只输出增量的思考内容
+                if thinking and len(thinking) > len(last_thinking):
+                    delta_thinking_content = thinking[len(last_thinking):]
                     contents.append(
                         ThinkingBlock(
                             type="thinking",
-                            thinking=thinking,
+                            thinking=delta_thinking_content,
                         ),
                     )
+                    last_thinking = thinking
 
                 if audio:
                     media_type = self.generate_kwargs.get("audio", {}).get(
@@ -482,28 +585,35 @@ class OpenAIChatModel(ChatModelBase):
                         ),
                     )
 
-                if text:
+                # 只输出增量的文本内容
+                if text and len(text) > len(last_text):
+                    delta_text_content = text[len(last_text):]
                     contents.append(
                         TextBlock(
                             type="text",
-                            text=text,
+                            text=delta_text_content,
                         ),
                     )
+                    last_text = text
 
                     if structured_model:
                         metadata = _json_loads_with_repair(text)
 
-                for tool_call in tool_calls.values():
-                    contents.append(
-                        ToolUseBlock(
-                            type=tool_call["type"],
-                            id=tool_call["id"],
-                            name=tool_call["name"],
-                            input=_json_loads_with_repair(
-                                tool_call["input"] or "{}",
+                # 工具调用只在完成时输出（不增量输出）
+                # 检查是否有新的工具调用完成
+                if tool_calls and not delta_text and not delta_thinking:
+                    # 只在没有文本输出时才输出工具调用
+                    for tool_call in tool_calls.values():
+                        contents.append(
+                            ToolUseBlock(
+                                type=tool_call["type"],
+                                id=tool_call["id"],
+                                name=tool_call["name"],
+                                input=_json_loads_with_repair(
+                                    tool_call["input"] or "{}",
+                                ),
                             ),
-                        ),
-                    )
+                        )
 
                 if not contents:
                     continue
