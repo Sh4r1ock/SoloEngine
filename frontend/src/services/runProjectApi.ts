@@ -1,6 +1,6 @@
 /**
- * @file debugProjectApi.ts
- * @description 调试项目API服务 - 项目选择、文件系统隔离、最近项目记录
+ * @file runProjectApi.ts
+ * @description 运行项目API服务 - 项目选择、文件系统隔离、最近项目记录
  * @author SoloEngine Team
  * @date 2026-02-22
  * 
@@ -11,7 +11,7 @@
  * - 沙箱文件系统操作
  * 
  * 使用场景：
- * - 面试调试场景中的项目管理
+ * - 运行场景中的项目管理
  * - 文件系统沙箱隔离
  */
 
@@ -98,41 +98,41 @@ export interface WorkspaceRootsResponse {
   system: string;
 }
 
-export const debugProjectApi = {
+export const runProjectApi = {
   async selectFolder(folderPath: string): Promise<{ code: number; data: SelectFolderResponse }> {
-    const response = await api.post('/debug-project/select-folder', {
+    const response = await api.post('/run-project/select-folder', {
       folder_path: folderPath,
     });
     return response.data;
   },
 
   async browseDirectory(path: string = ''): Promise<{ code: number; data: BrowseResponse | WorkspaceRootsResponse }> {
-    const response = await api.get('/debug-project/browse', { params: { path } });
+    const response = await api.get('/run-project/browse', { params: { path } });
     return response.data;
   },
 
   async openNativeFolderDialog(title: string = '选择项目文件夹'): Promise<{ code: number; data: SelectFolderResponse | null }> {
-    const response = await api.get('/debug-project/native-folder-dialog', { params: { title } });
+    const response = await api.get('/run-project/native-folder-dialog', { params: { title } });
     return response.data;
   },
 
   async getCurrentProject(): Promise<{ code: number; data: ProjectInfo | null }> {
-    const response = await api.get('/debug-project/current');
+    const response = await api.get('/run-project/current');
     return response.data;
   },
 
   async getRecentProjects(limit: number = 10): Promise<{ code: number; data: RecentProjectInfo[] }> {
-    const response = await api.get('/debug-project/recent', { params: { limit } });
+    const response = await api.get('/run-project/recent', { params: { limit } });
     return response.data;
   },
 
   async switchProject(projectId: string): Promise<{ code: number; data: ProjectInfo }> {
-    const response = await api.post(`/debug-project/switch/${projectId}`);
+    const response = await api.post(`/run-project/switch/${projectId}`);
     return response.data;
   },
 
   async listFiles(path: string = '', pattern: string = '*'): Promise<{ code: number; data: FileListResponse }> {
-    const response = await api.post('/debug-project/files/list', {
+    const response = await api.post('/run-project/files/list', {
       path,
       pattern,
     });
@@ -140,7 +140,7 @@ export const debugProjectApi = {
   },
 
   async readFile(path: string, encoding: string = 'utf-8'): Promise<{ code: number; data: FileReadResponse }> {
-    const response = await api.post('/debug-project/files/read', {
+    const response = await api.post('/run-project/files/read', {
       path,
       encoding,
     });
@@ -153,7 +153,7 @@ export const debugProjectApi = {
     encoding: string = 'utf-8',
     mode: 'write' | 'append' = 'write'
   ): Promise<{ code: number; data: FileWriteResponse }> {
-    const response = await api.post('/debug-project/files/write', {
+    const response = await api.post('/run-project/files/write', {
       path,
       content,
       encoding,
@@ -163,24 +163,24 @@ export const debugProjectApi = {
   },
 
   async deleteFile(path: string): Promise<{ code: number; data: { path: string; type: string; deleted: boolean } }> {
-    const response = await api.delete('/debug-project/files/delete', { params: { path } });
+    const response = await api.delete('/run-project/files/delete', { params: { path } });
     return response.data;
   },
 
   async createDirectory(path: string): Promise<{ code: number; data: { path: string; created: boolean } }> {
-    const response = await api.post('/debug-project/files/mkdir', null, { params: { path } });
+    const response = await api.post('/run-project/files/mkdir', null, { params: { path } });
     return response.data;
   },
 
   async getFileInfo(path: string): Promise<{ code: number; data: FileInfo }> {
-    const response = await api.get('/debug-project/files/info', { params: { path } });
+    const response = await api.get('/run-project/files/info', { params: { path } });
     return response.data;
   },
 
   async fileExists(path: string): Promise<{ code: number; data: { path: string; exists: boolean } }> {
-    const response = await api.get('/debug-project/files/exists', { params: { path } });
+    const response = await api.get('/run-project/files/exists', { params: { path } });
     return response.data;
   },
 };
 
-export default debugProjectApi;
+export default runProjectApi;

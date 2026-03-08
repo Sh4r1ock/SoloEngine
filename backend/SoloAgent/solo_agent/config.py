@@ -19,9 +19,9 @@ class SoloAgentConfig:
     model: str
     system_prompt: str = ""
     
-    skills: List[str] = field(default_factory=list)
+    skills: List[Dict[str, Any]] = field(default_factory=list)
     tools: List[str] = field(default_factory=list)
-    mcp_servers: List[str] = field(default_factory=list)
+    mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
     
     child_agents: List[str] = field(default_factory=list)
     
@@ -40,6 +40,8 @@ class SoloAgentConfig:
     max_tokens: int = 4096
     
     agent_type: str = "executor"
+    
+    work_dir: Optional[str] = None
     
     extra: Dict[str, Any] = field(default_factory=dict)
     
@@ -70,6 +72,7 @@ class SoloAgentConfig:
             temperature=data.get("temperature", 0.7),
             max_tokens=data.get("max_tokens", 4096),
             agent_type=data.get("agentType", data.get("agent_type", "executor")),
+            work_dir=data.get("work_dir"),
             extra=data.get("extra", {}),
         )
     
@@ -95,5 +98,6 @@ class SoloAgentConfig:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "agent_type": self.agent_type,
+            "work_dir": self.work_dir,
             "extra": self.extra,
         }

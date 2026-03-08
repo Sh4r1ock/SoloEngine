@@ -134,6 +134,7 @@ const Canvas: React.FC = () => {
     setEdges, 
     addEdge: storeAddEdge, 
     addNode,
+    addNodeWithDefaultConfig,
     snapToGrid, 
     setIsDragging, 
     pushHistory,
@@ -245,7 +246,7 @@ const Canvas: React.FC = () => {
     });
   }, [reactFlowInstance]);
 
-  const addNodeByType = useCallback((agentType: "orchestrator" | "planner" | "executor") => {
+  const addNodeByType = useCallback(async (agentType: "orchestrator" | "planner" | "executor") => {
     if (!contextMenu) return;
 
     const typeNames = {
@@ -265,17 +266,13 @@ const Canvas: React.FC = () => {
         system_prompt: '',
         user_prompt: '',
         assistant_prompt: '',
-        model_config: {
-          provider: 'openai',
-          model: 'gpt-4',
-        },
         skills: [],
       },
     };
 
-    addNode(newNode as any);
+    await addNodeWithDefaultConfig(newNode as any);
     setContextMenu(null);
-  }, [contextMenu, addNode]);
+  }, [contextMenu, addNodeWithDefaultConfig]);
 
   const addAnnotation = useCallback(() => {
     if (!contextMenu) return;
@@ -389,7 +386,7 @@ const Canvas: React.FC = () => {
   );
 
   const onDrop = useCallback(
-    (event: React.DragEvent) => {
+    async (event: React.DragEvent) => {
       event.preventDefault();
 
       const typeData = event.dataTransfer.getData('application/reactflow');
@@ -417,17 +414,13 @@ const Canvas: React.FC = () => {
           system_prompt: '',
           user_prompt: '',
           assistant_prompt: '',
-          model_config: {
-            provider: 'openai',
-            model: 'gpt-4',
-          },
           skills: [],
         },
       };
 
-      addNode(newNode as any);
+      await addNodeWithDefaultConfig(newNode as any);
     },
-    [reactFlowInstance, addNode]
+    [reactFlowInstance, addNodeWithDefaultConfig]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {

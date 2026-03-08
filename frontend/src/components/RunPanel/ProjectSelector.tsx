@@ -9,8 +9,8 @@ import {
   CheckOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
-import { useDebugProjectStore } from '../../store/debugProjectStore';
-import { debugProjectApi, RecentProjectInfo } from '../../services/debugProjectApi';
+import { useRunProjectStore } from '../../store/runProjectStore';
+import { runProjectApi, RecentProjectInfo } from '../../services/runProjectApi';
 
 const { Text } = Typography;
 
@@ -27,7 +27,7 @@ const ProjectSelector: React.FC<ProjectSelectorProps> = ({ onProjectChange }) =>
     loadCurrentProject,
     loadRecentProjects,
     switchProject,
-  } = useDebugProjectStore();
+  } = useRunProjectStore();
 
   const [recentModalVisible, setRecentModalVisible] = useState(false);
   const [switchingProjectId, setSwitchingProjectId] = useState<string | null>(null);

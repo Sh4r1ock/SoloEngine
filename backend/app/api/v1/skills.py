@@ -252,7 +252,7 @@ def sync_system_skills(db: Session) -> int:
             existing.version = (existing.version or 0) + 1
             logger.info(f"Updated system skill: {skill_name}")
         else:
-            from datetime import datetime
+            from datetime import datetime, timezone
             skill = SkillsPackageModel(
                 name=skill_name,
                 folder_path=skill_path,
@@ -263,8 +263,8 @@ def sync_system_skills(db: Session) -> int:
                 pkg_version=skill_info.get("version", "1.0.0"),
                 is_public=True,
                 is_active=True,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
             )
             db.add(skill)
             logger.info(f"Created system skill: {skill_name}")

@@ -46,7 +46,7 @@ class Packager:
     """打包引擎。"""
 
     def __init__(self, output_dir: Optional[str] = None):
-        self.output_dir = Path(output_dir) if output_dir else Path("packages")
+        self.output_dir = Path(output_dir) if output_dir else Path("data/packages")
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_flows_dir(self) -> Path:

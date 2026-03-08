@@ -42,6 +42,7 @@ ReAct 架构说明：
 
 import asyncio
 import re
+import logging
 from typing import Optional, List, Any, Union, Dict
 from enum import Enum
 
@@ -49,6 +50,8 @@ from ..message import Msg, ToolUseBlock, ToolResultBlock, TextBlock
 from ..model import ChatModelBase, ChatResponse
 from ..formatter import FormatterBase
 from .interfaces import IMemory, IRAG, IToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class CompletionReason(Enum):
@@ -195,6 +198,7 @@ class ReActCore:
         tool_executor: Optional[IToolExecutor] = None,
         max_iters: int = 10,
         print_hint_msg: bool = False,
+        stream_callback: Optional[callable] = None,
     ) -> None:
         """
         初始化 ReAct 核心微内核。
@@ -216,6 +220,8 @@ class ReActCore:
                 默认为 10。
             print_hint_msg (bool, optional): 是否打印调试信息。
                 默认为 False。
+            stream_callback (callable, optional): 流式输出回调函数。
+                默认为 None。
         
         Note:
             - model 和 formatter 是必需的
@@ -232,10 +238,44 @@ class ReActCore:
         self.tool_executor = tool_executor
         self.max_iters = max_iters
         self.print_hint_msg = print_hint_msg
+        self.stream_callback = stream_callback
         
         self._conversation_history: List[Msg] = []
         self._iteration_count = 0
         self._last_tool_results: List[Dict[str, Any]] = []
+        self._accumulated_text: str = ""  # 累积所有部分输出（用于断点续传）
+        self._interrupted: bool = False  # 中断标志
+    
+    def interrupt(self) -> None:
+        """
+        中断当前正在进行的模型输出。
+        
+        调用此方法后，流式输出会立即停止，API 不再发送请求。
+        这是一个真实的中断，不会消耗额外的 token。
+        
+        Example:
+            >>> # 在另一个线程中调用
+            >>> core.interrupt()
+        """
+        self._interrupted = True
+        logger.info(f"[{self.name}] Interrupt requested")
+    
+    def is_interrupted(self) -> bool:
+        """
+        检查是否已被中断。
+        
+        Returns:
+            bool: 如果已被中断返回 True，否则返回 False。
+        """
+        return self._interrupted
+    
+    def reset_interrupt(self) -> None:
+        """
+        重置中断标志。
+        
+        在开始新的对话时自动调用。
+        """
+        self._interrupted = False
         
     async def reply(self, message: str | Msg) -> Msg:
         """
@@ -271,6 +311,7 @@ class ReActCore:
         self._conversation_history.append(user_msg)
         self._iteration_count = 0
         self._last_tool_results = []
+        self._interrupted = False  # 重置中断标志
         
         memory_context = ""
         if self.memory:
@@ -299,6 +340,11 @@ class ReActCore:
         completion_reason = None
         
         for iteration in range(self.max_iters):
+            # 检查中断标志
+            if self._interrupted:
+                logger.info(f"[{self.name}] Execution interrupted by user at iteration {iteration}")
+                break
+            
             self._iteration_count = iteration + 1
             
             reasoning_result = await self._reasoning(
@@ -308,6 +354,28 @@ class ReActCore:
             )
             
             completion_check = self._check_completion(reasoning_result, iteration)
+            
+            # 处理断点续传
+            if completion_check.get("auto_continue"):
+                # 将当前的部分输出添加到对话历史，然后继续
+                partial_text = self._extract_text(reasoning_result)
+                if partial_text.strip():
+                    # 累积输出
+                    self._accumulated_text += partial_text
+                    partial_msg = Msg(
+                        name=self.name,
+                        content=partial_text,
+                        role="assistant"
+                    )
+                    self._conversation_history.append(partial_msg)
+                    # 添加继续提示
+                    continue_msg = Msg(
+                        name="user",
+                        content="[继续输出，不要重复之前的内容]",
+                        role="user"
+                    )
+                    self._conversation_history.append(continue_msg)
+                continue
             
             if completion_check["should_complete"]:
                 completion_reason = completion_check["reason"]
@@ -334,9 +402,7 @@ class ReActCore:
             if tool_results:
                 for result in tool_results:
                     self._conversation_history.append(result)
-                self._last_tool_results = [
-                    {"content": r.get_text_content()} for r in tool_results
-                ]
+                # _last_tool_results 已经在 _execute_tool_calls 中设置，不需要再覆盖
             else:
                 if self._has_explicit_answer(reasoning_result):
                     completion_reason = CompletionReason.NO_MORE_ACTIONS
@@ -414,9 +480,69 @@ class ReActCore:
             tools = self.tool_executor.get_available_tools()
         
         if tools:
+            logger.info(f"[_reasoning] Calling model with {len(tools)} tools: {[t.get('function', {}).get('name') for t in tools]}")
             response = await self.model(formatted, tools=tools)
         else:
+            logger.info(f"[_reasoning] Calling model without tools")
             response = await self.model(formatted)
+        
+        # 处理流式响应 - 必须先消费生成器
+        if hasattr(response, '__aiter__'):
+            # 流式响应：逐个chunk处理并收集
+            final_response = None
+            chunk_count = 0
+            async for chunk in response:
+                # 检查中断标志
+                if self._interrupted:
+                    logger.info(f"[{self.name}] Stream interrupted by user at chunk #{chunk_count}")
+                    break
+                
+                chunk_count += 1
+                final_response = chunk
+                # Debug: 打印每个 chunk 的 stop_reason
+                if hasattr(chunk, 'stop_reason'):
+                    logger.info(f"[_reasoning] Chunk #{chunk_count} stop_reason={chunk.stop_reason}")
+                if hasattr(chunk, 'finish_reason'):
+                    logger.info(f"[_reasoning] Chunk #{chunk_count} finish_reason={chunk.finish_reason}")
+                # 每个chunk都调用回调
+                if self.stream_callback and hasattr(chunk, 'content') and chunk.content:
+                    for block in chunk.content:
+                        # 处理 TextBlock (TypedDict 或 dict)
+                        if isinstance(block, dict):
+                            if block.get("type") == "text":
+                                text_content = block.get("text", "")
+                                if text_content:
+                                    try:
+                                        self.stream_callback(text_content)
+                                    except Exception as e:
+                                        logger.error(f"Stream callback error: {e}")
+                            elif block.get("type") == "thinking":
+                                thinking_content = block.get("thinking", "")
+                                if thinking_content:
+                                    try:
+                                        self.stream_callback(f"[思考] {thinking_content}")
+                                    except Exception as e:
+                                        logger.error(f"Stream callback error: {e}")
+            logger.debug(f"[ReActCore] Total stream chunks: {chunk_count}")
+            response = final_response
+        elif self.stream_callback and hasattr(response, 'content') and response.content:
+            # 非流式响应：一次性输出
+            for block in response.content:
+                if isinstance(block, dict):
+                    if block.get("type") == "text":
+                        text_content = block.get("text", "")
+                        if text_content:
+                            try:
+                                self.stream_callback(text_content)
+                            except Exception as e:
+                                logger.error(f"Stream callback error: {e}")
+                    elif block.get("type") == "thinking":
+                        thinking_content = block.get("thinking", "")
+                        if thinking_content:
+                            try:
+                                self.stream_callback(f"[思考] {thinking_content}")
+                            except Exception as e:
+                                logger.error(f"Stream callback error: {e}")
         
         if self.print_hint_msg:
             reasoning_text = ""
@@ -455,11 +581,17 @@ class ReActCore:
         """
         tool_calls = self._parse_tool_calls(response)
         
+        logger.info(f"[_acting] Parsed {len(tool_calls)} tool calls from response")
+        
         if not tool_calls:
+            logger.debug("[_acting] No tool calls found, returning empty list")
             return []
         
         tool_results = []
+        self._last_tool_results = []  # 重置并记录完整工具调用信息
+        
         for tool_call in tool_calls:
+            logger.info(f"[_acting] Executing tool: {tool_call.get('name')} with args: {tool_call.get('arguments')}")
             if self.tool_executor:
                 try:
                     result = await self.tool_executor.execute(tool_call)
@@ -470,6 +602,14 @@ class ReActCore:
                         role="assistant"
                     )
                     tool_results.append(result_msg)
+                    
+                    # 记录完整的工具调用信息
+                    self._last_tool_results.append({
+                        "name": tool_call.get("name"),
+                        "args": tool_call.get("arguments", {}),
+                        "result": result_content
+                    })
+                    logger.info(f"[_acting] Tool {tool_call.get('name')} executed successfully, result length: {len(str(result_content))}")
                 except Exception as e:
                     error_msg = Msg(
                         name="tool_error",
@@ -477,7 +617,16 @@ class ReActCore:
                         role="assistant"
                     )
                     tool_results.append(error_msg)
+                    
+                    # 记录失败的工具调用
+                    self._last_tool_results.append({
+                        "name": tool_call.get("name"),
+                        "args": tool_call.get("arguments", {}),
+                        "error": str(e)
+                    })
+                    logger.error(f"[_acting] Tool {tool_call.get('name')} execution failed: {e}")
         
+        logger.info(f"[_acting] Total {len(self._last_tool_results)} tool results recorded")
         return tool_results
     
     def _parse_tool_calls(self, response: ChatResponse) -> List[dict]:
@@ -504,6 +653,13 @@ class ReActCore:
                     "arguments": block.get("input", {})
                 }
                 tool_calls.append(tool_call)
+                logger.debug(f"Parsed tool call: {tool_call.get('name')} with args: {tool_call.get('arguments')}")
+        
+        if tool_calls:
+            logger.info(f"Total {len(tool_calls)} tool calls parsed from response")
+        else:
+            logger.debug(f"No tool calls found in response. Response content types: {[block.get('type') if isinstance(block, dict) else type(block).__name__ for block in response.content]}")
+        
         return tool_calls
     
     def _check_completion(self, response: Union[ChatResponse, str], iteration: int) -> dict:
@@ -525,7 +681,20 @@ class ReActCore:
                 - reason (CompletionReason): 结束原因
         """
         if isinstance(response, ChatResponse):
+            # Debug logging
+            stop_reason_raw = getattr(response, 'stop_reason', None)
+            finish_reason_raw = getattr(response, 'finish_reason', None)
+            logger.info(f"[_check_completion] stop_reason={stop_reason_raw}, finish_reason={finish_reason_raw}")
+            
+            # 检查是否有 tool_use 块
+            has_tool_calls = any(
+                isinstance(block, dict) and block.get("type") == "tool_use"
+                for block in response.content
+            )
+            logger.info(f"[_check_completion] has_tool_calls={has_tool_calls}")
+            
             stop_reason = StopReason.from_api_response(response)
+            logger.info(f"[_check_completion] parsed stop_reason={stop_reason}")
             
             if stop_reason == StopReason.END_TURN:
                 return {
@@ -537,9 +706,16 @@ class ReActCore:
                 return {"should_complete": False, "reason": CompletionReason.TOOL_CALL}
             
             if stop_reason == StopReason.MAX_TOKENS:
+                logger.info(f"MAX_TOKENS reached at iteration {iteration}, auto-continuing...")
+                if self.stream_callback:
+                    try:
+                        self.stream_callback("\n\n[继续输出...]\n\n")
+                    except Exception as e:
+                        logger.error(f"Stream callback error: {e}")
                 return {
-                    "should_complete": True,
-                    "reason": CompletionReason.MAX_ITERATIONS
+                    "should_complete": False,
+                    "reason": CompletionReason.MAX_ITERATIONS,
+                    "auto_continue": True
                 }
             
             has_tool_calls = any(
@@ -659,6 +835,14 @@ class ReActCore:
             str: 最终响应文本。
         """
         reasoning_text = self._extract_text(response)
+        
+        # 如果有累积的文本，优先使用
+        if self._accumulated_text:
+            final_text = self._accumulated_text + reasoning_text
+            self._accumulated_text = ""  # 重置累积文本
+            if len(final_text) > 500:
+                return final_text[:500] + "..."
+            return final_text
         
         if reasoning_text:
             final_answer = self._extract_final_answer(reasoning_text)

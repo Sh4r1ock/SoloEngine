@@ -13,7 +13,7 @@ import {
   FileOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
-import { debugProjectApi, FileInfo } from '../../services/debugProjectApi';
+import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 
 const { Text } = Typography;
 
@@ -42,7 +42,7 @@ const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await debugProjectApi.readFile(file.path);
+      const response = await runProjectApi.readFile(file.path);
       if (response.code === 200) {
         const fileContent = response.data.content;
         setContent(fileContent);
@@ -61,7 +61,7 @@ const FileEditor: React.FC<FileEditorProps> = ({ file, onClose }) => {
 
     setSaving(true);
     try {
-      await debugProjectApi.writeFile(file.path, content);
+      await runProjectApi.writeFile(file.path, content);
       setOriginalContent(content);
       setModified(false);
       message.success('文件已保存');

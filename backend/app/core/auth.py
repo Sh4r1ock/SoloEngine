@@ -251,7 +251,7 @@ class AuthService:
             if is_active is not None:
                 user_model.is_active = is_active
 
-            user_model.updated_at = datetime.utcnow()
+            user_model.updated_at = datetime.now(timezone.utc)
             db.commit()
             db.refresh(user_model)
             

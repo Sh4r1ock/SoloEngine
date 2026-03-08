@@ -7,40 +7,44 @@ import {
   CloseCircleOutlined,
   LoadingOutlined,
   CopyOutlined,
+  RobotOutlined,
+  ApiOutlined,
 } from '@ant-design/icons';
-import { useDebugStore, ExtendedDebugSession } from '../../store/debugStore';
+import { useRunStore, ExtendedRunSession, ToolCallRecord } from '../../store/runStore';
 
 const { Text, Paragraph } = Typography;
 const { Panel } = Collapse;
 
-interface ToolCall {
-  id: string;
-  name: string;
-  status: 'success' | 'error' | 'pending' | string;
-  duration?: number;
-  arguments: Record<string, any>;
-  result?: any;
-  error?: string;
-}
+const getTypeConfig = (type: 'tool' | 'skill' | 'mcp') => {
+  switch (type) {
+    case 'tool':
+      return { icon: ToolOutlined, color: '#1890ff', label: '工具' };
+    case 'skill':
+      return { icon: RobotOutlined, color: '#52c41a', label: '技能' };
+    case 'mcp':
+      return { icon: ApiOutlined, color: '#722ed1', label: 'MCP' };
+    default:
+      return { icon: ToolOutlined, color: '#1890ff', label: '工具' };
+  }
+};
 
 const OperationRecords: React.FC = () => {
   const {
     activeSessionId,
     sessions,
     toolFilter,
-  } = useDebugStore();
+  } = useRunStore();
 
-  const activeSession: ExtendedDebugSession | undefined = activeSessionId
-    ? sessions.find((s: ExtendedDebugSession) => s.id === activeSessionId)
+  const activeSession: ExtendedRunSession | undefined = activeSessionId
+    ? sessions.find((s: ExtendedRunSession) => s.id === activeSessionId)
     : undefined;
 
-  const toolCalls: ToolCall[] = activeSession?.toolCalls || [];
+  const toolCalls: ToolCallRecord[] = activeSession?.toolCalls || [];
 
-  const filteredToolCalls: ToolCall[] = toolFilter && toolFilter !== 'all'
-    ? toolCalls.filter((tc: ToolCall) => tc.name.toLowerCase().includes(toolFilter.toLowerCase()))
+  const filteredToolCalls: ToolCallRecord[] = toolFilter && toolFilter !== 'all'
+    ? toolCalls.filter((tc: ToolCallRecord) => tc.name.toLowerCase().includes(toolFilter.toLowerCase()))
     : toolCalls;
 
-  // 格式化持续时间
   const formatDuration = (duration?: number) => {
     if (!duration) return '-';
     if (duration < 1000) return `${duration}ms`;
@@ -48,12 +52,10 @@ const OperationRecords: React.FC = () => {
     return `${(duration / 60000).toFixed(2)}m`;
   };
 
-  // 复制到剪贴板
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
   };
 
-  // 格式化 JSON
   const formatJson = (obj: any) => {
     try {
       return JSON.stringify(obj, null, 2);
@@ -71,7 +73,7 @@ const OperationRecords: React.FC = () => {
         justifyContent: 'center',
         background: '#fafafa',
       }}>
-        <Empty description="请选择一个调试会话" />
+        <Empty description="请选择一个运行会话" />
       </div>
     );
   }
@@ -96,7 +98,7 @@ const OperationRecords: React.FC = () => {
         ) : (
           <List
             dataSource={filteredToolCalls}
-            renderItem={(toolCall: ToolCall) => (
+            renderItem={(toolCall: ToolCallRecord) => (
               <div
                 key={toolCall.id}
                 style={{
@@ -108,22 +110,41 @@ const OperationRecords: React.FC = () => {
                 }}
               >
                 <Space size={8} style={{ marginBottom: 8 }}>
-                  <ToolOutlined style={{ color: 'var(--primary-100)' }} />
+                  {(() => {
+                    const typeConfig = getTypeConfig(toolCall.type || 'tool');
+                    const TypeIcon = typeConfig.icon;
+                    return <TypeIcon style={{ color: typeConfig.color }} />;
+                  })()}
                   <Text strong style={{ fontSize: 13 }}>
                     {toolCall.name}
                   </Text>
                   <Tag
+                    color={(() => {
+                      const typeConfig = getTypeConfig(toolCall.type || 'tool');
+                      return typeConfig.color;
+                    })()}
+                    style={{ margin: 0, fontSize: 11 }}
+                  >
+                    {(() => {
+                      const typeConfig = getTypeConfig(toolCall.type || 'tool');
+                      return typeConfig.label;
+                    })()}
+                  </Tag>
+                  <Tag
                     color={toolCall.status === 'success' ? 'green' :
                            toolCall.status === 'error' ? 'red' :
-                           toolCall.status === 'pending' ? 'orange' : 'default'}
+                           toolCall.status === 'pending' ? 'orange' :
+                           toolCall.status === 'running' ? 'blue' : 'default'}
                     icon={toolCall.status === 'success' ? <CheckCircleOutlined /> :
                            toolCall.status === 'error' ? <CloseCircleOutlined /> :
-                           toolCall.status === 'pending' ? <LoadingOutlined /> : undefined}
+                           toolCall.status === 'pending' ? <LoadingOutlined /> :
+                           toolCall.status === 'running' ? <LoadingOutlined spin /> : undefined}
                     style={{ margin: 0, fontSize: 11 }}
                   >
                     {toolCall.status === 'success' ? '成功' :
                      toolCall.status === 'error' ? '失败' :
-                     toolCall.status === 'pending' ? '执行中' : toolCall.status}
+                     toolCall.status === 'pending' ? '等待中' :
+                     toolCall.status === 'running' ? '执行中' : toolCall.status}
                   </Tag>
                   <Space size={4}>
                     <ClockCircleOutlined style={{ fontSize: 12, color: '#8c8c8c' }} />
@@ -147,8 +168,27 @@ const OperationRecords: React.FC = () => {
                       children: (
                         <div style={{ marginTop: 8 }}>
                           <Descriptions size="small" column={1}>
-                            <Descriptions.Item label="工具名称">
+                            <Descriptions.Item label="调用类型">
+                              <Tag
+                                color={(() => {
+                                  const typeConfig = getTypeConfig(toolCall.type || 'tool');
+                                  return typeConfig.color;
+                                })()}
+                              >
+                                {(() => {
+                                  const typeConfig = getTypeConfig(toolCall.type || 'tool');
+                                  return typeConfig.label;
+                                })()}
+                              </Tag>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="名称">
                               {toolCall.name}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="调用时长">
+                              <Space size={4}>
+                                <ClockCircleOutlined style={{ fontSize: 12 }} />
+                                <Text>{formatDuration(toolCall.duration)}</Text>
+                              </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="参数">
                               <div style={{ position: 'relative' }}>
@@ -161,13 +201,13 @@ const OperationRecords: React.FC = () => {
                                   overflow: 'auto',
                                   fontSize: 11,
                                 }}>
-                                  {formatJson(toolCall.arguments)}
+                                  {formatJson(toolCall.arguments || {})}
                                 </pre>
                                 <Button
                                   type="text"
                                   size="small"
                                   icon={<CopyOutlined />}
-                                  onClick={() => copyToClipboard(formatJson(toolCall.arguments))}
+                                  onClick={() => copyToClipboard(formatJson(toolCall.arguments || {}))}
                                   style={{
                                     position: 'absolute',
                                     top: 4,
@@ -177,16 +217,17 @@ const OperationRecords: React.FC = () => {
                               </div>
                             </Descriptions.Item>
                             {toolCall.result !== undefined && (
-                              <Descriptions.Item label="结果">
+                              <Descriptions.Item label="调用结果">
                                 <div style={{ position: 'relative' }}>
                                   <pre style={{
-                                    background: '#f6ffed',
+                                    background: toolCall.status === 'error' ? '#fff2f0' : '#f6ffed',
                                     padding: '8px',
                                     borderRadius: 4,
                                     margin: 0,
-                                    maxHeight: 150,
+                                    maxHeight: 200,
                                     overflow: 'auto',
                                     fontSize: 11,
+                                    border: `1px solid ${toolCall.status === 'error' ? '#ffccc7' : '#b7eb8f'}`,
                                   }}>
                                     {formatJson(toolCall.result)}
                                   </pre>
@@ -205,10 +246,17 @@ const OperationRecords: React.FC = () => {
                               </Descriptions.Item>
                             )}
                             {toolCall.error && (
-                              <Descriptions.Item label="错误">
-                                <Paragraph type="danger" style={{ margin: 0, fontSize: 12 }}>
-                                  {toolCall.error}
-                                </Paragraph>
+                              <Descriptions.Item label="错误信息">
+                                <div style={{
+                                  background: '#fff2f0',
+                                  border: '1px solid #ffccc7',
+                                  borderRadius: 4,
+                                  padding: '8px 12px',
+                                }}>
+                                  <Paragraph type="danger" style={{ margin: 0, fontSize: 12 }}>
+                                    {toolCall.error}
+                                  </Paragraph>
+                                </div>
                               </Descriptions.Item>
                             )}
                           </Descriptions>

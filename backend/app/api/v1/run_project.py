@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-调试项目 API endpoints。
+运行项目 API endpoints。
 
-@file debug_project.py
-@description 调试项目管理API - 项目选择、文件系统隔离、最近项目记录
+@file run_project.py
+@description 运行项目管理API - 项目选择、文件系统隔离、最近项目记录
 @author SoloEngine Team
 @date 2026-02-22
 
@@ -14,7 +14,7 @@
 - 文件系统访问隔离
 
 使用场景：
-- 面试调试场景中的项目管理
+- 运行场景中的项目管理
 - 文件系统沙箱隔离
 """
 import os
@@ -22,19 +22,19 @@ import json
 import logging
 import shutil
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, DebugProjectModel, RecentProjectModel
+from app.core.database import get_db, db_manager, RunProjectModel, RecentProjectModel
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/debug-project", tags=["debug-project"])
+router = APIRouter(prefix="/api/v1/run-project", tags=["run-project"])
 
 
 class SelectFolderRequest(BaseModel):
@@ -229,7 +229,7 @@ def get_sandboxed_fs(user_id: str, db: Session) -> SandboxedFileSystem:
     project_id = _active_project_sessions.get(user_id)
     
     if not project_id:
-        project = db_manager.get_active_debug_project(db, user_id)
+        project = db_manager.get_active_run_project(db, user_id)
         if project:
             project_id = project.id
             _active_project_sessions[user_id] = project_id
@@ -240,7 +240,7 @@ def get_sandboxed_fs(user_id: str, db: Session) -> SandboxedFileSystem:
             detail="No project selected. Please select a project folder first."
         )
     
-    project = db_manager.get_debug_project(db, project_id, user_id)
+    project = db_manager.get_run_project(db, project_id, user_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
@@ -264,16 +264,16 @@ async def select_folder(
     
     project_name = os.path.basename(folder_path)
     
-    existing_project = db_manager.get_debug_project_by_path(db, current_user.id, folder_path)
+    existing_project = db_manager.get_run_project_by_path(db, current_user.id, folder_path)
     
     if existing_project:
-        existing_project.last_accessed_at = datetime.utcnow()
+        existing_project.last_accessed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing_project)
         project = existing_project
         is_new = False
     else:
-        project = db_manager.create_debug_project(
+        project = db_manager.create_run_project(
             db=db,
             user_id=current_user.id,
             name=project_name,
@@ -324,7 +324,7 @@ async def get_current_project(
     project_id = _active_project_sessions.get(current_user.id)
     
     if project_id:
-        project = db_manager.get_debug_project(db, project_id, current_user.id)
+        project = db_manager.get_run_project(db, project_id, current_user.id)
         if project:
             return {
                 "code": 200,
@@ -339,7 +339,7 @@ async def get_current_project(
                 }
             }
     
-    project = db_manager.get_active_debug_project(db, current_user.id)
+    project = db_manager.get_active_run_project(db, current_user.id)
     if project:
         _active_project_sessions[current_user.id] = project.id
         return {
@@ -394,7 +394,7 @@ async def switch_project(
     current_user: User = Depends(get_current_user)
 ):
     """切换到指定项目。"""
-    project = db_manager.get_debug_project(db, project_id, current_user.id)
+    project = db_manager.get_run_project(db, project_id, current_user.id)
     
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -402,7 +402,7 @@ async def switch_project(
     if not os.path.exists(project.folder_path):
         raise HTTPException(status_code=400, detail=f"Project folder no longer exists: {project.folder_path}")
     
-    project.last_accessed_at = datetime.utcnow()
+    project.last_accessed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(project)
     
@@ -423,6 +423,9 @@ async def switch_project(
             "id": project.id,
             "name": project.name,
             "folder_path": project.folder_path,
+            "description": project.description,
+            "last_accessed_at": project.last_accessed_at.isoformat() if project.last_accessed_at else None,
+            "created_at": project.created_at.isoformat() if project.created_at else None,
         }
     }
 
@@ -762,16 +765,16 @@ async def open_native_folder_dialog(
     
     project_name = os.path.basename(folder_path)
     
-    existing_project = db_manager.get_debug_project_by_path(db, current_user.id, folder_path)
+    existing_project = db_manager.get_run_project_by_path(db, current_user.id, folder_path)
     
     if existing_project:
-        existing_project.last_accessed_at = datetime.utcnow()
+        existing_project.last_accessed_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(existing_project)
         project = existing_project
         is_new = False
     else:
-        project = db_manager.create_debug_project(
+        project = db_manager.create_run_project(
             db=db,
             user_id=current_user.id,
             name=project_name,

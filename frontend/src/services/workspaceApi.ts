@@ -39,7 +39,7 @@ export interface BrowseResult {
 
 export const workspaceApi = {
   getWorkspaceRoots: async () => {
-    const response = await api.get('/api/v1/debug-project/workspace-roots');
+    const response = await api.get('/api/v1/run-project/workspace-roots');
     return response.data;
   },
 
@@ -48,14 +48,14 @@ export const workspaceApi = {
     message: string;
     data: BrowseResult | { roots: WorkspaceRoot[]; system: string };
   }> => {
-    const response = await api.get('/api/v1/debug-project/browse', {
+    const response = await api.get('/api/v1/run-project/browse', {
       params: { path },
     });
     return response.data;
   },
 
   selectWorkspace: async (folderPath: string) => {
-    const response = await api.post('/api/v1/debug-project/select-folder', {
+    const response = await api.post('/api/v1/run-project/select-folder', {
       folder_path: folderPath,
     });
     return response.data;

@@ -1,6 +1,6 @@
 /**
- * @file debugProjectStore.ts
- * @description 调试项目状态管理 - 项目选择、文件系统隔离状态管理
+ * @file runProjectStore.ts
+ * @description 运行项目状态管理 - 项目选择、文件系统隔离状态管理
  * @author SoloEngine Team
  * @date 2026-02-22
  * 
@@ -10,14 +10,14 @@
  * - 管理文件系统沙箱状态
  * 
  * 使用场景：
- * - 面试调试场景中的项目管理
+ * - 运行场景中的项目管理
  * - 文件系统沙箱隔离
  */
 
 import { create } from 'zustand';
-import { debugProjectApi, ProjectInfo, RecentProjectInfo, FileInfo, SelectFolderResponse } from '../services/debugProjectApi';
+import { runProjectApi, ProjectInfo, RecentProjectInfo, FileInfo, SelectFolderResponse } from '../services/runProjectApi';
 
-interface DebugProjectState {
+interface RunProjectState {
   currentProject: ProjectInfo | null;
   recentProjects: RecentProjectInfo[];
   files: FileInfo[];
@@ -34,10 +34,11 @@ interface DebugProjectState {
   switchProject: (projectId: string) => Promise<boolean>;
   listFiles: (path?: string, pattern?: string) => Promise<void>;
   setCurrentPath: (path: string) => void;
+  clearProject: () => void;
   clearError: () => void;
 }
 
-export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
+export const useRunProjectStore = create<RunProjectState>((set, get) => ({
   currentProject: null,
   recentProjects: [],
   files: [],
@@ -48,7 +49,7 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
   selectFolder: async (folderPath: string) => {
     set({ loading: true, error: null });
     try {
-      const response = await debugProjectApi.selectFolder(folderPath);
+      const response = await runProjectApi.selectFolder(folderPath);
       if (response.code === 200) {
         set({
           currentProject: {
@@ -74,7 +75,7 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
   openNativeFolderDialog: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await debugProjectApi.openNativeFolderDialog('选择项目文件夹');
+      const response = await runProjectApi.openNativeFolderDialog('选择项目文件夹');
       if (response.code === 200 && response.data) {
         set({
           currentProject: {
@@ -116,7 +117,7 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
   loadCurrentProject: async () => {
     set({ loading: true, error: null });
     try {
-      const response = await debugProjectApi.getCurrentProject();
+      const response = await runProjectApi.getCurrentProject();
       if (response.code === 200 && response.data) {
         set({
           currentProject: response.data,
@@ -135,11 +136,13 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
 
   loadRecentProjects: async () => {
     try {
-      const response = await debugProjectApi.getRecentProjects(10);
+      const response = await runProjectApi.getRecentProjects(10);
       if (response.code === 200) {
         set({ recentProjects: response.data });
       }
     } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || error.message || '获取最近项目失败';
+      set({ error: errorMsg });
       console.error('Failed to load recent projects:', error);
     }
   },
@@ -147,7 +150,7 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
   switchProject: async (projectId: string) => {
     set({ loading: true, error: null });
     try {
-      const response = await debugProjectApi.switchProject(projectId);
+      const response = await runProjectApi.switchProject(projectId);
       if (response.code === 200) {
         set({
           currentProject: response.data,
@@ -169,13 +172,15 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
   listFiles: async (path: string = '', pattern: string = '*') => {
     set({ loading: true, error: null });
     try {
-      const response = await debugProjectApi.listFiles(path, pattern);
+      const response = await runProjectApi.listFiles(path, pattern);
       if (response.code === 200) {
         set({
           files: response.data.files,
           currentPath: response.data.relative_path,
           loading: false,
         });
+      } else {
+        set({ loading: false, error: '获取文件列表失败' });
       }
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || '获取文件列表失败';
@@ -185,6 +190,15 @@ export const useDebugProjectStore = create<DebugProjectState>((set, get) => ({
 
   setCurrentPath: (path: string) => {
     set({ currentPath: path });
+  },
+
+  clearProject: () => {
+    set({
+      currentProject: null,
+      files: [],
+      currentPath: '',
+      error: null,
+    });
   },
 
   clearError: () => {

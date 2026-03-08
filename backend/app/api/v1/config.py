@@ -193,45 +193,6 @@ async def list_configs(
     }
 
 
-@router.get("/configs/{config_id}")
-async def get_config(
-    config_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-) -> dict:
-    """获取指定的LLM配置。"""
-    user_id = current_user.id
-    config = db_manager.get_llm_config(db, config_id, user_id)
-    
-    if not config:
-        raise HTTPException(status_code=404, detail=f"Config '{config_id}' not found")
-    
-    return {
-        "code": 200,
-        "message": "success",
-        "data": {
-            "id": config.id,
-            "user_id": config.user_id,
-            "name": config.name,
-            "provider": config.provider,
-            "model_name": config.model_name,
-            "base_url": config.base_url,
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-            "top_p": config.top_p,
-            "frequency_penalty": config.frequency_penalty,
-            "presence_penalty": config.presence_penalty,
-            "timeout": config.timeout,
-            "extra_params": config.extra_params or {},
-            "is_default": config.is_default,
-            "is_active": config.is_active,
-            "version": config.version,
-            "created_at": config.created_at.isoformat() if config.created_at else None,
-            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
-        },
-    }
-
-
 @router.get("/configs/default")
 async def get_default_config(
     db: Session = Depends(get_db),
@@ -267,6 +228,45 @@ async def get_default_config(
             "extra_params": config.extra_params or {},
             "is_default": config.is_default,
             "version": config.version,
+        },
+    }
+
+
+@router.get("/configs/{config_id}")
+async def get_config(
+    config_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """获取指定的LLM配置。"""
+    user_id = current_user.id
+    config = db_manager.get_llm_config(db, config_id, user_id)
+    
+    if not config:
+        raise HTTPException(status_code=404, detail=f"Config '{config_id}' not found")
+    
+    return {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "id": config.id,
+            "user_id": config.user_id,
+            "name": config.name,
+            "provider": config.provider,
+            "model_name": config.model_name,
+            "base_url": config.base_url,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "top_p": config.top_p,
+            "frequency_penalty": config.frequency_penalty,
+            "presence_penalty": config.presence_penalty,
+            "timeout": config.timeout,
+            "extra_params": config.extra_params or {},
+            "is_default": config.is_default,
+            "is_active": config.is_active,
+            "version": config.version,
+            "created_at": config.created_at.isoformat() if config.created_at else None,
+            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
         },
     }
 

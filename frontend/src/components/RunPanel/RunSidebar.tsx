@@ -1,20 +1,21 @@
 import React, { useEffect } from 'react';
 import { List, Typography, Tag, Input, Space, Empty, Spin } from 'antd';
 import { SearchOutlined, HistoryOutlined } from '@ant-design/icons';
-import { useDebugStore, ExtendedDebugSession } from '../../store/debugStore';
-import { debugApi } from '../../services/debugApi';
+import { useRunStore, ExtendedRunSession } from '../../store/runStore';
+import { runApi } from '../../services/runApi';
+import { formatTimeShort } from '../../utils/timezone';
 
 const { Search } = Input;
 const { Text, Title } = Typography;
 
-const DebugSidebar: React.FC = () => {
+const RunSidebar: React.FC = () => {
   const {
     sessions,
     activeSessionId,
     setActiveSession,
     searchQuery,
     setSearchQuery,
-  } = useDebugStore();
+  } = useRunStore();
 
   const [loading, setLoading] = React.useState(false);
 
@@ -25,8 +26,7 @@ const DebugSidebar: React.FC = () => {
   const loadSessions = async () => {
     setLoading(true);
     try {
-      const response = await debugApi.getSessions({ limit: 50 });
-      // response is DebugSession[] array
+      const response = await runApi.getSessions({ limit: 50 });
       console.log('Loaded sessions:', response.length);
     } catch (error) {
       console.error('加载会话失败：', error);
@@ -35,7 +35,7 @@ const DebugSidebar: React.FC = () => {
     }
   };
 
-  const filteredSessions = sessions.filter((session: ExtendedDebugSession) => {
+  const filteredSessions = sessions.filter((session: ExtendedRunSession) => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       return (
@@ -46,33 +46,22 @@ const DebugSidebar: React.FC = () => {
     return true;
   });
 
-  // 格式化时间
   const formatTime = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatTimeShort(new Date(timestamp).toISOString());
   };
 
-  // 获取状态标签颜色
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'running': return 'green';
-      case 'paused': return 'orange';
       case 'completed': return 'blue';
       case 'error': return 'red';
       default: return 'default';
     }
   };
 
-  // 获取状态文本
   const getStatusText = (status: string) => {
     switch (status) {
       case 'running': return '运行中';
-      case 'paused': return '已暂停';
       case 'completed': return '已完成';
       case 'error': return '错误';
       default: return status;
@@ -83,7 +72,7 @@ const DebugSidebar: React.FC = () => {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '16px', borderBottom: '1px solid var(--bg-300)' }}>
         <Title level={5} style={{ marginBottom: 12 }}>
-          <HistoryOutlined /> 调试会话
+          <HistoryOutlined /> 运行会话
         </Title>
         <Search
           placeholder="搜索会话..."
@@ -102,13 +91,13 @@ const DebugSidebar: React.FC = () => {
           </div>
         ) : filteredSessions.length === 0 ? (
           <Empty
-            description="暂无调试会话"
+            description="暂无运行会话"
             style={{ padding: '24px' }}
           />
         ) : (
           <List
             dataSource={filteredSessions}
-            renderItem={(session: ExtendedDebugSession) => (
+            renderItem={(session: ExtendedRunSession) => (
               <List.Item
                 key={session.id}
                 onClick={() => setActiveSession(session.id)}
@@ -152,4 +141,4 @@ const DebugSidebar: React.FC = () => {
   );
 };
 
-export default DebugSidebar;
+export default RunSidebar;

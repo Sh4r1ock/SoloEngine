@@ -7,13 +7,13 @@ import {
   SettingOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
-import { useDebugStore } from '../../store/debugStore';
-import { debugApi } from '../../services/debugApi';
+import { useRunStore, ExtendedRunSession } from '../../store/runStore';
+import { runApi } from '../../services/runApi';
 import type { MenuProps } from 'antd';
 
 const { Text } = Typography;
 
-interface DebugMessage {
+interface RunMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
@@ -27,7 +27,7 @@ const ConversationHistory: React.FC = () => {
     sessions,
     messageFilter,
     searchQuery,
-  } = useDebugStore();
+  } = useRunStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -35,13 +35,13 @@ const ConversationHistory: React.FC = () => {
     ? sessions.find(s => s.id === activeSessionId)
     : null;
 
-  const messages: DebugMessage[] = activeSession?.messages || [];
+  const messages: RunMessage[] = activeSession?.messages || [];
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  const filteredMessages = messages.filter((msg: DebugMessage) => {
+  const filteredMessages = messages.filter((msg: RunMessage) => {
     if (messageFilter !== 'all' && msg.role !== messageFilter) {
       return false;
     }
@@ -52,18 +52,16 @@ const ConversationHistory: React.FC = () => {
     return true;
   });
 
-  // 导出对话历史
   const handleExport = async (format: 'json' | 'txt' | 'md') => {
     if (!activeSessionId) return;
 
     try {
-      const response = await debugApi.exportSession(activeSessionId, format);
+      const response = await runApi.exportSession(activeSessionId, format);
 
-      // 创建下载链接
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `debug_session_${activeSessionId}.${format}`;
+      link.download = `run_session_${activeSessionId}.${format}`;
       link.click();
       window.URL.revokeObjectURL(url);
     } catch (error) {
@@ -71,7 +69,6 @@ const ConversationHistory: React.FC = () => {
     }
   };
 
-  // 导出菜单项
   const exportMenu: MenuProps['items'] = [
     {
       key: 'json',
@@ -90,7 +87,6 @@ const ConversationHistory: React.FC = () => {
     },
   ];
 
-  // 获取角色图标
   const getRoleIcon = (role: string) => {
     switch (role) {
       case 'user': return <UserOutlined />;
@@ -101,7 +97,6 @@ const ConversationHistory: React.FC = () => {
     }
   };
 
-  // 获取角色颜色
   const getRoleColor = (role: string) => {
     switch (role) {
       case 'user': return '#1890ff';
@@ -112,7 +107,6 @@ const ConversationHistory: React.FC = () => {
     }
   };
 
-  // 格式化时间
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString('zh-CN', {
@@ -131,7 +125,7 @@ const ConversationHistory: React.FC = () => {
         justifyContent: 'center',
         background: '#fafafa',
       }}>
-        <Empty description="请选择一个调试会话" />
+        <Empty description="请选择一个运行会话" />
       </div>
     );
   }
@@ -161,7 +155,7 @@ const ConversationHistory: React.FC = () => {
         ) : (
           <List
             dataSource={filteredMessages}
-            renderItem={(msg: DebugMessage, index: number) => (
+            renderItem={(msg: RunMessage, index: number) => (
               <div
                 key={msg.id}
                 style={{

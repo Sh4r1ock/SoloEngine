@@ -19,7 +19,7 @@
 - 支持序列化和反序列化
 """
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import copy
 
@@ -30,7 +30,7 @@ class ContextManager:
             "user_input": "",
             "current_plan": None,
             "execution_history": [],
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         self._snapshots: List[Dict[str, Any]] = []
         self._max_snapshots = 50
@@ -53,7 +53,7 @@ class ContextManager:
         history_entry = {
             "node_id": node_id,
             "node_type": node_type,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "result": result
         }
         self.global_context["execution_history"].append(history_entry)
@@ -63,7 +63,7 @@ class ContextManager:
             "user_input": "",
             "current_plan": None,
             "execution_history": [],
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         self._variables.clear()
         self._metadata.clear()
@@ -75,11 +75,11 @@ class ContextManager:
         self.global_context = copy.deepcopy(context)
     
     def create_snapshot(self, label: Optional[str] = None) -> str:
-        snapshot_id = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        snapshot_id = f"snapshot_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')}"
         snapshot = {
             "id": snapshot_id,
             "label": label or snapshot_id,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "context": copy.deepcopy(self.global_context),
             "variables": copy.deepcopy(self._variables),
             "metadata": copy.deepcopy(self._metadata)

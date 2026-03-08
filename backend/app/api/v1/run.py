@@ -1,31 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-调试 API endpoints。
+运行 API endpoints。
 
-@file debug.py
-@description 调试接口 - Agentic调试相关API端点
+@file run.py
+@description 运行接口 - 工作流运行相关API端点
 @author SoloEngine Team
 @date 2026-02-19
 
 功能描述：
-- 启动Agentic调试会话接口
-- 停止Agentic调试会话接口
-- 获取调试会话状态接口
-- 获取调试执行日志接口
-- 执行单步调试接口
-- 继续执行调试接口
-- 断点管理接口
+- JSON工作流执行接口
+- 单节点执行接口
+- 运行会话管理接口
+- 执行历史查询接口
 - WebSocket实时通信端点
-- JSON导入执行接口
 
 使用场景：
-- Agentic调试会话管理
-- 单步执行和断点控制
-- JSON Agentic执行
+- 工作流运行管理
+- 执行历史查询
 
 注意事项：
-- 调试会话需要正确建立WebSocket连接
-- 支持断点设置和条件断点
 - 会话数据存储在SQLite数据库中
 """
 import asyncio
@@ -40,22 +33,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, db_manager
-from app.core.json_executor import JSONWorkflowExecutor, WorkflowRunner
-from app.core.debug_engine import debug_engine, DebugState, BreakpointType
+from SoloAgent.solo_agent.compiler import AgenticFlowCompiler, FlowRunner, CompiledFlowFactory
 from app.api.v1.auth import get_current_user
 from app.core.auth import User, auth_service
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/debug", tags=["debug"])
-
-
-class StartDebugRequest(BaseModel):
-    session_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    node_id: Optional[str] = None
-    breakpoints: Optional[List[Dict[str, str]]] = None
+router = APIRouter(prefix="/api/v1/run", tags=["run"])
 
 
 class ExecuteJSONRequest(BaseModel):
@@ -63,6 +48,7 @@ class ExecuteJSONRequest(BaseModel):
     input_message: str = Field(..., description="输入消息")
     project_name: Optional[str] = Field(None, description="项目名称")
     context: Optional[Dict[str, Any]] = Field(None, description="执行上下文")
+    flow_id: Optional[str] = Field(None, description="AgenticFlow ID")
 
 
 class ExecuteNodeRequest(BaseModel):
@@ -70,40 +56,39 @@ class ExecuteNodeRequest(BaseModel):
     node_id: str = Field(..., description="节点ID")
     input_message: str = Field(..., description="输入消息")
     context: Optional[Dict[str, Any]] = Field(None, description="执行上下文")
+    flow_id: Optional[str] = Field(None, description="AgenticFlow ID")
 
 
-class StopDebugRequest(BaseModel):
-    session_id: str
+class CreateSessionRequest(BaseModel):
+    flow_id: Optional[str] = Field(None, description="AgenticFlow ID")
+    canvas_data: Optional[Dict[str, Any]] = Field(None, description="画布JSON数据")
+    project_name: Optional[str] = Field(None, description="项目名称")
 
 
-class PauseDebugRequest(BaseModel):
-    session_id: str
-
-
-class ResumeDebugRequest(BaseModel):
-    session_id: str
-
-
-class StepControlRequest(BaseModel):
-    session_id: str
-    command: str
-
-
-class SetBreakpointRequest(BaseModel):
-    node_id: str
-    step_type: str = Field(..., pattern="^(before_thought|before_action|after_action)$")
-    enabled: bool = True
-
-
-class DebugMessage(BaseModel):
+class RunMessage(BaseModel):
     type: str
     data: Dict[str, Any]
     session_id: str
     timestamp: float
 
 
+class SessionInfo:
+    """会话信息类"""
+    def __init__(self, session_id: str, user_id: str, flow_id: str = None, 
+                 canvas_data: Dict = None, project_name: str = None):
+        self.session_id = session_id
+        self.user_id = user_id
+        self.flow_id = flow_id
+        self.canvas_data = canvas_data or {}
+        self.project_name = project_name
+        self.created_at = datetime.now()
+        self.status = "created"
+        self.messages: List[Dict] = []
+
+
 _active_websockets: Dict[str, WebSocket] = {}
 _websocket_timestamps: Dict[str, float] = {}
+_valid_sessions: Dict[str, SessionInfo] = {}
 _cleanup_task: Optional[asyncio.Task] = None
 
 
@@ -120,7 +105,7 @@ async def _cleanup_stale_connections():
                     if hasattr(ws, 'client_state') and ws.client_state.name == "DISCONNECTED":
                         stale_sessions.append(session_id)
                     elif session_id in _websocket_timestamps:
-                        if current_time - _websocket_timestamps[session_id] > settings.DEBUG_SESSION_TIMEOUT:
+                        if current_time - _websocket_timestamps[session_id] > settings.RUN_SESSION_TIMEOUT:
                             stale_sessions.append(session_id)
                 except Exception:
                     stale_sessions.append(session_id)
@@ -149,6 +134,57 @@ async def startup_event():
     logger.info("WebSocket cleanup task started")
 
 
+@router.post("/sessions")
+async def create_session(
+    request: CreateSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    创建新的运行会话。
+    
+    会话用于：
+    - 标识一次完整的对话/执行流程
+    - 存储对话历史和执行记录
+    - WebSocket连接标识
+    
+    Returns:
+        session_id: 会话ID，用于后续WebSocket连接
+    """
+    session_id = str(uuid.uuid4())
+    
+    session_info = SessionInfo(
+        session_id=session_id,
+        user_id=current_user.id,
+        flow_id=request.flow_id,
+        canvas_data=request.canvas_data,
+        project_name=request.project_name
+    )
+    
+    _valid_sessions[session_id] = session_info
+    
+    execution = db_manager.create_execution(
+        db,
+        project_name=request.project_name or "default",
+        input_message=None,
+        user_id=current_user.id,
+        flow_id=request.flow_id
+    )
+    
+    logger.info(f"Created session {session_id} for user {current_user.id}")
+    
+    return {
+        "code": 200,
+        "message": "Session created",
+        "data": {
+            "session_id": session_id,
+            "execution_id": execution.id,
+            "created_at": session_info.created_at.isoformat(),
+            "status": session_info.status
+        }
+    }
+
+
 @router.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时停止清理任务。"""
@@ -166,7 +202,7 @@ def _get_timestamp() -> float:
     return datetime.now().timestamp()
 
 
-async def _broadcast_message(session_id: str, message: DebugMessage):
+async def _broadcast_message(session_id: str, message: RunMessage):
     ws = _active_websockets.get(session_id)
     if ws:
         try:
@@ -181,21 +217,23 @@ async def execute_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """执行JSON Agentic。"""
+    """执行JSON工作流。"""
     try:
-        result = await WorkflowRunner.run_from_json(
+        result = await FlowRunner.run_from_json(
             request.canvas_data,
             request.input_message,
-            request.context or {}
+            user_id=current_user.id,
+            flow_id=request.flow_id,
+            context=request.context or {}
         )
         
         return {
             "code": 200,
-            "message": "Agentic executed",
+            "message": "Workflow executed",
             "data": result
         }
     except Exception as e:
-        logger.error(f"Agentic execution failed: {e}")
+        logger.error(f"Workflow execution failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -207,11 +245,13 @@ async def execute_single_node(
 ):
     """执行单个节点。"""
     try:
-        result = await WorkflowRunner.run_node(
+        result = await FlowRunner.run_node(
             request.canvas_data,
             request.node_id,
             request.input_message,
-            request.context or {}
+            user_id=current_user.id,
+            flow_id=request.flow_id,
+            context=request.context or {}
         )
         
         return {
@@ -224,134 +264,6 @@ async def execute_single_node(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/start")
-async def start_debug(
-    request: StartDebugRequest, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """启动调试会话。"""
-    session_id = request.session_id or f"debug-{uuid.uuid4().hex[:12]}"
-
-    session = await debug_engine.create_session(
-        flow_id=request.agent_id or "default",
-        flow_name="Debug Session"
-    )
-
-    if request.breakpoints:
-        for bp in request.breakpoints:
-            await debug_engine.add_breakpoint(
-                session_id,
-                BreakpointType(bp.get("step_type", "before_action")),
-                bp.get("node_id")
-            )
-
-    await debug_engine.start_debug(session_id)
-
-    return {
-        "code": 200,
-        "message": "Debug session started",
-        "data": {
-            "session_id": session_id,
-            "status": "running"
-        }
-    }
-
-
-@router.post("/stop")
-async def stop_debug(request: StopDebugRequest, current_user: User = Depends(get_current_user)):
-    """停止调试会话。"""
-    session_id = request.session_id
-
-    await debug_engine.stop_debug(session_id)
-
-    ws = _active_websockets.pop(session_id, None)
-    if ws:
-        await ws.close()
-
-    return {
-        "code": 200,
-        "message": "Debug session stopped",
-        "data": {"session_id": session_id}
-    }
-
-
-@router.post("/pause")
-async def pause_debug(request: PauseDebugRequest, current_user: User = Depends(get_current_user)):
-    """暂停调试会话。"""
-    await debug_engine.pause_debug(request.session_id)
-
-    return {
-        "code": 200,
-        "message": "Debug session paused",
-        "data": {"session_id": request.session_id}
-    }
-
-
-@router.post("/resume")
-async def resume_debug(request: ResumeDebugRequest, current_user: User = Depends(get_current_user)):
-    """恢复调试会话。"""
-    await debug_engine.resume_debug(request.session_id)
-
-    return {
-        "code": 200,
-        "message": "Debug session resumed",
-        "data": {"session_id": request.session_id}
-    }
-
-
-@router.post("/step")
-async def step_control(request: StepControlRequest, current_user: User = Depends(get_current_user)):
-    """单步调试控制。"""
-    await debug_engine.step(request.session_id, request.command)
-
-    return {
-        "code": 200,
-        "message": "Step command sent",
-        "data": {
-            "session_id": request.session_id,
-            "command": request.command
-        }
-    }
-
-
-@router.post("/breakpoint")
-async def set_breakpoint(request: SetBreakpointRequest, current_user: User = Depends(get_current_user)):
-    """设置断点。"""
-    breakpoint_id = f"bp-{uuid.uuid4().hex[:12]}"
-
-    return {
-        "code": 200,
-        "message": "Breakpoint set",
-        "data": {
-            "id": breakpoint_id,
-            "node_id": request.node_id,
-            "step_type": request.step_type,
-            "enabled": request.enabled
-        }
-    }
-
-
-@router.delete("/breakpoint/{breakpoint_id}")
-async def remove_breakpoint(breakpoint_id: str, current_user: User = Depends(get_current_user)):
-    """删除断点。"""
-    return {
-        "code": 200,
-        "message": "Breakpoint removed",
-        "data": {"breakpoint_id": breakpoint_id}
-    }
-
-
-@router.get("/breakpoints")
-async def list_breakpoints(current_user: User = Depends(get_current_user)):
-    """列出所有断点。"""
-    return {
-        "code": 200,
-        "message": "Breakpoints retrieved",
-        "data": []
-    }
-
-
 @router.get("/sessions")
 async def get_sessions(
     agent_id: Optional[str] = None,
@@ -360,7 +272,7 @@ async def get_sessions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取调试会话列表。"""
+    """获取运行会话列表。"""
     executions = db_manager.list_executions(db, agent_id=agent_id, status=status, limit=limit)
     
     return {
@@ -388,7 +300,7 @@ async def get_session(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取调试会话详情。"""
+    """获取运行会话详情。"""
     execution = db_manager.get_execution(db, session_id)
     
     if not execution:
@@ -531,13 +443,65 @@ async def export_session(
         }
 
 
+@router.post("/clear-cache/{flow_id}")
+async def clear_flow_cache(
+    flow_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """清除指定 Flow 的编译缓存。"""
+    removed = CompiledFlowFactory.remove(flow_id)
+    return {
+        "code": 200,
+        "message": "Cache cleared" if removed else "Cache not found",
+        "data": {"flow_id": flow_id, "removed": removed}
+    }
+
+
+@router.post("/clear-cache")
+async def clear_all_cache(
+    current_user: User = Depends(get_current_user)
+):
+    """清除所有编译缓存。"""
+    CompiledFlowFactory.clear_all()
+    return {
+        "code": 200,
+        "message": "All cache cleared",
+        "data": CompiledFlowFactory.get_stats()
+    }
+
+
+@router.get("/cache-stats")
+async def get_cache_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """获取缓存统计信息。"""
+    return {
+        "code": 200,
+        "message": "Cache stats retrieved",
+        "data": CompiledFlowFactory.get_stats()
+    }
+
+
+async def _send_event(websocket: WebSocket, session_id: str, event: Any):
+    """发送执行事件到WebSocket客户端。"""
+    try:
+        await websocket.send_json({
+            "type": "execution_event",
+            "data": event if isinstance(event, dict) else event.__dict__ if hasattr(event, '__dict__') else str(event),
+            "session_id": session_id,
+            "timestamp": _get_timestamp()
+        })
+    except Exception as e:
+        logger.error(f"Failed to send event: {e}")
+
+
 @router.websocket("/ws/{session_id}")
-async def debug_websocket(
+async def run_websocket(
     websocket: WebSocket, 
     session_id: str,
     token: str = Query(None)
 ):
-    """WebSocket端点用于实时调试消息。"""
+    """WebSocket端点用于实时运行消息。"""
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
@@ -557,14 +521,43 @@ async def debug_websocket(
         await websocket.close(code=4001, reason="User not found or inactive")
         return
 
-    session = await debug_engine.get_session(session_id)
-    if not session:
-        await websocket.close(code=4004, reason="Session not found")
+    session_info = _valid_sessions.get(session_id)
+    if not session_info:
+        await websocket.close(code=4002, reason="Invalid session_id. Please create a session first via POST /api/v1/run/sessions")
+        return
+    
+    if session_info.user_id != user_id:
+        await websocket.close(code=4003, reason="Session does not belong to this user")
         return
 
     await websocket.accept()
+    session_info.status = "connected"
     _active_websockets[session_id] = websocket
     _websocket_timestamps[session_id] = _get_timestamp()
+
+    def event_callback(event):
+        """事件回调函数 - 在同步上下文中调度异步发送"""
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(_send_event(websocket, session_id, event))
+        except Exception as e:
+            logger.error(f"Event callback error: {e}")
+
+    def stream_callback(content: str):
+        """流式输出回调函数"""
+        try:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(_send_event(websocket, session_id, {
+                    "event_type": "stream",
+                    "content": content,
+                    "timestamp": datetime.now().isoformat()
+                }))
+        except Exception as e:
+            logger.error(f"Stream callback error: {e}")
 
     try:
         while True:
@@ -574,15 +567,63 @@ async def debug_websocket(
             if data.get("type") == "ping":
                 await websocket.send_json({"type": "pong", "timestamp": _get_timestamp()})
             elif data.get("type") == "execute":
-                canvas_data = data.get("canvas_data", {})
+                canvas_data = data.get("canvas_data", {}) or session_info.canvas_data
                 input_message = data.get("input_message", "")
+                flow_id = data.get("flow_id") or session_info.flow_id
                 
-                executor = JSONWorkflowExecutor()
-                if executor.load_from_json(canvas_data):
-                    result = await executor.execute(input_message)
+                session_info.status = "running"
+                session_info.messages.append({
+                    "role": "user",
+                    "content": input_message,
+                    "timestamp": datetime.now().isoformat()
+                })
+                
+                try:
+                    result = await FlowRunner.run_from_json(
+                        canvas_data,
+                        input_message,
+                        user_id=user_id,
+                        flow_id=flow_id,
+                        event_callback=event_callback,
+                        stream_callback=stream_callback
+                    )
+                    
+                    session_info.status = "completed"
+                    if result.get("output"):
+                        session_info.messages.append({
+                            "role": "assistant",
+                            "content": result.get("output"),
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    
                     await websocket.send_json({
                         "type": "execution_result",
                         "data": result,
+                        "session_id": session_id,
+                        "timestamp": _get_timestamp()
+                    })
+                except Exception as exec_error:
+                    logger.error(f"Execution error: {exec_error}")
+                    session_info.status = "error"
+                    error_msg = str(exec_error)
+                    
+                    await websocket.send_json({
+                        "type": "execution_event",
+                        "data": {
+                            "event_type": "execution_error",
+                            "error": error_msg,
+                            "timestamp": datetime.now().isoformat()
+                        },
+                        "session_id": session_id,
+                        "timestamp": _get_timestamp()
+                    })
+                    
+                    await websocket.send_json({
+                        "type": "execution_result",
+                        "data": {
+                            "status": "error",
+                            "error": error_msg
+                        },
                         "session_id": session_id,
                         "timestamp": _get_timestamp()
                     })
@@ -591,18 +632,19 @@ async def debug_websocket(
         logger.info(f"WebSocket disconnected: {session_id}")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "execution_event",
+                "data": {
+                    "event_type": "execution_error",
+                    "error": str(e),
+                    "timestamp": datetime.now().isoformat()
+                },
+                "session_id": session_id,
+                "timestamp": _get_timestamp()
+            })
+        except:
+            pass
     finally:
         _active_websockets.pop(session_id, None)
         _websocket_timestamps.pop(session_id, None)
-
-
-@router.get("/variables/{session_id}")
-async def get_variables(session_id: str, current_user: User = Depends(get_current_user)):
-    """获取调试变量。"""
-    variables = await debug_engine.get_variables(session_id)
-    
-    return {
-        "code": 200,
-        "message": "Variables retrieved",
-        "data": variables
-    }

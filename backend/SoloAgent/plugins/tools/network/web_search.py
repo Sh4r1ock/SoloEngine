@@ -357,6 +357,87 @@ class WebSearch(BaseNetworkTool):
             lines.append(f"   摘要: {result.content}")
         
         return "\n".join(lines)
+    
+    async def execute(
+        self,
+        query: str,
+        num: int = 5,
+        lr: Optional[str] = None,
+        engine: str = "duckduckgo",
+    ) -> Dict[str, Any]:
+        """
+        执行搜索（工具接口）。
+        
+        这是工具执行器调用的入口方法。
+        
+        Args:
+            query (str): 搜索查询字符串。
+            num (int, optional): 最大返回结果数量。默认为 5。
+            lr (Optional[str], optional): 语言限制，如 "lang_zh-CN"。
+            engine (str, optional): 搜索引擎。默认为 "duckduckgo"。
+        
+        Returns:
+            Dict[str, Any]: 包含搜索结果的字典。
+        """
+        try:
+            results = await self.search(query, num=num, lr=lr, engine=engine)
+            
+            if not results:
+                return {
+                    "content": f"未找到关于 '{query}' 的搜索结果。",
+                    "success": True,
+                    "results": [],
+                }
+            
+            formatted = self.format_results(results)
+            
+            return {
+                "content": formatted,
+                "success": True,
+                "results": [r.to_dict() for r in results],
+            }
+            
+        except NetworkToolError as e:
+            return {
+                "content": f"搜索出错: {e.message}",
+                "success": False,
+                "error_message": e.message,
+                "results": [],
+            }
+        except Exception as e:
+            return {
+                "content": f"搜索出错: {str(e)}",
+                "success": False,
+                "error_message": str(e),
+                "results": [],
+            }
+    
+    @property
+    def spec(self) -> Dict[str, Any]:
+        """工具规范"""
+        return {
+            "name": "web_search",
+            "description": "在网络上搜索信息。使用搜索引擎获取实时搜索结果。适用于获取实时信息或搜索不了解的技术概念。",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "required": True,
+                    "description": "搜索查询字符串",
+                },
+                "num": {
+                    "type": "integer",
+                    "required": False,
+                    "default": 5,
+                    "description": "最大返回结果数量（默认5）",
+                },
+                "lr": {
+                    "type": "string",
+                    "required": False,
+                    "default": None,
+                    "description": "语言限制，如 'lang_zh-CN' 表示中文",
+                },
+            },
+        }
 
 
 async def web_search(

@@ -23,8 +23,8 @@ import {
   CopyOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TreeDataNode } from 'antd';
-import { useDebugProjectStore } from '../../store/debugProjectStore';
-import { debugProjectApi, FileInfo } from '../../services/debugProjectApi';
+import { useRunProjectStore } from '../../store/runProjectStore';
+import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 
 const { Text } = Typography;
 
@@ -41,7 +41,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
     loading,
     listFiles,
     setCurrentPath,
-  } = useDebugProjectStore();
+  } = useRunProjectStore();
 
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
@@ -183,7 +183,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
     setActionLoading(true);
     try {
       const filePath = currentPath ? `${currentPath}/${newFileName}` : newFileName;
-      await debugProjectApi.writeFile(filePath, '');
+      await runProjectApi.writeFile(filePath, '');
       message.success('文件创建成功');
       setNewFileDialogVisible(false);
       setNewFileName('');
@@ -204,7 +204,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
     setActionLoading(true);
     try {
       const folderPath = currentPath ? `${currentPath}/${newFolderName}` : newFolderName;
-      await debugProjectApi.createDirectory(folderPath);
+      await runProjectApi.createDirectory(folderPath);
       message.success('文件夹创建成功');
       setNewFolderDialogVisible(false);
       setNewFolderName('');
@@ -225,7 +225,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
       cancelText: '取消',
       onOk: async () => {
         try {
-          await debugProjectApi.deleteFile(file.path);
+          await runProjectApi.deleteFile(file.path);
           message.success('删除成功');
           listFiles(currentPath);
           if (selectedFile?.path === file.path) {

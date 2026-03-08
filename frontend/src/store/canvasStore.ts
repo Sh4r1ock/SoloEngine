@@ -22,6 +22,7 @@ import { CanvasData, NodeData, EdgeData, ProjectData } from '../types/canvas';
 import { projectApi } from '../services/api';
 import { localStorageService } from '../services/localStorage';
 import { agenticFlowApi } from '../services/agenticFlowApi';
+import { llmApi } from '../services/llmApi';
 
 const MAX_HISTORY_SIZE = 30;
 const DEBOUNCE_DELAY = 500;
@@ -65,6 +66,7 @@ interface CanvasStore {
   setNodes: (nodes: NodeData[], skipHistory?: boolean) => void;
   setEdges: (edges: EdgeData[], skipHistory?: boolean) => void;
   addNode: (node: NodeData) => void;
+  addNodeWithDefaultConfig: (node: NodeData) => Promise<void>;
   updateNode: (nodeId: string, data: Partial<NodeData['data']>) => void;
   deleteNode: (nodeId: string) => void;
   addEdge: (edge: EdgeData) => void;
@@ -203,13 +205,46 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return { nodes: newNodes };
   }),
 
+  addNodeWithDefaultConfig: async (node: NodeData) => {
+    try {
+      const defaultConfig = await llmApi.getDefaultConfig();
+      if (defaultConfig) {
+        node.data.llm_config_id = defaultConfig.id;
+        node.data.model_config = {
+          config_id: defaultConfig.id,
+          config_name: defaultConfig.name,
+          provider: defaultConfig.provider,
+          model: defaultConfig.model_name,
+        };
+      }
+    } catch (error) {
+      console.warn('Failed to load default LLM config:', error);
+    }
+    
+    set((state) => {
+      const newNodes = [...state.nodes, node];
+      return { nodes: newNodes };
+    });
+    get().autoSave();
+    get().pushHistory();
+  },
+
   updateNode: (nodeId, data) => set((state) => {
     const newNodes = state.nodes.map((node) =>
       node.id === nodeId ? { ...node, data: { ...node.data, ...data } } : node
     );
+    
+    let newSelectedNode = state.selectedNode;
+    if (state.selectedNode && state.selectedNode.id === nodeId) {
+      const updatedNode = newNodes.find(n => n.id === nodeId);
+      if (updatedNode) {
+        newSelectedNode = updatedNode;
+      }
+    }
+    
     get().autoSave();
     get().pushHistory();
-    return { nodes: newNodes };
+    return { nodes: newNodes, selectedNode: newSelectedNode };
   }),
 
   deleteNode: (nodeId) => set((state) => {

@@ -22,7 +22,7 @@
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import logging
 import json
@@ -99,7 +99,7 @@ class DatabaseMemoryPlugin(IMemory):
                 - user_id: 用户ID（必需）
                 - agentic_flow_id: AgenticFlowModel 的 ID（可选）
                 - agent_id: AgentModel 的 ID（可选）
-                - debug_project_id: DebugProjectModel 的 ID（可选）
+                - run_project_id: RunProjectModel 的 ID（可选）
                 - auto_load: 是否自动加载历史记忆（默认 True）
         """
         config = config or {}
@@ -108,7 +108,7 @@ class DatabaseMemoryPlugin(IMemory):
         self._user_id = config.get("user_id")
         self._agentic_flow_id = config.get("agentic_flow_id")
         self._agent_id = config.get("agent_id")
-        self._debug_project_id = config.get("debug_project_id")
+        self._run_project_id = config.get("run_project_id")
         self._auto_load = config.get("auto_load", True)
         
         if not self._run_id:
@@ -130,16 +130,26 @@ class DatabaseMemoryPlugin(IMemory):
         return SessionLocal()
     
     def _load_from_database(self) -> None:
-        """从数据库加载对话记录。"""
+        """从数据库加载对话记录。
+        
+        修复：按 agentic_flow_id 加载记忆，而不是 run_id
+        这样同一个 AgenticFlow 的不同运行可以共享记忆
+        """
         AgentMemoryModel = _get_agent_memory_model()
         
         try:
             db = self._get_db_session()
             try:
-                record = db.query(AgentMemoryModel).filter(
-                    AgentMemoryModel.run_id == self._run_id,
-                    AgentMemoryModel.user_id == self._user_id
-                ).first()
+                if self._agentic_flow_id:
+                    record = db.query(AgentMemoryModel).filter(
+                        AgentMemoryModel.agentic_flow_id == self._agentic_flow_id,
+                        AgentMemoryModel.user_id == self._user_id
+                    ).order_by(AgentMemoryModel.created_at.desc()).first()
+                else:
+                    record = db.query(AgentMemoryModel).filter(
+                        AgentMemoryModel.run_id == self._run_id,
+                        AgentMemoryModel.user_id == self._user_id
+                    ).first()
                 
                 if record:
                     self._record_id = record.id
@@ -163,7 +173,7 @@ class DatabaseMemoryPlugin(IMemory):
         """保存对话记录到数据库（带乐观锁）。"""
         AgentMemoryModel = _get_agent_memory_model()
         
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         self._updated_at = now
         
         if not self._created_at:
@@ -207,15 +217,36 @@ class DatabaseMemoryPlugin(IMemory):
             logger.warning(f"Failed to save conversation to database: {e}")
     
     def _create_new_record(self, db, content_data: dict) -> None:
-        """创建新的对话记录。"""
+        """创建新的对话记录或更新现有记录。
+        
+        修复：如果已存在相同 agentic_flow_id 的记录，则更新它
+        """
         AgentMemoryModel = _get_agent_memory_model()
+        
+        if self._agentic_flow_id:
+            existing_record = db.query(AgentMemoryModel).filter(
+                AgentMemoryModel.agentic_flow_id == self._agentic_flow_id,
+                AgentMemoryModel.user_id == self._user_id
+            ).order_by(AgentMemoryModel.created_at.desc()).first()
+            
+            if existing_record:
+                existing_record.content = json.dumps(content_data, ensure_ascii=False)
+                existing_record.version = (existing_record.version or 1) + 1
+                existing_record.run_id = self._run_id
+                db.commit()
+                db.refresh(existing_record)
+                
+                self._record_id = existing_record.id
+                self._version = existing_record.version
+                logger.debug(f"Updated existing conversation record {self._record_id} for agentic_flow_id {self._agentic_flow_id}")
+                return
         
         record = AgentMemoryModel(
             run_id=self._run_id,
             user_id=self._user_id,
             agentic_flow_id=self._agentic_flow_id,
             agent_id=self._agent_id,
-            debug_project_id=self._debug_project_id,
+            run_project_id=self._run_project_id,
             role="conversation",
             content=json.dumps(content_data, ensure_ascii=False),
             meta_data={"type": "conversation_storage"},
@@ -242,7 +273,7 @@ class DatabaseMemoryPlugin(IMemory):
             "content": msg.get_text_content() or "",
             "name": msg.name or "",
             "metadata": metadata or {},
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
         self._messages.append(message_data)

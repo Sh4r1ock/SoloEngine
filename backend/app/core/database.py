@@ -29,7 +29,7 @@ import hashlib
 import base64
 import secrets
 from contextlib import contextmanager, asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
@@ -71,8 +71,8 @@ class UserModel(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
     version = Column(Integer, nullable=False, default=1)
 
@@ -91,8 +91,8 @@ class AgenticFlowModel(Base):
     canvas_data = Column(JSON, nullable=True)
     is_template = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="agentic_flows")
@@ -112,7 +112,7 @@ class AgenticFlowRunModel(Base):
     error = Column(Text, nullable=True)
     token_usage = Column(JSON, nullable=True)
     duration_ms = Column(Integer, nullable=True)
-    started_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
     version = Column(Integer, nullable=False, default=1)
 
@@ -133,8 +133,8 @@ class AgentModel(Base):
     agent_type = Column(String(50), nullable=False)
     description = Column(Text, nullable=True)
     config = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
     version = Column(Integer, nullable=False, default=1)
 
@@ -148,7 +148,7 @@ class AgentMemoryModel(Base):
         Index('ix_agent_memories_role', 'role'),
         Index('ix_agent_memories_created_at', 'created_at'),
         Index('ix_agent_memories_user_flow', 'user_id', 'agentic_flow_id'),
-        Index('ix_agent_memories_user_project', 'user_id', 'debug_project_id'),
+        Index('ix_agent_memories_user_project', 'user_id', 'run_project_id'),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -156,17 +156,17 @@ class AgentMemoryModel(Base):
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     agentic_flow_id = Column(String(36), ForeignKey("agentic_flows.id"), nullable=True, index=True)
     run_id = Column(String(36), ForeignKey("agentic_flow_runs.id"), nullable=True, index=True)
-    debug_project_id = Column(String(36), ForeignKey("debug_projects.id"), nullable=True, index=True)
+    run_project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=True, index=True)
     role = Column(String(50), nullable=False)
     content = Column(Text, nullable=False)
     embedding_hash = Column(String(64), nullable=True)
     meta_data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     agent = relationship("AgentModel", back_populates="memories")
     run = relationship("AgenticFlowRunModel", back_populates="memories")
-    debug_project = relationship("DebugProjectModel", backref="memories")
+    run_project = relationship("RunProjectModel", backref="memories")
 
 
 class ExecutionStepModel(Base):
@@ -188,7 +188,7 @@ class ExecutionStepModel(Base):
     observation = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     duration_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     run = relationship("AgenticFlowRunModel", back_populates="steps")
@@ -205,7 +205,7 @@ class ToolCallRecordModel(Base):
     result = Column(Text, nullable=True)
     error = Column(Text, nullable=True)
     duration_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     run = relationship("AgenticFlowRunModel", back_populates="tool_calls")
@@ -231,8 +231,8 @@ class SkillsPackageModel(Base):
     folder_path = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="skills_packages")
@@ -248,8 +248,8 @@ class ProjectModel(Base):
     description = Column(Text, nullable=True)
     canvas_data = Column(JSON, nullable=True)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="projects")
@@ -275,18 +275,18 @@ class LLMConfigModel(Base):
     extra_params = Column(JSON, nullable=True)
     is_default = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="llm_configs")
 
 
-class DebugProjectModel(Base):
-    """调试项目模型 - 用于面试调试场景的项目管理。"""
-    __tablename__ = "debug_projects"
+class RunProjectModel(Base):
+    """运行项目模型 - 用于运行场景的项目管理。"""
+    __tablename__ = "run_projects"
     __table_args__ = (
-        Index('ix_debug_projects_user_active', 'user_id', 'is_active'),
+        Index('ix_run_projects_user_active', 'user_id', 'is_active'),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
@@ -295,12 +295,12 @@ class DebugProjectModel(Base):
     folder_path = Column(String(1000), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    last_accessed_at = Column(DateTime, default=datetime.utcnow)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_accessed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
-    user = relationship("UserModel", backref="debug_projects")
+    user = relationship("UserModel", backref="run_projects")
 
 
 class RecentProjectModel(Base):
@@ -312,14 +312,14 @@ class RecentProjectModel(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    project_id = Column(String(36), ForeignKey("debug_projects.id"), nullable=False, index=True)
+    project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=False, index=True)
     folder_path = Column(String(1000), nullable=False)
     project_name = Column(String(255), nullable=False)
-    accessed_at = Column(DateTime, default=datetime.utcnow)
+    accessed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="recent_projects")
-    project = relationship("DebugProjectModel", backref="recent_records")
+    project = relationship("RunProjectModel", backref="recent_records")
 
 
 def init_db():
@@ -512,7 +512,7 @@ class DatabaseManager:
             return None
         if not verify_password(password, user.hashed_password):
             return None
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         db.commit()
         return user
 
@@ -607,6 +607,10 @@ class DatabaseManager:
         db.refresh(run)
         return run
 
+    def get_run(self, db: Session, run_id: str) -> Optional[AgenticFlowRunModel]:
+        """获取单个运行记录。"""
+        return db.query(AgenticFlowRunModel).filter(AgenticFlowRunModel.id == run_id).first()
+
     def get_runs(self, db: Session, flow_id: str = None, user_id: str = None, 
                  limit: int = 100) -> List[AgenticFlowRunModel]:
         """获取运行记录。"""
@@ -630,8 +634,8 @@ class DatabaseManager:
             pkg_version=pkg_version,
             author=author,
             tags=tags or [],
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(package)
         db.commit()
@@ -682,14 +686,14 @@ class DatabaseManager:
 
     def add_memory(self, db: Session, user_id: str, role: str, content: str,
                    agent_id: str = None, flow_id: str = None, run_id: str = None,
-                   debug_project_id: str = None, metadata: Dict = None) -> AgentMemoryModel:
+                   run_project_id: str = None, metadata: Dict = None) -> AgentMemoryModel:
         """添加Agent记忆。"""
         memory = AgentMemoryModel(
             agent_id=agent_id,
             user_id=user_id,
             agentic_flow_id=flow_id,
             run_id=run_id,
-            debug_project_id=debug_project_id,
+            run_project_id=run_project_id,
             role=role,
             content=content,
             meta_data=metadata or {},
@@ -700,7 +704,7 @@ class DatabaseManager:
         return memory
 
     def get_memories(self, db: Session, user_id: str, flow_id: str = None, 
-                     run_id: str = None, debug_project_id: str = None, 
+                     run_id: str = None, run_project_id: str = None, 
                      limit: int = 100) -> List[AgentMemoryModel]:
         """获取Agent记忆。"""
         query = db.query(AgentMemoryModel).filter(AgentMemoryModel.user_id == user_id)
@@ -708,8 +712,8 @@ class DatabaseManager:
             query = query.filter(AgentMemoryModel.agentic_flow_id == flow_id)
         if run_id:
             query = query.filter(AgentMemoryModel.run_id == run_id)
-        if debug_project_id:
-            query = query.filter(AgentMemoryModel.debug_project_id == debug_project_id)
+        if run_project_id:
+            query = query.filter(AgentMemoryModel.run_project_id == run_project_id)
         return query.order_by(AgentMemoryModel.created_at.desc()).limit(limit).all()
 
     def add_execution_step(self, db: Session, run_id: str, step_type: str,
@@ -998,10 +1002,10 @@ class DatabaseManager:
             return True
         return False
 
-    def create_debug_project(self, db: Session, user_id: str, name: str,
-                             folder_path: str, description: str = None) -> DebugProjectModel:
-        """创建调试项目。"""
-        project = DebugProjectModel(
+    def create_run_project(self, db: Session, user_id: str, name: str,
+                           folder_path: str, description: str = None) -> RunProjectModel:
+        """创建运行项目。"""
+        project = RunProjectModel(
             user_id=user_id,
             name=name,
             folder_path=folder_path,
@@ -1012,32 +1016,32 @@ class DatabaseManager:
         db.refresh(project)
         return project
 
-    def get_debug_project(self, db: Session, project_id: str, user_id: str = None) -> Optional[DebugProjectModel]:
-        """获取调试项目。"""
-        query = db.query(DebugProjectModel).filter(DebugProjectModel.id == project_id)
+    def get_run_project(self, db: Session, project_id: str, user_id: str = None) -> Optional[RunProjectModel]:
+        """获取运行项目。"""
+        query = db.query(RunProjectModel).filter(RunProjectModel.id == project_id)
         if user_id:
-            query = query.filter(DebugProjectModel.user_id == user_id)
+            query = query.filter(RunProjectModel.user_id == user_id)
         return query.first()
 
-    def get_debug_project_by_path(self, db: Session, user_id: str, folder_path: str) -> Optional[DebugProjectModel]:
-        """通过路径获取调试项目。"""
-        return db.query(DebugProjectModel).filter(
-            DebugProjectModel.user_id == user_id,
-            DebugProjectModel.folder_path == folder_path,
-            DebugProjectModel.is_active == True
+    def get_run_project_by_path(self, db: Session, user_id: str, folder_path: str) -> Optional[RunProjectModel]:
+        """通过路径获取运行项目。"""
+        return db.query(RunProjectModel).filter(
+            RunProjectModel.user_id == user_id,
+            RunProjectModel.folder_path == folder_path,
+            RunProjectModel.is_active == True
         ).first()
 
-    def get_active_debug_project(self, db: Session, user_id: str) -> Optional[DebugProjectModel]:
-        """获取用户当前活动的调试项目。"""
-        return db.query(DebugProjectModel).filter(
-            DebugProjectModel.user_id == user_id,
-            DebugProjectModel.is_active == True
-        ).order_by(DebugProjectModel.last_accessed_at.desc()).first()
+    def get_active_run_project(self, db: Session, user_id: str) -> Optional[RunProjectModel]:
+        """获取用户当前活动的运行项目。"""
+        return db.query(RunProjectModel).filter(
+            RunProjectModel.user_id == user_id,
+            RunProjectModel.is_active == True
+        ).order_by(RunProjectModel.last_accessed_at.desc()).first()
 
-    def update_debug_project(self, db: Session, project_id: str, user_id: str,
-                             version: int = None, **kwargs) -> Optional[DebugProjectModel]:
-        """更新调试项目（带乐观锁）。"""
-        project = self.get_debug_project(db, project_id, user_id)
+    def update_run_project(self, db: Session, project_id: str, user_id: str,
+                           version: int = None, **kwargs) -> Optional[RunProjectModel]:
+        """更新运行项目（带乐观锁）。"""
+        project = self.get_run_project(db, project_id, user_id)
         if not project:
             return None
         
@@ -1054,9 +1058,9 @@ class DatabaseManager:
         db.refresh(project)
         return project
 
-    def delete_debug_project(self, db: Session, project_id: str, user_id: str) -> bool:
-        """删除调试项目（软删除）。"""
-        project = self.get_debug_project(db, project_id, user_id)
+    def delete_run_project(self, db: Session, project_id: str, user_id: str) -> bool:
+        """删除运行项目（软删除）。"""
+        project = self.get_run_project(db, project_id, user_id)
         if project:
             project.is_active = False
             db.commit()
@@ -1072,7 +1076,7 @@ class DatabaseManager:
         ).first()
         
         if existing:
-            existing.accessed_at = datetime.utcnow()
+            existing.accessed_at = datetime.now(timezone.utc)
             existing.folder_path = folder_path
             existing.project_name = project_name
             db.commit()

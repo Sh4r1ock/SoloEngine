@@ -158,9 +158,9 @@ const AgenticFlowList: React.FC = () => {
                 onPlay={(e?: React.MouseEvent) => {
                   // Ctrl+左键点击时在新标签页打开
                   if (e?.ctrlKey || e?.metaKey) {
-                    window.open(`/debug/${flow.id}`, '_blank');
+                    window.open(`/run/${flow.id}`, '_blank');
                   } else {
-                    navigate(`/debug/${flow.id}`);
+                    navigate(`/run/${flow.id}`);
                   }
                 }}
                 onCopy={() => handleDuplicate(flow)}

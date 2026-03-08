@@ -24,7 +24,7 @@ import json
 import logging
 from typing import Optional, Dict, Any
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ class AgenticFlowStorageService:
             data = {
                 "flow_id": flow_id,
                 "canvas_data": canvas_data,
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             
             with open(file_path, 'w', encoding='utf-8') as f:

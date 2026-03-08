@@ -10,7 +10,7 @@ import {
   CheckOutlined,
 } from '@ant-design/icons';
 import { workspaceApi, WorkspaceRoot, BrowseItem } from '../../services/workspaceApi';
-import { useDebugProjectStore } from '../../store/debugProjectStore';
+import { useRunProjectStore } from '../../store/runProjectStore';
 
 const { Text } = Typography;
 
@@ -28,7 +28,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ visible, onClose,
   const [items, setItems] = useState<BrowseItem[]>([]);
   const [selectedPath, setSelectedPath] = useState('');
   const [manualPath, setManualPath] = useState('');
-  const { currentProject } = useDebugProjectStore();
+  const { currentProject } = useRunProjectStore();
 
   useEffect(() => {
     if (visible) {

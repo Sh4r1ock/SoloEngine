@@ -28,9 +28,17 @@ class ToolRegistry:
     
     @classmethod
     def get_tool(cls, name: str) -> Optional[Any]:
-        """获取工具实例"""
+        """获取工具实例
+        
+        支持大小写不敏感的工具名称查找
+        """
         if name in cls._tools:
             return cls._tools[name]
+        
+        name_lower = name.lower()
+        for key in cls._tools:
+            if key.lower() == name_lower:
+                return cls._tools[key]
         
         tool = cls._create_tool(name)
         if tool:
@@ -78,7 +86,10 @@ class ToolRegistry:
     
     @classmethod
     def _create_tool(cls, name: str) -> Optional[Any]:
-        """创建工具实例"""
+        """创建工具实例
+        
+        支持大小写不敏感的工具名称查找
+        """
         tool_map = {
             "Read": ("plugins.tools.file.read", "Read"),
             "Write": ("plugins.tools.file.write", "Write"),

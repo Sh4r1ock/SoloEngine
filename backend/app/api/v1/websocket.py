@@ -12,12 +12,18 @@ WebSocket API 端点模块。
 - 实时执行状态推送
 - 工作流执行调度
 - Token 认证验证
+- 流式事件推送
 
 事件类型：
     - execution-start: 开始执行工作流
-    - agent-update: Agent 状态更新
+    - agent-start: Agent 开始执行
+    - agent-complete: Agent 执行完成
+    - agent-error: Agent 执行错误
     - tool-call: 工具调用事件
-    - response-streaming: 响应流式输出
+    - skill-call: Skill 调用事件
+    - mcp-call: MCP 调用事件
+    - child-agent-start: 子模型开始执行
+    - child-agent-complete: 子模型执行完成
     - execution-complete: 执行完成
     - error: 错误事件
 
@@ -37,11 +43,17 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from typing import Dict, Any
 import json
 import uuid
-from app.core.canvas_parser import CanvasParser
-from app.core.scheduler import Scheduler
-from app.schemas.response import AgentUpdateEvent, ToolCallEvent, ResponseStreamingEvent, ExecutionCompleteEvent
+import logging
+from SoloAgent.solo_agent.compiler import (
+    AgenticFlowCompiler, 
+    FlowRunner, 
+    CompiledFlowFactory,
+    ExecutionEvent
+)
 from app.core.auth import auth_service
 from app.core.database import db_manager, get_db_context_async
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -59,120 +71,45 @@ class ConnectionManager:
         task_id -> WebSocket 实例
         
         每个任务有唯一的 task_id，对应一个 WebSocket 连接。
-    
-    Example:
-        >>> manager = ConnectionManager()
-        >>> await manager.connect(websocket, "task-123")
-        >>> await manager.send_event("task-123", {"type": "status", "data": "..."})
-        >>> manager.disconnect("task-123")
-    
-    Note:
-        - 连接是线程安全的
-        - 断开连接后自动从映射中移除
     """
     
     def __init__(self):
-        """
-        初始化连接管理器。
-        
-        创建空的连接映射字典。
-        """
         self.active_connections: Dict[str, WebSocket] = {}
-        """活跃连接映射：task_id -> WebSocket"""
     
     async def connect(self, websocket: WebSocket, task_id: str):
-        """
-        注册新的 WebSocket 连接。
-        
-        接受 WebSocket 连接请求并添加到活跃连接映射中。
-        
-        Args:
-            websocket (WebSocket): WebSocket 连接实例。
-            task_id (str): 任务唯一标识符，用于后续发送事件。
-        
-        Note:
-            - 会调用 websocket.accept() 接受连接
-            - 如果 task_id 已存在，会覆盖旧连接
-        """
         await websocket.accept()
         self.active_connections[task_id] = websocket
     
     def disconnect(self, task_id: str):
-        """
-        注销 WebSocket 连接。
-        
-        从活跃连接映射中移除指定任务的连接。
-        
-        Args:
-            task_id (str): 要注销的任务 ID。
-        
-        Note:
-            如果 task_id 不存在，不会抛出异常。
-        """
         if task_id in self.active_connections:
             del self.active_connections[task_id]
     
     async def send_event(self, task_id: str, event: Dict[str, Any]):
-        """
-        向指定任务发送事件。
-        
-        通过 WebSocket 向指定任务发送 JSON 格式的事件数据。
-        
-        Args:
-            task_id (str): 目标任务 ID。
-            event (Dict[str, Any]): 事件数据，必须包含 "type" 字段。
-        
-        Note:
-            如果任务连接不存在，不会抛出异常。
-        
-        Example:
-            >>> await manager.send_event("task-123", {
-            ...     "type": "agent-update",
-            ...     "node_id": "node-1",
-            ...     "status": "running"
-            ... })
-        """
         if task_id in self.active_connections:
             await self.active_connections[task_id].send_json(event)
 
 
 manager = ConnectionManager()
-"""全局连接管理器实例"""
 
 
-async def verify_token(token: str) -> bool:
+async def verify_token(token: str) -> tuple:
     """
     验证 WebSocket 连接的 Token。
-    
-    验证 JWT Token 的有效性，包括：
-        1. Token 是否存在
-        2. Token 是否可解码
-        3. Token 类型是否为 "access"
-        4. 用户是否存在且活跃
-    
-    Args:
-        token (str): JWT Token 字符串。
-    
-    Returns:
-        bool: Token 是否有效。
-            - True: Token 有效，允许连接
-            - False: Token 无效，拒绝连接
-    
-    Note:
-        此函数用于 WebSocket 连接前的认证验证。
     """
     if not token:
-        return False
+        return False, None
     payload = auth_service.decode_token(token)
     if not payload:
-        return False
+        return False, None
     if payload.get("type") != "access":
-        return False
+        return False, None
     user_id = payload.get("sub")
     if not user_id:
-        return False
+        return False, None
     user = await auth_service.get_user(user_id)
-    return user is not None and user.is_active
+    if user is None or not user.is_active:
+        return False, None
+    return True, user_id
 
 
 @router.websocket("/ws/{task_id}")
@@ -183,36 +120,9 @@ async def websocket_endpoint(
 ):
     """
     WebSocket 端点主入口。
-    
-    处理 WebSocket 连接的生命周期，包括：
-        1. Token 认证验证
-        2. 连接注册
-        3. 消息循环处理
-        4. 连接断开清理
-    
-    Args:
-        websocket (WebSocket): WebSocket 连接实例。
-        task_id (str): 任务唯一标识符，由客户端生成。
-        token (str, optional): JWT Token，通过查询参数传递。
-    
-    消息格式：
-        客户端发送的消息必须是 JSON 格式，包含 type 字段：
-        
-        开始执行：
-        {
-            "type": "execution-start",
-            "project_id": "project-uuid",
-            "input": "用户输入"
-        }
-    
-    错误码：
-        - 4001: 未授权（Token 无效）
-    
-    Note:
-        - Token 验证失败会立即关闭连接
-        - 连接断开后会自动清理资源
     """
-    if not token or not await verify_token(token):
+    is_valid, user_id = await verify_token(token)
+    if not is_valid:
         await websocket.close(code=4001, reason="Unauthorized")
         return
     
@@ -226,40 +136,43 @@ async def websocket_endpoint(
                 project_id = data.get("project_id")
                 user_input = data.get("input", "")
                 
-                await execute_workflow(task_id, project_id, user_input)
+                await execute_workflow(task_id, project_id, user_input, user_id)
+            
+            elif data.get("type") == "execute":
+                canvas_data = data.get("canvas_data", {})
+                input_message = data.get("input_message", "")
+                flow_id = data.get("flow_id")
+                
+                await execute_canvas(task_id, canvas_data, input_message, user_id, flow_id)
+            
+            elif data.get("type") == "clear-cache":
+                flow_id = data.get("flow_id")
+                if flow_id:
+                    CompiledFlowFactory.remove(flow_id)
+                    await manager.send_event(task_id, {
+                        "type": "cache-cleared",
+                        "flow_id": flow_id
+                    })
+                else:
+                    CompiledFlowFactory.clear_all()
+                    await manager.send_event(task_id, {
+                        "type": "cache-cleared",
+                        "message": "All cache cleared"
+                    })
+            
+            elif data.get("type") == "ping":
+                await manager.send_event(task_id, {"type": "pong"})
             
     except WebSocketDisconnect:
         manager.disconnect(task_id)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        manager.disconnect(task_id)
 
 
-async def execute_workflow(task_id: str, project_id: str, user_input: str):
+async def execute_workflow(task_id: str, project_id: str, user_input: str, user_id: str):
     """
     执行工作流。
-    
-    根据项目 ID 加载画布数据，解析并执行工作流。
-    通过 WebSocket 实时推送执行状态。
-    
-    执行流程：
-        1. 加载项目和画布数据
-        2. 解析画布为协作图
-        3. 创建调度器并启动执行
-        4. 推送每个节点的执行状态
-        5. 推送执行完成事件
-    
-    Args:
-        task_id (str): 任务 ID，用于发送事件。
-        project_id (str): 项目 ID，用于加载画布数据。
-        user_input (str): 用户输入，作为工作流的初始上下文。
-    
-    推送事件：
-        - agent-update: 节点状态更新
-        - execution-complete: 执行完成
-        - error: 错误事件
-    
-    Note:
-        - 执行过程是异步的
-        - 错误会通过 WebSocket 推送给客户端
-        - 数据库连接会在执行完成后自动关闭
     """
     async with get_db_context_async() as db:
         project = db_manager.get_project(db, project_id)
@@ -272,46 +185,93 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str):
         
         canvas_data = project.canvas_data
         
-        try:
-            collaboration_graph = CanvasParser.parse(canvas_data)
-        except ValueError as e:
+        if not canvas_data or not canvas_data.get("nodes"):
             await manager.send_event(task_id, {
                 "type": "error",
-                "message": str(e)
+                "message": "Canvas data is empty"
             })
             return
         
-        scheduler = Scheduler(collaboration_graph)
-        initial_context = {"user_input": user_input}
+        await execute_canvas(task_id, canvas_data, user_input, user_id, project_id)
+
+
+async def execute_canvas(
+    task_id: str, 
+    canvas_data: Dict[str, Any], 
+    input_message: str, 
+    user_id: str,
+    flow_id: str = None
+):
+    """
+    执行画布工作流，支持流式事件推送。
+    """
+    def event_callback(event: ExecutionEvent):
+        event_data = {
+            "type": event.event_type,
+            "data": {
+                "agent_id": event.agent_id,
+                "agent_name": event.agent_name,
+                "agent_type": event.metadata.get("agent_type") if event.metadata else None,
+                "content": event.content,
+                "tool_name": event.tool_name,
+                "tool_args": event.tool_args,
+                "tool_result": event.tool_result,
+                "skill_name": event.skill_name,
+                "skill_args": event.skill_args,
+                "skill_result": event.skill_result,
+                "mcp_name": event.mcp_name,
+                "mcp_args": event.mcp_args,
+                "mcp_result": event.mcp_result,
+                "child_agent_id": event.child_agent_id,
+                "child_agent_name": event.child_agent_name,
+                "status": event.status,
+                "error": event.error,
+                "timestamp": event.timestamp,
+                "metadata": event.metadata
+            }
+        }
         
+        import asyncio
         try:
-            result = await scheduler.start(initial_context)
-            
-            await manager.send_event(task_id, {
-                "type": "agent-update",
-                "node_id": result.get("node_id"),
-                "status": result.get("status"),
-                "message": result.get("message")
-            })
-            
-            while result.get("next_node_id"):
-                result = await scheduler.schedule_next(result)
-                
-                await manager.send_event(task_id, {
-                    "type": "agent-update",
-                    "node_id": result.get("node_id"),
-                    "status": result.get("status"),
-                    "message": result.get("message")
-                })
-            
-            await manager.send_event(task_id, {
-                "type": "execution-complete",
-                "task_id": task_id,
-                "result": result
-            })
-            
+            loop = asyncio.get_event_loop()
+            loop.create_task(manager.send_event(task_id, event_data))
         except Exception as e:
-            await manager.send_event(task_id, {
-                "type": "error",
-                "message": str(e)
-            })
+            logger.error(f"Failed to send event: {e}")
+    
+    try:
+        await manager.send_event(task_id, {
+            "type": "agent-update",
+            "status": "compiling",
+            "message": "Compiling workflow..."
+        })
+        
+        compiler = AgenticFlowCompiler(user_id=user_id)
+        compiled_flow = compiler.compile(
+            {"canvas_data": canvas_data},
+            user_id=user_id,
+            flow_id=flow_id
+        )
+        
+        compiled_flow.set_event_callback(event_callback)
+        
+        await manager.send_event(task_id, {
+            "type": "agent-update",
+            "status": "running",
+            "message": f"Starting execution with {len(compiled_flow.agents)} agents",
+            "orchestrator_id": compiled_flow.orchestrator_id
+        })
+        
+        result = await compiled_flow.run(input_message)
+        
+        await manager.send_event(task_id, {
+            "type": "execution-complete",
+            "task_id": task_id,
+            "result": result
+        })
+        
+    except Exception as e:
+        logger.error(f"Workflow execution failed: {e}")
+        await manager.send_event(task_id, {
+            "type": "error",
+            "message": str(e)
+        })
