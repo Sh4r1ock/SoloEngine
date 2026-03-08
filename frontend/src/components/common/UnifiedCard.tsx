@@ -9,6 +9,7 @@ import {
   CheckCircleOutlined,
   EditOutlined,
 } from '@ant-design/icons';
+import { formatTime as formatTimezone } from '../../utils/timezone';
 
 const { Text, Paragraph } = Typography;
 
@@ -66,19 +67,7 @@ const getStatusTagColor = (status?: string) => {
 };
 
 const formatTime = (dateStr?: string) => {
-  if (!dateStr) return '-';
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      });
-  } catch {
-    return '-';
-  }
+  return formatTimezone(dateStr);
 };
 
 const UnifiedCard: React.FC<CardItemProps> = ({

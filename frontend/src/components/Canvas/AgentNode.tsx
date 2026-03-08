@@ -47,11 +47,11 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
   };
 
   const renderModelInfo = () => {
-    if (data.model_config?.config_name) {
+    if (data.model_config?.config_id && data.model_config?.config_name) {
       return (
         <Tooltip title={`${data.model_config.provider} - ${data.model_config.model}`}>
           <Tag 
-            color={getProviderColor(data.model_config.provider)}
+            color="blue"
             style={{ 
               display: 'inline-flex',
               alignItems: 'center',
@@ -65,44 +65,18 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
       );
     }
     
-    if (data.model_config?.model) {
-      const modelDisplayNames: Record<string, string> = {
-        'gpt-4': 'GPT-4',
-        'gpt-3.5-turbo': 'GPT-3.5 Turbo',
-        'claude-3': 'Claude 3',
-        'qwen-max': '通义千问 Max',
-      };
-      const displayName = modelDisplayNames[data.model_config.model] || data.model_config.model;
-      
-      return (
-        <span style={{
-          display: 'inline-block',
-          padding: '2px 8px',
-          backgroundColor: '#e3f2fd',
-          color: '#1976d2',
-          borderRadius: '4px',
-          fontSize: '11px',
-          fontWeight: 500,
-          marginTop: 4,
-        }}>
-          {displayName}
-        </span>
-      );
-    }
-    
     return (
-      <span style={{
-        display: 'inline-block',
-        padding: '2px 8px',
-        backgroundColor: '#fff2f0',
-        color: '#ff4d4f',
-        borderRadius: '4px',
-        fontSize: '11px',
-        fontWeight: 500,
-        marginTop: 4,
-      }}>
+      <Tag 
+        color="error"
+        style={{ 
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          marginTop: 4,
+        }}
+      >
         未配置模型
-      </span>
+      </Tag>
     );
   };
 

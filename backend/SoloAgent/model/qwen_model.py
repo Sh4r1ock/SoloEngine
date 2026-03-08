@@ -313,6 +313,8 @@ class QwenChatModel(ChatModelBase):
         text = ""
         thinking = ""
         tool_calls = OrderedDict()
+        last_text = ""  # 记录上次输出的文本，用于计算增量
+        last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
 
         async with response as stream:
             async for chunk in stream:
@@ -358,21 +360,26 @@ class QwenChatModel(ChatModelBase):
                                         elif block.get("type") == "thinking":
                                             thinking += block.get("text", "")
 
+                # 增量输出
                 contents = []
-                if thinking:
+                if thinking and len(thinking) > len(last_thinking):
+                    delta_thinking_content = thinking[len(last_thinking):]
                     contents.append(
                         SoloThinkingBlock(
                             type="thinking",
-                            thinking=thinking,
+                            thinking=delta_thinking_content,
                         ),
                     )
-                if text:
+                    last_thinking = thinking
+                if text and len(text) > len(last_text):
+                    delta_text_content = text[len(last_text):]
                     contents.append(
                         SoloTextBlock(
                             type="text",
-                            text=text,
+                            text=delta_text_content,
                         ),
                     )
+                    last_text = text
                 for tool_call in tool_calls.values():
                     contents.append(
                         SoloToolUseBlock(

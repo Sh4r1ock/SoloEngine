@@ -6,8 +6,8 @@
         "id": "node_1772380596347",
         "type": "agent",
         "position": {
-          "x": 1080,
-          "y": 200
+          "x": 1160,
+          "y": 80
         },
         "data": {
           "name": "新规划者",
@@ -15,18 +15,59 @@
           "agentType": "planner",
           "system_prompt": "",
           "user_prompt": "",
-          "assistant_prompt": "",
           "model_config": {
-            "provider": "openai",
-            "model": "gpt-4"
+            "config_id": "05d96800-5eb4-409c-8b01-a3d2ee1dfe17",
+            "config_name": "DeepSeek-Reasoner",
+            "provider": "deepseek",
+            "model": "deepseek-reasoner"
           },
+          "skills": [],
+          "llm_config_id": "05d96800-5eb4-409c-8b01-a3d2ee1dfe17",
+          "mcp_tools": []
+        },
+        "width": 222,
+        "height": 125,
+        "selected": false,
+        "positionAbsolute": {
+          "x": 1160,
+          "y": 80
+        },
+        "dragging": false
+      },
+      {
+        "id": "node_1772979070692",
+        "type": "agent",
+        "position": {
+          "x": 1160,
+          "y": 240
+        },
+        "data": {
+          "name": "新执行者",
+          "desc": "",
+          "agentType": "executor",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
           "skills": []
         },
         "width": 222,
-        "height": 124
+        "height": 125,
+        "selected": false,
+        "dragging": false,
+        "positionAbsolute": {
+          "x": 1160,
+          "y": 240
+        }
       }
     ],
-    "edges": []
+    "edges": [
+      {
+        "id": "e_node_1772380596347_node_1772979070692",
+        "source": "node_1772380596347",
+        "target": "node_1772979070692",
+        "label": "调用"
+      }
+    ]
   },
-  "updated_at": "2026-03-01T15:56:37.377434"
+  "updated_at": "2026-03-08T14:14:22.613115"
 }

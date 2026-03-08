@@ -1,0 +1,54 @@
+{
+  "flow_id": "03689392-0a52-478f-ab87-be9a32f9ac57",
+  "canvas_data": {
+    "nodes": [
+      {
+        "id": "node_1772980257339",
+        "type": "agent",
+        "position": {
+          "x": 640,
+          "y": 360
+        },
+        "data": {
+          "name": "新节点",
+          "desc": "",
+          "agentType": "executor",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "skills": []
+        },
+        "width": 222,
+        "height": 125
+      },
+      {
+        "id": "node_1772980689065",
+        "type": "agent",
+        "position": {
+          "x": 760,
+          "y": 440
+        },
+        "data": {
+          "name": "新节点",
+          "desc": "",
+          "agentType": "executor",
+          "system_prompt": "",
+          "user_prompt": "",
+          "assistant_prompt": "",
+          "skills": [],
+          "llm_config_id": "da205d76-8c87-48e3-a2fb-6bb25e612437",
+          "model_config": {
+            "config_id": "da205d76-8c87-48e3-a2fb-6bb25e612437",
+            "config_name": "测试模型配置",
+            "provider": "openai",
+            "model": "gpt-4"
+          }
+        },
+        "width": 222,
+        "height": 125
+      }
+    ],
+    "edges": []
+  },
+  "updated_at": "2026-03-08T14:39:24.073166+00:00"
+}

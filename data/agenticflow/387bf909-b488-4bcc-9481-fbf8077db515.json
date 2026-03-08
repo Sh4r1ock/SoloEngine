@@ -10,17 +10,15 @@
           "y": 240
         },
         "data": {
-          "name": "新协调者",
-          "desc": "",
+          "name": "管理者",
+          "desc": "理解用户需求，完成任务拆分，为子模型分配任务",
           "agentType": "orchestrator",
-          "system_prompt": "",
+          "system_prompt": "你是总指挥，负责管理整个项目的执行流程。\n\n当用户提出需求时，你需要：\n1. 分析用户需求\n2. 将任务拆分为子任务\n3. 分配给合适的执行者\n\n可调用的执行者：\n- 代码编写：负责代码实现\n- 信息检索：负责搜索和整理信息\n- 市场营销：负责营销文案撰写",
           "user_prompt": "",
-          "assistant_prompt": "",
-          "model_config": {
-            "provider": "openai",
-            "model": "gpt-4"
-          },
-          "skills": []
+          "skills": [],
+          "mcp_tools": [],
+          "tools": [],
+          "llm_config_id": "05d96800-5eb4-409c-8b01-a3d2ee1dfe17"
         },
         "width": 222,
         "height": 124,
@@ -35,59 +33,119 @@
         "id": "node_1772635894610",
         "type": "agent",
         "position": {
-          "x": 920,
-          "y": 440
+          "x": 780,
+          "y": 480
         },
         "data": {
-          "name": "新节点",
-          "desc": "",
+          "name": "代码编写",
+          "desc": "根据用户需求进行代码编写",
           "agentType": "executor",
-          "system_prompt": "",
+          "system_prompt": "你是代码编写专家，负责根据需求编写高质量的代码。\n\n请遵循以下原则：\n1. 代码简洁清晰\n2. 添加必要注释\n3. 考虑边界情况",
           "user_prompt": "",
-          "assistant_prompt": "",
-          "model_config": {
-            "provider": "openai",
-            "model": "gpt-4"
-          },
-          "skills": []
+          "skills": [],
+          "tools": [
+            "write_file",
+            "read_file"
+          ],
+          "llm_config_id": "c519ccf8-51d9-43fd-8e65-c6b9d33ca035",
+          "mcp_tools": []
         },
         "width": 222,
         "height": 124,
         "selected": false,
         "dragging": false,
         "positionAbsolute": {
-          "x": 920,
-          "y": 440
+          "x": 780,
+          "y": 480
         }
       },
       {
         "id": "node_1772635913796",
         "type": "agent",
         "position": {
-          "x": 1220,
-          "y": 440
+          "x": 1040,
+          "y": 480
         },
         "data": {
-          "name": "新节点",
-          "desc": "",
+          "name": "信息检索",
+          "desc": "使用网络搜索工具，检索信息并编写文档",
           "agentType": "executor",
-          "system_prompt": "",
+          "system_prompt": "你是信息检索专家，负责搜索和整理信息。\n\n请使用 web_search 工具搜索相关信息，然后整理成清晰的文档。",
           "user_prompt": "",
-          "assistant_prompt": "",
-          "model_config": {
-            "provider": "openai",
-            "model": "gpt-4"
-          },
-          "skills": []
+          "skills": [],
+          "tools": [
+            "web_search"
+          ],
+          "llm_config_id": "c519ccf8-51d9-43fd-8e65-c6b9d33ca035",
+          "mcp_tools": []
         },
         "width": 222,
         "height": 124,
         "selected": false,
         "positionAbsolute": {
-          "x": 1220,
-          "y": 440
+          "x": 1040,
+          "y": 480
         },
         "dragging": false
+      },
+      {
+        "id": "node_1772683926794",
+        "type": "agent",
+        "position": {
+          "x": 1300,
+          "y": 480
+        },
+        "data": {
+          "name": "市场营销",
+          "desc": "完成营销文案、视频脚本撰写等工作",
+          "agentType": "executor",
+          "system_prompt": "你是市场营销专家，负责撰写营销文案和视频脚本。\n\n请创作有吸引力的内容，突出产品特点。",
+          "user_prompt": "",
+          "skills": [],
+          "tools": [],
+          "llm_config_id": "c519ccf8-51d9-43fd-8e65-c6b9d33ca035",
+          "mcp_tools": []
+        },
+        "width": 222,
+        "height": 124,
+        "selected": false,
+        "positionAbsolute": {
+          "x": 1300,
+          "y": 480
+        },
+        "dragging": false
+      },
+      {
+        "id": "node_1772976414175",
+        "type": "agent",
+        "position": {
+          "x": 1320,
+          "y": 240
+        },
+        "data": {
+          "name": "新协调者",
+          "desc": "",
+          "agentType": "orchestrator",
+          "system_prompt": "",
+          "user_prompt": "",
+          "model_config": {
+            "config_id": "05d96800-5eb4-409c-8b01-a3d2ee1dfe17",
+            "config_name": "DeepSeek-Reasoner",
+            "provider": "deepseek",
+            "model": "deepseek-reasoner"
+          },
+          "skills": [],
+          "llm_config_id": "05d96800-5eb4-409c-8b01-a3d2ee1dfe17",
+          "mcp_tools": []
+        },
+        "width": 222,
+        "height": 125,
+        "selected": false,
+        "dragging": false,
+        "positionAbsolute": {
+          "x": 1320,
+          "y": 240
+        }
       }
     ],
     "edges": [
@@ -102,8 +160,14 @@
         "source": "node_1772380591835",
         "target": "node_1772635913796",
         "label": "调用"
+      },
+      {
+        "id": "e_node_1772380591835_node_1772683926794",
+        "source": "node_1772380591835",
+        "target": "node_1772683926794",
+        "label": "调用"
       }
     ]
   },
-  "updated_at": "2026-03-04T14:52:05.382258"
+  "updated_at": "2026-03-08T14:08:41.646388"
 }

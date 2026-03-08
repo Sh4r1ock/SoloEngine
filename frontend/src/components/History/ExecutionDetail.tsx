@@ -6,6 +6,7 @@ import {
   LoadingOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
+import { formatDateTime } from '../../utils/timezone';
 
 const { Text, Title, Paragraph } = Typography;
 
@@ -75,10 +76,10 @@ const ExecutionDetail: React.FC<ExecutionDetailProps> = ({ record, onClose }) =>
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="开始时间">
-            {new Date(record.start_time).toLocaleString()}
+            {formatDateTime(record.start_time)}
           </Descriptions.Item>
           <Descriptions.Item label="结束时间">
-            {record.end_time ? new Date(record.end_time).toLocaleString() : '-'}
+            {record.end_time ? formatDateTime(record.end_time) : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="耗时">
             {record.duration_ms ? `${(record.duration_ms / 1000).toFixed(2)}s` : '-'}
@@ -115,7 +116,7 @@ const ExecutionDetail: React.FC<ExecutionDetailProps> = ({ record, onClose }) =>
                   <Text strong>步骤 {index + 1}: {step.node_name}</Text>
                   <br />
                   <Text type="secondary">
-                    {new Date(step.timestamp).toLocaleString()}
+                    {formatDateTime(step.timestamp)}
                     {step.duration_ms && ` (${step.duration_ms}ms)`}
                   </Text>
                   {step.thought && (

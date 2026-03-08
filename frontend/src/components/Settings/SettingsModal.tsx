@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Modal, Form, Button, Space, Typography, Divider, Tabs } from 'antd';
 import { useCanvasStore, GlobalSettings } from '../../store/canvasStore';
 import LLMConfig from './LLMConfig';
+import TimezoneSettings from './TimezoneSettings';
 
 const { Text } = Typography;
 
@@ -152,6 +153,15 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
             children: (
               <div style={{ padding: '16px 0' }}>
                 <LLMConfig />
+              </div>
+            ),
+          },
+          {
+            key: 'timezone',
+            label: '时区设置',
+            children: (
+              <div style={{ padding: '16px 0' }}>
+                <TimezoneSettings />
               </div>
             ),
           },

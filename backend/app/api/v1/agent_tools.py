@@ -24,21 +24,18 @@ Agent Tools API endpoints.
 - 未指定时使用用户默认配置
 """
 import os
-import json
 import logging
-import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-import uuid
-import httpx
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, db_manager, LLMConfigModel
+from app.core.llm_service import LLMService
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
-from app.api.v1.debug_project import _active_project_sessions
+from app.api.v1.run_project import _active_project_sessions
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +99,6 @@ class DocumentSummarizeRequest(BaseModel):
     config_id: Optional[str] = Field(None, description="LLM配置ID")
 
 
-_llm_clients: Dict[str, Any] = {}
-
-
-def _get_decrypted_api_key(config: LLMConfigModel) -> str:
-    """从配置中获取解密后的API Key。"""
-    if config.api_key:
-        return db_manager.encryption_service.decrypt(config.api_key) if db_manager.encryption_service else config.api_key
-    return ""
-
-
 async def _get_llm_config(
     db: Session,
     user_id: str,
@@ -133,57 +120,6 @@ async def _get_llm_config(
     return config
 
 
-async def _create_llm_client(config: LLMConfigModel) -> tuple:
-    """根据配置创建LLM客户端。"""
-    provider = config.provider
-    api_key = _get_decrypted_api_key(config)
-    base_url = config.base_url
-    
-    if provider == "openai":
-        client = httpx.AsyncClient(
-            base_url=base_url or "https://api.openai.com/v1",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            timeout=float(config.timeout or 120)
-        )
-        return ("openai", client, config)
-    
-    elif provider == "anthropic":
-        client = httpx.AsyncClient(
-            base_url=base_url or "https://api.anthropic.com/v1",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json"
-            },
-            timeout=float(config.timeout or 120)
-        )
-        return ("anthropic", client, config)
-    
-    elif provider == "qwen":
-        client = httpx.AsyncClient(
-            base_url=base_url or "https://dashscope.aliyuncs.com/api/v1",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            timeout=float(config.timeout or 120)
-        )
-        return ("qwen", client, config)
-    
-    elif provider == "ollama":
-        client = httpx.AsyncClient(
-            base_url=f"{base_url or 'http://localhost:11434'}/api",
-            timeout=float(config.timeout or 120)
-        )
-        return ("ollama", client, config)
-    
-    else:
-        raise ValueError(f"不支持的LLM提供商: {provider}")
-
-
 @router.post("/llm/chat")
 async def llm_chat(
     request: LLMRequest,
@@ -195,219 +131,44 @@ async def llm_chat(
         project_id = request.project_id or _active_project_sessions.get(current_user.id)
         
         config = await _get_llm_config(db, current_user.id, request.config_id)
-        provider_type, client, llm_config = await _create_llm_client(config)
-        
-        model = request.model or llm_config.model_name
-        temperature = request.temperature if request.temperature is not None else llm_config.temperature
-        max_tokens = request.max_tokens or llm_config.max_tokens
-        
-        messages = []
-        if request.system_prompt:
-            messages.append({"role": "system", "content": request.system_prompt})
-        
-        if request.conversation_history:
-            messages.extend(request.conversation_history)
-        
-        messages.append({"role": "user", "content": request.message})
         
         db_manager.add_memory(
             db=db,
             user_id=current_user.id,
             role="user",
             content=request.message,
-            debug_project_id=project_id,
+            run_project_id=project_id,
         )
         
-        if provider_type == "openai":
-            response = await client.post(
-                "/chat/completions",
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens
-                }
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"OpenAI API 错误: {response.text}"
-                )
-            
-            data = response.json()
-            assistant_content = data["choices"][0]["message"]["content"]
-            
-            db_manager.add_memory(
-                db=db,
-                user_id=current_user.id,
-                role="assistant",
-                content=assistant_content,
-                debug_project_id=project_id,
-                metadata={"model": model, "tokens": data.get("usage", {})}
-            )
-            
-            return {
-                "code": 200,
-                "message": "LLM响应已生成",
-                "data": {
-                    "content": assistant_content,
-                    "model": data.get("model", model),
-                    "provider": provider_type,
-                    "config_id": config.id,
-                    "config_name": config.name,
-                    "tokens_used": {
-                        "prompt_tokens": data.get("usage", {}).get("prompt_tokens", 0),
-                        "completion_tokens": data.get("usage", {}).get("completion_tokens", 0),
-                        "total_tokens": data.get("usage", {}).get("total_tokens", 0)
-                    },
-                    "finish_reason": data["choices"][0].get("finish_reason", "stop"),
-                    "project_id": project_id,
-                }
-            }
+        result = await LLMService.chat(
+            config=config,
+            message=request.message,
+            system_prompt=request.system_prompt,
+            conversation_history=request.conversation_history,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            model=request.model,
+        )
         
-        elif provider_type == "anthropic":
-            anthropic_messages = []
-            system_content = None
-            for msg in messages:
-                if msg["role"] == "system":
-                    system_content = msg["content"]
-                else:
-                    anthropic_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-            
-            request_body = {
-                "model": model,
-                "messages": anthropic_messages,
-                "max_tokens": max_tokens
+        db_manager.add_memory(
+            db=db,
+            user_id=current_user.id,
+            role="assistant",
+            content=result["content"],
+            run_project_id=project_id,
+            metadata={
+                "model": result["model"],
+                "tokens": result["tokens_used"]
             }
-            if system_content:
-                request_body["system"] = system_content
-            
-            response = await client.post(
-                "/messages",
-                json=request_body
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Anthropic API 错误: {response.text}"
-                )
-            
-            data = response.json()
-            content = ""
-            for block in data.get("content", []):
-                if block.get("type") == "text":
-                    content += block.get("text", "")
-            
-            return {
-                "code": 200,
-                "message": "LLM响应已生成",
-                "data": {
-                    "content": content,
-                    "model": data.get("model", model),
-                    "provider": provider_type,
-                    "config_id": config.id,
-                    "config_name": config.name,
-                    "tokens_used": {
-                        "input_tokens": data.get("usage", {}).get("input_tokens", 0),
-                        "output_tokens": data.get("usage", {}).get("output_tokens", 0)
-                    },
-                    "finish_reason": data.get("stop_reason", "end_turn")
-                }
-            }
+        )
         
-        elif provider_type == "qwen":
-            qwen_messages = []
-            for msg in messages:
-                qwen_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
-            
-            response = await client.post(
-                "/services/aigc/text-generation/generation",
-                json={
-                    "model": model,
-                    "input": {
-                        "messages": qwen_messages
-                    },
-                    "parameters": {
-                        "temperature": temperature,
-                        "max_tokens": max_tokens
-                    }
-                }
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"通义千问 API 错误: {response.text}"
-                )
-            
-            data = response.json()
-            output = data.get("output", {})
-            
-            return {
-                "code": 200,
-                "message": "LLM响应已生成",
-                "data": {
-                    "content": output.get("text", ""),
-                    "model": model,
-                    "provider": provider_type,
-                    "config_id": config.id,
-                    "config_name": config.name,
-                    "tokens_used": {
-                        "input_tokens": data.get("usage", {}).get("input_tokens", 0),
-                        "output_tokens": data.get("usage", {}).get("output_tokens", 0)
-                    },
-                    "finish_reason": output.get("finish_reason", "stop")
-                }
-            }
+        result["project_id"] = project_id
         
-        elif provider_type == "ollama":
-            response = await client.post(
-                "/chat",
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens
-                    }
-                }
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=f"Ollama API 错误: {response.text}"
-                )
-            
-            data = response.json()
-            return {
-                "code": 200,
-                "message": "LLM响应已生成",
-                "data": {
-                    "content": data.get("message", {}).get("content", ""),
-                    "model": data.get("model", model),
-                    "provider": provider_type,
-                    "config_id": config.id,
-                    "config_name": config.name,
-                    "tokens_used": {
-                        "prompt_tokens": data.get("prompt_eval_count", 0),
-                        "completion_tokens": data.get("eval_count", 0)
-                    },
-                    "finish_reason": "stop"
-                }
-            }
-        
-        else:
-            raise HTTPException(status_code=400, detail=f"不支持的提供商: {provider_type}")
+        return {
+            "code": 200,
+            "message": "LLM响应已生成",
+            "data": result
+        }
     
     except HTTPException:
         raise

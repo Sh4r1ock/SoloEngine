@@ -455,6 +455,8 @@ class AnthropicChatModel(ChatModelBase):
         tool_calls = OrderedDict()
         metadata: dict | None = None
         current_response_id = None
+        last_text = ""  # 记录上次输出的文本，用于计算增量
+        last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
 
         async with response as stream:
             async for event in stream:
@@ -467,9 +469,11 @@ class AnthropicChatModel(ChatModelBase):
                         thinking = ""
                 elif event.type == "content_block_delta":
                     if event.content_block.type == "text":
-                        text += event.delta.text
+                        delta_text = event.delta.text
+                        text += delta_text
                     elif event.content_block.type == "thinking":
-                        thinking += event.delta.text
+                        delta_thinking = event.delta.text
+                        thinking += delta_thinking
                     elif event.content_block.type == "input_json":
                         if event.delta.type == "tool_use":
                             tool_use_id = event.content_block.index
@@ -487,6 +491,36 @@ class AnthropicChatModel(ChatModelBase):
                                 tool_calls[tool_use_id]["name"] = event.delta.partial_json.get(
                                     "name", ""
                                 )
+                    
+                    # 增量输出
+                    contents = []
+                    if thinking and len(thinking) > len(last_thinking):
+                        delta_thinking_content = thinking[len(last_thinking):]
+                        contents.append(
+                            SoloThinkingBlock(
+                                type="thinking",
+                                thinking=delta_thinking_content,
+                            ),
+                        )
+                        last_thinking = thinking
+                    if text and len(text) > len(last_text):
+                        delta_text_content = text[len(last_text):]
+                        contents.append(
+                            SoloTextBlock(
+                                type="text",
+                                text=delta_text_content,
+                            ),
+                        )
+                        last_text = text
+                    
+                    if contents:
+                        res = ChatResponse(
+                            content=contents,
+                            usage=usage,
+                            metadata=metadata,
+                        )
+                        yield res
+                        
                 elif event.type == "content_block_stop":
                     contents = []
                     if thinking:
