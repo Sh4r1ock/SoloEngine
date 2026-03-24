@@ -44,11 +44,15 @@ Skill工具模块 - 技能调用实现。
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 import os
+import sys
 import logging
 
 from .base import BaseAgentTool, AgentToolError, ToolContext, ToolPermission
 
 logger = logging.getLogger(__name__)
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'app')))
+from app.core.data_paths import DataPaths
 
 
 @dataclass
@@ -399,11 +403,7 @@ class SkillTool(BaseAgentTool):
         Returns:
             str: 系统技能目录路径
         """
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.normpath(os.path.join(
-            current_dir, "..", "..", "..", ".."
-        ))
-        return os.path.join(project_root, "data", "system_skills")
+        return DataPaths.get_system_skills_dir()
     
     async def _load_skill_from_path(
         self,

@@ -10,7 +10,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](../../LICENSE)
+[![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](../../LICENSE)
 
 **语言**: [English](../../README.md) | 简体中文
 
@@ -353,7 +353,7 @@ ENCRYPTION_KEY=your_encryption_key_here
 
 ## 许可证
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](../../LICENSE) 文件
+本项目采用 Apache-2.0 许可证 - 详见 [LICENSE](../../LICENSE) 文件
 
 ---
 

@@ -10,6 +10,7 @@ const MarketplacePage = lazy(() => import('./pages/Marketplace/MarketplacePage')
 const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
 const SkillsEditorPage = lazy(() => import('./pages/SkillsEditor/SkillsEditorPage'));
+const MarkdownDemo = lazy(() => import('./pages/MarkdownDemo/MarkdownDemo'));
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
@@ -79,7 +80,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/run/:projectId',
+    path: '/run/:agenticFlowId',
     element: (
       <ProtectedRoute>
         <Suspense fallback={<LoadingFallback />}>
@@ -126,6 +127,14 @@ const router = createBrowserRouter([
           <SkillsEditorPage />
         </Suspense>
       </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/markdown-demo',
+    element: (
+      <Suspense fallback={<LoadingFallback />}>
+        <MarkdownDemo />
+      </Suspense>
     ),
   },
 ]);

@@ -31,6 +31,7 @@
 状态: ✅ 完整实现
 """
 
+import json
 from dataclasses import dataclass, field
 from typing import Literal, Sequence, Optional
 
@@ -181,3 +182,182 @@ class ChatResponse(DictMixin):
             elif hasattr(block, 'text'):
                 texts.append(block.text)
         return "".join(texts)
+    
+    def get_reasoning_content(self) -> str:
+        """
+        获取思考内容（OpenAI 格式）。
+        
+        从内容块中提取所有思考内容并合并。
+        对应 OpenAI API 的 reasoning_content 字段。
+        
+        Returns:
+            str: 合并后的思考内容。
+        """
+        reasoning = []
+        for block in self.content:
+            if isinstance(block, dict):
+                if block.get("type") == "thinking":
+                    reasoning.append(block.get("thinking", ""))
+            elif hasattr(block, 'thinking'):
+                reasoning.append(block.thinking)
+        return "".join(reasoning)
+    
+    def to_openai_message(self) -> dict:
+        """
+        转换为 OpenAI 格式的消息对象。
+        
+        Returns:
+            dict: OpenAI 格式的消息，包含 role, content, reasoning_content, tool_calls 字段
+        """
+        msg = {
+            "role": "assistant",
+            "content": self.get_text_content(),
+            "reasoning_content": self.get_reasoning_content() or None
+        }
+        
+        tool_calls = []
+        for block in self.content:
+            # 支持 dict 和 TypedDict 对象
+            if isinstance(block, dict):
+                block_type = block.get("type")
+            elif hasattr(block, "__getitem__"):
+                try:
+                    block_type = block["type"] if "type" in block else None
+                except (KeyError, TypeError):
+                    block_type = None
+            else:
+                block_type = None
+            
+            if block_type == "tool_use":
+                if isinstance(block, dict):
+                    tool_id = block.get("id", "")
+                    tool_name = block.get("name", "")
+                    tool_input = block.get("input", {})
+                else:
+                    tool_id = block.get("id", "") if hasattr(block, "get") else (block["id"] if "id" in block else "")
+                    tool_name = block.get("name", "") if hasattr(block, "get") else (block["name"] if "name" in block else "")
+                    tool_input = block.get("input", {}) if hasattr(block, "get") else (block["input"] if "input" in block else {})
+                if isinstance(tool_input, str):
+                    arguments_str = tool_input
+                else:
+                    try:
+                        arguments_str = json.dumps(tool_input, ensure_ascii=False)
+                    except:
+                        arguments_str = ""
+                tool_calls.append({
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": arguments_str
+                    }
+                })
+            elif block_type == "tool_calls":
+                # 流式格式的 tool_calls 块
+                if isinstance(block, dict):
+                    tcs = block.get("tool_calls", [])
+                else:
+                    tcs = block.get("tool_calls", []) if hasattr(block, "get") else (block["tool_calls"] if "tool_calls" in block else [])
+                for tc in tcs:
+                    # 验证并补全 tool_call 格式
+                    if isinstance(tc, dict):
+                        tc_id = tc.get("id", "")
+                        # 去重：如果 id 已存在，跳过
+                        if tc_id and tc_id not in [t.get("id", "") for t in tool_calls]:
+                            # 确保 function.arguments 存在
+                            if "function" in tc and isinstance(tc["function"], dict):
+                                if "arguments" not in tc["function"]:
+                                    tc["function"]["arguments"] = ""
+                            tool_calls.append(tc)
+        
+        if tool_calls:
+            msg["tool_calls"] = tool_calls
+        
+        return msg
+    
+    def to_delta(self) -> dict:
+        """
+        转换为 OpenAI 流式响应的 delta 格式。
+        
+        这是流式输出的标准格式，用于 stream_callback。
+        将 content 列表中的各个 block 转换为 delta 对象。
+        
+        Returns:
+            dict: OpenAI delta 格式。例如：
+                - {"content": "文本内容"} - 文本增量
+                - {"reasoning_content": "思考内容"} - 思考增量
+                - {"tool_calls": [...]} - 工具调用增量
+                - {} - 空块（无内容）
+        
+        Note:
+            如果同时包含多种类型，会返回包含多个字段的对象。
+            对于多个 tool_use 块，会合并为一个 tool_calls 数组。
+        """
+        delta = {}
+        tool_calls_list = []
+        
+        for block in self.content:
+            # 支持 dict 和 TypedDict 对象
+            if isinstance(block, dict):
+                block_type = block.get("type")
+            elif hasattr(block, "__getitem__"):
+                try:
+                    block_type = block["type"] if "type" in block else None
+                except (KeyError, TypeError):
+                    block_type = None
+            else:
+                block_type = None
+            
+            if block_type == "text":
+                if isinstance(block, dict):
+                    text = block.get("text", "")
+                else:
+                    text = block.get("text", "") if hasattr(block, "get") else (block["text"] if "text" in block else "")
+                if text:
+                    delta["content"] = text
+            elif block_type == "thinking":
+                if isinstance(block, dict):
+                    thinking = block.get("thinking", "")
+                else:
+                    thinking = block.get("thinking", "") if hasattr(block, "get") else (block["thinking"] if "thinking" in block else "")
+                if thinking:
+                    delta["reasoning_content"] = thinking
+            elif block_type == "tool_use":
+                if isinstance(block, dict):
+                    tool_id = block.get("id", "")
+                    tool_name = block.get("name", "")
+                    tool_input = block.get("input", {})
+                else:
+                    tool_id = block.get("id", "") if hasattr(block, "get") else (block["id"] if "id" in block else "")
+                    tool_name = block.get("name", "") if hasattr(block, "get") else (block["name"] if "name" in block else "")
+                    tool_input = block.get("input", {}) if hasattr(block, "get") else (block["input"] if "input" in block else {})
+                if isinstance(tool_input, str):
+                    arguments_str = tool_input
+                else:
+                    try:
+                        arguments_str = json.dumps(tool_input, ensure_ascii=False)
+                    except:
+                        arguments_str = ""
+                tool_calls_list.append({
+                    "index": len(tool_calls_list),
+                    "id": tool_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_name,
+                        "arguments": arguments_str
+                    }
+                })
+            elif block_type == "tool_calls":
+                # 流式格式的 tool_calls 块
+                if isinstance(block, dict):
+                    for tc in block.get("tool_calls", []):
+                        tool_calls_list.append(tc)
+                else:
+                    tcs = block.get("tool_calls", []) if hasattr(block, "get") else (block["tool_calls"] if "tool_calls" in block else [])
+                    for tc in tcs:
+                        tool_calls_list.append(tc)
+        
+        if tool_calls_list:
+            delta["tool_calls"] = tool_calls_list
+        
+        return delta

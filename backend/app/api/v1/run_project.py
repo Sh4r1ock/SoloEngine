@@ -24,17 +24,24 @@ import shutil
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db, db_manager, RunProjectModel, RecentProjectModel
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
+from app.core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/run-project", tags=["run-project"])
+
+
+class SelectOrCreateProjectRequest(BaseModel):
+    agentic_flow_id: str = Field(..., description="流程ID")
+    folder_path: str = Field(..., description="选择的文件夹路径")
 
 
 class SelectFolderRequest(BaseModel):
@@ -224,15 +231,101 @@ class SandboxedFileSystem:
 _active_project_sessions: Dict[str, str] = {}
 
 
-def get_sandboxed_fs(user_id: str, db: Session) -> SandboxedFileSystem:
+def _get_session_key(user_id: str, agentic_flow_id: str = None) -> str:
+    """生成会话存储的 key，包含 user_id 和 agentic_flow_id"""
+    if agentic_flow_id:
+        return f"{user_id}:{agentic_flow_id}"
+    return user_id
+
+
+def _do_select_or_create_project(
+    db: Session,
+    user_id: str,
+    agentic_flow_id: str,
+    folder_path: str
+) -> Dict[str, Any]:
+    """选择或创建项目的核心逻辑。
+    
+    Args:
+        db: 数据库会话
+        user_id: 用户ID
+        agentic_flow_id: 流程ID
+        folder_path: 文件夹路径
+        
+    Returns:
+        包含项目信息和最近项目列表的字典
+    """
+    folder_path = os.path.abspath(folder_path)
+    
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=400, detail=f"Folder does not exist: {folder_path}")
+    
+    if not os.path.isdir(folder_path):
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {folder_path}")
+    
+    project_name = os.path.basename(folder_path)
+    
+    existing_project = db_manager.get_run_project_by_path(
+        db, user_id, agentic_flow_id, folder_path
+    )
+    
+    if existing_project:
+        existing_project.last_accessed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(existing_project)
+        project = existing_project
+        is_new = False
+    else:
+        project = db_manager.create_run_project(
+            db=db,
+            user_id=user_id,
+            agentic_flow_id=agentic_flow_id,
+            name=project_name,
+            folder_path=folder_path,
+        )
+        is_new = True
+    
+    session_key = _get_session_key(user_id, agentic_flow_id)
+    _active_project_sessions[session_key] = project.id
+    
+    db_manager.add_recent_project(
+        db=db,
+        user_id=user_id,
+        project_id=project.id,
+        folder_path=folder_path,
+        project_name=project_name,
+    )
+    
+    recent_projects = db_manager.get_recent_projects(db, user_id, limit=10)
+    
+    return {
+        "project_id": project.id,
+        "project_name": project.name,
+        "folder_path": project.folder_path,
+        "is_new": is_new,
+        "recent_projects": [
+            {
+                "id": rp.id,
+                "project_id": rp.project_id,
+                "project_name": rp.project_name,
+                "folder_path": rp.folder_path,
+                "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
+            }
+            for rp in recent_projects
+        ]
+    }
+
+
+def get_sandboxed_fs(user_id: str, db: Session, agentic_flow_id: str = None) -> SandboxedFileSystem:
     """获取用户的沙箱文件系统实例。"""
-    project_id = _active_project_sessions.get(user_id)
+    session_key = _get_session_key(user_id, agentic_flow_id)
+    project_id = _active_project_sessions.get(session_key)
     
     if not project_id:
-        project = db_manager.get_active_run_project(db, user_id)
+        project = db_manager.get_active_run_project(db, user_id, agentic_flow_id)
         if project:
             project_id = project.id
-            _active_project_sessions[user_id] = project_id
+            _active_project_sessions[session_key] = project_id
     
     if not project_id:
         raise HTTPException(
@@ -244,7 +337,41 @@ def get_sandboxed_fs(user_id: str, db: Session) -> SandboxedFileSystem:
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    return SandboxedFileSystem(project.folder_path)
+    folder_path = project.folder_path
+    
+    if not os.path.isabs(folder_path):
+        from app.core.data_paths import DataPaths
+        folder_path = DataPaths.to_absolute_path(folder_path)
+    
+    return SandboxedFileSystem(folder_path)
+
+
+@router.post("/select-or-create")
+async def select_or_create_project(
+    request: SelectOrCreateProjectRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """根据agentic_flow_id、user_id、folder_path选择或创建项目。
+    
+    逻辑：
+    1. 根据user_id + agentic_flow_id + folder_path查询run_projects表
+    2. 如果存在，更新last_accessed_at，返回项目信息
+    3. 如果不存在，创建新记录，返回项目信息
+    4. 更新 recent_projects 表
+    """
+    data = _do_select_or_create_project(
+        db=db,
+        user_id=current_user.id,
+        agentic_flow_id=request.agentic_flow_id,
+        folder_path=request.folder_path
+    )
+    
+    return {
+        "code": 200,
+        "message": "Project selected successfully",
+        "data": data
+    }
 
 
 @router.post("/select-folder")
@@ -253,75 +380,19 @@ async def select_folder(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """选择项目文件夹。"""
-    folder_path = os.path.abspath(request.folder_path)
-    
-    if not os.path.exists(folder_path):
-        raise HTTPException(status_code=400, detail=f"Folder does not exist: {folder_path}")
-    
-    if not os.path.isdir(folder_path):
-        raise HTTPException(status_code=400, detail=f"Path is not a directory: {folder_path}")
-    
-    project_name = os.path.basename(folder_path)
-    
-    existing_project = db_manager.get_run_project_by_path(db, current_user.id, folder_path)
-    
-    if existing_project:
-        existing_project.last_accessed_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(existing_project)
-        project = existing_project
-        is_new = False
-    else:
-        project = db_manager.create_run_project(
-            db=db,
-            user_id=current_user.id,
-            name=project_name,
-            folder_path=folder_path,
-        )
-        is_new = True
-    
-    _active_project_sessions[current_user.id] = project.id
-    
-    db_manager.add_recent_project(
-        db=db,
-        user_id=current_user.id,
-        project_id=project.id,
-        folder_path=folder_path,
-        project_name=project_name,
-    )
-    
-    recent_projects = db_manager.get_recent_projects(db, current_user.id, limit=10)
-    
-    return {
-        "code": 200,
-        "message": "Project selected successfully",
-        "data": {
-            "project_id": project.id,
-            "project_name": project.name,
-            "folder_path": project.folder_path,
-            "is_new": is_new,
-            "recent_projects": [
-                {
-                    "id": rp.id,
-                    "project_id": rp.project_id,
-                    "project_name": rp.project_name,
-                    "folder_path": rp.folder_path,
-                    "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
-                }
-                for rp in recent_projects
-            ]
-        }
-    }
+    """选择项目文件夹（已废弃，请使用 /select-or-create）。"""
+    raise HTTPException(status_code=410, detail="This endpoint is deprecated. Please use /select-or-create instead.")
 
 
 @router.get("/current")
 async def get_current_project(
+    agentic_flow_id: str = Query(None, description="流程ID，可选，用于过滤特定流程的项目"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """获取当前选择的项目。"""
-    project_id = _active_project_sessions.get(current_user.id)
+    session_key = _get_session_key(current_user.id, agentic_flow_id)
+    project_id = _active_project_sessions.get(session_key)
     
     if project_id:
         project = db_manager.get_run_project(db, project_id, current_user.id)
@@ -339,9 +410,9 @@ async def get_current_project(
                 }
             }
     
-    project = db_manager.get_active_run_project(db, current_user.id)
+    project = db_manager.get_active_run_project(db, current_user.id, agentic_flow_id)
     if project:
-        _active_project_sessions[current_user.id] = project.id
+        _active_project_sessions[session_key] = project.id
         return {
             "code": 200,
             "message": "Current project retrieved",
@@ -364,12 +435,26 @@ async def get_current_project(
 
 @router.get("/recent")
 async def get_recent_projects(
-    limit: int = 10,
+    agentic_flow_id: str = Query(..., description="流程ID，必需"),
+    limit: int = Query(10, description="返回数量限制"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取最近访问的项目列表。"""
+    """获取最近访问的项目列表。
+    
+    Args:
+        agentic_flow_id: 流程ID，必需，用于过滤特定流程的项目
+        limit: 返回数量限制
+    """
+    # 使用db_manager方法获取，确保路径转换正确
     recent_projects = db_manager.get_recent_projects(db, current_user.id, limit=limit)
+    
+    # 过滤特定agentic_flow_id的项目
+    filtered_projects = []
+    for rp in recent_projects:
+        project = db_manager.get_run_project(db, rp.project_id)
+        if project and project.agentic_flow_id == agentic_flow_id:
+            filtered_projects.append(rp)
     
     return {
         "code": 200,
@@ -382,51 +467,8 @@ async def get_recent_projects(
                 "folder_path": rp.folder_path,
                 "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
             }
-            for rp in recent_projects
+            for rp in filtered_projects
         ]
-    }
-
-
-@router.post("/switch/{project_id}")
-async def switch_project(
-    project_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """切换到指定项目。"""
-    project = db_manager.get_run_project(db, project_id, current_user.id)
-    
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    if not os.path.exists(project.folder_path):
-        raise HTTPException(status_code=400, detail=f"Project folder no longer exists: {project.folder_path}")
-    
-    project.last_accessed_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(project)
-    
-    _active_project_sessions[current_user.id] = project.id
-    
-    db_manager.add_recent_project(
-        db=db,
-        user_id=current_user.id,
-        project_id=project.id,
-        folder_path=project.folder_path,
-        project_name=project.name,
-    )
-    
-    return {
-        "code": 200,
-        "message": "Project switched successfully",
-        "data": {
-            "id": project.id,
-            "name": project.name,
-            "folder_path": project.folder_path,
-            "description": project.description,
-            "last_accessed_at": project.last_accessed_at.isoformat() if project.last_accessed_at else None,
-            "created_at": project.created_at.isoformat() if project.created_at else None,
-        }
     }
 
 
@@ -718,17 +760,24 @@ async def browse_directory(
 
 @router.get("/native-folder-dialog")
 async def open_native_folder_dialog(
+    agentic_flow_id: str = Query(..., description="流程ID"),
     title: str = "选择项目文件夹",
     initialdir: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """打开原生文件夹选择对话框。"""
-    import threading
+    """打开原生文件夹选择对话框。
+    
+    功能：
+    1. 打开原生文件夹选择对话框
+    2. 如果选择了文件夹，调用 selectOrCreateProject 逻辑创建/获取项目
+    
+    注意：此 API 是 selectOrCreateProject 的便捷封装，
+         核心逻辑由 _do_select_or_create_project 函数实现。
+    """
+    import asyncio
     import tkinter as tk
     from tkinter import filedialog
-    
-    result = {"folder_path": None}
     
     def open_dialog():
         try:
@@ -741,76 +790,221 @@ async def open_native_folder_dialog(
                 initialdir=initialdir if initialdir else None
             )
             
-            result["folder_path"] = folder_path if folder_path else None
             root.destroy()
+            return folder_path if folder_path else None
         except Exception as e:
             logger.error(f"Failed to open folder dialog: {e}")
-            result["error"] = str(e)
+            return None
     
-    dialog_thread = threading.Thread(target=open_dialog)
-    dialog_thread.start()
-    dialog_thread.join(timeout=60)
+    try:
+        folder_path = await asyncio.to_thread(open_dialog)
+    except Exception as e:
+        logger.error(f"Failed to open folder dialog: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
-    if result.get("error"):
-        raise HTTPException(status_code=500, detail=result["error"])
-    
-    if not result.get("folder_path"):
+    if not folder_path:
         return {
             "code": 200,
             "message": "No folder selected",
             "data": None
         }
     
-    folder_path = result["folder_path"]
-    
-    project_name = os.path.basename(folder_path)
-    
-    existing_project = db_manager.get_run_project_by_path(db, current_user.id, folder_path)
-    
-    if existing_project:
-        existing_project.last_accessed_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(existing_project)
-        project = existing_project
-        is_new = False
-    else:
-        project = db_manager.create_run_project(
-            db=db,
-            user_id=current_user.id,
-            name=project_name,
-            folder_path=folder_path,
-        )
-        is_new = True
-    
-    _active_project_sessions[current_user.id] = project.id
-    
-    db_manager.add_recent_project(
+    data = _do_select_or_create_project(
         db=db,
         user_id=current_user.id,
-        project_id=project.id,
-        folder_path=folder_path,
-        project_name=project_name,
+        agentic_flow_id=agentic_flow_id,
+        folder_path=folder_path
     )
-    
-    recent_projects = db_manager.get_recent_projects(db, current_user.id, limit=10)
     
     return {
         "code": 200,
-        "message": "Folder selected successfully",
-        "data": {
-            "project_id": project.id,
-            "project_name": project.name,
-            "folder_path": project.folder_path,
-            "is_new": is_new,
-            "recent_projects": [
-                {
-                    "id": rp.id,
-                    "project_id": rp.project_id,
-                    "project_name": rp.project_name,
-                    "folder_path": rp.folder_path,
-                    "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
-                }
-                for rp in recent_projects
-            ]
-        }
+        "message": "Project selected successfully",
+        "data": data
     }
+
+
+@router.get("/files/access")
+async def access_file(
+    path: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """访问文件（用于预览）。"""
+    try:
+        fs = get_sandboxed_fs(current_user.id, db)
+        absolute_path = fs._resolve_path(path)
+        
+        if not os.path.exists(absolute_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not os.path.isfile(absolute_path):
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        
+        return FileResponse(
+            path=absolute_path,
+            filename=os.path.basename(absolute_path),
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to access file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_document_type(file_ext: str) -> str:
+    """根据文件扩展名获取 OnlyOffice 文档类型。"""
+    ext = file_ext.lower().lstrip('.')
+    word_exts = ['doc', 'docx', 'odt', 'rtf', 'txt', 'html', 'htm', 'mht', 'pdf', 'djvu', 'xps', 'epub']
+    cell_exts = ['xls', 'xlsx', 'ods', 'csv']
+    slide_exts = ['ppt', 'pptx', 'odp']
+    
+    if ext in word_exts:
+        return 'word'
+    elif ext in cell_exts:
+        return 'cell'
+    elif ext in slide_exts:
+        return 'slide'
+    return 'word'
+
+
+def generate_file_key(file_path: str) -> str:
+    """生成文件唯一 key（用于 OnlyOffice 缓存）。"""
+    import hashlib
+    return hashlib.md5(file_path.encode()).hexdigest()
+
+
+class OnlyOfficeConfigRequest(BaseModel):
+    path: str = Field(..., description="文件路径")
+    mode: str = Field(default="edit", description="编辑模式: edit, view")
+
+
+@router.post("/onlyoffice/config")
+async def get_onlyoffice_config(
+    request: OnlyOfficeConfigRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取 OnlyOffice 编辑器配置。"""
+    try:
+        fs = get_sandboxed_fs(current_user.id, db)
+        absolute_path = fs._resolve_path(request.path)
+        
+        if not os.path.exists(absolute_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not os.path.isfile(absolute_path):
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        
+        file_name = os.path.basename(absolute_path)
+        file_ext = os.path.splitext(file_name)[1].lstrip('.').lower()
+        
+        stat = os.stat(absolute_path)
+        file_key = f"{generate_file_key(request.path)}_{int(stat.st_mtime)}"
+        
+        backend_url = "http://localhost:8990"
+        onlyoffice_url = "http://localhost:8993"
+        
+        config = {
+            "document": {
+                "fileType": file_ext,
+                "key": file_key,
+                "title": file_name,
+                "url": f"{backend_url}/api/v1/run-project/onlyoffice/download?path={request.path}",
+            },
+            "documentType": get_document_type(file_ext),
+            "editorConfig": {
+                "callbackUrl": f"{backend_url}/api/v1/run-project/onlyoffice/save?path={request.path}",
+                "user": {
+                    "id": current_user.id,
+                    "name": current_user.username or "User"
+                },
+                "mode": request.mode,
+                "lang": "zh-CN",
+                "customization": {
+                    "autosave": True,
+                    "forcesave": True,
+                    "chat": False,
+                    "comments": False,
+                    "help": True,
+                    "zoom": 100,
+                    "compactHeader": False,
+                    "toolbarNoTabs": False,
+                }
+            }
+        }
+        
+        return {
+            "code": 200,
+            "message": "OnlyOffice config retrieved",
+            "data": {
+                "config": config,
+                "documentServerUrl": onlyoffice_url
+            }
+        }
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to get OnlyOffice config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/onlyoffice/download")
+async def onlyoffice_download_file(
+    path: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """OnlyOffice 下载文件 API。"""
+    try:
+        fs = get_sandboxed_fs(current_user.id, db)
+        absolute_path = fs._resolve_path(path)
+        
+        if not os.path.exists(absolute_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not os.path.isfile(absolute_path):
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        
+        return FileResponse(
+            path=absolute_path,
+            filename=os.path.basename(absolute_path),
+        )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to download file for OnlyOffice: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/onlyoffice/save")
+async def onlyoffice_save_file(
+    path: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """OnlyOffice 保存文件回调 API。"""
+    from fastapi import Request
+    
+    try:
+        fs = get_sandboxed_fs(current_user.id, db)
+        absolute_path = fs._resolve_path(path)
+        
+        if not os.path.exists(absolute_path):
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        return {
+            "error": 0
+        }
+    except Exception as e:
+        logger.error(f"Failed to save file from OnlyOffice: {e}")
+        return {
+            "error": 1,
+            "message": str(e)
+        }

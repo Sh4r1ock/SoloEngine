@@ -1,0 +1,67 @@
+import os
+from typing import Optional
+
+class DataPaths:
+    """统一数据路径管理模块。"""
+    
+    @staticmethod
+    def get_project_root() -> str:
+        """获取项目根目录。"""
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    
+    @staticmethod
+    def get_data_root() -> str:
+        """获取data根目录。"""
+        return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "data"))
+    
+    @staticmethod
+    def to_relative_path(absolute_path: str) -> str:
+        """将绝对路径转换为相对于项目根目录的相对路径。"""
+        project_root = DataPaths.get_project_root()
+        return os.path.relpath(absolute_path, project_root)
+    
+    @staticmethod
+    def to_absolute_path(relative_path: str) -> str:
+        """将相对于项目根目录的相对路径转换为绝对路径。"""
+        project_root = DataPaths.get_project_root()
+        return os.path.abspath(os.path.join(project_root, relative_path))
+    
+    @staticmethod
+    def get_user_dir(user_id: str) -> str:
+        """获取用户根目录。"""
+        return os.path.join(DataPaths.get_data_root(), user_id)
+    
+    @staticmethod
+    def get_user_skills_dir(user_id: str) -> str:
+        """获取用户Skills目录。"""
+        return os.path.join(DataPaths.get_user_dir(user_id), "skills")
+    
+    @staticmethod
+    def get_system_skills_dir() -> str:
+        """获取系统Skills目录。"""
+        return DataPaths.get_user_skills_dir("system")
+    
+    @staticmethod
+    def get_user_agenticflow_dir(user_id: str) -> str:
+        """获取用户AgenticFlow目录。"""
+        return os.path.join(DataPaths.get_user_dir(user_id), "agenticflow")
+    
+    @staticmethod
+    def get_system_agenticflow_dir() -> str:
+        """获取系统AgenticFlow目录。"""
+        return DataPaths.get_user_agenticflow_dir("system")
+    
+    @staticmethod
+    def get_user_mcp_servers_dir(user_id: str) -> str:
+        """获取用户MCP Servers目录。"""
+        return os.path.join(DataPaths.get_user_dir(user_id), "mcp_servers")
+    
+    @staticmethod
+    def get_system_mcp_servers_dir() -> str:
+        """获取系统MCP Servers目录。"""
+        return DataPaths.get_user_mcp_servers_dir("system")
+    
+    @staticmethod
+    def ensure_dir(path: str) -> None:
+        """确保目录存在。"""
+        os.makedirs(path, exist_ok=True)

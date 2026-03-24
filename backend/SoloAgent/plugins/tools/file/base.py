@@ -46,23 +46,29 @@ class BaseFileTool:
     """
     
     @staticmethod
-    def validate_absolute_path(path: str) -> None:
+    def validate_absolute_path(path: str) -> str:
         """
-        验证路径是否为绝对路径。
+        验证路径，如果是相对路径则结合当前工作目录转换为绝对路径。
         
         Args:
             path (str): 要验证的路径。
         
+        Returns:
+            str: 绝对路径。
+        
         Raises:
-            FileToolError: 当路径不是绝对路径时抛出。
+            FileToolError: 当路径无效时抛出。
         
         Example:
             >>> BaseFileTool.validate_absolute_path("/home/user/file.txt")  # Linux
             >>> BaseFileTool.validate_absolute_path("C:\\Users\\file.txt")  # Windows
-            >>> BaseFileTool.validate_absolute_path("relative/path")  # Raises FileToolError
+            >>> BaseFileTool.validate_absolute_path("relative/path")  # 转换为绝对路径
         """
         if not os.path.isabs(path):
-            raise FileToolError(f"路径必须是绝对路径: {path}")
+            work_dir = os.getcwd()
+            path = os.path.join(work_dir, path)
+            path = os.path.normpath(path)
+        return path
     
     @staticmethod
     def ensure_directory_exists(file_path: str) -> None:

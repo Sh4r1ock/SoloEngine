@@ -682,3 +682,913 @@ pre {
 .ant-tooltip {
   border-radius: var(--radius-sm);
 }
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ==================== Property Panel Enhanced Styles ==================== */
+.property-panel-form {
+  width: 100%;
+  overflow: hidden;
+}
+
+.property-panel-divider {
+  margin: var(--spacing-lg) 0 !important;
+}
+
+.property-panel-divider .ant-divider-inner-text {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.property-panel-divider .ant-divider-inner-text .anticon {
+  color: var(--primary-100);
+}
+
+.property-panel-divider::before,
+.property-panel-divider::after {
+  border-color: var(--border-color-lighter) !important;
+}
+
+.property-panel-btn-group {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-md);
+  padding: var(--spacing-sm);
+  background: var(--bg-surface);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-color-lighter);
+}
+
+.property-panel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-base);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  border: 1px solid var(--border-color-light);
+  background: var(--bg-100);
+  color: var(--text-primary);
+  transition: all var(--duration-fast);
+}
+
+.property-panel-btn:hover {
+  border-color: var(--primary-100);
+  color: var(--primary-100);
+  background: var(--primary-300);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-xs);
+}
+
+.property-panel-btn-primary {
+  background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
+  color: white;
+  border: none;
+}
+
+.property-panel-btn-primary:hover {
+  background: linear-gradient(135deg, var(--primary-200), var(--primary-100));
+  color: white;
+  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+}
+
+.property-panel-model-card {
+  background: linear-gradient(135deg, var(--bg-surface), var(--bg-tertiary)) !important;
+  border: 1px solid var(--border-color-light) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-xs) !important;
+  margin-bottom: var(--spacing-lg) !important;
+  transition: all var(--duration-fast);
+}
+
+.property-panel-model-card:hover {
+  border-color: var(--primary-100) !important;
+  box-shadow: var(--shadow-sm) !important;
+  transform: translateY(-1px);
+}
+
+.property-panel-model-card .ant-card-body {
+  padding: var(--spacing-md) !important;
+}
+
+.property-panel-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  margin-right: 8px;
+  margin-bottom: 8px;
+}
+
+.property-panel-tag-provider-openai {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.property-panel-tag-provider-anthropic {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.property-panel-tag-provider-qwen {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.property-panel-tag-provider-ollama {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
+
+.property-panel-tag-default {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.property-panel-tag-model {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.property-panel-meta {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-color-lighter);
+}
+
+.property-panel-textarea {
+  font-family: var(--font-family-code) !important;
+  font-size: var(--font-size-sm) !important;
+  line-height: 1.6 !important;
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-color-light) !important;
+  border-radius: var(--radius-base) !important;
+  transition: all var(--duration-fast) !important;
+}
+
+.property-panel-textarea:focus {
+  background: var(--bg-100) !important;
+  border-color: var(--primary-100) !important;
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.1) !important;
+}
+
+.property-panel-textarea:hover {
+  border-color: var(--primary-100) !important;
+}
+
+.property-panel-form-item {
+  margin-bottom: var(--spacing-lg) !important;
+}
+
+.property-panel-form-item .ant-form-item-label > label {
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.property-panel-form-item .ant-input,
+.property-panel-form-item .ant-select-selector {
+  border-radius: var(--radius-base) !important;
+  transition: all var(--duration-fast) !important;
+}
+
+.property-panel-form-item .ant-input:hover,
+.property-panel-form-item .ant-select-selector:hover {
+  border-color: var(--primary-100) !important;
+}
+
+.property-panel-form-item .ant-input:focus,
+.property-panel-form-item .ant-select-focused .ant-select-selector {
+  border-color: var(--primary-100) !important;
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.1) !important;
+}
+
+.property-panel-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--primary-100);
+  padding: 4px 0;
+  transition: all var(--duration-fast);
+}
+
+.property-panel-link-btn:hover {
+  color: var(--primary-200);
+}
+
+.property-panel-switch-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--border-color-lighter);
+}
+
+.property-panel-switch-label {
+  flex: 1;
+}
+
+.property-panel-switch-title {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  display: block;
+  font-size: var(--font-size-base);
+}
+
+.property-panel-switch-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  display: block;
+  margin-top: 2px;
+}
+
+.property-panel-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color-light);
+}
+
+.property-panel-modal-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.property-panel-modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.property-panel-modal-close:hover {
+  background: var(--bg-200);
+}
+
+.property-panel-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border-color-light);
+  margin-bottom: 20px;
+}
+
+.property-panel-tab {
+  padding: 12px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-200);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s;
+}
+
+.property-panel-tab:hover {
+  color: var(--primary-100);
+}
+
+.property-panel-tab.active {
+  color: var(--primary-100);
+  border-bottom-color: var(--primary-100);
+}
+
+.property-panel-template-card {
+  padding: 16px;
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-base);
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.property-panel-template-card:hover {
+  border-color: var(--primary-100);
+  box-shadow: var(--shadow-sm);
+}
+
+.property-panel-template-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.property-panel-template-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.property-panel-template-card-desc {
+  font-size: 12px;
+  color: var(--text-300);
+  margin-bottom: 8px;
+}
+
+.property-panel-template-card-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.property-panel-preview-section {
+  margin-bottom: 16px;
+}
+
+.property-panel-preview-section:last-child {
+  margin-bottom: 0;
+}
+
+.property-panel-preview-label {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.property-panel-preview-box {
+  background: var(--bg-surface);
+  border-radius: var(--radius-base);
+  padding: 12px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.property-panel-preview-box.blue {
+  background: #e6f7ff;
+}
+
+.property-panel-preview-box pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.property-panel-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: var(--bg-100);
+  padding: 12px 24px;
+  border-radius: var(--radius-base);
+  box-shadow: var(--shadow-lg);
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.property-panel-toast.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.property-panel-toast.success {
+  border-left: 3px solid var(--success);
+}
+
+.property-panel-toast.warning {
+  border-left: 3px solid var(--warning);
+}
+
+.property-panel-toast.error {
+  border-left: 3px solid var(--error);
+}
+
+/* ============= FINAL FIX FOR PROPERTY PANEL ============= */
+
+/* Force all elements to fit within container */
+.property-panel-form {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.property-panel-form * {
+  box-sizing: border-box !important;
+}
+
+/* Fix Select component - ABSOLUTE FIX */
+.property-panel-form .ant-select {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.property-panel-form .ant-select .ant-select-selector {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.property-panel-form .ant-select .ant-select-selection-overflow {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Fix Tag overflow - make sure tags fit properly */
+.property-panel-form .ant-tag {
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+}
+
+/* Fix Form.Item - COMPLETE FIX */
+.property-panel-form-item {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-bottom: 20px !important;
+  overflow: hidden !important;
+}
+
+.property-panel-form-item .ant-form-item-label {
+  padding-bottom: 8px !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+.property-panel-form-item .ant-form-item-label > label {
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  line-height: 1.4 !important;
+  font-size: 14px !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+/* Fix Form.Item control */
+.property-panel-form-item .ant-form-item-control {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.property-panel-form-item .ant-form-item-control-input {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Fix Input width */
+.property-panel-form .ant-input,
+.property-panel-form .ant-input-number,
+.property-panel-form .ant-picker {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* Fix TextArea */
+.property-panel-textarea {
+  width: 100% !important;
+  max-width: 100% !important;
+  resize: vertical !important;
+}
+
+/* Fix Switch wrapper */
+.property-panel-switch-wrapper {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Fix Button group */
+.property-panel-btn-group {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  flex-wrap: wrap !important;
+}
+
+/* Fix Model card */
+.property-panel-model-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Fix Form.Item extra text - FINAL FIX */
+.property-panel-form .ant-form-item-extra {
+  margin-top: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: var(--text-tertiary) !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+/* Fix divider alignment */
+.property-panel-divider {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 24px 0 !important;
+  overflow: hidden !important;
+}
+
+/* Fix Form.Item row */
+.property-panel-form-item .ant-row {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+}
+
+/* Fix all containers */
+.property-panel-form > div,
+.property-panel-form > .ant-form-item,
+.property-panel-form .ant-card,
+.property-panel-form .ant-select-dropdown {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* Ensure everything stays inside */
+.property-panel-form .ant-col {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+/* ============= COMPLETE FIX FOR SELECT MULTIPLE TAGS ============= */
+
+/* Fix Select multiple mode - ensure tags show only 1 row */
+.property-panel-form .ant-select-multiple .ant-select-selector {
+  flex-wrap: nowrap !important;
+  align-content: center !important;
+  min-height: 40px !important;
+  height: 40px !important;
+  padding: 0 11px !important;
+  overflow: hidden !important;
+}
+
+/* Fix selection overflow container - single row only */
+.property-panel-form .ant-select-multiple .ant-select-selection-overflow {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 4px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  align-items: center !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Fix individual tag items - truncate long tags */
+.property-panel-form .ant-select-multiple .ant-select-selection-item {
+  margin: 0 !important;
+  margin-inline-end: 4px !important;
+  flex-shrink: 1 !important;
+  max-width: 120px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+/* Fix search input */
+.property-panel-form .ant-select-multiple .ant-select-selection-search {
+  position: relative !important;
+  flex: 0 0 auto !important;
+  min-width: 50px !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+}
+
+.property-panel-form .ant-select-multiple .ant-select-selection-search-input {
+  width: 100% !important;
+}
+
+/* Fix placeholder */
+.property-panel-form .ant-select-multiple .ant-select-selection-placeholder {
+  position: absolute !important;
+  top: 50% !important;
+  left: 11px !important;
+  right: 11px !important;
+  transform: translateY(-50%) !important;
+  width: auto !important;
+  padding: 0 !important;
+  line-height: normal !important;
+}
+
+/* Ensure Select component container doesn't overflow */
+.property-panel-form .ant-select {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* ============= FIX FOR SIDER WIDTH ============= */
+
+/* Ensure Sider uses the correct width - DO NOT override flex property */
+
+/* Fix for property panel container */
+.property-panel-form {
+  padding-right: 0 !important;
+}
+
+/* ============= RESPONSIVE FIXES ============= */
+
+/* Ensure all elements fit in narrow panels */
+@media (max-width: 400px) {
+  .property-panel-form .ant-btn {
+    font-size: 12px !important;
+    padding: 0 8px !important;
+  }
+  
+  .property-panel-btn-group {
+    padding: 8px !important;
+  }
+  
+  .property-panel-form-item {
+    margin-bottom: 16px !important;
+  }
+}
+
+/* ============= COMPLETE FORM.ITEM FIX ============= */
+
+/* Ensure Form.Item layout is correct */
+.property-panel-form-item {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin-bottom: 20px !important;
+  overflow: visible !important;
+}
+
+/* Fix Form.Item label - ensure proper alignment */
+.property-panel-form-item .ant-form-item-label {
+  padding: 0 0 8px 0 !important;
+  width: 100% !important;
+  text-align: left !important;
+  overflow: visible !important;
+}
+
+.property-panel-form-item .ant-form-item-label > label {
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+  line-height: 1.4 !important;
+  font-size: 14px !important;
+  width: 100% !important;
+  text-align: left !important;
+  height: auto !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* Fix Form.Item required mark */
+.property-panel-form-item .ant-form-item-label > label.ant-form-item-required:not(.ant-form-item-required-mark-optional)::before {
+  margin-right: 4px !important;
+  display: inline-flex !important;
+}
+
+/* Fix Form.Item control */
+.property-panel-form-item .ant-form-item-control {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: visible !important;
+}
+
+.property-panel-form-item .ant-form-item-control-input {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-height: 40px !important;
+}
+
+/* Fix Form.Item extra text */
+.property-panel-form .ant-form-item-extra {
+  margin-top: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: var(--text-tertiary) !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  width: 100% !important;
+  text-align: left !important;
+  overflow: visible !important;
+}
+
+/* Fix Form.Item error message */
+.property-panel-form .ant-form-item-explain-error {
+  margin-top: 4px !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: var(--error-color) !important;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+/* ============= OVERFLOW PREVENTION ============= */
+
+/* Ensure no horizontal overflow */
+.property-panel-form {
+  overflow-x: hidden !important;
+  overflow-y: visible !important;
+}
+
+/* All children should respect box-sizing */
+.property-panel-form * {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+}
+
+/* Prevent text overflow */
+.property-panel-form .ant-typography {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+/* Fix Divider */
+.property-panel-divider {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 24px 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Fix Card */
+.property-panel-model-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Fix Button Group */
+.property-panel-btn-group {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  flex-wrap: wrap !important;
+  overflow: hidden !important;
+}
+
+/* Fix Switch wrapper */
+.property-panel-switch-wrapper {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Fix TextArea */
+.property-panel-textarea {
+  width: 100% !important;
+  max-width: 100% !important;
+  resize: vertical !important;
+  box-sizing: border-box !important;
+  font-family: var(--font-family) !important;
+  font-size: var(--font-size-base) !important;
+  line-height: 1.6 !important;
+  background: var(--bg-100) !important;
+  border: 1px solid var(--bg-300) !important;
+  border-radius: var(--radius-base) !important;
+  padding: 8px 12px !important;
+  transition: all var(--duration-fast) !important;
+}
+
+/* Fix TextArea placeholder - match Input style */
+.property-panel-textarea::placeholder {
+  color: rgba(0, 0, 0, 0.25) !important;
+  font-family: var(--font-family) !important;
+  font-size: var(--font-size-base) !important;
+  line-height: 1.6 !important;
+}
+
+.property-panel-textarea:focus {
+  background: var(--bg-100) !important;
+  border-color: var(--primary-100) !important;
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.1) !important;
+  outline: none !important;
+}
+
+.property-panel-textarea:hover {
+  border-color: var(--primary-100) !important;
+}
+
+/* Fix Input and InputNumber */
+.property-panel-form .ant-input,
+.property-panel-form .ant-input-number,
+.property-panel-form .ant-picker {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Fix InputNumber wrapper */
+.property-panel-form .ant-input-number {
+  width: 100% !important;
+}
+
+.property-panel-form .ant-input-number-input-wrap {
+  width: 100% !important;
+}
+
+/* Fix Row and Col */
+.property-panel-form-item .ant-row {
+  width: 100% !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.property-panel-form .ant-col {
+  max-width: 100% !important;
+  width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* ============= SCROLLBAR AND CONTENT AREA ============= */
+
+/* Ensure the sider content area scrolls properly */
+.ant-layout-sider-children {
+  overflow: hidden !important;
+}
+
+.ant-layout-sider-children > div {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.custom-scrollbar {
+  flex: 1 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* Better scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--bg-secondary) !important;
+  border-radius: 4px !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--bg-300) !important;
+  border-radius: 4px !important;
+  transition: background 0.2s !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--text-300) !important;
+}
+
+

@@ -1,0 +1,81 @@
+{
+  "nodes": [
+    {
+      "id": "node_1773897210093",
+      "type": "agent",
+      "position": {
+        "x": 860,
+        "y": 400
+      },
+      "data": {
+        "name": "新协调者",
+        "desc": "",
+        "agentType": "orchestrator",
+        "system_prompt": "帮我列出当前目录的文件\n",
+        "user_prompt": "",
+        "skills": [
+          "test",
+          "algorithmic-art",
+          "brand-guidelines",
+          "canvas-design",
+          "doc-coauthoring",
+          "docx",
+          "frontend-design",
+          "internal-comms",
+          "mcp-builder",
+          "pdf",
+          "pptx",
+          "skill-creator",
+          "slack-gif-creator",
+          "theme-factory",
+          "web-artifacts-builder",
+          "webapp-testing",
+          "xlsx"
+        ],
+        "llm_config_id": "70a10f67-e13f-4b52-ac89-b223d5bc0b3f",
+        "model_config": {
+          "config_id": "70a10f67-e13f-4b52-ac89-b223d5bc0b3f",
+          "config_name": "DeepSeek-Reasoner",
+          "provider": "deepseek",
+          "model": "deepseek-reasoner"
+        },
+        "mcp_tools": [],
+        "tools": [
+          "Read",
+          "Write",
+          "DeleteFile",
+          "LS",
+          "Grep",
+          "Glob",
+          "SearchCodebase",
+          "RunCommand",
+          "CheckCommandStatus",
+          "StopCommand",
+          "GetDiagnostics",
+          "WebFetch",
+          "WebSearch",
+          "Skill",
+          "Task",
+          "TodoWrite",
+          "AskUserQuestion",
+          "OpenPreview"
+        ],
+        "memory": true
+      },
+      "width": 222,
+      "height": 125,
+      "selected": true,
+      "positionAbsolute": {
+        "x": 860,
+        "y": 400
+      },
+      "dragging": false
+    }
+  ],
+  "edges": [],
+  "globalSettings": {
+    "maxContextLength": 4096,
+    "maxIterations": 100,
+    "timeout": 30000
+  }
+}

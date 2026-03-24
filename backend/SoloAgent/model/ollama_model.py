@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Ollama local model chat class."""
 import asyncio
+import json
 from datetime import datetime
 from typing import (
     Any,
@@ -199,6 +200,7 @@ class OllamaChatModel(ChatModelBase):
         tool_calls = OrderedDict()
         last_text = ""  # 记录上次输出的文本，用于计算增量
         last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
+        last_tool_calls = OrderedDict()  # 记录上次输出的工具调用，用于计算增量
 
         try:
             async for line in response.aiter_lines():
@@ -262,15 +264,69 @@ class OllamaChatModel(ChatModelBase):
                             ),
                         )
                         last_text = text
-                    for tool_call in tool_calls.values():
-                        contents.append(
-                            SoloToolUseBlock(
-                                type=tool_call["type"],
-                                id=tool_call["id"],
-                                name=tool_call["name"],
-                                input=tool_call["input"],
-                            ),
-                        )
+                    
+                    # 工具调用输出增量格式，而非完整 ToolUseBlock
+                    # 由 ReActCore 的 ToolCallEventManager 管理状态
+                    for tool_id, tool_call in tool_calls.items():
+                        index = list(tool_calls.keys()).index(tool_id)
+                        last_call = last_tool_calls.get(tool_id)
+                        tool_call_chunks = []
+                        
+                        if last_call is None:
+                            # 新工具调用开始
+                            # 第一个 chunk：包含 id 和 name，arguments 可能为空
+                            tool_call_chunks.append({
+                                "index": index,
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call["name"],
+                                    "arguments": "",
+                                }
+                            })
+                            logger.info(f"[Ollama] Tool call start: index={index}, id={tool_id}, name={tool_call.get('name')}")
+                            
+                            # 如果有 arguments，单独发送
+                            if tool_call.get("input"):
+                                args_str = json.dumps(tool_call["input"], ensure_ascii=False)
+                                tool_call_chunks.append({
+                                    "index": index,
+                                    "id": None,
+                                    "type": "function",
+                                    "function": {
+                                        "name": None,
+                                        "arguments": args_str,
+                                    }
+                                })
+                                logger.info(f"[Ollama] Tool call initial args: index={index}, args={args_str[:50]}...")
+                        else:
+                            # 后续增量：只包含 arguments 增量
+                            current_input = tool_call.get("input", {})
+                            last_input = last_call.get("input", {})
+                            current_args = json.dumps(current_input, ensure_ascii=False)
+                            last_args = json.dumps(last_input, ensure_ascii=False)
+                            if current_args and len(current_args) > len(last_args):
+                                delta_args = current_args[len(last_args):]
+                                if delta_args:
+                                    tool_call_chunks.append({
+                                        "index": index,
+                                        "id": None,
+                                        "type": "function",
+                                        "function": {
+                                            "name": None,
+                                            "arguments": delta_args,
+                                        }
+                                    })
+                                    logger.info(f"[Ollama] Tool call args delta: index={index}, delta={delta_args[:50]}...")
+                        
+                        for chunk_data in tool_call_chunks:
+                            contents.append({
+                                "type": "tool_calls",
+                                "tool_calls": [chunk_data],
+                            })
+                    
+                    last_tool_calls = OrderedDict(tool_calls)
+                    
                     if contents:
                         yield ChatResponse(
                             content=contents,
@@ -365,6 +421,10 @@ class OllamaChatModel(ChatModelBase):
                 output_tokens=data.get("eval_count", 0),
                 time=(datetime.now() - start_datetime).total_seconds(),
             )
+
+        metadata = metadata or {}
+        metadata['original_model_message'] = data
+        metadata['provider'] = 'ollama'
 
         return ChatResponse(
             content=content_blocks,

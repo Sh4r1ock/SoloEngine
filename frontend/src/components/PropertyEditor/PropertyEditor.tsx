@@ -24,19 +24,43 @@
  * - 配置数据存储在节点数据的 llm_config_id 字段
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Form, Input, Select, Button, Typography, Divider, message, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert } from 'antd';
-import { ReloadOutlined, ToolOutlined, FolderOutlined, PlayCircleOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
+import { Form, Input, Select, Button, Typography, Divider, message, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
+import { ReloadOutlined, ToolOutlined, FolderOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { useParams } from 'react-router-dom';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useMCPStore } from '../../store/mcpStore';
+import { useRunStore } from '../../store/runStore';
 import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import { mcpApi, MCPTool } from '../../services/mcpApi';
 import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
+import { toolsApi, ToolInfo } from '../../services/toolsApi';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
+
+const SOLOAGENT_TOOLS = [
+  { name: 'Read', description: '读取文件内容' },
+  { name: 'Write', description: '写入文件内容' },
+  { name: 'DeleteFile', description: '删除文件' },
+  { name: 'LS', description: '列出目录内容' },
+  { name: 'Grep', description: '搜索文件内容' },
+  { name: 'Glob', description: '模式匹配文件' },
+  { name: 'SearchCodebase', description: '搜索代码库' },
+  { name: 'RunCommand', description: '运行系统命令' },
+  { name: 'CheckCommandStatus', description: '检查命令状态' },
+  { name: 'StopCommand', description: '停止命令执行' },
+  { name: 'GetDiagnostics', description: '获取诊断信息' },
+  { name: 'WebFetch', description: '获取网页内容' },
+  { name: 'WebSearch', description: '网络搜索' },
+  { name: 'Skill', description: '调用技能' },
+  { name: 'Task', description: '调用子Agent任务' },
+  { name: 'TodoWrite', description: '管理待办事项' },
+  { name: 'AskUserQuestion', description: '询问用户问题' },
+  { name: 'OpenPreview', description: '打开预览' },
+];
 
 interface PromptTemplate {
   id: string;
@@ -167,6 +191,9 @@ const PropertyPanel: React.FC = () => {
   const { selectedNode, updateNode, nodes, edges, saveCanvas } = useCanvasStore();
   const { loadServers, servers } = useMCPStore();
   const [form] = Form.useForm();
+  const { projectId } = useParams<{ projectId: string }>();
+  const { currentSessionId } = useRunStore();
+  
   const [showAssistantPrompt, setShowAssistantPrompt] = useState(false);
   const saveTimeoutRef = useRef<number | null>(null);
   
@@ -174,11 +201,8 @@ const PropertyPanel: React.FC = () => {
   const [mcpTools, setMcpTools] = useState<MCPTool[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [loadingTools, setLoadingTools] = useState(false);
-  
-  const [testModalVisible, setTestModalVisible] = useState(false);
-  const [testInput, setTestInput] = useState('');
-  const [testResult, setTestResult] = useState<any>(null);
-  const [testLoading, setTestLoading] = useState(false);
+  const [localTools, setLocalTools] = useState<ToolInfo[]>([]);
+  const [loadingLocalTools, setLoadingLocalTools] = useState(false);
   
   const [templateModalVisible, setTemplateModalVisible] = useState(false);
   const [previewContent, setPreviewContent] = useState('');
@@ -204,6 +228,8 @@ const PropertyPanel: React.FC = () => {
         assistant_prompt: selectedNode.data.assistant_prompt || '',
         skills: selectedNode.data.skills || [],
         mcp_tools: selectedNode.data.mcp_tools || [],
+        tools: selectedNode.data.tools || [],
+        memory: selectedNode.data.memory !== undefined ? selectedNode.data.memory : true,
       });
       
       if (selectedNode.data.llm_config_id) {
@@ -303,9 +329,24 @@ const PropertyPanel: React.FC = () => {
     }
   };
 
+  const loadLocalTools = async () => {
+    setLoadingLocalTools(true);
+    try {
+      const response = await toolsApi.getTools();
+      if (response.code === 200 && response.data) {
+        setLocalTools(response.data);
+      }
+    } catch (error) {
+      console.error('Failed to load local tools:', error);
+    } finally {
+      setLoadingLocalTools(false);
+    }
+  };
+
   useEffect(() => {
     loadSkillsPackages();
     loadMCPTools();
+    loadLocalTools();
     loadServers();
   }, []);
 
@@ -332,6 +373,8 @@ const PropertyPanel: React.FC = () => {
         } : undefined,
         skills: values.skills || [],
         mcp_tools: values.mcp_tools || [],
+        tools: values.tools || [],
+        memory: values.memory,
       });
     } catch (error) {
       message.error('保存失败，请重试');
@@ -386,41 +429,6 @@ const PropertyPanel: React.FC = () => {
     } else if (agentType === 'executor') {
       const prompt = generateExecutorPrompt(selectedNode as any);
       form.setFieldsValue({ system_prompt: prompt });
-    }
-  };
-
-  const handleTestNode = async () => {
-    if (!selectedNode || !testInput.trim()) {
-      message.warning('请输入测试输入');
-      return;
-    }
-
-    setTestLoading(true);
-    setTestResult(null);
-
-    try {
-      const canvasData = {
-        nodes: [selectedNode],
-        edges: []
-      };
-
-      const result = await runApi.executeNode(
-        canvasData,
-        selectedNode.id,
-        testInput,
-        {}
-      );
-
-      setTestResult(result);
-      message.success('节点测试完成');
-    } catch (error: any) {
-      setTestResult({
-        status: 'error',
-        error: error.message || '测试执行失败'
-      });
-      message.error('节点测试失败');
-    } finally {
-      setTestLoading(false);
     }
   };
 
@@ -547,16 +555,30 @@ const PropertyPanel: React.FC = () => {
 
   return (
     <>
-      <Form form={form} layout="vertical" onValuesChange={handleValuesChange}>
-        <Form.Item label="节点名称" name="name" rules={[{ required: true, message: '请输入节点名称' }]}>
+      <Form form={form} layout="vertical" onValuesChange={handleValuesChange} className="property-panel-form">
+        <Form.Item 
+          label="节点名称" 
+          name="name" 
+          rules={[{ required: true, message: '请输入节点名称' }]}
+          className="property-panel-form-item"
+        >
           <Input placeholder="请输入节点名称" />
         </Form.Item>
 
-        <Form.Item label="节点简介" name="desc">
+        <Form.Item 
+          label="节点简介" 
+          name="desc"
+          className="property-panel-form-item"
+        >
           <Input placeholder="请输入节点简介" />
         </Form.Item>
 
-        <Form.Item label="Agent 类型" name="agentType" rules={[{ required: true, message: '请选择 Agent 类型' }]}>
+        <Form.Item 
+          label="Agent 类型" 
+          name="agentType" 
+          rules={[{ required: true, message: '请选择 Agent 类型' }]}
+          className="property-panel-form-item"
+        >
           <Select>
             <Select.Option value="orchestrator">协调者</Select.Option>
             <Select.Option value="planner">规划者</Select.Option>
@@ -564,11 +586,28 @@ const PropertyPanel: React.FC = () => {
           </Select>
         </Form.Item>
 
-        <Divider>模型配置</Divider>
+        <Form.Item 
+          name="memory"
+          valuePropName="checked"
+          className="property-panel-form-item"
+        >
+          <div className="property-panel-switch-wrapper">
+            <div className="property-panel-switch-label">
+              <span className="property-panel-switch-title">启用记忆</span>
+              <span className="property-panel-switch-desc">
+                启用后，对话历史将保存到数据库，支持多轮对话上下文
+              </span>
+            </div>
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </div>
+        </Form.Item>
+
+        <Divider className="property-panel-divider">模型配置</Divider>
 
         <Form.Item 
           label="LLM配置" 
           name="llm_config_id"
+          className="property-panel-form-item"
           extra={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <span style={{ fontSize: 12, color: '#999' }}>
@@ -579,6 +618,7 @@ const PropertyPanel: React.FC = () => {
                 size="small" 
                 icon={<SettingOutlined />}
                 onClick={() => window.open('/mainmenu/llm', '_blank')}
+                className="property-panel-link-btn"
               >
                 管理配置
               </Button>
@@ -592,41 +632,39 @@ const PropertyPanel: React.FC = () => {
         </Form.Item>
 
         {selectedLLMConfig && (
-          <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
+          <Card size="small" className="property-panel-model-card">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <Tag color={
-                selectedLLMConfig.provider === 'openai' ? 'blue' :
-                selectedLLMConfig.provider === 'anthropic' ? 'orange' :
-                selectedLLMConfig.provider === 'qwen' ? 'green' : 'purple'
-              }>
+              <Tag className={`property-panel-tag property-panel-tag-provider-${selectedLLMConfig.provider}`}>
                 {selectedLLMConfig.provider}
               </Tag>
-              <Tag>{selectedLLMConfig.model_name}</Tag>
+              <Tag className="property-panel-tag property-panel-tag-model">
+                {selectedLLMConfig.model_name}
+              </Tag>
               {selectedLLMConfig.is_default && (
-                <Tag color="gold">默认</Tag>
+                <Tag className="property-panel-tag property-panel-tag-default">
+                  默认
+                </Tag>
               )}
-              <span style={{ fontSize: 12, color: '#999' }}>
-                温度: {selectedLLMConfig.temperature} | 
-                最大Token: {selectedLLMConfig.max_tokens}
-              </span>
+            </div>
+            <div className="property-panel-meta">
+              <span>🌡️ 温度: {selectedLLMConfig.temperature}</span>
+              <span>📊 最大Token: {selectedLLMConfig.max_tokens}</span>
             </div>
           </Card>
         )}
 
-        <Divider>提示词配置</Divider>
+        <Divider className="property-panel-divider">提示词配置</Divider>
 
-        <div style={{ marginBottom: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div className="property-panel-btn-group">
           <Button 
-            type="default" 
-            size="small"
+            className="property-panel-btn property-panel-btn-primary"
             onClick={generateSmartPrompt}
             icon={<ThunderboltOutlined />}
           >
             智能生成
           </Button>
           <Button 
-            type="default" 
-            size="small"
+            className="property-panel-btn"
             onClick={() => setTemplateModalVisible(true)}
             icon={<BookOutlined />}
           >
@@ -649,13 +687,12 @@ const PropertyPanel: React.FC = () => {
             title="变量说明"
             trigger="click"
           >
-            <Button type="default" size="small">
+            <Button className="property-panel-btn">
               变量说明
             </Button>
           </Popover>
           <Button 
-            type="default" 
-            size="small"
+            className="property-panel-btn"
             onClick={handlePreviewInterpolation}
             icon={<EyeOutlined />}
           >
@@ -667,16 +704,26 @@ const PropertyPanel: React.FC = () => {
           label="System Prompt"
           name="system_prompt"
           extra="支持变量插值，如 {available_agents}"
+          className="property-panel-form-item"
         >
-          <TextArea rows={4} placeholder="请输入系统提示词" />
+          <TextArea 
+            className="property-panel-textarea"
+            rows={4} 
+            placeholder="请输入系统提示词" 
+          />
         </Form.Item>
 
         <Form.Item
           label="User Prompt"
           name="user_prompt"
           extra="支持变量插值，如 {user_input}"
+          className="property-panel-form-item"
         >
-          <TextArea rows={3} placeholder="请输入用户提示词" />
+          <TextArea 
+            className="property-panel-textarea"
+            rows={3} 
+            placeholder="请输入用户提示词" 
+          />
         </Form.Item>
 
         {showAssistantPrompt && (
@@ -684,8 +731,13 @@ const PropertyPanel: React.FC = () => {
             label="Assistant Prompt"
             name="assistant_prompt"
             extra="支持变量插值，如 {execution_history}"
+            className="property-panel-form-item"
           >
-            <TextArea rows={3} placeholder="请输入助手提示词" />
+            <TextArea 
+              className="property-panel-textarea"
+              rows={3} 
+              placeholder="请输入助手提示词" 
+            />
           </Form.Item>
         )}
 
@@ -693,26 +745,13 @@ const PropertyPanel: React.FC = () => {
           type="link" 
           size="small" 
           onClick={() => setShowAssistantPrompt(!showAssistantPrompt)}
+          className="property-panel-link-btn"
           style={{ marginBottom: 16 }}
         >
           {showAssistantPrompt ? '隐藏' : '显示'} Assistant Prompt
         </Button>
 
-        <Divider>
-          <PlayCircleOutlined style={{ marginRight: 8 }} />
-          节点测试
-        </Divider>
-
-        <Button 
-          type="primary" 
-          onClick={() => setTestModalVisible(true)}
-          icon={<PlayCircleOutlined />}
-          style={{ marginBottom: 16 }}
-        >
-          测试节点
-        </Button>
-
-        <Divider>
+        <Divider className="property-panel-divider">
           <FolderOutlined style={{ marginRight: 8 }} />
           Skills 包绑定
         </Divider>
@@ -720,6 +759,7 @@ const PropertyPanel: React.FC = () => {
         <Form.Item 
           label="绑定的 Skills 包" 
           name="skills"
+          className="property-panel-form-item"
           extra={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>从主菜单管理 Skills 包</span>
@@ -729,6 +769,7 @@ const PropertyPanel: React.FC = () => {
                 icon={<ReloadOutlined />} 
                 onClick={loadSkillsPackages}
                 loading={loadingSkills}
+                className="property-panel-link-btn"
               >
                 刷新
               </Button>
@@ -760,7 +801,57 @@ const PropertyPanel: React.FC = () => {
           </Select>
         </Form.Item>
 
-        <Divider>
+        <Divider className="property-panel-divider">
+          <ToolOutlined style={{ marginRight: 8 }} />
+          本地工具绑定
+        </Divider>
+
+        <Form.Item 
+          label="绑定的本地工具" 
+          name="tools"
+          className="property-panel-form-item"
+          extra={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>SoloAgent 内置工具</span>
+              <Button 
+                type="link" 
+                size="small" 
+                icon={<ReloadOutlined />} 
+                onClick={loadLocalTools}
+                loading={loadingLocalTools}
+                className="property-panel-link-btn"
+              >
+                刷新
+              </Button>
+            </div>
+          }
+        >
+          <Select 
+            mode="multiple" 
+            placeholder={loadingLocalTools ? "加载中..." : "请选择本地工具"}
+            loading={loadingLocalTools}
+            optionLabelProp="label"
+          >
+            {SOLOAGENT_TOOLS.map(tool => (
+              <Select.Option 
+                key={tool.name} 
+                value={tool.name}
+                label={tool.name}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span>{tool.name}</span>
+                  {tool.description && (
+                    <span style={{ fontSize: 12, color: '#999' }}>
+                      {tool.description}
+                    </span>
+                  )}
+                </div>
+              </Select.Option>
+            ))}
+          </Select>
+        </Form.Item>
+
+        <Divider className="property-panel-divider">
           <ToolOutlined style={{ marginRight: 8 }} />
           MCP 工具绑定
         </Divider>
@@ -768,6 +859,7 @@ const PropertyPanel: React.FC = () => {
         <Form.Item 
           label="绑定的 MCP 工具" 
           name="mcp_tools"
+          className="property-panel-form-item"
           extra={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>从主菜单管理 MCP 服务器</span>
@@ -777,6 +869,7 @@ const PropertyPanel: React.FC = () => {
                 icon={<ReloadOutlined />} 
                 onClick={loadMCPTools}
                 loading={loadingTools}
+                className="property-panel-link-btn"
               >
                 刷新
               </Button>
@@ -815,84 +908,6 @@ const PropertyPanel: React.FC = () => {
       </Form>
 
       <Modal
-        title="节点测试"
-        open={testModalVisible}
-        onCancel={() => {
-          setTestModalVisible(false);
-          setTestResult(null);
-          setTestInput('');
-        }}
-        footer={[
-          <Button key="cancel" onClick={() => setTestModalVisible(false)}>
-            关闭
-          </Button>,
-          <Button 
-            key="test" 
-            type="primary" 
-            onClick={handleTestNode}
-            loading={testLoading}
-          >
-            执行测试
-          </Button>,
-        ]}
-        width={700}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <Text strong>测试输入:</Text>
-          <TextArea
-            rows={3}
-            value={testInput}
-            onChange={(e) => setTestInput(e.target.value)}
-            placeholder="请输入测试内容..."
-            style={{ marginTop: 8 }}
-          />
-        </div>
-
-        <div style={{ marginBottom: 16 }}>
-          <Text strong>节点配置:</Text>
-          <Card size="small" style={{ marginTop: 8, background: '#f5f5f5' }}>
-            <div><Text type="secondary">名称:</Text> {selectedNode?.data.name}</div>
-            <div><Text type="secondary">类型:</Text> {selectedNode?.data.agentType}</div>
-            <div>
-              <Text type="secondary">模型:</Text>{' '}
-              {selectedLLMConfig ? (
-                <span>
-                  {selectedLLMConfig.name} ({selectedLLMConfig.provider}/{selectedLLMConfig.model_name})
-                </span>
-              ) : (
-                <span style={{ color: '#ff4d4f' }}>未配置</span>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {testResult && (
-          <div>
-            <Text strong>测试结果:</Text>
-            <Card 
-              size="small" 
-              style={{ 
-                marginTop: 8, 
-                background: testResult.status === 'error' ? '#fff2f0' : '#f6ffed',
-                maxHeight: 300,
-                overflow: 'auto'
-              }}
-            >
-              {testResult.status === 'error' ? (
-                <Text type="danger">{testResult.error}</Text>
-              ) : (
-                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                  {typeof testResult.output === 'string' 
-                    ? testResult.output 
-                    : JSON.stringify(testResult, null, 2)}
-                </pre>
-              )}
-            </Card>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
         title="提示词模板库"
         open={templateModalVisible}
         onCancel={() => setTemplateModalVisible(false)}
@@ -912,6 +927,7 @@ const PropertyPanel: React.FC = () => {
                       size="small"
                       hoverable
                       onClick={() => handleApplyTemplate(template)}
+                      className="property-panel-template-card"
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
@@ -926,7 +942,7 @@ const PropertyPanel: React.FC = () => {
                             ))}
                           </div>
                         </div>
-                        <Button type="link">应用</Button>
+                        <Button type="link" className="property-panel-link-btn">应用</Button>
                       </div>
                     </Card>
                   ))}
@@ -944,6 +960,7 @@ const PropertyPanel: React.FC = () => {
                       size="small"
                       hoverable
                       onClick={() => handleApplyTemplate(template)}
+                      className="property-panel-template-card"
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
@@ -960,7 +977,7 @@ const PropertyPanel: React.FC = () => {
                             {template.description}
                           </Text>
                         </div>
-                        <Button type="link">应用</Button>
+                        <Button type="link" className="property-panel-link-btn">应用</Button>
                       </div>
                     </Card>
                   ))}
@@ -982,18 +999,18 @@ const PropertyPanel: React.FC = () => {
         ]}
         width={600}
       >
-        <div style={{ marginBottom: 16 }}>
+        <div className="property-panel-preview-section">
           <Text strong>原始提示词:</Text>
-          <Card size="small" style={{ marginTop: 8, background: '#f5f5f5', maxHeight: 150, overflow: 'auto' }}>
+          <Card size="small" style={{ marginTop: 8, background: '#f5f5f5', maxHeight: 150, overflow: 'auto' }} className="property-panel-preview-box">
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
               {form.getFieldValue('system_prompt')}
             </pre>
           </Card>
         </div>
         
-        <div>
+        <div className="property-panel-preview-section">
           <Text strong>插值后预览:</Text>
-          <Card size="small" style={{ marginTop: 8, background: '#e6f7ff', maxHeight: 200, overflow: 'auto' }}>
+          <Card size="small" style={{ marginTop: 8, background: '#e6f7ff', maxHeight: 200, overflow: 'auto' }} className="property-panel-preview-box blue">
             <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
               {previewContent}
             </pre>

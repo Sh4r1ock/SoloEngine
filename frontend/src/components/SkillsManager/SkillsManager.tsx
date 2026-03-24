@@ -1,34 +1,22 @@
-/**
- * @file SkillsManager.tsx
- * @description Skills管理器主组件 - Skills包管理核心组件
- * @author SoloEngine Team
- * @date 2026-02-19
- */
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Typography, Button, Space, Modal, message, Empty, Spin, Input, Select } from 'antd';
-import {
-  PlusOutlined,
-  UploadOutlined,
-  FolderOpenOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
+import { Typography, Modal, message, Empty, Spin, Input } from 'antd';
+import { FolderOpenOutlined } from '@ant-design/icons';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import SkillsPackageList from './SkillsPackageList';
 import SkillsCreateModal from './SkillsCreateModal';
 import SkillsImportDialog from './SkillsImportDialog';
+import PageHeader from '../common/PageHeader';
+import { getDefaultIcon } from '../../utils/iconLibrary';
 
-const { Title, Text } = Typography;
-const { Search } = Input;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 const SkillsManager: React.FC = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [packages, setPackages] = useState<SkillsPackage[]>([]);
   const [filteredPackages, setFilteredPackages] = useState<SkillsPackage[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [editInfoModalVisible, setEditInfoModalVisible] = useState(false);
@@ -119,13 +107,39 @@ const SkillsManager: React.FC = () => {
     }
   };
 
+  const handleTagToggle = (tag: string) => {
+    setSelectedTags(prev => {
+      if (prev.includes(tag)) {
+        return prev.filter(t => t !== tag);
+      } else {
+        return [...prev, tag];
+      }
+    });
+  };
+
+  const handleViewDetail = (pkg: SkillsPackage) => {
+    const url = `/skills-editor/${pkg.id}`;
+    window.open(url, '_blank', 'width=1400,height=900,menubar=no,toolbar=no,location=no,status=no');
+  };
+
+  const allTags = Array.from(new Set(
+    packages.flatMap(pkg => [
+      ...(pkg.is_default ? ['system'] : []),
+      ...(pkg.tags || []),
+    ])
+  )).sort();
+
   useEffect(() => {
     let result = packages;
 
-    if (statusFilter !== 'all') {
-      result = result.filter(pkg =>
-        statusFilter === 'active' ? pkg.is_active : !pkg.is_active
-      );
+    if (selectedTags.length > 0) {
+      result = result.filter(pkg => {
+        const pkgTags = [
+          ...(pkg.is_default ? ['system'] : []),
+          ...(pkg.tags || []),
+        ];
+        return selectedTags.some(tag => pkgTags.includes(tag));
+      });
     }
 
     if (searchQuery) {
@@ -141,71 +155,51 @@ const SkillsManager: React.FC = () => {
     }
 
     setFilteredPackages(result);
-  }, [searchQuery, statusFilter, packages]);
-
-  const handleViewDetail = (pkg: SkillsPackage) => {
-    const url = `/skills-editor/${pkg.id}`;
-    window.open(url, '_blank', 'width=1400,height=900,menubar=no,toolbar=no,location=no,status=no');
-  };
+  }, [searchQuery, selectedTags, packages]);
 
   useEffect(() => {
     loadPackages();
   }, []);
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24,
-      }}>
-        <div>
-          <Title level={3} style={{ margin: 0 }}>Skills 技能包</Title>
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            管理可复用的技能模块
-          </Text>
-        </div>
-        <Space>
-          <Search
-            placeholder="搜索 Skills 包..."
-            style={{ width: 250 }}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            allowClear
-          />
-          <Select
-            value={statusFilter}
-            onChange={setStatusFilter}
-            style={{ width: 120 }}
-            options={[
-              { label: '全部状态', value: 'all' },
-              { label: '已启用', value: 'active' },
-              { label: '已停用', value: 'inactive' },
-            ]}
-          />
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => setImportModalVisible(true)}
-          >
-            导入 Skills
-          </Button>
-          <Button
-            icon={<PlusOutlined />}
-            type="primary"
-            onClick={() => setCreateModalVisible(true)}
-          >
-            创建 Skills
-          </Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleRefresh}
-            loading={loading}
-          >
-            刷新
-          </Button>
-        </Space>
-      </div>
+    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100vh' }}>
+      <PageHeader
+        icon={<FolderOpenOutlined />}
+        title="Skills 技能包"
+        subtitle="管理可复用的AI技能模块"
+        searchPlaceholder="搜索 Skills 包..."
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        allTags={allTags}
+        selectedTags={selectedTags}
+        onTagToggle={handleTagToggle}
+        secondaryButtons={[
+          {
+            text: '导入 Skills',
+            icon: (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+            ),
+            onClick: () => setImportModalVisible(true),
+          },
+        ]}
+        primaryButton={{
+          text: '创建 Skills',
+          icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          ),
+          onClick: () => setCreateModalVisible(true),
+        }}
+        showRefresh={true}
+        onRefresh={handleRefresh}
+        refreshLoading={loading}
+      />
 
       {loading && packages.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px' }}>
@@ -216,9 +210,9 @@ const SkillsManager: React.FC = () => {
           style={{ padding: '60px 20px' }}
           description={
             <span>
-              {searchQuery ? '没有找到匹配的 Skills 包' : '暂无 Skills 包'}
+              {searchQuery || selectedTags.length > 0 ? '没有找到匹配的 Skills 包' : '暂无 Skills 包'}
               <br />
-              {!searchQuery && (
+              {!searchQuery && selectedTags.length === 0 && (
                 <Text type="secondary" style={{ fontSize: 13 }}>
                   点击上方"创建 Skills"按钮创建您的第一个技能包
                 </Text>

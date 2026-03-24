@@ -3,6 +3,7 @@ SoloAgent 基础类
 简洁的 Agent 配置类，支持声明式配置
 """
 import asyncio
+import json
 import logging
 from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
 
@@ -25,8 +26,9 @@ class SoloAgent:
     - 延迟加载：配置细节在运行时按需加载
     - 支持多模型：通过 provider + model 自动选择模型
     - 支持流式输出：原生支持流式响应
-    - 支持持久化记忆：memory=True 时自动存储对话
     - 支持子Agent调用：通过 child_agents 列表
+    
+    注意：记忆管理由 CompiledFlow 层统一处理，Agent 不再管理 _memory_plugin
     """
     
     def __init__(self, config: SoloAgentConfig):
@@ -35,12 +37,12 @@ class SoloAgent:
         
         self._llm: Optional["BaseLLM"] = None
         self._core: Optional["ReActCore"] = None
-        self._memory_plugin: Optional["DatabaseMemoryPlugin"] = None
         self._mcp_clients: List["MCPClient"] = []
         self._tools: Dict[str, Any] = {}
         self._child_agents: Dict[str, "SoloAgent"] = {}
         self._message_history: List[Dict[str, Any]] = []
         self._last_tool_calls: List[Dict[str, Any]] = []
+        self._last_response: Optional[Any] = None
         self._stream_callback: Optional[callable] = None
         
     @property
@@ -79,6 +81,11 @@ class SoloAgent:
         self._stream_callback = callback
         if self._core:
             self._core.stream_callback = callback
+            self._core.agent_id = self.agent_id
+    
+    def set_message_history(self, history: List[Dict[str, Any]]) -> None:
+        """设置消息历史（由 CompiledFlow 层调用）"""
+        self._message_history = history
     
     async def initialize(self) -> None:
         if self._initialized:
@@ -113,6 +120,7 @@ class SoloAgent:
                 model_name=llm_config.get("model", self.config.model),
                 api_key=llm_config.get("api_key"),
                 stream=True,
+                base_url=llm_config.get("base_url"),
             )
         
         tool_configs = []
@@ -141,9 +149,6 @@ class SoloAgent:
             available_tools = toolkit_executor.get_available_tools()
             logger.info(f"[Toolkit] Available tools: {[t.get('function', {}).get('name') for t in available_tools]}")
         
-        if self.config.memory:
-            await self._init_memory()
-        
         formatter = OpenAIChatFormatter()
         
         self._core = ReActCore(
@@ -153,11 +158,22 @@ class SoloAgent:
             system_prompt=self.config.system_prompt,
             max_iters=self.config.max_iters,
             stream_callback=self._stream_callback,
-            memory=self._memory_plugin,
+            agent_id=self.agent_id,
         )
         
         if toolkit_executor:
             self._core.tool_executor = toolkit_executor
+        
+        if self._message_history:
+            from ..message import Msg
+            history_msgs = []
+            for msg in self._message_history:
+                content = msg["content"]
+                if isinstance(content, list):
+                    history_msgs.append(Msg(name=msg["role"], content=content, role=msg["role"]))
+                else:
+                    history_msgs.append(Msg(name=msg["role"], content=content, role=msg["role"]))
+            self._core.load_history(history_msgs)
         
         self._initialized = True
         logger.info(f"SoloAgent '{self.name}' initialized with {len(tool_configs)} tools")
@@ -270,77 +286,54 @@ class SoloAgent:
             generate_kwargs=generate_kwargs if generate_kwargs else None,
         )
     
-    async def _init_memory(self) -> None:
-        from ..plugins.memory.database_memory import DatabaseMemoryPlugin
-        from ..message import Msg
-        
-        if not self.config.agentic_flow_run_id:
-            logger.warning("agentic_flow_run_id is required for memory, memory disabled")
-            return
-        
-        if not self.config.user_id:
-            logger.warning("user_id is required for memory, memory disabled")
-            return
-        
-        self._memory_plugin = DatabaseMemoryPlugin({
-            "run_id": self.config.agentic_flow_run_id,
-            "user_id": self.config.user_id,
-            "agentic_flow_id": self.config.agentic_flow_id,
-            "agent_id": self.config.agent_id,
-            "auto_load": True,
-        })
-        
-        history_msgs = await self._memory_plugin.retrieve_all()
-        self._message_history = [
-            {"role": msg.role, "content": msg.get_text_content() or ""}
-            for msg in history_msgs
-        ]
-        logger.info(f"SoloAgent '{self.name}' loaded {len(self._message_history)} messages from memory")
-    
-    async def _save_to_memory(self, role: str, content: str, metadata: Dict = None) -> None:
-        if self._memory_plugin:
-            from ..message import Msg
-            msg = Msg(
-                name=role,
-                content=content,
-                role=role,
-            )
-            await self._memory_plugin.add(msg, metadata)
-    
-    async def reply(self, message: str) -> str:
+    async def reply(self, message: str, cancel_event: asyncio.Event = None) -> str:
         if not self._initialized:
             await self.initialize()
-        
-        await self._save_to_memory("user", message)
-        self._message_history.append({"role": "user", "content": message})
         
         if self._core is None:
             raise RuntimeError("Agent core not initialized")
         
-        response = await self._core.reply(message)
+        try:
+            response = await self._core.reply(message, cancel_event=cancel_event)
+            
+            self._last_response = response
+            
+            if hasattr(self._core, '_last_tool_results'):
+                self._last_tool_calls = self._core._last_tool_results.copy() if self._core._last_tool_results else []
+            
+            response_text = response.get_text_content() if hasattr(response, 'get_text_content') else str(response)
+            
+            return response_text
+        except Exception as e:
+            logger.error(f"Agent reply error: {e}")
+            raise
+    
+    def get_last_openai_message(self) -> dict:
+        """
+        获取最后一次响应的 OpenAI 格式消息。
         
-        # 从 core 获取工具调用信息
-        if hasattr(self._core, '_last_tool_results'):
-            self._last_tool_calls = self._core._last_tool_results.copy() if self._core._last_tool_results else []
+        Returns:
+            dict: OpenAI 格式的消息，包含 role, content, reasoning_content 字段
+        """
+        if self._last_response is None:
+            return {"role": "assistant", "content": "", "reasoning_content": None}
         
-        response_text = response.get_text_content() if hasattr(response, 'get_text_content') else str(response)
+        if hasattr(self._last_response, 'to_openai_message'):
+            return self._last_response.to_openai_message()
         
-        await self._save_to_memory("assistant", response_text)
-        self._message_history.append({"role": "assistant", "content": response_text})
+        if hasattr(self._last_response, 'get_text_content'):
+            content = self._last_response.get_text_content()
+            reasoning = self._last_response.get_reasoning_content() if hasattr(self._last_response, 'get_reasoning_content') else None
+            return {"role": "assistant", "content": content, "reasoning_content": reasoning}
         
-        return response_text
+        return {"role": "assistant", "content": str(self._last_response), "reasoning_content": None}
     
     async def stream(self, message: str) -> AsyncGenerator[str, None]:
         if not self._initialized:
             await self.initialize()
         
-        await self._save_to_memory("user", message)
-        self._message_history.append({"role": "user", "content": message})
-        
         if self._core is None:
             raise RuntimeError("Agent core not initialized")
-        
-        full_response = ""
         
         from ..formatter.openai_formatter import OpenAIChatFormatter
         from ..message import Msg
@@ -379,19 +372,13 @@ class SoloAgent:
                         if block.get("type") == "text":
                             text = block.get("text", "")
                             yield text
-                            full_response += text
                         elif block.get("type") == "thinking":
                             thinking = block.get("thinking", "")
                             yield f"<think:{thinking}>"
                     elif hasattr(block, 'text'):
                         yield block.text
-                        full_response += block.text
             elif isinstance(chunk, str):
                 yield chunk
-                full_response += chunk
-        
-        await self._save_to_memory("assistant", full_response)
-        self._message_history.append({"role": "assistant", "content": full_response})
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
         from .tools import ToolRegistry

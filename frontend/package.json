@@ -14,19 +14,29 @@
     "antd": "^5.11.7",
     "axios": "^1.6.2",
     "dayjs": "^1.11.19",
+    "docx-preview": "^0.3.7",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
+    "github-markdown-css": "^5.9.0",
+    "highlight.js": "^11.11.1",
     "react": "^18.2.0",
+    "react-doc-viewer": "^0.1.16",
     "react-dom": "^18.2.0",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.20.0",
+    "react-syntax-highlighter": "^16.1.1",
     "reactflow": "^11.10.1",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "@vitejs/plugin-react": "^4.2.1",
     "typescript": "^5.3.2",
-    "vite": "^5.0.8"
+    "vite": "^5.4.19"
   }
 }

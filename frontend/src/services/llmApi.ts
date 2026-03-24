@@ -89,8 +89,16 @@ class LLMApi {
   }
 
   async getDefaultConfig(): Promise<LLMConfig | null> {
-    const response = await api.get('/llm/configs/default');
-    return response.data;
+    try {
+      const response = await api.get('/llm/configs/default');
+      if (response && response.data) {
+        return response.data;
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to get default LLM config:', error);
+      return null;
+    }
   }
 
   async createConfig(request: CreateLLMConfigRequest): Promise<LLMConfig> {
