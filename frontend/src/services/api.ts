@@ -126,7 +126,7 @@ export const projectApi = {
     return response.data.canvas;
   },
 
-  runProject: async (projectId: string, input: string): Promise<{ task_id: string }> => {
+  runProject: async (projectId: string, input: string): Promise<{ session_id: string }> => {
     const response = await api.post(`/projects/${projectId}/run`, { input });
     return response.data;
   },
@@ -163,3 +163,5 @@ export const toolApi = {
     return response.data.result;
   },
 };
+
+export { apiClient };

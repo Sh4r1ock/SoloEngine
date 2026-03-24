@@ -372,6 +372,68 @@ class WebFetch(BaseNetworkTool):
             )
         
         return response.content
+    
+    async def execute(self, url: str, max_length: Optional[int] = None) -> Dict[str, Any]:
+        """
+        执行网页获取（工具接口）。
+        
+        Args:
+            url (str): 要获取的 URL。
+            max_length (Optional[int], optional): 最大内容长度。
+        
+        Returns:
+            Dict[str, Any]: 包含获取结果的字典。
+        """
+        try:
+            content = await self.fetch(url, max_length)
+            return {
+                "content": content,
+                "success": True,
+                "url": url,
+            }
+        except NetworkToolError as e:
+            return {
+                "content": f"获取网页失败: {e.message}",
+                "success": False,
+                "error_message": e.message,
+                "url": url,
+            }
+        except Exception as e:
+            return {
+                "content": f"获取网页出错: {str(e)}",
+                "success": False,
+                "error_message": str(e),
+                "url": url,
+            }
+    
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取网页获取工具的规范定义。
+        
+        Returns:
+            Dict[str, Any]: 工具规范，用于注册到工具执行器。
+        """
+        return {
+            "type": "function",
+            "function": {
+                "name": "WebFetch",
+                "description": "获取 URL 内容并转换为 Markdown 格式。适用于获取网页详细内容进行分析。",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "要获取的完整 URL",
+                        },
+                        "max_length": {
+                            "type": "integer",
+                            "description": "最大内容长度（字符数），默认为 10000",
+                        },
+                    },
+                    "required": ["url"],
+                },
+            },
+        }
 
 
 async def web_fetch(url: str) -> Dict[str, Any]:

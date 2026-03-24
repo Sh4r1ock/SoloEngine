@@ -264,6 +264,9 @@ class LLMFactory:
             provider_kwargs["api_key"] = api_key
             provider_kwargs["reasoning_effort"] = kwargs.get("reasoning_effort")
             provider_kwargs["organization"] = kwargs.get("organization")
+            base_url = kwargs.pop("base_url", None)
+            if base_url:
+                provider_kwargs["client_kwargs"] = {"base_url": base_url}
 
         elif provider_lower == LLMProvider.ANTHROPIC:
             provider_kwargs["api_key"] = api_key

@@ -127,6 +127,40 @@ class SearchReplace(BaseFileTool):
             raise
         except Exception as e:
             raise FileToolError(f"搜索替换失败: {str(e)}")
+    
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取搜索替换工具的规范定义。
+        
+        Returns:
+            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
+        """
+        return {
+            "name": "SearchReplace",
+            "description": (
+                "在文件中搜索并替换文本。"
+                "old_str 必须在文件中唯一（只出现一次）。"
+                "只替换第一个匹配项。"
+                "old_str 和 new_str 必须不同。"
+            ),
+            "parameters": {
+                "file_path": {
+                    "type": "string",
+                    "description": "要修改的文件的绝对路径。",
+                    "required": True,
+                },
+                "old_str": {
+                    "type": "string",
+                    "description": "要搜索的文本（必须在文件中唯一）。",
+                    "required": True,
+                },
+                "new_str": {
+                    "type": "string",
+                    "description": "替换后的文本。",
+                    "required": True,
+                },
+            },
+        }
 
 
 def search_replace(

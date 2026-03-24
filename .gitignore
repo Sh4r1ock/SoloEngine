@@ -214,10 +214,15 @@ npm_cache/
 
 # 自定义忽略文件夹
 备份文件/
+参考/
 代码审查/
+技术文档/
 开发计划/
 开发文档/
+软件著作权/
+提示词模板/
 执行要求/
+专利/
 .idea/
 .vscode/
 .trae/
@@ -228,8 +233,7 @@ test_sessions/
 tests/
 test_screenshots/
 SoloEngine.zip
-软件著作权/
-专利/
+
 
 # 数据目录
 data/packages/

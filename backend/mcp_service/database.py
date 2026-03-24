@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import uuid
 import logging
 from datetime import datetime
@@ -13,6 +14,9 @@ from contextlib import contextmanager
 from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from app.core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,7 @@ class MCPServerModel(Base):
     transport_type = Column(String(50), nullable=False)
     source_type = Column(String(50), nullable=True)  # 源类型: python_function, stdio, http, sse
     description = Column(Text, nullable=True)
+    icon = Column(String(100), nullable=True)
     enabled = Column(Boolean, default=True)
     share = Column(Boolean, default=False)
     author = Column(String(255), nullable=True)
@@ -95,6 +100,18 @@ class MCPHttpConfigModel(Base):
 def init_db():
     """初始化数据库。"""
     Base.metadata.create_all(bind=engine)
+    
+    with engine.connect() as conn:
+        from sqlalchemy import text
+        result = conn.execute(text("PRAGMA table_info(mcp_servers)"))
+        columns = [row[1] for row in result.fetchall()]
+        
+        if 'icon' not in columns:
+            logger.info("Adding icon column to mcp_servers table...")
+            conn.execute(text("ALTER TABLE mcp_servers ADD COLUMN icon VARCHAR(100)"))
+            conn.commit()
+            logger.info("icon column added successfully")
+    
     logger.info(f"MCP Service database initialized at {DATABASE_PATH}")
 
 
@@ -148,18 +165,24 @@ class MCPDatabaseManager:
         author: str = None,
         tags: List[str] = None,
         source_type: str = None,
+        icon: str = None,
     ) -> MCPServerModel:
         """创建MCP服务器配置。"""
+        final_tags = tags.copy() if tags else []
+        if user_id == "system" and "system" not in final_tags:
+            final_tags.append("system")
+        
         server = MCPServerModel(
             user_id=user_id,
             mcp_name=mcp_name,
             transport_type=transport_type,
             source_type=source_type or transport_type,  # 默认source_type与transport_type相同
             description=description,
+            icon=icon,
             enabled=enabled,
             share=share,
             author=author,
-            tags=tags or [],
+            tags=final_tags,
         )
         db.add(server)
         db.commit()
@@ -167,10 +190,29 @@ class MCPDatabaseManager:
         return server
 
     def get_servers(self, db: Session, user_id: str) -> List[MCPServerModel]:
-        """获取用户的MCP服务器。"""
+        """获取用户可见的MCP服务器（系统 + 用户）。"""
+        from sqlalchemy import or_
         return db.query(MCPServerModel).filter(
-            MCPServerModel.user_id == user_id
-        ).order_by(MCPServerModel.updated_at.desc()).all()
+            or_(
+                MCPServerModel.user_id == "system",
+                MCPServerModel.user_id == user_id
+            )
+        ).order_by(MCPServerModel.created_at.desc()).all()
+    
+    def check_server_permission(self, db: Session, server_id: str, user_id: str, action: str = "read") -> Optional[MCPServerModel]:
+        """检查服务器权限。"""
+        server = db.query(MCPServerModel).filter(MCPServerModel.mcp_server_id == server_id).first()
+        if not server:
+            return None
+        
+        if action in ["update", "delete"]:
+            if server.user_id == "system" and user_id != "system":
+                return None
+        
+        if server.user_id != user_id and server.user_id != "system":
+            return None
+        
+        return server
 
     def get_server(self, db: Session, mcp_server_id: str, user_id: str = None) -> Optional[MCPServerModel]:
         """获取MCP服务器。"""
@@ -198,7 +240,13 @@ class MCPDatabaseManager:
             )
         
         for key, value in kwargs.items():
-            if hasattr(server, key):
+            if key == 'tags' and value is not None:
+                # 如果是系统MCP，确保system标签不会被删除
+                if server.user_id == "system":
+                    if "system" not in value:
+                        value.append("system")
+                setattr(server, key, value)
+            elif hasattr(server, key):
                 setattr(server, key, value)
         server.version = (server.version or 0) + 1
         db.commit()
@@ -232,13 +280,17 @@ class MCPDatabaseManager:
         working_dir: str = None,
     ) -> MCPStdioConfigModel:
         """创建Stdio配置。"""
+        # 转换为相对路径
+        rel_storage_path = DataPaths.to_relative_path(storage_path) if storage_path else None
+        rel_working_dir = DataPaths.to_relative_path(working_dir) if working_dir else None
+        
         config = MCPStdioConfigModel(
             mcp_server_id=mcp_server_id,
             command=command,
             args=args or [],
             env=env or {},
-            storage_path=storage_path,
-            working_dir=working_dir,
+            storage_path=rel_storage_path,
+            working_dir=rel_working_dir,
         )
         db.add(config)
         db.commit()
@@ -247,19 +299,43 @@ class MCPDatabaseManager:
 
     def get_stdio_config(self, db: Session, mcp_server_id: str) -> Optional[MCPStdioConfigModel]:
         """获取Stdio配置。"""
-        return db.query(MCPStdioConfigModel).filter(
+        config = db.query(MCPStdioConfigModel).filter(
             MCPStdioConfigModel.mcp_server_id == mcp_server_id
         ).first()
+        
+        if config:
+            # 转换为绝对路径
+            if config.storage_path:
+                config.storage_path = DataPaths.to_absolute_path(config.storage_path)
+            if config.working_dir:
+                config.working_dir = DataPaths.to_absolute_path(config.working_dir)
+        
+        return config
 
     def update_stdio_config(self, db: Session, mcp_server_id: str, **kwargs) -> Optional[MCPStdioConfigModel]:
         """更新Stdio配置。"""
-        config = self.get_stdio_config(db, mcp_server_id)
+        config = db.query(MCPStdioConfigModel).filter(
+            MCPStdioConfigModel.mcp_server_id == mcp_server_id
+        ).first()
+        
         if config:
+            # 处理需要转换为相对路径的字段
             for key, value in kwargs.items():
+                if key in ['storage_path', 'working_dir'] and value:
+                    value = DataPaths.to_relative_path(value)
+                
                 if hasattr(config, key):
                     setattr(config, key, value)
+            
             db.commit()
             db.refresh(config)
+            
+            # 返回时转换为绝对路径
+            if config.storage_path:
+                config.storage_path = DataPaths.to_absolute_path(config.storage_path)
+            if config.working_dir:
+                config.working_dir = DataPaths.to_absolute_path(config.working_dir)
+        
         return config
 
     def create_sse_config(

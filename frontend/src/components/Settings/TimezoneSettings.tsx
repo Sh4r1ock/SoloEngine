@@ -6,6 +6,16 @@ import { setUserTimezone, formatDateTime } from '../../utils/timezone';
 
 const { Text, Title } = Typography;
 
+interface SelectOption {
+  label: string;
+  value: string;
+}
+
+interface SelectOptionGroup {
+  label: string;
+  options: SelectOption[];
+}
+
 const TimezoneSettings: React.FC = () => {
   const [timezone, setTimezoneState] = useState('Asia/Shanghai');
   const [timezones, setTimezones] = useState<string[]>([]);
@@ -100,7 +110,7 @@ const TimezoneSettings: React.FC = () => {
                   label: '所有时区',
                   options: timezones.map(tz => ({ label: tz, value: tz })),
                 },
-              ]}
+              ] as any}
             />
           </div>
 
