@@ -18,7 +18,7 @@
  * - 支持撤销/重做历史记录（最多30条）
  */
 import { create } from 'zustand';
-import { CanvasData, NodeData, EdgeData, ProjectData } from '../types/canvas';
+import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../types/canvas';
 import { projectApi } from '../services/api';
 import { localStorageService } from '../services/localStorage';
 import { agenticFlowApi } from '../services/agenticFlowApi';
@@ -36,11 +36,7 @@ const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T =
   }) as T;
 };
 
-export interface GlobalSettings {
-  maxContextLength: number;
-  maxIterations: number;
-  timeout: number;
-}
+
 
 interface HistoryState {
   nodes: NodeData[];
@@ -87,7 +83,7 @@ interface CanvasStore {
 
 const defaultSettings: GlobalSettings = {
   maxContextLength: 4096,
-  maxIterations: 10,
+  maxIterations: 100,
   timeout: 30000,
 };
 
@@ -108,14 +104,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isDragging: false,
 
   autoSave: debounce(async () => {
-    const { nodes, edges, currentProject, isDragging } = get();
+    const { nodes, edges, currentProject, isDragging, globalSettings } = get();
     if (isDragging) return;
-    
-    const flowId = currentProject?.id;
-    if (!flowId) return;
-    
+
+    const agenticFlowId = currentProject?.id;
+    if (!agenticFlowId) return;
+
     try {
-      await agenticFlowApi.saveCanvas(flowId, { nodes, edges });
+      await agenticFlowApi.saveCanvas(agenticFlowId, { nodes, edges, globalSettings });
     } catch (error) {
       console.error('Auto save failed:', error);
     }
@@ -286,11 +282,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   setIsDragging: (dragging) => set({ isDragging: dragging }),
 
   saveCanvas: async () => {
-    const { currentProject, nodes, edges } = get();
+    const { currentProject, nodes, edges, globalSettings } = get();
     if (!currentProject) return;
 
     const canvasData: CanvasData = { nodes, edges };
-    await projectApi.updateCanvas(currentProject.id, canvasData);
+    await projectApi.updateCanvas(currentProject.id, { ...canvasData, globalSettings });
   },
 
   loadCanvas: async (projectId: string) => {

@@ -47,6 +47,7 @@ class MCPServerInfo:
     source: Optional[str] = None
     description: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    icon: Optional[str] = None
     storage_path: Optional[str] = None
     tools: List[Dict[str, Any]] = field(default_factory=list)
     version: int = 0
@@ -75,6 +76,7 @@ class MCPServerInfo:
             "source": self.source,
             "description": self.description,
             "tags": self.tags,
+            "icon": self.icon,
             "storage_path": self.storage_path,
             "tools": self.tools,
             "version": self.version,

@@ -15,7 +15,7 @@ import ast
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -33,16 +33,41 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
 
-MCP_SERVERS_STORAGE_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "mcp_servers"
-)
-os.makedirs(MCP_SERVERS_STORAGE_DIR, exist_ok=True)
+
+def get_user_id(request: Request) -> str:
+    """从请求头获取用户ID。"""
+    user_id = request.headers.get("X-User-ID")
+    if not user_id:
+        return "default_user"
+    return user_id
 
 
-def get_mcp_server_dir(name: str) -> str:
-    """获取MCP Server存储目录。"""
-    server_dir = os.path.join(MCP_SERVERS_STORAGE_DIR, name)
-    os.makedirs(server_dir, exist_ok=True)
+def get_data_root() -> str:
+    """获取data根目录。"""
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data"))
+
+
+def get_user_dir(user_id: str) -> str:
+    """获取用户根目录。"""
+    return os.path.join(get_data_root(), user_id)
+
+
+def get_user_mcp_servers_dir(user_id: str) -> str:
+    """获取用户MCP Servers目录。"""
+    return os.path.join(get_user_dir(user_id), "mcp_servers")
+
+
+def ensure_dir(path: str) -> None:
+    """确保目录存在。"""
+    os.makedirs(path, exist_ok=True)
+
+
+def get_mcp_server_dir(user_id: str, name: str) -> str:
+    """获取MCP Server存储目录（用户隔离）。"""
+    user_dir = get_user_mcp_servers_dir(user_id)
+    ensure_dir(user_dir)
+    server_dir = os.path.join(user_dir, name)
+    ensure_dir(server_dir)
     return server_dir
 
 
@@ -58,6 +83,7 @@ class MCPServerCreate(BaseModel):
     timeout: int = Field(30, description="超时时间（秒）")
     enabled: bool = Field(True, description="是否启用")
     share: bool = Field(False, description="是否共享")
+    icon: Optional[str] = Field(None, description="图标")
 
 
 class MCPServerUpdate(BaseModel):
@@ -73,6 +99,7 @@ class MCPServerUpdate(BaseModel):
     enabled: Optional[bool] = None
     share: Optional[bool] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
+    icon: Optional[str] = None
 
 
 class CallToolRequest(BaseModel):
@@ -170,6 +197,7 @@ def model_to_server_info(server: MCPServerModel) -> MCPServerInfo:
         source=source_type,  # 使用source_type作为source
         description=server.description,
         tags=server.tags or [],
+        icon=server.icon,
         version=server.version,
         status=ServerStatus.DISCONNECTED,
         created_at=server.created_at,
@@ -179,17 +207,13 @@ def model_to_server_info(server: MCPServerModel) -> MCPServerInfo:
     )
 
 
-def get_mock_user_id() -> str:
-    """获取模拟用户ID（用于简化认证）。"""
-    return "default_user"
-
-
 @router.get("/servers")
 async def list_servers(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """获取用户的所有 MCP 服务器。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     servers = mcp_db_manager.get_servers(db, user_id)
     
     result = []
@@ -213,11 +237,12 @@ async def list_servers(
 
 @router.post("/servers")
 async def add_server(
+    request: Request,
     server: MCPServerCreate,
     db: Session = Depends(get_db)
 ):
     """添加 MCP 服务器。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     new_server = mcp_db_manager.create_server(
         db=db,
@@ -227,6 +252,7 @@ async def add_server(
         description=server.description,
         enabled=server.enabled,
         share=server.share,
+        icon=server.icon,
     )
     
     if server.transport == "stdio":
@@ -270,11 +296,12 @@ async def add_server(
 
 @router.get("/servers/{server_id}")
 async def get_server(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取指定的 MCP 服务器。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -291,12 +318,13 @@ async def get_server(
 
 @router.put("/servers/{server_id}")
 async def update_server(
+    request: Request,
     server_id: str,
     update: MCPServerUpdate,
     db: Session = Depends(get_db)
 ):
     """更新 MCP 服务器配置（带乐观锁）。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     update_data = {}
     if update.name is not None:
@@ -309,6 +337,8 @@ async def update_server(
         update_data["enabled"] = update.enabled
     if update.share is not None:
         update_data["share"] = update.share
+    if update.icon is not None:
+        update_data["icon"] = update.icon
     
     try:
         server = mcp_db_manager.update_server(
@@ -363,11 +393,12 @@ async def update_server(
 
 @router.delete("/servers/{server_id}")
 async def delete_server(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """删除 MCP 服务器。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     await lifecycle_manager.unregister_and_disconnect(server_id)
     
@@ -385,6 +416,7 @@ async def delete_server(
 
 @router.post("/servers/create/python")
 async def create_python_mcp(
+    request: Request,
     name: str = Form(...),
     description: str = Form(""),
     file: UploadFile = File(..., description="Python 文件 (.py)"),
@@ -399,7 +431,7 @@ async def create_python_mcp(
     - __init__.py - 包初始化文件
     - __main__.py - 模块入口文件
     """
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     if not file.filename.endswith('.py'):
         raise HTTPException(status_code=400, detail="Only Python files (.py) are allowed")
@@ -413,7 +445,7 @@ async def create_python_mcp(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid tools JSON format")
     
-    server_dir = get_mcp_server_dir(safe_name)
+    server_dir = get_mcp_server_dir(user_id, safe_name)
     
     content = await file.read()
     original_code = content.decode('utf-8')
@@ -494,6 +526,7 @@ if __name__ == "__main__":
 
 @router.post("/servers/create/stdio")
 async def create_stdio_mcp(
+    request: Request,
     name: str = Form(...),
     description: str = Form("", description="MCP Server 描述"),
     package: Optional[UploadFile] = File(None, description="MCP Server 包 (.zip)"),
@@ -505,7 +538,7 @@ async def create_stdio_mcp(
     上传的 ZIP 包将被解压到 mcp_server 目录，或文件夹中的文件将被存储。
     ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
     """
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     if not package and not files:
         raise HTTPException(status_code=400, detail="Either package or files must be provided")
@@ -514,7 +547,7 @@ async def create_stdio_mcp(
     if not safe_name:
         raise HTTPException(status_code=400, detail="Invalid server name")
     
-    server_dir = get_mcp_server_dir(safe_name)
+    server_dir = get_mcp_server_dir(user_id, safe_name)
     
     main_py_path = None
     entry_file = None
@@ -632,11 +665,12 @@ async def create_stdio_mcp(
 
 @router.post("/servers/create/http")
 async def create_http_mcp(
+    fastapi_request: Request,
     request: CreateHttpServerRequest,
     db: Session = Depends(get_db)
 ):
     """创建HTTP MCP（填写HTTP连接配置）。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     
     new_server = mcp_db_manager.create_server(
         db=db,
@@ -670,11 +704,12 @@ async def create_http_mcp(
 
 @router.post("/servers/create/sse")
 async def create_sse_mcp(
+    fastapi_request: Request,
     request: CreateSseServerRequest,
     db: Session = Depends(get_db)
 ):
     """创建SSE MCP（填写SSE连接配置）。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     
     new_server = mcp_db_manager.create_server(
         db=db,
@@ -711,12 +746,13 @@ async def create_sse_mcp(
 
 @router.put("/servers/{server_id}/tools")
 async def update_mcp_tools(
+    fastapi_request: Request,
     server_id: str,
     request: UpdateMCPToolsRequest,
     db: Session = Depends(get_db)
 ):
     """保存工具参数定义到tools.json，并自动重新编译MCP Server代码。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -767,11 +803,12 @@ async def update_mcp_tools(
 
 @router.get("/servers/{server_id}/tools/json")
 async def get_mcp_tools_json(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取tools.json内容。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -802,11 +839,12 @@ async def get_mcp_tools_json(
 
 @router.get("/servers/{server_id}/original")
 async def get_mcp_original_code(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取original.py内容。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -838,12 +876,13 @@ async def get_mcp_original_code(
 
 @router.put("/servers/{server_id}/original")
 async def update_mcp_original_code(
+    fastapi_request: Request,
     server_id: str,
     request: UpdateMCPCodeRequest,
     db: Session = Depends(get_db)
 ):
     """更新original.py内容，并自动重新编译MCP Server代码。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -895,11 +934,12 @@ async def update_mcp_original_code(
 
 @router.get("/servers/{server_id}/code")
 async def get_mcp_code(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取MCP的Python代码。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -931,12 +971,13 @@ async def get_mcp_code(
 
 @router.put("/servers/{server_id}/code")
 async def update_mcp_code(
+    fastapi_request: Request,
     server_id: str,
     request: UpdateMCPCodeRequest,
     db: Session = Depends(get_db)
 ):
     """更新MCP的Python代码。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -963,11 +1004,12 @@ async def update_mcp_code(
 
 @router.post("/servers/{server_id}/connect")
 async def connect_server(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """连接到 MCP 服务器。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -999,11 +1041,12 @@ async def connect_server(
 
 @router.post("/servers/{server_id}/disconnect")
 async def disconnect_server(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """断开 MCP 服务器连接。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -1086,11 +1129,12 @@ async def test_server(server: MCPServerCreate):
 
 @router.get("/servers/{server_id}/tools")
 async def get_server_tools(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取MCP服务器的工具列表。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -1117,6 +1161,7 @@ async def get_server_tools(
 
 @router.post("/servers/{server_id}/tools/{tool_name}/call")
 async def call_server_tool(
+    fastapi_request: Request,
     server_id: str,
     tool_name: str,
     request: CallToolRequest,
@@ -1127,11 +1172,11 @@ async def call_server_tool(
         raise HTTPException(status_code=400, detail="Invalid tool name format")
     
     if request.arguments:
-        serialized_size = len(str(request.arguments))
+        serialized_size = len(json.dumps(request.arguments))
         if serialized_size > MAX_TOOL_ARGUMENTS_SIZE:
             raise HTTPException(status_code=413, detail="Arguments size exceeds 1MB limit")
     
-    user_id = get_mock_user_id()
+    user_id = get_user_id(fastapi_request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -1158,10 +1203,11 @@ async def call_server_tool(
 
 @router.get("/tools/all")
 async def get_all_tools(
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """获取所有已启用MCP服务器的工具。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     
     try:
         tools = await unified_caller.list_all_tools(user_id)
@@ -1184,11 +1230,12 @@ async def get_all_tools(
 
 @router.get("/servers/{server_id}/resources")
 async def get_server_resources(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取MCP服务器的资源列表。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -1215,11 +1262,12 @@ async def get_server_resources(
 
 @router.get("/servers/{server_id}/prompts")
 async def get_server_prompts(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取MCP服务器的提示词列表。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
@@ -1260,11 +1308,12 @@ async def health_check():
 
 @router.get("/servers/{server_id}/files")
 async def get_server_files(
+    request: Request,
     server_id: str,
     db: Session = Depends(get_db)
 ):
     """获取 MCP Server 的文件列表。"""
-    user_id = get_mock_user_id()
+    user_id = get_user_id(request)
     server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:

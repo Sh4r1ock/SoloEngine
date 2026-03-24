@@ -20,7 +20,7 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, history, marketplace, agentic_flows, agent_tools, run_project, settings
+from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,17 @@ app.add_middleware(
 async def startup_event():
     """应用启动时执行初始化操作。"""
     from app.core.database import SessionLocal
+    from app.core.system_user import create_system_user
     from app.api.v1.skills import sync_system_skills
+    
+    db = SessionLocal()
+    try:
+        create_system_user(db)
+        logger.info("System user created/verified successfully")
+    except Exception as e:
+        logger.error(f"Failed to create system user: {e}")
+    finally:
+        db.close()
     
     db = SessionLocal()
     try:
@@ -68,7 +78,6 @@ app.include_router(websocket.router)
 app.include_router(auth.router)
 app.include_router(export.router)
 app.include_router(package.router)
-app.include_router(history.router)
 app.include_router(marketplace.router)
 app.include_router(agentic_flows.router)
 app.include_router(agent_tools.router)

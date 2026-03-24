@@ -8,6 +8,7 @@
  * - 运行会话管理API
  * - JSON工作流执行API
  * - 执行历史API
+ * - 会话消息持久化API
  * 
  * 使用场景：
  * - 运行面板调用后端运行服务
@@ -24,16 +25,46 @@ export interface ExecutionResult {
   error?: string;
 }
 
-export interface RunSession {
+export interface Session {
   id: string;
   status: string;
-  input_message: string;
-  output_message: string;
   error?: string;
-  started_at: string;
-  completed_at?: string;
-  duration_ms?: number;
   token_usage?: Record<string, number>;
+  started_at?: string;
+  completed_at?: string;
+  created_at?: string;
+  updated_at?: string;
+  duration_ms?: number;
+}
+
+export interface DataBlock {
+  type: 'content' | 'reasoning_content' | 'tool_calls';
+  content?: string;
+  reasoning_content?: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+    result?: string;
+  }>;
+}
+
+export interface SessionMessage {
+  id: string;
+  role: string;
+  content?: string;
+  data: DataBlock[];
+  message_index: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  created_at?: string;
+  timestamp?: string;
+  reasoning_content?: string;
+  tokens?: number;
 }
 
 export interface ExecutionStep {
@@ -57,27 +88,7 @@ export interface ToolCallRecord {
   created_at: string;
 }
 
-export interface CreateSessionResponse {
-  session_id: string;
-  execution_id: string;
-  created_at: string;
-  status: string;
-}
-
 export const runApi = {
-  async createSession(params?: {
-    flowId?: string;
-    canvasData?: Record<string, any>;
-    projectName?: string;
-  }): Promise<CreateSessionResponse> {
-    const response = await api.post('/run/sessions', {
-      flow_id: params?.flowId,
-      canvas_data: params?.canvasData,
-      project_name: params?.projectName,
-    });
-    return response.data;
-  },
-
   async executeWorkflow(
     canvasData: any,
     inputMessage: string,
@@ -90,45 +101,177 @@ export const runApi = {
       project_name: projectName,
       context: context,
     });
-    return response.data.data;
+    
+    if (response.data && response.data.data) {
+      return response.data.data;
+    } else if (response.data && response.data.output) {
+      return response.data;
+    } else if (response.data && response.data.error) {
+      return {
+        execution_id: '',
+        status: 'error',
+        output: '',
+        error: response.data.error,
+      };
+    } else {
+      console.error('Unexpected response structure:', response.data);
+      return {
+        execution_id: '',
+        status: 'error',
+        output: '',
+        error: 'Unexpected response structure from server',
+      };
+    }
   },
 
   async executeNode(
     canvasData: any,
     nodeId: string,
     inputMessage: string,
-    context?: Record<string, any>
+    context?: Record<string, any>,
+    agenticFlowId?: string,
+    sessionId?: string,
+    runProjectId?: string
   ): Promise<ExecutionResult> {
     const response = await api.post('/run/execute-node', {
       canvas_data: canvasData,
       node_id: nodeId,
       input_message: inputMessage,
       context: context,
+      agentic_flow_id: agenticFlowId,
+      session_id: sessionId,
+      run_project_id: runProjectId,
     });
     return response.data;
   },
 
-  async getSessions(params?: {
-    agentId?: string;
+  async executeWorkflowStream(
+    canvasData: any,
+    inputMessage: string,
+    onStream: (delta: any) => void,
+    onComplete: (result: any) => void,
+    onError: (error: string) => void,
+    agenticFlowId?: string,
+    sessionId?: string,
+    context?: Record<string, any>
+  ): Promise<void> {
+    const token = localStorage.getItem('access_token');
+    const response = await fetch('/api/v1/run/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        canvas_data: canvasData,
+        input_message: inputMessage,
+        agentic_flow_id: agenticFlowId,
+        session_id: sessionId,
+        context: context,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('No response body');
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              switch (data.type) {
+                case 'stream':
+                  if (data.delta) {
+                    onStream(data.delta);
+                  }
+                  break;
+                case 'execution_complete':
+                  onComplete(data);
+                  break;
+                case 'error':
+                  onError(data.message || 'Unknown error');
+                  break;
+                case 'status':
+                  console.log('[SSE Status]', data.message);
+                  break;
+              }
+            } catch (parseError) {
+              console.warn('Failed to parse SSE data:', line, parseError);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  },
+
+  async getSessions(params: {
+    agentic_flow_id: string;
+    run_project_id: string;
     status?: string;
     limit?: number;
-  }): Promise<RunSession[]> {
+  }): Promise<Session[]> {
     const response = await api.get('/run/sessions', { params });
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
     return response.data;
   },
 
-  async getSession(sessionId: string): Promise<RunSession> {
+  async getSession(sessionId: string): Promise<Session> {
     const response = await api.get(`/run/sessions/${sessionId}`);
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
+    return response.data;
+  },
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await api.delete(`/run/sessions/${sessionId}`);
+  },
+
+  async getSessionMessages(sessionId: string, params?: {
+    limit?: number;
+    offset?: number;
+  }): Promise<SessionMessage[]> {
+    const response = await api.get(`/run/sessions/${sessionId}/messages`, { params });
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
     return response.data;
   },
 
   async getSessionSteps(sessionId: string): Promise<ExecutionStep[]> {
     const response = await api.get(`/run/sessions/${sessionId}/steps`);
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
     return response.data;
   },
 
   async getSessionToolCalls(sessionId: string): Promise<ToolCallRecord[]> {
     const response = await api.get(`/run/sessions/${sessionId}/tools`);
+    if (response.data && response.data.data) {
+      return response.data.data;
+    }
     return response.data;
   },
 
@@ -142,11 +285,11 @@ export const runApi = {
     return response.data;
   },
 
-  createWebSocket(sessionId: string): WebSocket {
+  createWebSocket(agenticFlowId: string, sessionId: string, runProjectId: string): WebSocket {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     const token = localStorage.getItem('access_token');
-    return new WebSocket(`${protocol}//${host}/api/v1/run/ws/${sessionId}?token=${token}`);
+    return new WebSocket(`${protocol}//${host}/api/v1/run/ws/${agenticFlowId}/${sessionId}/${runProjectId}?token=${token}`);
   },
 };
 

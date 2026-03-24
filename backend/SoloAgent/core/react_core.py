@@ -41,6 +41,7 @@ ReAct 架构说明：
 """
 
 import asyncio
+import json
 import re
 import logging
 from typing import Optional, List, Any, Union, Dict
@@ -134,6 +135,169 @@ class StopReason(Enum):
         return cls.UNKNOWN
 
 
+class ToolCallEventType(str, Enum):
+    """工具调用事件类型"""
+    TOOL_CALL_START = "TOOL_CALL_START"
+    TOOL_CALL_ARGS = "TOOL_CALL_ARGS"
+    TOOL_CALL_END = "TOOL_CALL_END"
+    TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
+
+
+class ToolCallEventManager:
+    """
+    工具调用事件管理器。
+    
+    负责管理工具调用的四事件生命周期，并将内部事件转换为前端格式。
+    
+    事件流程：
+    1. TOOL_CALL_START：首次检测到新的工具调用 ID
+    2. TOOL_CALL_ARGS：增量传输参数（可能多次）
+    3. TOOL_CALL_END：参数传输完成
+    4. TOOL_CALL_RESULT：工具执行结果返回
+    
+    前端格式：
+    所有事件都转换为 {type: "tool_calls", tool_calls: [...]} 格式，
+    通过 stream callback 发送，最终包装为 {type: "stream", delta: {...}}。
+    """
+    
+    def __init__(self, stream_callback=None, agent_id: str = None, agent_name: str = None):
+        self.stream_callback = stream_callback
+        self.agent_id = agent_id
+        self.agent_name = agent_name
+        self._active_tool_calls: Dict[str, dict] = {}
+        self._ended_tool_calls: set = set()
+    
+    def on_tool_call_start(self, tool_call_id: str, tool_name: str):
+        if tool_call_id in self._active_tool_calls:
+            return
+        
+        self._active_tool_calls[tool_call_id] = {
+            "id": tool_call_id,
+            "name": tool_name,
+            "arguments": "",
+            "status": "start"
+        }
+        
+        logger.info(f"[ToolCallEventManager] TOOL_CALL_START: {tool_name} ({tool_call_id})")
+        self._emit_to_frontend({
+            "type": ToolCallEventType.TOOL_CALL_START,
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name
+        })
+    
+    def on_tool_call_args(self, tool_call_id: str, delta: str):
+        if tool_call_id not in self._active_tool_calls:
+            logger.warning(f"[ToolCallEventManager] Unknown tool_call_id: {tool_call_id}")
+            return
+        
+        self._active_tool_calls[tool_call_id]["arguments"] += delta
+        logger.debug(f"[ToolCallEventManager] TOOL_CALL_ARGS: {tool_call_id} delta={delta[:50]}...")
+        
+        self._emit_to_frontend({
+            "type": ToolCallEventType.TOOL_CALL_ARGS,
+            "tool_call_id": tool_call_id,
+            "delta": delta
+        })
+    
+    def on_tool_call_end(self, tool_call_id: str):
+        if tool_call_id not in self._active_tool_calls:
+            return
+        
+        self._active_tool_calls[tool_call_id]["status"] = "end"
+        self._ended_tool_calls.add(tool_call_id)
+        
+        logger.info(f"[ToolCallEventManager] TOOL_CALL_END: {tool_call_id}")
+        self._emit_to_frontend({
+            "type": ToolCallEventType.TOOL_CALL_END,
+            "tool_call_id": tool_call_id
+        })
+    
+    def on_tool_call_result(self, tool_call_id: str, result: str, error: str = None):
+        logger.info(f"[ToolCallEventManager] TOOL_CALL_RESULT: {tool_call_id} error={error is not None}")
+        self._emit_to_frontend({
+            "type": ToolCallEventType.TOOL_CALL_RESULT,
+            "tool_call_id": tool_call_id,
+            "result": result,
+            "error": error
+        })
+    
+    def end_all_active_tool_calls(self):
+        for tool_call_id in list(self._active_tool_calls.keys()):
+            if tool_call_id not in self._ended_tool_calls:
+                self.on_tool_call_end(tool_call_id)
+    
+    def get_tool_call_arguments(self, tool_call_id: str) -> str:
+        if tool_call_id in self._active_tool_calls:
+            return self._active_tool_calls[tool_call_id].get("arguments", "")
+        return ""
+    
+    def get_active_tool_calls(self) -> Dict[str, dict]:
+        return self._active_tool_calls.copy()
+    
+    def reset(self):
+        self._active_tool_calls.clear()
+        self._ended_tool_calls.clear()
+        logger.debug("[ToolCallEventManager] Reset")
+    
+    def _emit_to_frontend(self, event: dict):
+        frontend_delta = self._convert_to_frontend_format(event)
+        if self.stream_callback and frontend_delta:
+            self.stream_callback(frontend_delta, agent_id=self.agent_id, agent_name=self.agent_name)
+    
+    def _convert_to_frontend_format(self, event: dict) -> dict:
+        """
+        将内部事件转换为前端格式。
+        
+        返回格式：{type: "tool_calls", tool_calls: [...]}
+        """
+        event_type = event["type"]
+        tool_call_id = event["tool_call_id"]
+        
+        if event_type == ToolCallEventType.TOOL_CALL_START:
+            return {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "type": "function",
+                    "function": {
+                        "name": event["tool_name"]
+                    },
+                    "status": "start"
+                }]
+            }
+        elif event_type == ToolCallEventType.TOOL_CALL_ARGS:
+            return {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "function": {
+                        "arguments": event["delta"]
+                    }
+                }]
+            }
+        elif event_type == ToolCallEventType.TOOL_CALL_END:
+            return {
+                "type": "tool_calls",
+                "tool_calls": [{
+                    "id": tool_call_id,
+                    "status": "end"
+                }]
+            }
+        elif event_type == ToolCallEventType.TOOL_CALL_RESULT:
+            result_data = {
+                "id": tool_call_id,
+                "result": event["result"]
+            }
+            if event.get("error"):
+                result_data["error"] = event["error"]
+            return {
+                "type": "tool_calls",
+                "tool_calls": [result_data]
+            }
+        
+        return None
+
+
 class ReActCore:
     """
     ReAct 微内核 - 纯控制流实现，通过插件接口扩展功能。
@@ -193,12 +357,12 @@ class ReActCore:
         model: ChatModelBase,
         formatter: FormatterBase,
         system_prompt: str,
-        memory: Optional[IMemory] = None,
         rag: Optional[IRAG] = None,
         tool_executor: Optional[IToolExecutor] = None,
         max_iters: int = 10,
         print_hint_msg: bool = False,
         stream_callback: Optional[callable] = None,
+        agent_id: Optional[str] = None,
     ) -> None:
         """
         初始化 ReAct 核心微内核。
@@ -222,6 +386,8 @@ class ReActCore:
                 默认为 False。
             stream_callback (callable, optional): 流式输出回调函数。
                 默认为 None。
+            agent_id (str, optional): Agent ID，用于多Agent场景区分。
+                默认为 None，会使用 name 作为 ID。
         
         Note:
             - model 和 formatter 是必需的
@@ -233,18 +399,34 @@ class ReActCore:
         self.model = model
         self.formatter = formatter
         self.system_prompt = system_prompt
-        self.memory = memory
         self.rag = rag
         self.tool_executor = tool_executor
         self.max_iters = max_iters
         self.print_hint_msg = print_hint_msg
         self.stream_callback = stream_callback
+        self.agent_id = agent_id or name
         
         self._conversation_history: List[Msg] = []
         self._iteration_count = 0
         self._last_tool_results: List[Dict[str, Any]] = []
-        self._accumulated_text: str = ""  # 累积所有部分输出（用于断点续传）
-        self._interrupted: bool = False  # 中断标志
+        self._accumulated_text: str = ""
+        self._interrupted: bool = False
+        
+        # 新增：初始化工具调用事件管理器
+        self._tool_call_event_manager = ToolCallEventManager(
+            stream_callback=self.stream_callback,
+            agent_id=self.agent_id,
+            agent_name=self.name
+        )
+    
+    def load_history(self, messages: List[Msg]) -> None:
+        """
+        加载历史消息到对话历史。
+        
+        Args:
+            messages (List[Msg]): 历史消息列表。
+        """
+        self._conversation_history = messages.copy()
     
     def interrupt(self) -> None:
         """
@@ -277,7 +459,7 @@ class ReActCore:
         """
         self._interrupted = False
         
-    async def reply(self, message: str | Msg) -> Msg:
+    async def reply(self, message: str | Msg, cancel_event: asyncio.Event = None) -> Msg:
         """
         处理用户消息并生成回复。
         
@@ -313,14 +495,8 @@ class ReActCore:
         self._last_tool_results = []
         self._interrupted = False  # 重置中断标志
         
-        memory_context = ""
-        if self.memory:
-            retrieved = await self.memory.retrieve(user_msg.get_text_content() or "")
-            if retrieved:
-                memory_context = "\n".join([
-                    f"Previous conversation: {msg.get_text_content()}"
-                    for msg in retrieved
-                ])
+        # 新增：重置工具调用事件管理器
+        self._tool_call_event_manager.reset()
         
         rag_context = ""
         if self.rag:
@@ -332,17 +508,21 @@ class ReActCore:
                 ])
         
         full_system_prompt = self.system_prompt
-        if memory_context:
-            full_system_prompt += f"\n\n{memory_context}"
         if rag_context:
             full_system_prompt += f"\n\n{rag_context}"
         
         completion_reason = None
         
         for iteration in range(self.max_iters):
-            # 检查中断标志
+            # 每轮迭代开始时重置工具调用事件管理器
+            self._tool_call_event_manager.reset()
+            
             if self._interrupted:
                 logger.info(f"[{self.name}] Execution interrupted by user at iteration {iteration}")
+                break
+            
+            if cancel_event and cancel_event.is_set():
+                logger.info(f"[{self.name}] Cancel event detected at iteration {iteration}")
                 break
             
             self._iteration_count = iteration + 1
@@ -350,7 +530,8 @@ class ReActCore:
             reasoning_result = await self._reasoning(
                 user_msg, 
                 full_system_prompt,
-                iteration
+                iteration,
+                cancel_event
             )
             
             completion_check = self._check_completion(reasoning_result, iteration)
@@ -387,16 +568,39 @@ class ReActCore:
                 response_msg = Msg(
                     name=self.name,
                     content=final_response,
-                    role="assistant"
+                    role="assistant",
+                    metadata=getattr(reasoning_result, 'metadata', None)
                 )
                 self._conversation_history.append(response_msg)
                 
-                if self.memory:
-                    await self.memory.add(user_msg)
-                    await self.memory.add(response_msg)
-                
                 return response_msg
             
+            # 检查是否有tool_calls
+            # 优先使用 ToolCallEventManager 判断，其次检查 finish_reason
+            has_tool_calls = (
+                len(self._tool_call_event_manager.get_active_tool_calls()) > 0 or
+                reasoning_result.finish_reason == "tool_calls"
+            )
+
+            logger.info(f"[ReActCore] has_tool_calls={has_tool_calls}")
+            logger.info(f"[ReActCore] reasoning_result metadata: {getattr(reasoning_result, 'metadata', None)}")
+            logger.info(f"[ReActCore] reasoning_result type: {type(reasoning_result)}")
+            
+            if hasattr(reasoning_result, '__dict__'):
+                logger.info(f"[ReActCore] reasoning_result attributes: {list(reasoning_result.__dict__.keys())}")
+
+            if has_tool_calls:
+                # 从ChatResponse的content创建Msg，并传递metadata
+                assistant_msg = Msg(
+                    name=self.name,
+                    content=reasoning_result.content,
+                    role="assistant",
+                    metadata=getattr(reasoning_result, 'metadata', None)
+                )
+                self._conversation_history.append(assistant_msg)
+                logger.info(f"[ReActCore] Added assistant message with tool_calls to history")
+                logger.info(f"[ReActCore] Assistant msg metadata: {assistant_msg.metadata}")
+
             tool_results = await self._acting(reasoning_result)
             
             if tool_results:
@@ -414,13 +618,10 @@ class ReActCore:
                     response_msg = Msg(
                         name=self.name,
                         content=final_response,
-                        role="assistant"
+                        role="assistant",
+                        metadata=getattr(reasoning_result, 'metadata', None)
                     )
                     self._conversation_history.append(response_msg)
-                    
-                    if self.memory:
-                        await self.memory.add(user_msg)
-                        await self.memory.add(response_msg)
                     
                     return response_msg
         
@@ -433,13 +634,10 @@ class ReActCore:
         response_msg = Msg(
             name=self.name,
             content=final_response,
-            role="assistant"
+            role="assistant",
+            metadata=getattr(reasoning_result, 'metadata', None)
         )
         self._conversation_history.append(response_msg)
-        
-        if self.memory:
-            await self.memory.add(user_msg)
-            await self.memory.add(response_msg)
         
         return response_msg
     
@@ -447,7 +645,8 @@ class ReActCore:
         self,
         user_msg: Msg,
         system_prompt: str,
-        iteration: int
+        iteration: int,
+        cancel_event: asyncio.Event = None
     ) -> ChatResponse:
         """
         执行推理步骤。
@@ -481,68 +680,231 @@ class ReActCore:
         
         if tools:
             logger.info(f"[_reasoning] Calling model with {len(tools)} tools: {[t.get('function', {}).get('name') for t in tools]}")
-            response = await self.model(formatted, tools=tools)
+            response = await self.model(formatted, tools=tools, cancel_event=cancel_event)
         else:
             logger.info(f"[_reasoning] Calling model without tools")
-            response = await self.model(formatted)
+            response = await self.model(formatted, cancel_event=cancel_event)
         
         # 处理流式响应 - 必须先消费生成器
         if hasattr(response, '__aiter__'):
             # 流式响应：逐个chunk处理并收集
             final_response = None
             chunk_count = 0
+            # 收集所有的内容块，合并到完整响应
+            collected_content = []
+            collected_stop_reason = None
+            collected_finish_reason = None
+            collected_metadata = None
+            collected_usage = None
+            
             async for chunk in response:
-                # 检查中断标志
                 if self._interrupted:
                     logger.info(f"[{self.name}] Stream interrupted by user at chunk #{chunk_count}")
                     break
                 
+                if cancel_event and cancel_event.is_set():
+                    logger.info(f"[{self.name}] Stream cancelled at chunk #{chunk_count}")
+                    break
+                
                 chunk_count += 1
                 final_response = chunk
+                
                 # Debug: 打印每个 chunk 的 stop_reason
-                if hasattr(chunk, 'stop_reason'):
+                if chunk.stop_reason:
                     logger.info(f"[_reasoning] Chunk #{chunk_count} stop_reason={chunk.stop_reason}")
-                if hasattr(chunk, 'finish_reason'):
+                    collected_stop_reason = chunk.stop_reason
+                if chunk.finish_reason:
                     logger.info(f"[_reasoning] Chunk #{chunk_count} finish_reason={chunk.finish_reason}")
-                # 每个chunk都调用回调
-                if self.stream_callback and hasattr(chunk, 'content') and chunk.content:
+                    collected_finish_reason = chunk.finish_reason
+                
+                # 收集内容块 - 区分增量块和完整块
+                if hasattr(chunk, 'content') and chunk.content:
                     for block in chunk.content:
-                        # 处理 TextBlock (TypedDict 或 dict)
+                        # 支持 dict 和 dataclass/TypedDict 对象
                         if isinstance(block, dict):
-                            if block.get("type") == "text":
-                                text_content = block.get("text", "")
-                                if text_content:
-                                    try:
-                                        self.stream_callback(text_content)
-                                    except Exception as e:
-                                        logger.error(f"Stream callback error: {e}")
-                            elif block.get("type") == "thinking":
-                                thinking_content = block.get("thinking", "")
-                                if thinking_content:
-                                    try:
-                                        self.stream_callback(f"[思考] {thinking_content}")
-                                    except Exception as e:
-                                        logger.error(f"Stream callback error: {e}")
-            logger.debug(f"[ReActCore] Total stream chunks: {chunk_count}")
-            response = final_response
-        elif self.stream_callback and hasattr(response, 'content') and response.content:
-            # 非流式响应：一次性输出
-            for block in response.content:
-                if isinstance(block, dict):
-                    if block.get("type") == "text":
-                        text_content = block.get("text", "")
-                        if text_content:
+                            block_type = block.get("type")
+                        elif hasattr(block, "__getitem__"):
+                            # TypedDict 支持字典式访问
                             try:
-                                self.stream_callback(text_content)
-                            except Exception as e:
-                                logger.error(f"Stream callback error: {e}")
-                    elif block.get("type") == "thinking":
-                        thinking_content = block.get("thinking", "")
-                        if thinking_content:
-                            try:
-                                self.stream_callback(f"[思考] {thinking_content}")
-                            except Exception as e:
-                                logger.error(f"Stream callback error: {e}")
+                                block_type = block["type"] if "type" in block else None
+                            except (KeyError, TypeError):
+                                block_type = None
+                        else:
+                            block_type = None
+                        
+                        if block_type == "tool_use":
+                            # 完整工具调用块（非流式响应或 Claude 格式）
+                            # 流式响应中 Model 层不再输出此块，由 ReActCore 从增量构建
+                            tool_id = block.get("id") if isinstance(block, dict) else getattr(block, "id", None)
+                            if tool_id:
+                                input_data = block.get("input", {}) if isinstance(block, dict) else getattr(block, "input", {})
+                                if isinstance(input_data, str):
+                                    try:
+                                        input_data = json.loads(input_data) if input_data.strip() else {}
+                                    except json.JSONDecodeError:
+                                        logger.warning(f"Failed to parse tool_use input: {input_data[:100]}...")
+                                        input_data = {}
+                                
+                                tool_name = block.get("name", "") if isinstance(block, dict) else getattr(block, "name", "")
+                                
+                                # 通知 ToolCallEventManager（用于前端实时显示）
+                                self._tool_call_event_manager.on_tool_call_start(
+                                    tool_call_id=tool_id,
+                                    tool_name=tool_name
+                                )
+                                args_str = json.dumps(input_data, ensure_ascii=False) if input_data else "{}"
+                                self._tool_call_event_manager.on_tool_call_args(
+                                    tool_call_id=tool_id,
+                                    delta=args_str
+                                )
+                                self._tool_call_event_manager.on_tool_call_end(tool_id)
+                                
+                                block_dict = {
+                                    "type": "tool_use",
+                                    "id": tool_id,
+                                    "name": tool_name,
+                                    "input": input_data
+                                }
+                                collected_content.append(block_dict)
+                            else:
+                                pass
+                        elif block_type == "tool_calls":
+                            # 增量工具调用块（OpenAI 流式格式）- 触发四事件
+                            for tool_call_data in block.get("tool_calls", []):
+                                tool_id = tool_call_data.get("id")
+                                tool_index = tool_call_data.get("index")
+                                func = tool_call_data.get("function", {})
+                                
+                                logger.info(f"[ReActCore] Received tool_calls block: id={tool_id}, index={tool_index}, func={func}")
+                                
+                                # 关键修复：确定实际的工具调用 ID
+                                # OpenAI 流式响应中，后续 delta 的 id 可能为 None，需要通过 index 匹配
+                                actual_tool_id = tool_id
+                                
+                                if not actual_tool_id and tool_index is not None:
+                                    # id 为 None，通过 index 匹配已存在的工具调用
+                                    active_calls = self._tool_call_event_manager.get_active_tool_calls()
+                                    active_ids = list(active_calls.keys())
+                                    if tool_index < len(active_ids):
+                                        actual_tool_id = active_ids[tool_index]
+                                        logger.info(f"[ReActCore] Matched tool call by index: {tool_index} -> {actual_tool_id}")
+                                
+                                if not actual_tool_id:
+                                    # 无法确定工具调用 ID，跳过
+                                    logger.warning(f"[ReActCore] Cannot determine tool_call_id, skipping: index={tool_index}")
+                                    continue
+                                
+                                # TOOL_CALL_START: 检测到新的工具调用
+                                if actual_tool_id not in self._tool_call_event_manager.get_active_tool_calls():
+                                    self._tool_call_event_manager.on_tool_call_start(
+                                        tool_call_id=actual_tool_id,
+                                        tool_name=func.get("name", "")
+                                    )
+                                    logger.info(f"[ReActCore] TOOL_CALL_START: {actual_tool_id}, name={func.get('name')}")
+                                
+                                # TOOL_CALL_ARGS: 发送参数增量
+                                delta_args = func.get("arguments", "")
+                                if delta_args:
+                                    self._tool_call_event_manager.on_tool_call_args(
+                                        tool_call_id=actual_tool_id,
+                                        delta=delta_args
+                                    )
+                                    logger.info(f"[ReActCore] TOOL_CALL_ARGS: {actual_tool_id}, delta={delta_args[:50]}...")
+                                else:
+                                    logger.info(f"[ReActCore] TOOL_CALL_ARGS skipped: delta_args is empty or None")
+                            # 不收集到 collected_content，由 ToolCallEventManager 管理
+                        else:
+                            collected_content.append(block)
+                
+                # 收集 metadata 和 usage
+                if hasattr(chunk, 'metadata') and chunk.metadata:
+                    collected_metadata = chunk.metadata
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    collected_usage = chunk.usage
+                
+                # 使用 to_delta() 方法转换为 OpenAI 标准格式
+                # 但过滤掉已被 ToolCallEventManager 处理的 tool_use 块
+                if self.stream_callback and chunk.content:
+                    # 过滤掉 tool_use 和 tool_calls 块（由 ToolCallEventManager 处理）
+                    filtered_content = [
+                        block for block in chunk.content
+                        if not (isinstance(block, dict) and block.get("type") in ("tool_use", "tool_calls"))
+                    ]
+                    if filtered_content:
+                        # 避免将模型最终组装的完整块作为 delta 发送，否则会导致前端重复显示
+                        is_final_assembled = hasattr(chunk, 'metadata') and chunk.metadata and 'original_model_message' in chunk.metadata
+                        if not is_final_assembled:
+                            from collections import defaultdict
+                            type_groups = defaultdict(list)
+                            for block in filtered_content:
+                                if isinstance(block, dict):
+                                    block_type = block.get("type", "text")
+                                else:
+                                    block_type = getattr(block, "type", "text")
+                                type_groups[block_type].append(block)
+                            
+                            for block_type, blocks in type_groups.items():
+                                single_type_chunk = ChatResponse(content=blocks)
+                                delta = single_type_chunk.to_delta()
+                                if delta:
+                                    logger.info(f"[ReActCore] Chunk #{chunk_count} sending delta with type: {block_type}")
+                                    self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name)
+            
+            logger.info(f"[ReActCore] Total stream chunks processed: {chunk_count}")
+            
+            # finish_reason 处理：结束所有活跃的工具调用
+            if collected_finish_reason == "tool_calls":
+                self._tool_call_event_manager.end_all_active_tool_calls()
+                logger.info(f"[ReActCore] finish_reason=tool_calls, ended all active tool calls")
+            
+            logger.info(f"[ReActCore] collected_content types before tool_use merge: {[block.get('type') if isinstance(block, dict) else type(block).__name__ for block in collected_content]}")
+            
+            # 从 ToolCallEventManager 获取完整的工具调用信息，构建 ToolUseBlock
+            # 这是四事件方案的核心：Model 层只发增量，ReActCore 从 ToolCallEventManager 构建 ToolUseBlock
+            active_tool_calls = self._tool_call_event_manager.get_active_tool_calls()
+            if active_tool_calls:
+                existing_tool_ids = set()
+                for block in collected_content:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        existing_tool_ids.add(block.get("id"))
+                
+                for tool_id, tool_call in active_tool_calls.items():
+                    if tool_id not in existing_tool_ids:
+                        try:
+                            arguments = json.loads(tool_call.get("arguments", "{}")) if tool_call.get("arguments", "").strip() else {}
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse arguments for tool {tool_call.get('name')}: {tool_call.get('arguments', '')[:100]}...")
+                            arguments = {}
+                        
+                        tool_use_block = {
+                            "type": "tool_use",
+                            "id": tool_id,
+                            "name": tool_call.get("name", ""),
+                            "input": arguments
+                        }
+                        collected_content.append(tool_use_block)
+                        logger.info(f"[ReActCore] Built ToolUseBlock from ToolCallEventManager: {tool_id}")
+            
+            logger.info(f"[ReActCore] Final collected_content types: {[block.get('type') if isinstance(block, dict) else type(block).__name__ for block in collected_content]}")
+            
+            # 构建完整的响应
+            if final_response and collected_content:
+                # 从 final_response 创建新的完整响应
+                response = ChatResponse(
+                    content=collected_content,
+                    usage=collected_usage or getattr(final_response, 'usage', None),
+                    metadata=collected_metadata or getattr(final_response, 'metadata', None),
+                    stop_reason=collected_stop_reason or getattr(final_response, 'stop_reason', None),
+                    finish_reason=collected_finish_reason or getattr(final_response, 'finish_reason', None),
+                )
+                logger.info(f"[ReActCore] Built complete response with {len(collected_content)} content blocks")
+            else:
+                response = final_response
+        elif self.stream_callback and response.content:
+            delta = response.to_delta()
+            if delta:
+                logger.info(f"[ReActCore] Non-stream delta: {list(delta.keys())}")
+                self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name)
         
         if self.print_hint_msg:
             reasoning_text = ""
@@ -588,7 +950,7 @@ class ReActCore:
             return []
         
         tool_results = []
-        self._last_tool_results = []  # 重置并记录完整工具调用信息
+        self._last_tool_results = []
         
         for tool_call in tool_calls:
             logger.info(f"[_acting] Executing tool: {tool_call.get('name')} with args: {tool_call.get('arguments')}")
@@ -596,14 +958,27 @@ class ReActCore:
                 try:
                     result = await self.tool_executor.execute(tool_call)
                     result_content = result.get("content", str(result))
+                    
+                    # 使用 ToolCallEventManager 发送 TOOL_CALL_RESULT
+                    self._tool_call_event_manager.on_tool_call_result(
+                        tool_call_id=tool_call.get("id"),
+                        result=result_content
+                    )
+                    
+                    tool_result_block = {
+                        "type": "tool_result",
+                        "id": tool_call.get("id"),
+                        "name": tool_call.get("name"),
+                        "output": result_content if isinstance(result_content, str) else str(result_content)
+                    }
+                    
                     result_msg = Msg(
                         name="tool",
-                        content=result_content if isinstance(result_content, str) else str(result_content),
-                        role="assistant"
+                        content=[tool_result_block],
+                        role="tool"
                     )
                     tool_results.append(result_msg)
                     
-                    # 记录完整的工具调用信息
                     self._last_tool_results.append({
                         "name": tool_call.get("name"),
                         "args": tool_call.get("arguments", {}),
@@ -611,14 +986,27 @@ class ReActCore:
                     })
                     logger.info(f"[_acting] Tool {tool_call.get('name')} executed successfully, result length: {len(str(result_content))}")
                 except Exception as e:
+                    # 使用 ToolCallEventManager 发送 TOOL_CALL_RESULT（带错误）
+                    self._tool_call_event_manager.on_tool_call_result(
+                        tool_call_id=tool_call.get("id"),
+                        result=f"Error: {str(e)}",
+                        error=str(e)
+                    )
+                    
+                    error_result_block = {
+                        "type": "tool_result",
+                        "id": tool_call.get("id"),
+                        "name": tool_call.get("name"),
+                        "output": str(e)
+                    }
+                    
                     error_msg = Msg(
                         name="tool_error",
-                        content=str(e),
-                        role="assistant"
+                        content=[error_result_block],
+                        role="tool"
                     )
                     tool_results.append(error_msg)
                     
-                    # 记录失败的工具调用
                     self._last_tool_results.append({
                         "name": tool_call.get("name"),
                         "args": tool_call.get("arguments", {}),
@@ -633,7 +1021,8 @@ class ReActCore:
         """
         从 LLM 响应中解析工具调用。
         
-        提取响应内容中的 tool_use 块，转换为标准工具调用格式。
+        优先使用 ToolCallEventManager 中累积的数据，
+        回退到从响应内容中解析（兼容非流式响应)。
         
         Args:
             response (ChatResponse): LLM 响应对象。
@@ -642,23 +1031,50 @@ class ReActCore:
             List[dict]: 工具调用列表，每个调用包含：
                 - id: 调用 ID
                 - name: 工具名称
-                - arguments: 工具参数
+                - arguments: 工具参数（字典）
         """
         tool_calls = []
+        
+        # 优先使用 ToolCallEventManager 中累积的数据
+        active_tool_calls = self._tool_call_event_manager.get_active_tool_calls()
+        
+        if active_tool_calls:
+            for tool_id, tool_call in active_tool_calls.items():
+                args_str = tool_call.get("arguments", "")
+                
+                try:
+                    arguments = json.loads(args_str) if args_str.strip() else {}
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse arguments for tool {tool_call.get('name')}: {args_str[:100]}...")
+                    arguments = {}
+                
+                tool_calls.append({
+                    "id": tool_id,
+                    "name": tool_call.get("name"),
+                    "arguments": arguments
+                })
+            
+            logger.info(f"[_parse_tool_calls] Parsed {len(tool_calls)} tool calls from ToolCallEventManager")
+            return tool_calls
+        
+        # 回退：从响应内容中解析（兼容非流式响应和 tool_use 块)
+        merged_tool_calls = {}
+        
         for block in response.content:
-            if isinstance(block, dict) and block.get("type") == "tool_use":
-                tool_call = {
-                    "id": block.get("id"),
-                    "name": block.get("name"),
-                    "arguments": block.get("input", {})
-                }
-                tool_calls.append(tool_call)
-                logger.debug(f"Parsed tool call: {tool_call.get('name')} with args: {tool_call.get('arguments')}")
+            if isinstance(block, dict):
+                block_type = block.get("type")
+                
+                if block_type == "tool_use":
+                    tool_id = block.get("id")
+                    if tool_id:
+                        tool_calls.append({
+                            "id": tool_id,
+                            "name": block.get("name"),
+                            "arguments": block.get("input", {})
+                        })
         
         if tool_calls:
-            logger.info(f"Total {len(tool_calls)} tool calls parsed from response")
-        else:
-            logger.debug(f"No tool calls found in response. Response content types: {[block.get('type') if isinstance(block, dict) else type(block).__name__ for block in response.content]}")
+            logger.info(f"[_parse_tool_calls] Parsed {len(tool_calls)} tool calls from response content")
         
         return tool_calls
     
@@ -686,15 +1102,28 @@ class ReActCore:
             finish_reason_raw = getattr(response, 'finish_reason', None)
             logger.info(f"[_check_completion] stop_reason={stop_reason_raw}, finish_reason={finish_reason_raw}")
             
-            # 检查是否有 tool_use 块
+            # 优先检查是否有 tool_use 块
+            # 这是关键修复：无论stop_reason是什么，只要有tool_use块就返回TOOL_CALL
             has_tool_calls = any(
                 isinstance(block, dict) and block.get("type") == "tool_use"
                 for block in response.content
             )
             logger.info(f"[_check_completion] has_tool_calls={has_tool_calls}")
             
+            if has_tool_calls:
+                logger.info(f"[_check_completion] Found tool_use blocks, returning TOOL_CALL")
+                return {"should_complete": False, "reason": CompletionReason.TOOL_CALL}
+            
+            # 然后检查stop_reason
             stop_reason = StopReason.from_api_response(response)
             logger.info(f"[_check_completion] parsed stop_reason={stop_reason}")
+            with open('debug_completion.log', 'a', encoding='utf-8') as f:
+                f.write(f"Iteration: {iteration}\n")
+                f.write(f"has_tool_calls: {has_tool_calls}\n")
+                f.write(f"response.finish_reason: {getattr(response, 'finish_reason', None)}\n")
+                f.write(f"response.stop_reason: {getattr(response, 'stop_reason', None)}\n")
+                f.write(f"stop_reason enum: {stop_reason}\n")
+                f.write("-" * 50 + "\n")
             
             if stop_reason == StopReason.END_TURN:
                 return {
@@ -709,7 +1138,7 @@ class ReActCore:
                 logger.info(f"MAX_TOKENS reached at iteration {iteration}, auto-continuing...")
                 if self.stream_callback:
                     try:
-                        self.stream_callback("\n\n[继续输出...]\n\n")
+                        self.stream_callback({"content": "\n\n[继续输出...]\n\n"}, agent_id=self.agent_id, agent_name=self.name)
                     except Exception as e:
                         logger.error(f"Stream callback error: {e}")
                 return {
@@ -717,13 +1146,6 @@ class ReActCore:
                     "reason": CompletionReason.MAX_ITERATIONS,
                     "auto_continue": True
                 }
-            
-            has_tool_calls = any(
-                isinstance(block, dict) and block.get("type") == "tool_use"
-                for block in response.content
-            )
-            if has_tool_calls:
-                return {"should_complete": False, "reason": CompletionReason.TOOL_CALL}
             
             reasoning_text = self._extract_text(response)
             if reasoning_text.strip() and self._looks_like_final_answer(reasoning_text):
@@ -893,7 +1315,6 @@ class ReActCore:
         - 对话历史
         - 迭代计数
         - 工具调用结果
-        - 记忆存储（如果配置了记忆插件）
         
         Warning:
             此操作不可逆，所有对话上下文将丢失。
@@ -901,9 +1322,6 @@ class ReActCore:
         self._conversation_history.clear()
         self._iteration_count = 0
         self._last_tool_results = []
-        
-        if self.memory:
-            await self.memory.clear()
     
     def get_iteration_count(self) -> int:
         """
