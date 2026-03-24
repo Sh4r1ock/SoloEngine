@@ -7,20 +7,23 @@
  * 功能描述：
  * - 管理运行会话状态、执行日志等
  * - 管理运行状态、存储执行日志
+ * - 支持会话消息持久化
  * 
  * 使用场景：
  * - 工作流运行功能
  */
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { runApi, Session, SessionMessage } from '../services/runApi';
 
 export interface RunSession {
   id: string;
   status: string;
-  input_message: string;
-  output_message: string;
   error?: string;
-  started_at: string;
+  started_at?: string;
   completed_at?: string;
+  created_at?: string;
+  updated_at?: string;
   duration_ms?: number;
   token_usage?: Record<string, number>;
 }
@@ -47,9 +50,11 @@ export interface ChildAgentOutput {
 }
 
 export interface ExtendedRunSession extends RunSession {
+  name?: string;
+  createdAt?: string;
   agentId?: string;
   agentName?: string;
-  messages?: any[];
+  messages?: SessionMessage[];
   toolCalls?: ToolCallRecord[];
   childAgentOutputs?: ChildAgentOutput[];
   startTime?: number;
@@ -60,7 +65,7 @@ export type OperationPanelType = 'tools' | 'childAgents' | 'history' | null;
 interface RunState {
   sessions: ExtendedRunSession[];
   currentSession: ExtendedRunSession | null;
-  activeSessionId: string | null;
+  currentSessionId: string | null;
   loading: boolean;
   error: string | null;
   messageFilter: string;
@@ -74,8 +79,7 @@ interface RunState {
   activeOperationPanel: OperationPanelType;
 
   selectSession: (session: ExtendedRunSession | null) => void;
-  addSession: (session: Partial<ExtendedRunSession>) => void;
-  setActiveSession: (sessionId: string | null) => void;
+  setCurrentSessionId: (sessionId: string | null) => void;
   setSearchQuery: (query: string) => void;
   setMessageFilter: (filter: string) => void;
   setToolFilter: (filter: string) => void;
@@ -93,131 +97,213 @@ interface RunState {
   addToSessionHistory: (session: ExtendedRunSession) => void;
   clearSessionHistory: () => void;
   setActiveOperationPanel: (panel: OperationPanelType) => void;
+  
+  loadSessions: (agenticFlowId: string, runProjectId: string) => Promise<void>;
+  loadSessionMessages: (sessionId: string) => Promise<void>;
+  updateCurrentSession: (updates: Partial<ExtendedRunSession>) => void;
+  setSessions: (sessionsOrUpdater: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
 }
 
-export const useRunStore = create<RunState>((set, get) => ({
-  sessions: [],
-  currentSession: null,
-  activeSessionId: null,
-  loading: false,
-  error: null,
-  messageFilter: 'all',
-  toolFilter: 'all',
-  searchQuery: '',
-  isRunning: false,
-  isPaused: false,
-  toolCalls: [],
-  childAgentOutputs: [],
-  sessionHistory: [],
-  activeOperationPanel: null,
+export const useRunStore = create<RunState>()(
+  persist(
+    (set, get) => ({
+      sessions: [],
+      currentSession: null,
+      currentSessionId: null,
+      loading: false,
+      error: null,
+      messageFilter: 'all',
+      toolFilter: 'all',
+      searchQuery: '',
+      isRunning: false,
+      isPaused: false,
+      toolCalls: [],
+      childAgentOutputs: [],
+      sessionHistory: [],
+      activeOperationPanel: null,
 
-  selectSession: (session: ExtendedRunSession | null) => {
-    set({ currentSession: session });
-  },
+      selectSession: (session: ExtendedRunSession | null) => {
+        set({ currentSession: session, currentSessionId: session?.id || null });
+        if (session) {
+          get().loadSessionMessages(session.id);
+        }
+      },
 
-  addSession: (session: Partial<ExtendedRunSession>) => {
-    const newSession: ExtendedRunSession = {
-      id: session.id || `session-${Date.now()}`,
-      status: session.status || 'running',
-      input_message: '',
-      output_message: '',
-      started_at: new Date().toISOString(),
-      agentId: session.agentId,
-      agentName: session.agentName,
-      messages: session.messages || [],
-      toolCalls: session.toolCalls || [],
-      childAgentOutputs: session.childAgentOutputs || [],
-      startTime: session.startTime,
-    };
-    set((state) => ({
-      sessions: [...state.sessions, newSession],
-      activeSessionId: newSession.id,
-    }));
-  },
+      setCurrentSessionId: (sessionId: string | null) => {
+        set({ currentSessionId: sessionId });
+        if (sessionId) {
+          const session = get().sessions.find(s => s.id === sessionId);
+          if (session) {
+            set({ currentSession: session });
+          }
+        } else {
+          set({ currentSession: null });
+        }
+      },
 
-  setActiveSession: (sessionId: string | null) => {
-    set({ activeSessionId: sessionId });
-  },
+      setSearchQuery: (query: string) => {
+        set({ searchQuery: query });
+      },
 
-  setSearchQuery: (query: string) => {
-    set({ searchQuery: query });
-  },
+      setMessageFilter: (filter: string) => {
+        set({ messageFilter: filter });
+      },
 
-  setMessageFilter: (filter: string) => {
-    set({ messageFilter: filter });
-  },
+      setToolFilter: (filter: string) => {
+        set({ toolFilter: filter });
+      },
 
-  setToolFilter: (filter: string) => {
-    set({ toolFilter: filter });
-  },
+      startRunning: () => {
+        set({ isRunning: true, isPaused: false });
+      },
 
-  startRunning: () => {
-    set({ isRunning: true, isPaused: false });
-  },
+      stopRunning: () => {
+        set({ isRunning: false, isPaused: false });
+      },
 
-  stopRunning: () => {
-    set({ isRunning: false, isPaused: false, activeSessionId: null });
-  },
+      pauseRunning: () => {
+        set({ isPaused: true });
+      },
 
-  pauseRunning: () => {
-    set({ isPaused: true });
-  },
+      resumeRunning: () => {
+        set({ isPaused: false });
+      },
 
-  resumeRunning: () => {
-    set({ isPaused: false });
-  },
+      addToolCall: (toolCall: ToolCallRecord) => {
+        set((state) => ({
+          toolCalls: [...state.toolCalls, toolCall],
+        }));
+      },
 
-  addToolCall: (toolCall: ToolCallRecord) => {
-    set((state) => ({
-      toolCalls: [...state.toolCalls, toolCall],
-    }));
-  },
+      updateToolCall: (id: string, updates: Partial<ToolCallRecord>) => {
+        set((state) => ({
+          toolCalls: state.toolCalls.map((tc) =>
+            tc.id === id ? { ...tc, ...updates } : tc
+          ),
+        }));
+      },
 
-  updateToolCall: (id: string, updates: Partial<ToolCallRecord>) => {
-    set((state) => ({
-      toolCalls: state.toolCalls.map((tc) =>
-        tc.id === id ? { ...tc, ...updates } : tc
-      ),
-    }));
-  },
+      clearToolCalls: () => {
+        set({ toolCalls: [] });
+      },
 
-  clearToolCalls: () => {
-    set({ toolCalls: [] });
-  },
+      addChildAgentOutput: (output: ChildAgentOutput) => {
+        set((state) => ({
+          childAgentOutputs: [...state.childAgentOutputs, output],
+        }));
+      },
 
-  addChildAgentOutput: (output: ChildAgentOutput) => {
-    set((state) => ({
-      childAgentOutputs: [...state.childAgentOutputs, output],
-    }));
-  },
+      updateChildAgentOutput: (id: string, updates: Partial<ChildAgentOutput>) => {
+        set((state) => ({
+          childAgentOutputs: state.childAgentOutputs.map((cao) =>
+            cao.id === id ? { ...cao, ...updates } : cao
+          ),
+        }));
+      },
 
-  updateChildAgentOutput: (id: string, updates: Partial<ChildAgentOutput>) => {
-    set((state) => ({
-      childAgentOutputs: state.childAgentOutputs.map((cao) =>
-        cao.id === id ? { ...cao, ...updates } : cao
-      ),
-    }));
-  },
+      clearChildAgentOutputs: () => {
+        set({ childAgentOutputs: [] });
+      },
 
-  clearChildAgentOutputs: () => {
-    set({ childAgentOutputs: [] });
-  },
+      loadSessionHistory: (sessions: ExtendedRunSession[]) => {
+        set({ sessionHistory: sessions });
+      },
 
-  loadSessionHistory: (sessions: ExtendedRunSession[]) => {
-    set({ sessionHistory: sessions });
-  },
+      addToSessionHistory: (session: ExtendedRunSession) => {
+        set((state) => ({
+          sessionHistory: [session, ...state.sessionHistory],
+        }));
+      },
 
-  addToSessionHistory: (session: ExtendedRunSession) => {
-    set((state) => ({
-      sessionHistory: [session, ...state.sessionHistory],
-    }));
-  },
+      clearSessionHistory: () => {
+        set({ sessionHistory: [] });
+      },
 
-  clearSessionHistory: () => {
-    set({ sessionHistory: [] });
-  },
+      setActiveOperationPanel: (panel: OperationPanelType) => {
+        set({ activeOperationPanel: panel });
+      },
 
-  setActiveOperationPanel: (panel: OperationPanelType) => {
-    set({ activeOperationPanel: panel });
-  },
-}));
+      loadSessions: async (agenticFlowId: string, runProjectId: string) => {
+        set({ loading: true, error: null });
+        try {
+          const sessions = await runApi.getSessions({ 
+            agentic_flow_id: agenticFlowId,
+            run_project_id: runProjectId,
+            limit: 50 
+          });
+          
+          const currentSessions = get().sessions;
+          
+          const extendedSessions: ExtendedRunSession[] = sessions.map(s => {
+            const existingSession = currentSessions.find(cs => cs.id === s.id);
+            return {
+              ...s,
+              messages: existingSession?.messages || [],
+              toolCalls: existingSession?.toolCalls || [],
+              childAgentOutputs: existingSession?.childAgentOutputs || [],
+            };
+          });
+          set({ sessions: extendedSessions, sessionHistory: extendedSessions });
+        } catch (error: any) {
+          set({ error: error.message || 'Failed to load sessions' });
+        } finally {
+          set({ loading: false });
+        }
+      },
+
+      loadSessionMessages: async (sessionId: string) => {
+        try {
+          const messages = await runApi.getSessionMessages(sessionId);
+          
+          const formattedMessages: SessionMessage[] = messages.map((msg, index) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content || '',
+            reasoning_content: msg.reasoning_content,
+            data: msg.data || [],
+            message_index: msg.message_index ?? index,
+            timestamp: msg.created_at || new Date().toISOString(),
+            created_at: msg.created_at,
+            tokens: msg.total_tokens,
+            prompt_tokens: msg.prompt_tokens,
+            completion_tokens: msg.completion_tokens,
+            total_tokens: msg.total_tokens,
+          }));
+          
+          set((state) => ({
+            sessions: state.sessions.map(s =>
+              s.id === sessionId ? { ...s, messages: formattedMessages } : s
+            ),
+            currentSession: state.currentSession?.id === sessionId
+              ? { ...state.currentSession, messages: formattedMessages }
+              : state.currentSession,
+          }));
+        } catch (error: any) {
+          console.error('Failed to load session messages:', error);
+        }
+      },
+
+      updateCurrentSession: (updates: Partial<ExtendedRunSession>) => {
+        set((state) => ({
+          currentSession: state.currentSession
+            ? { ...state.currentSession, ...updates }
+            : null,
+        }));
+      },
+
+      setSessions: (sessionsOrUpdater: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => {
+        if (typeof sessionsOrUpdater === 'function') {
+          set((state) => ({ sessions: sessionsOrUpdater(state.sessions) }));
+        } else {
+          set({ sessions: sessionsOrUpdater });
+        }
+      },
+    }),
+    {
+      name: 'run-store',
+      partialize: (state) => ({
+        currentSessionId: state.currentSessionId,
+      }),
+    }
+  )
+);

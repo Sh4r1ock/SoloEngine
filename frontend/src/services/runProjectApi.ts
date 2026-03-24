@@ -5,7 +5,7 @@
  * @date 2026-02-22
  * 
  * 功能描述：
- * - 项目选择和切换API
+ * - 项目选择和创建API
  * - 文件夹选择对话框接口
  * - 最近项目记录管理
  * - 沙箱文件系统操作
@@ -17,7 +17,8 @@
 
 import { api } from './api';
 
-export interface SelectFolderRequest {
+export interface SelectOrCreateProjectRequest {
+  agentic_flow_id: string;
   folder_path: string;
 }
 
@@ -38,12 +39,17 @@ export interface RecentProjectInfo {
   accessed_at?: string;
 }
 
-export interface SelectFolderResponse {
+export interface SelectOrCreateProjectResponse {
   project_id: string;
   project_name: string;
   folder_path: string;
   is_new: boolean;
   recent_projects: RecentProjectInfo[];
+}
+
+export interface NativeFolderDialogResponse {
+  folder_path: string;
+  folder_name: string;
 }
 
 export interface FileInfo {
@@ -99,52 +105,62 @@ export interface WorkspaceRootsResponse {
 }
 
 export const runProjectApi = {
-  async selectFolder(folderPath: string): Promise<{ code: number; data: SelectFolderResponse }> {
-    const response = await api.post('/run-project/select-folder', {
+  async selectOrCreateProject(
+    agenticFlowId: string,
+    folderPath: string
+  ): Promise<{ code: number; data: SelectOrCreateProjectResponse }> {
+    return await api.post('/run-project/select-or-create', {
+      agentic_flow_id: agenticFlowId,
       folder_path: folderPath,
     });
-    return response.data;
   },
 
   async browseDirectory(path: string = ''): Promise<{ code: number; data: BrowseResponse | WorkspaceRootsResponse }> {
-    const response = await api.get('/run-project/browse', { params: { path } });
-    return response.data;
+    return await api.get('/run-project/browse', { params: { path } });
   },
 
-  async openNativeFolderDialog(title: string = '选择项目文件夹'): Promise<{ code: number; data: SelectFolderResponse | null }> {
-    const response = await api.get('/run-project/native-folder-dialog', { params: { title } });
-    return response.data;
+  async openNativeFolderDialog(
+    agenticFlowId: string,
+    title: string = '选择项目文件夹',
+    initialdir: string = ''
+  ): Promise<{ code: number; data: SelectOrCreateProjectResponse | null }> {
+    return await api.get('/run-project/native-folder-dialog', { 
+      params: { agentic_flow_id: agenticFlowId, title, initialdir } 
+    });
   },
 
-  async getCurrentProject(): Promise<{ code: number; data: ProjectInfo | null }> {
-    const response = await api.get('/run-project/current');
-    return response.data;
+  async getCurrentProject(agenticFlowId?: string): Promise<{ code: number; data: ProjectInfo | null }> {
+    const params: any = {};
+    if (agenticFlowId) {
+      params.agentic_flow_id = agenticFlowId;
+    }
+    return await api.get('/run-project/current', { params });
   },
 
-  async getRecentProjects(limit: number = 10): Promise<{ code: number; data: RecentProjectInfo[] }> {
-    const response = await api.get('/run-project/recent', { params: { limit } });
-    return response.data;
-  },
-
-  async switchProject(projectId: string): Promise<{ code: number; data: ProjectInfo }> {
-    const response = await api.post(`/run-project/switch/${projectId}`);
-    return response.data;
+  async getRecentProjects(
+    agenticFlowId: string,
+    limit: number = 10
+  ): Promise<{ code: number; data: RecentProjectInfo[] }> {
+    return await api.get('/run-project/recent', { 
+      params: { 
+        agentic_flow_id: agenticFlowId,
+        limit 
+      } 
+    });
   },
 
   async listFiles(path: string = '', pattern: string = '*'): Promise<{ code: number; data: FileListResponse }> {
-    const response = await api.post('/run-project/files/list', {
+    return await api.post('/run-project/files/list', {
       path,
       pattern,
     });
-    return response.data;
   },
 
   async readFile(path: string, encoding: string = 'utf-8'): Promise<{ code: number; data: FileReadResponse }> {
-    const response = await api.post('/run-project/files/read', {
+    return await api.post('/run-project/files/read', {
       path,
       encoding,
     });
-    return response.data;
   },
 
   async writeFile(
@@ -153,33 +169,32 @@ export const runProjectApi = {
     encoding: string = 'utf-8',
     mode: 'write' | 'append' = 'write'
   ): Promise<{ code: number; data: FileWriteResponse }> {
-    const response = await api.post('/run-project/files/write', {
+    return await api.post('/run-project/files/write', {
       path,
       content,
       encoding,
       mode,
     });
-    return response.data;
   },
 
   async deleteFile(path: string): Promise<{ code: number; data: { path: string; type: string; deleted: boolean } }> {
-    const response = await api.delete('/run-project/files/delete', { params: { path } });
-    return response.data;
+    return await api.delete('/run-project/files/delete', { params: { path } });
   },
 
   async createDirectory(path: string): Promise<{ code: number; data: { path: string; created: boolean } }> {
-    const response = await api.post('/run-project/files/mkdir', null, { params: { path } });
-    return response.data;
+    return await api.post('/run-project/files/mkdir', null, { params: { path } });
   },
 
   async getFileInfo(path: string): Promise<{ code: number; data: FileInfo }> {
-    const response = await api.get('/run-project/files/info', { params: { path } });
-    return response.data;
+    return await api.get('/run-project/files/info', { params: { path } });
   },
 
   async fileExists(path: string): Promise<{ code: number; data: { path: string; exists: boolean } }> {
-    const response = await api.get('/run-project/files/exists', { params: { path } });
-    return response.data;
+    return await api.get('/run-project/files/exists', { params: { path } });
+  },
+
+  getFileAccessUrl(path: string): string {
+    return `/api/v1/run-project/files/access?path=${encodeURIComponent(path)}`;
   },
 };
 

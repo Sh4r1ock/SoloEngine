@@ -72,7 +72,7 @@ const SkillsEditorPage: React.FC = () => {
   const [folderDescModalVisible, setFolderDescModalVisible] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [folderDescription, setFolderDescription] = useState('');
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textAreaRef = useRef<any>(null);
   
   const [history, setHistory] = useState<HistoryState[]>([]);

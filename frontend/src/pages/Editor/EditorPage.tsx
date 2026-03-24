@@ -51,9 +51,14 @@ const EditorPage: React.FC = () => {
   } = useCanvasStore();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [projectName, setProjectName] = useState('');
-  const [panelWidth, setPanelWidth] = useState(320);
+  const [panelWidth, setPanelWidth] = useState(480);
   const [isPanelDragging, setIsPanelDragging] = useState(false);
   const dragHandleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const initialWidth = Math.floor(window.innerWidth * 0.25);
+    setPanelWidth(initialWidth);
+  }, []);
 
   useEffect(() => {
     if (projectId) {
@@ -116,13 +121,13 @@ const EditorPage: React.FC = () => {
    */
   const handleSave = async () => {
     const { nodes, edges } = useCanvasStore.getState();
-    const flowId = projectId || currentProject?.id;
-    if (!flowId) {
+    const agenticFlowId = projectId || currentProject?.id;
+    if (!agenticFlowId) {
       message.error('无法保存：缺少项目ID');
       return;
     }
     try {
-      await agenticFlowApi.saveCanvas(flowId, { nodes, edges });
+      await agenticFlowApi.saveCanvas(agenticFlowId, { nodes, edges });
       message.success('保存成功');
     } catch (error) {
       message.error('保存失败');
@@ -159,8 +164,8 @@ const EditorPage: React.FC = () => {
     if (!isPanelDragging) return;
 
     const newWidth = window.innerWidth - e.clientX;
-    const minWidth = 280;
-    const maxWidth = 600;
+    const minWidth = Math.max(280, Math.floor(window.innerWidth * 0.2));
+    const maxWidth = Math.floor(window.innerWidth * 0.5);
 
     if (newWidth >= minWidth && newWidth <= maxWidth) {
       setPanelWidth(newWidth);
@@ -344,12 +349,14 @@ const EditorPage: React.FC = () => {
               boxShadow: 'var(--shadow-lg)',
             }}
             trigger={null}
+            collapsible={false}
           >
             <div style={{ 
               position: 'relative',
               height: '100%',
               display: 'flex',
               flexDirection: 'column',
+              background: 'var(--bg-100)',
             }}>
               <Button
                 type="text"
@@ -357,14 +364,29 @@ const EditorPage: React.FC = () => {
                 onClick={handleClosePropertyPanel}
                 style={{
                   position: 'absolute',
-                  top: 16,
-                  right: 16,
+                  top: 12,
+                  right: 12,
                   fontSize: 14,
-                  padding: 4,
+                  padding: 8,
                   zIndex: 10,
-                  color: 'var(--text-200)',
+                  color: 'var(--text-300)',
+                  borderRadius: 'var(--radius-base)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-color-lighter)',
+                  transition: 'all var(--duration-fast)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--error-color)';
+                  e.currentTarget.style.background = '#fef2f2';
+                  e.currentTarget.style.borderColor = '#fecaca';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-300)';
+                  e.currentTarget.style.background = 'var(--bg-surface)';
+                  e.currentTarget.style.borderColor = 'var(--border-color-lighter)';
                 }}
               />
+              
               <div
                 ref={dragHandleRef}
                 onMouseDown={handleMouseDown}
@@ -373,28 +395,41 @@ const EditorPage: React.FC = () => {
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  width: 4,
+                  width: 6,
                   cursor: 'col-resize',
-                  background: 'var(--bg-200)',
-                  transition: isPanelDragging ? 'none' : 'background 0.2s',
+                  background: 'transparent',
+                  transition: 'background 0.2s',
+                  zIndex: 5,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
+                onMouseEnter={(e) => {
+                  if (!isPanelDragging) {
+                    e.currentTarget.style.background = 'var(--primary-300)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isPanelDragging) {
+                    e.currentTarget.style.background = 'transparent';
+                  }
+                }}
               >
-                <DragOutlined 
-                  style={{ 
-                    fontSize: 12, 
-                    color: 'var(--text-200)',
-                    transform: 'rotate(90deg)',
-                  }} 
-                />
+                <div style={{
+                  width: 2,
+                  height: 40,
+                  background: isPanelDragging ? 'var(--primary-100)' : 'var(--border-color-lighter)',
+                  borderRadius: 2,
+                  transition: 'background 0.2s',
+                }} />
               </div>
+              
               <div style={{ 
                 flex: 1, 
                 overflowY: 'auto', 
-                padding: '16px 24px 24px' 
-              }}>
+                padding: '20px 20px 24px',
+                paddingTop: '20px',
+              }} className="custom-scrollbar">
                 <PropertyPanel />
               </div>
             </div>

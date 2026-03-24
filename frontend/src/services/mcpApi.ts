@@ -96,6 +96,7 @@ export interface MCPServer {
   name: string;
   transport: string;
   transport_type?: string;
+  source_type?: string;
   url?: string;
   command?: string;
   args?: string[];
@@ -110,6 +111,7 @@ export interface MCPServer {
   source?: string;
   description?: string;
   tags?: string[];
+  icon?: string;
   version?: number;
   status: string;
   created_at?: string;
@@ -358,6 +360,14 @@ class MCPApi {
 
   async healthCheck() {
     return mcpApiRequest.get('/mcp/health');
+  }
+
+  async getOpenMCPList() {
+    return mcpApiRequest.get('/mcp/open/list');
+  }
+
+  async importOpenMCP(mcpId: string) {
+    return mcpApiRequest.post(`/mcp/open/import/${mcpId}`);
   }
 }
 

@@ -6,12 +6,12 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { useRunStore } from '../store/runStore';
 
 export type ExecutionEventType =
   | 'execution_start'
   | 'execution_complete'
   | 'execution_error'
+  | 'execution_cancelled'
   | 'agent_start'
   | 'agent_complete'
   | 'agent_error'
@@ -34,6 +34,16 @@ export interface ExecutionEvent {
   agent_name?: string;
   agent_type?: string;
   content?: string;
+  content_type?: string;
+  delta?: {
+    content?: string;
+    reasoning_content?: string;
+  };
+  message?:{
+    role: string;
+    content?: string;
+    reasoning_content?: string;
+  };
   tool_name?: string;
   tool_args?: Record<string, any>;
   tool_result?: string;
@@ -52,13 +62,14 @@ export interface ExecutionEvent {
   child_agent_type?: string;
   child_agent_input?: string;
   child_agent_output?: string;
-  status?: 'pending' | 'running' | 'success' | 'error' | 'completed';
+  status?:'pending' | 'running' | 'success' | 'error' | 'completed' | 'stopped' | 'cancelled';
   error?: string;
   timestamp: string;
   start_time?: string;
   end_time?: string;
   duration_ms?: number;
   metadata?: Record<string, any>;
+  data?: Record<string, any>;
 }
 
 export interface WebSocketMessage {
@@ -66,13 +77,19 @@ export interface WebSocketMessage {
   data: any;
   session_id: string;
   timestamp: number;
+  message?: {
+    role: string;
+    content?: string;
+    reasoning_content?: string;
+  };
 }
 
 interface UseRunWebSocketOptions {
+  agenticFlowId: string | null;
   sessionId: string | null;
+  runProjectId: string | null;
   onMessage?: (message: WebSocketMessage) => void;
   onEvent?: (event: ExecutionEvent) => void;
-  onStream?: (content: string) => void;
   onError?: (error: Event) => void;
   onClose?: (event: CloseEvent) => void;
   autoReconnect?: boolean;
@@ -82,40 +99,70 @@ interface UseRunWebSocketOptions {
 
 export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
   const {
+    agenticFlowId,
     sessionId,
+    runProjectId,
     autoReconnect = true,
     reconnectInterval = 3000,
-    maxReconnectAttempts = 5,
+    maxReconnectAttempts = 10,
   } = options;
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectionKeyRef = useRef<string>('');
+  const messageQueueRef = useRef<Array<{
+    type: string;
+    data: any;
+    resolve: (success: boolean) => void;
+  }>>([]);
+  const isReconnectingRef = useRef<boolean>(false);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected' | 'error'>('disconnected');
   
   const onMessageRef = useRef(options.onMessage);
   const onEventRef = useRef(options.onEvent);
-  const onStreamRef = useRef(options.onStream);
   const onErrorRef = useRef(options.onError);
   const onCloseRef = useRef(options.onClose);
 
   useEffect(() => {
     onMessageRef.current = options.onMessage;
     onEventRef.current = options.onEvent;
-    onStreamRef.current = options.onStream;
     onErrorRef.current = options.onError;
     onCloseRef.current = options.onClose;
-  });
+  }, [options.onMessage, options.onEvent, options.onError, options.onClose]);
 
-  const { addSession } = useRunStore();
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+    }
+    heartbeatIntervalRef.current = setInterval(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 15000);
+  }, []);
 
-  const disconnect = useCallback(() => {
+  const stopHeartbeat = useCallback(() => {
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+  }, []);
+
+  const disconnect = useCallback((preventReconnect: boolean = false) => {
+    stopHeartbeat();
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
-    reconnectAttemptsRef.current = maxReconnectAttempts;
+    if (preventReconnect) {
+      reconnectAttemptsRef.current = maxReconnectAttempts;
+    }
+    
+    isReconnectingRef.current = false;
+    messageQueueRef.current = [];
     
     if (wsRef.current) {
       wsRef.current.close(1000, 'User disconnected');
@@ -123,12 +170,15 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
     }
     setIsConnected(false);
     setConnectionStatus('disconnected');
-  }, [maxReconnectAttempts]);
+  }, [maxReconnectAttempts, stopHeartbeat]);
 
   const connect = useCallback(() => {
-    if (!sessionId) return;
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+    if (!agenticFlowId || !sessionId || !runProjectId) {
+      console.log('Missing required parameters for WebSocket connection:', {
+        agenticFlowId,
+        sessionId,
+        runProjectId,
+      });
       return;
     }
 
@@ -140,7 +190,21 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const wsUrl = `${protocol}//${host}/api/v1/run/ws/${sessionId}?token=${token}`;
+    const wsUrl = `${protocol}//${host}/api/v1/run/ws/${agenticFlowId}/${sessionId}/${runProjectId}?token=${token}`;
+
+    if (wsRef.current) {
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        const currentUrl = wsRef.current.url;
+        if (currentUrl === wsUrl) {
+          return;
+        }
+        wsRef.current.close(1000, 'Session changed');
+        wsRef.current = null;
+      } else if (wsRef.current.readyState === WebSocket.CONNECTING) {
+        wsRef.current.close(1000, 'Session changed');
+        wsRef.current = null;
+      }
+    }
 
     setConnectionStatus('connecting');
 
@@ -153,8 +217,23 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
         setIsConnected(true);
         setConnectionStatus('connected');
         reconnectAttemptsRef.current = 0;
+        isReconnectingRef.current = false;
 
         ws.send(JSON.stringify({ type: 'ping' }));
+        startHeartbeat();
+        
+        while (messageQueueRef.current.length > 0) {
+          const item = messageQueueRef.current.shift();
+          if (item && ws.readyState === WebSocket.OPEN) {
+            try {
+              ws.send(JSON.stringify({ type: item.type, ...item.data }));
+              item.resolve(true);
+            } catch (error) {
+              console.error('Failed to send queued message:', error);
+              item.resolve(false);
+            }
+          }
+        }
       };
 
       ws.onmessage = (event) => {
@@ -165,20 +244,56 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
             return;
           }
 
-          if (message.type === 'execution_result') {
-            onMessageRef.current?.(message);
-          } else if (message.type === 'execution_event') {
+          if (message.type === 'stream') {
+            const streamEvent: ExecutionEvent = {
+              event_type: 'stream',
+              delta: (message as any).delta,
+              timestamp: (message as any).timestamp || new Date().toISOString(),
+            };
+            onEventRef.current?.(streamEvent);
+            return;
+          }
+
+          if (message.type === 'execution_complete') {
+            const completeEvent: ExecutionEvent = {
+              event_type: 'execution_complete',
+              message: (message as any).message,
+              data: (message as any).data,
+              timestamp: (message as any).timestamp || new Date().toISOString(),
+            };
+            onEventRef.current?.(completeEvent);
+            return;
+          }
+
+          if (message.type === 'execution_event') {
             const execEvent: ExecutionEvent = message.data;
             onEventRef.current?.(execEvent);
-
-            if (execEvent.event_type === 'stream') {
-              onStreamRef.current?.(execEvent.content || '');
-            }
-          } else if (message.type === 'stream') {
-            onStreamRef.current?.(message.data);
-          } else {
-            onMessageRef.current?.(message);
+            return;
           }
+
+          if (message.type === 'execution_stopped') {
+            const stoppedEvent: ExecutionEvent = {
+              event_type: 'execution_error',
+              status: 'stopped',
+              error: 'Execution stopped by user',
+              timestamp: (message as any).timestamp || new Date().toISOString(),
+            };
+            onEventRef.current?.(stoppedEvent);
+            return;
+          }
+
+          if (message.type === 'execution_cancelled') {
+            const cancelledEvent: ExecutionEvent = {
+              event_type: 'execution_cancelled',
+              status: 'cancelled',
+              error: 'Execution cancelled',
+              timestamp: (message as any).timestamp || new Date().toISOString(),
+            };
+            onEventRef.current?.(cancelledEvent);
+            return;
+          }
+
+          onMessageRef.current?.(message);
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);
         }
@@ -195,22 +310,32 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
         setIsConnected(false);
         setConnectionStatus('disconnected');
         wsRef.current = null;
+        stopHeartbeat();
 
         onCloseRef.current?.(event);
 
         if (autoReconnect && reconnectAttemptsRef.current < maxReconnectAttempts) {
           reconnectAttemptsRef.current++;
-          console.log(`Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts}`);
+          
+          let delay = 0;
+          if (reconnectAttemptsRef.current > 1) {
+            delay = Math.min(reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 2), 30000);
+          }
+          
+          isReconnectingRef.current = true;
+          console.log(`Reconnecting... Attempt ${reconnectAttemptsRef.current}/${maxReconnectAttempts} in ${delay}ms`);
           reconnectTimeoutRef.current = setTimeout(() => {
             connect();
-          }, reconnectInterval);
+          }, delay);
+        } else {
+          isReconnectingRef.current = false;
         }
       };
     } catch (error) {
       console.error('Failed to create WebSocket:', error);
       setConnectionStatus('error');
     }
-  }, [sessionId, autoReconnect, maxReconnectAttempts, reconnectInterval]);
+  }, [agenticFlowId, sessionId, runProjectId, autoReconnect, maxReconnectAttempts, reconnectInterval, startHeartbeat, stopHeartbeat]);
 
   const send = useCallback((type: string, data: any) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -220,23 +345,79 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
     return false;
   }, []);
 
-  const executeFlow = useCallback((canvasData: any, inputMessage: string, flowId?: string) => {
-    return send('execute', {
+  const sendWithRetry = useCallback((
+    type: string, 
+    data: any, 
+    maxRetries: number = 3,
+    retryDelay: number = 500
+  ): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type, ...data }));
+          resolve(true);
+        } catch (error) {
+          console.error('WebSocket send error:', error);
+          resolve(false);
+        }
+        return;
+      }
+      
+      if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
+        messageQueueRef.current.push({ type, data, resolve });
+        return;
+      }
+      
+      messageQueueRef.current.push({ type, data, resolve });
+      
+      if (autoReconnect && !isReconnectingRef.current) {
+        isReconnectingRef.current = true;
+        connect();
+      }
+    });
+  }, [autoReconnect, connect]);
+
+  const executeFlow = useCallback(async (
+    canvasData: any, 
+    inputMessage: string, 
+    agenticFlowId?: string,
+    sessionId?: string,
+    runProjectId?: string
+  ) => {
+    return sendWithRetry('execute', {
       canvas_data: canvasData,
       input_message: inputMessage,
-      flow_id: flowId,
+      agentic_flow_id: agenticFlowId,
+      session_id: sessionId,
+      run_project_id: runProjectId,
     });
-  }, [send]);
+  }, [sendWithRetry]);
+
+  const stopFlow = useCallback(async () => {
+    console.log('[WebSocket] Sending stop request...');
+    return sendWithRetry('stop', {});
+  }, [sendWithRetry]);
 
   useEffect(() => {
-    if (sessionId) {
-      connect();
+    const connectionKey = `${agenticFlowId}:${sessionId}:${runProjectId}`;
+    
+    if (agenticFlowId && sessionId && runProjectId) {
+      if (connectionKeyRef.current !== connectionKey) {
+        if (connectionKeyRef.current) {
+          disconnect(true);
+        }
+        connectionKeyRef.current = connectionKey;
+        connect();
+      }
     }
 
     return () => {
-      disconnect();
+      if (connectionKeyRef.current) {
+        disconnect(true);
+        connectionKeyRef.current = '';
+      }
     };
-  }, [sessionId]);
+  }, [agenticFlowId, sessionId, runProjectId, connect, disconnect]);
 
   return {
     isConnected,
@@ -245,6 +426,7 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
     disconnect,
     send,
     executeFlow,
+    stopFlow,
   };
 };
 

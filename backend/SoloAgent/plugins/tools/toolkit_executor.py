@@ -254,36 +254,42 @@ class ToolkitExecutor(IToolExecutor):
         tools = []
         for tool_name, tool_info in self._tools.items():
             raw_params = tool_info.get("parameters", {})
-            properties = {}
-            required = []
             
-            for param_name, param_def in raw_params.items():
-                if isinstance(param_def, dict):
-                    prop = {}
-                    if "type" in param_def:
-                        prop["type"] = param_def["type"]
-                    if "description" in param_def:
-                        prop["description"] = param_def["description"]
-                    if "default" in param_def:
-                        prop["default"] = param_def["default"]
-                    if "enum" in param_def:
-                        prop["enum"] = param_def["enum"]
-                    if param_def.get("required", False):
-                        required.append(param_name)
-                    properties[param_name] = prop if prop else {"type": "string"}
-                else:
-                    properties[param_name] = {"type": "string"}
+            if raw_params and "properties" in raw_params:
+                parameters = raw_params
+            else:
+                properties = {}
+                required = []
+                
+                for param_name, param_def in raw_params.items():
+                    if isinstance(param_def, dict):
+                        prop = {}
+                        if "type" in param_def:
+                            prop["type"] = param_def["type"]
+                        if "description" in param_def:
+                            prop["description"] = param_def["description"]
+                        if "default" in param_def:
+                            prop["default"] = param_def["default"]
+                        if "enum" in param_def:
+                            prop["enum"] = param_def["enum"]
+                        if param_def.get("required", False):
+                            required.append(param_name)
+                        properties[param_name] = prop if prop else {"type": "string"}
+                    else:
+                        properties[param_name] = {"type": "string"}
+                
+                parameters = {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required
+                }
             
             tools.append({
                 "type": "function",
                 "function": {
                     "name": tool_name,
                     "description": tool_info.get("description", ""),
-                    "parameters": {
-                        "type": "object",
-                        "properties": properties,
-                        "required": required
-                    }
+                    "parameters": parameters
                 }
             })
         return tools

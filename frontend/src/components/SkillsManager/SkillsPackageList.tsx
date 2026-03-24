@@ -1,8 +1,8 @@
 import React from 'react';
-import { Row, Col, message } from 'antd';
-import { FolderOpenOutlined, EditOutlined } from '@ant-design/icons';
+import { message } from 'antd';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import UnifiedCard from '../common/UnifiedCard';
+import { getDefaultIcon } from '../../utils/iconLibrary';
 
 interface SkillsPackageListProps {
   packages: SkillsPackage[];
@@ -34,31 +34,49 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
     }
   };
 
+  const handleIconChange = async (pkg: SkillsPackage, icon: string) => {
+    try {
+      await skillsApi.updatePackage(pkg.id, { icon });
+      message.success('图标已更新');
+      onRefresh?.();
+    } catch (error) {
+      message.error('更新图标失败');
+    }
+  };
+
   return (
-    <Row gutter={[16, 16]}>
+    <div
+      className="cards-grid"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, 1fr)',
+        gap: '12px',
+      }}
+    >
       {packages.map((pkg) => (
-        <Col xs={24} sm={12} md={8} lg={6} key={pkg.id}>
-          <UnifiedCard
-            name={pkg.name}
-            description={pkg.description || pkg.metadata?.description}
-            icon={<FolderOpenOutlined />}
-            tags={pkg.tags || pkg.metadata?.tags || []}
-            isActive={pkg.is_active}
-            isDefault={pkg.is_default}
-            showSwitch={true}
-            onSwitchChange={(checked) => handleToggleActive(pkg, checked)}
-            meta1={{ label: '版本', value: `v${pkg.metadata?.version || pkg.pkg_version || '1.0.0'}` }}
-            meta2={{ label: '作者', value: pkg.metadata?.author || pkg.author || '未知' }}
-            updatedAt={pkg.updated_at}
-            onClick={() => onViewDetail(pkg)}
-            onView={() => onViewDetail(pkg)}
-            onEdit={() => onEditInfo?.(pkg)}
-            onDelete={() => onDelete(pkg)}
-            deleteConfirmText="确定要删除此Skills包吗？"
-          />
-        </Col>
+        <UnifiedCard
+          key={pkg.id}
+          id={pkg.id}
+          name={pkg.name}
+          description={pkg.description || pkg.metadata?.description}
+          icon={pkg.icon || getDefaultIcon('skills')}
+          tags={pkg.tags || pkg.metadata?.tags || []}
+          isActive={pkg.is_active}
+          isDefault={pkg.is_default}
+          showSwitch={true}
+          onSwitchChange={(checked: boolean) => handleToggleActive(pkg, checked)}
+          onIconChange={(icon: string) => handleIconChange(pkg, icon)}
+          meta1={{ label: '版本', value: `v${pkg.metadata?.version || pkg.pkg_version || '1.0.0'}` }}
+          meta2={{ label: '作者', value: pkg.metadata?.author || pkg.author || '未知' }}
+          updatedAt={pkg.updated_at}
+          onClick={() => onViewDetail(pkg)}
+          onView={() => onViewDetail(pkg)}
+          onEdit={() => onEditInfo?.(pkg)}
+          onDelete={() => onDelete(pkg)}
+          deleteConfirmText="确定要删除此Skills包吗？"
+        />
       ))}
-    </Row>
+    </div>
   );
 };
 

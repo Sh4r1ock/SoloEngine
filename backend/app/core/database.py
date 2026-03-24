@@ -46,9 +46,11 @@ try:
 except ImportError:
     HAS_PWDLIB = False
 
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, or_, Index
+from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, or_, Index, func, PrimaryKeyConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
+
+from app.core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +90,8 @@ class AgenticFlowModel(Base):
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    canvas_data = Column(JSON, nullable=True)
+    icon = Column(String(100), nullable=True)
+    folder_path = Column(String(500), nullable=True)
     is_template = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -96,30 +99,49 @@ class AgenticFlowModel(Base):
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="agentic_flows")
-    runs = relationship("AgenticFlowRunModel", back_populates="agentic_flow", cascade="all, delete-orphan")
+    sessions = relationship("AgenticFlowSessionModel", back_populates="agentic_flow", cascade="all, delete-orphan")
 
 
-class AgenticFlowRunModel(Base):
-    """AgenticFlow 运行记录模型。"""
-    __tablename__ = "agentic_flow_runs"
+class AgenticFlowSessionModel(Base):
+    """会话模型 - 存储会话元数据（状态、时间、统计）。
+    
+    设计理念：
+        会话是用户与AI的一次完整对话流程，包含多轮对话消息。
+        会话元数据包括状态、时间戳、token统计等。
+    """
+    __tablename__ = "agentic_flow_sessions"
+    __table_args__ = (
+        Index('ix_sessions_user_id', 'user_id'),
+        Index('ix_sessions_agentic_flow_id', 'agentic_flow_id'),
+        Index('ix_sessions_status', 'status'),
+        Index('ix_sessions_created_at', 'created_at'),
+        Index('ix_sessions_user_status', 'user_id', 'status'),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     agentic_flow_id = Column(String(36), ForeignKey("agentic_flows.id"), nullable=False, index=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    status = Column(String(50), nullable=False, default="pending")
-    input_message = Column(Text, nullable=True)
-    output_message = Column(Text, nullable=True)
+    run_project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=False, index=True)
+    
+    status = Column(String(50), nullable=False, default="pending", index=True)
     error = Column(Text, nullable=True)
+    
     token_usage = Column(JSON, nullable=True)
     duration_ms = Column(Integer, nullable=True)
+    
     started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    
     version = Column(Integer, nullable=False, default=1)
 
-    agentic_flow = relationship("AgenticFlowModel", back_populates="runs")
-    memories = relationship("AgentMemoryModel", back_populates="run", cascade="all, delete-orphan")
-    steps = relationship("ExecutionStepModel", back_populates="run", cascade="all, delete-orphan")
-    tool_calls = relationship("ToolCallRecordModel", back_populates="run", cascade="all, delete-orphan")
+    agentic_flow = relationship("AgenticFlowModel", back_populates="sessions")
+    user = relationship("UserModel", backref="sessions")
+    run_project = relationship("RunProjectModel", backref="sessions")
+    messages = relationship("SessionMessageModel", back_populates="session", cascade="all, delete-orphan", order_by="SessionMessageModel.message_index")
+    steps = relationship("ExecutionStepModel", back_populates="session", cascade="all, delete-orphan")
+    tool_calls = relationship("ToolCallRecordModel", back_populates="session", cascade="all, delete-orphan")
 
 
 class AgentModel(Base):
@@ -138,35 +160,47 @@ class AgentModel(Base):
     is_active = Column(Boolean, default=True)
     version = Column(Integer, nullable=False, default=1)
 
-    memories = relationship("AgentMemoryModel", back_populates="agent", cascade="all, delete-orphan")
 
-
-class AgentMemoryModel(Base):
-    """Agent 长期记忆模型。"""
-    __tablename__ = "agent_memories"
+class SessionMessageModel(Base):
+    """会话消息模型 - 存储会话中的对话消息。
+    
+    设计理念：
+        一次对话只产生2条数据库记录（1条 user + 1条 assistant）
+        使用 data 字段存储消息内容数组
+        支持多轮推理过程：reasoning_content、tool_calls、content 可以多次出现
+    """
+    __tablename__ = "session_messages"
     __table_args__ = (
-        Index('ix_agent_memories_role', 'role'),
-        Index('ix_agent_memories_created_at', 'created_at'),
-        Index('ix_agent_memories_user_flow', 'user_id', 'agentic_flow_id'),
-        Index('ix_agent_memories_user_project', 'user_id', 'run_project_id'),
+        PrimaryKeyConstraint('session_id', 'id', name='pk_session_messages'),
+        Index('ix_session_messages_session_id', 'session_id'),
+        Index('ix_session_messages_user_id', 'user_id'),
+        Index('ix_session_messages_role', 'role'),
+        Index('ix_session_messages_session_index', 'session_id', 'message_index'),
+        Index('ix_session_messages_created_at', 'created_at'),
     )
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    agent_id = Column(String(36), ForeignKey("agents.id"), nullable=True, index=True)
+    session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True, primary_key=True)
+    id = Column(String(36), default=lambda: str(uuid.uuid4()), primary_key=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    agentic_flow_id = Column(String(36), ForeignKey("agentic_flows.id"), nullable=True, index=True)
-    run_id = Column(String(36), ForeignKey("agentic_flow_runs.id"), nullable=True, index=True)
-    run_project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=True, index=True)
-    role = Column(String(50), nullable=False)
-    content = Column(Text, nullable=False)
-    embedding_hash = Column(String(64), nullable=True)
-    meta_data = Column(JSON, nullable=True)
+    agent_id = Column(String(36), nullable=False, default="default", index=True)
+    
+    role = Column(String(50), nullable=False, index=True)
+    data = Column(JSON, nullable=False, default=[])
+    status = Column(String(50), nullable=True, default="completed", index=True)
+    
+    message_index = Column(Integer, nullable=False)
+    parent_message_id = Column(String(36), nullable=True)
+    
+    prompt_tokens = Column(Integer, nullable=True)
+    completion_tokens = Column(Integer, nullable=True)
+    total_tokens = Column(Integer, nullable=True)
+    
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
-
-    agent = relationship("AgentModel", back_populates="memories")
-    run = relationship("AgenticFlowRunModel", back_populates="memories")
-    run_project = relationship("RunProjectModel", backref="memories")
+    
+    session = relationship("AgenticFlowSessionModel", back_populates="messages")
+    user = relationship("UserModel", backref="session_messages")
 
 
 class ExecutionStepModel(Base):
@@ -174,11 +208,12 @@ class ExecutionStepModel(Base):
     __tablename__ = "execution_steps"
     __table_args__ = (
         Index('ix_execution_steps_step_type', 'step_type'),
-        Index('ix_execution_steps_run_type', 'run_id', 'step_type'),
+        Index('ix_execution_steps_session_type', 'session_id', 'step_type'),
     )
 
+    
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String(36), ForeignKey("agentic_flow_runs.id"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True)
     step_type = Column(String(50), nullable=False)
     node_id = Column(String(36), nullable=True)
     node_name = Column(String(255), nullable=True)
@@ -190,16 +225,20 @@ class ExecutionStepModel(Base):
     duration_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
-
-    run = relationship("AgenticFlowRunModel", back_populates="steps")
+    
+    session = relationship("AgenticFlowSessionModel", back_populates="steps")
 
 
 class ToolCallRecordModel(Base):
     """工具调用记录模型。"""
     __tablename__ = "tool_call_records"
+    __table_args__ = (
+        Index('ix_tool_call_records_tool_name', 'tool_name'),
+        Index('ix_tool_call_records_session_type', 'session_id', 'tool_name'),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String(36), ForeignKey("agentic_flow_runs.id"), nullable=False, index=True)
+    session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True)
     tool_name = Column(String(255), nullable=False)
     arguments = Column(JSON, nullable=True)
     result = Column(Text, nullable=True)
@@ -208,7 +247,7 @@ class ToolCallRecordModel(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
 
-    run = relationship("AgenticFlowRunModel", back_populates="tool_calls")
+    session = relationship("AgenticFlowSessionModel", back_populates="tool_calls")
 
 
 class SkillsPackageModel(Base):
@@ -225,6 +264,7 @@ class SkillsPackageModel(Base):
     name = Column(String(255), nullable=False)
     pkg_version = Column(String(50), nullable=False, default="1.0.0")
     description = Column(Text, nullable=True)
+    icon = Column(String(100), nullable=True)
     author = Column(String(255), nullable=False, default="system", index=True)
     tags = Column(JSON, nullable=True)
     instructions = Column(Text, nullable=True)
@@ -287,10 +327,12 @@ class RunProjectModel(Base):
     __tablename__ = "run_projects"
     __table_args__ = (
         Index('ix_run_projects_user_active', 'user_id', 'is_active'),
+        Index('ix_run_projects_user_flow', 'user_id', 'agentic_flow_id'),
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    agentic_flow_id = Column(String(36), ForeignKey("agentic_flows.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     folder_path = Column(String(1000), nullable=False)
     description = Column(Text, nullable=True)
@@ -301,6 +343,7 @@ class RunProjectModel(Base):
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="run_projects")
+    agentic_flow = relationship("AgenticFlowModel", backref="run_projects")
 
 
 class RecentProjectModel(Base):
@@ -320,6 +363,29 @@ class RecentProjectModel(Base):
 
     user = relationship("UserModel", backref="recent_projects")
     project = relationship("RunProjectModel", backref="recent_records")
+
+
+class MCPServerModel(Base):
+    """MCP服务器配置模型。"""
+    __tablename__ = "mcp_servers"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    transport = Column(String(50), nullable=False)
+    url = Column(String(500), nullable=True)
+    command = Column(String(500), nullable=True)
+    args = Column(JSON, nullable=True)
+    env = Column(JSON, nullable=True)
+    headers = Column(JSON, nullable=True)
+    timeout = Column(Integer, default=30)
+    enabled = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("UserModel", backref="mcp_servers")
 
 
 def init_db():
@@ -517,37 +583,64 @@ class DatabaseManager:
         return user
 
     def create_agentic_flow(self, db: Session, user_id: str, name: str, 
-                            description: str = None, canvas_data: Dict = None) -> AgenticFlowModel:
+                            description: str = None, folder_path: str = None, icon: str = None) -> AgenticFlowModel:
         """创建AgenticFlow。"""
+        # 转换为相对路径
+        rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
+        
         flow = AgenticFlowModel(
             user_id=user_id,
             name=name,
             description=description,
-            canvas_data=canvas_data or {},
+            folder_path=rel_folder_path,
+            icon=icon,
         )
         db.add(flow)
         db.commit()
         db.refresh(flow)
+        
+        # 返回时转换为绝对路径
+        if flow.folder_path:
+            flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
+        
         return flow
 
     def get_agentic_flows(self, db: Session, user_id: str) -> List[AgenticFlowModel]:
         """获取用户的所有AgenticFlow。"""
-        return db.query(AgenticFlowModel).filter(
+        flows = db.query(AgenticFlowModel).filter(
             AgenticFlowModel.user_id == user_id,
             AgenticFlowModel.is_active == True
-        ).order_by(AgenticFlowModel.updated_at.desc()).all()
+        ).order_by(AgenticFlowModel.created_at.desc()).all()
+        
+        # 转换为绝对路径
+        for flow in flows:
+            if flow.folder_path:
+                flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
+        
+        return flows
 
-    def get_agentic_flow(self, db: Session, flow_id: str, user_id: str = None) -> Optional[AgenticFlowModel]:
+    def get_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str = None) -> Optional[AgenticFlowModel]:
         """获取AgenticFlow。"""
-        query = db.query(AgenticFlowModel).filter(AgenticFlowModel.id == flow_id)
+        query = db.query(AgenticFlowModel).filter(AgenticFlowModel.id == agentic_flow_id)
         if user_id:
             query = query.filter(AgenticFlowModel.user_id == user_id)
-        return query.first()
+        flow = query.first()
+        
+        # 转换为绝对路径
+        if flow and flow.folder_path:
+            flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
+        
+        return flow
 
-    def update_agentic_flow(self, db: Session, flow_id: str, user_id: str, 
+    def update_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str, 
                             version: int = None, **kwargs) -> Optional[AgenticFlowModel]:
         """更新AgenticFlow（带乐观锁）。"""
-        flow = self.get_agentic_flow(db, flow_id, user_id)
+        # 直接查询数据库，不使用get_agentic_flow，避免路径转换干扰
+        query = db.query(AgenticFlowModel).filter(AgenticFlowModel.id == agentic_flow_id)
+        if user_id:
+            query = query.filter(AgenticFlowModel.user_id == user_id)
+        flow = query.first()
+        
         if not flow:
             return None
         
@@ -557,108 +650,233 @@ class DatabaseManager:
             )
         
         for key, value in kwargs.items():
+            if key == 'folder_path' and value:
+                # 转换为相对路径
+                value = DataPaths.to_relative_path(value)
+            
             if hasattr(flow, key):
                 setattr(flow, key, value)
+        
         flow.version = (flow.version or 0) + 1
         db.commit()
         db.refresh(flow)
+        
+        # 返回时转换为绝对路径
+        if flow.folder_path:
+            flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
+        
         return flow
 
-    def delete_agentic_flow(self, db: Session, flow_id: str, user_id: str) -> bool:
+    def delete_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str) -> bool:
         """删除AgenticFlow。"""
-        flow = self.get_agentic_flow(db, flow_id, user_id)
+        flow = self.get_agentic_flow(db, agentic_flow_id, user_id)
         if flow:
             flow.is_active = False
             db.commit()
             return True
         return False
 
-    def create_run(self, db: Session, flow_id: str, user_id: str, 
-                   input_message: str = None) -> AgenticFlowRunModel:
-        """创建运行记录。"""
-        run = AgenticFlowRunModel(
-            agentic_flow_id=flow_id,
+    def create_session(self, db: Session, agentic_flow_id: str, user_id: str,
+                       run_project_id: str = None) -> AgenticFlowSessionModel:
+        """创建会话记录。"""
+        session = AgenticFlowSessionModel(
+            agentic_flow_id=agentic_flow_id,
             user_id=user_id,
-            input_message=input_message,
+            run_project_id=run_project_id,
             status="pending",
         )
-        db.add(run)
+        db.add(session)
         db.commit()
-        db.refresh(run)
-        return run
+        db.refresh(session)
+        return session
 
-    def update_run(self, db: Session, run_id: str, version: int = None, 
-                   **kwargs) -> Optional[AgenticFlowRunModel]:
-        """更新运行记录（带乐观锁）。"""
-        run = db.query(AgenticFlowRunModel).filter(AgenticFlowRunModel.id == run_id).first()
-        if not run:
+    def update_session(self, db: Session, session_id: str, version: int = None,
+                       **kwargs) -> Optional[AgenticFlowSessionModel]:
+        """更新会话记录（带乐观锁）。"""
+        session = db.query(AgenticFlowSessionModel).filter(
+            AgenticFlowSessionModel.id == session_id
+        ).first()
+        if not session:
             return None
         
-        if version is not None and run.version != version:
+        if version is not None and session.version != version:
             raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {run.version}"
+                f"Optimistic lock conflict: expected version {version}, but current version is {session.version}"
             )
         
         for key, value in kwargs.items():
-            if hasattr(run, key):
-                setattr(run, key, value)
-        run.version = (run.version or 0) + 1
+            if hasattr(session, key):
+                setattr(session, key, value)
+        session.version = (session.version or 0) + 1
+        session.updated_at = datetime.now(timezone.utc)
         db.commit()
-        db.refresh(run)
-        return run
+        db.refresh(session)
+        return session
 
-    def get_run(self, db: Session, run_id: str) -> Optional[AgenticFlowRunModel]:
-        """获取单个运行记录。"""
-        return db.query(AgenticFlowRunModel).filter(AgenticFlowRunModel.id == run_id).first()
+    def get_session(self, db: Session, session_id: str) -> Optional[AgenticFlowSessionModel]:
+        """获取单个会话记录。"""
+        return db.query(AgenticFlowSessionModel).filter(
+            AgenticFlowSessionModel.id == session_id
+        ).first()
 
-    def get_runs(self, db: Session, flow_id: str = None, user_id: str = None, 
-                 limit: int = 100) -> List[AgenticFlowRunModel]:
-        """获取运行记录。"""
-        query = db.query(AgenticFlowRunModel)
-        if flow_id:
-            query = query.filter(AgenticFlowRunModel.agentic_flow_id == flow_id)
+    def get_sessions(self, db: Session, agentic_flow_id: str = None, user_id: str = None,
+                     status: str = None, limit: int = 100) -> List[AgenticFlowSessionModel]:
+        """获取会话记录。"""
+        query = db.query(AgenticFlowSessionModel)
+        if agentic_flow_id:
+            query = query.filter(AgenticFlowSessionModel.agentic_flow_id == agentic_flow_id)
         if user_id:
-            query = query.filter(AgenticFlowRunModel.user_id == user_id)
-        return query.order_by(AgenticFlowRunModel.started_at.desc()).limit(limit).all()
+            query = query.filter(AgenticFlowSessionModel.user_id == user_id)
+        if status:
+            query = query.filter(AgenticFlowSessionModel.status == status)
+        return query.order_by(AgenticFlowSessionModel.updated_at.desc()).limit(limit).all()
+
+    def add_session_message(self, db: Session, session_id: str, user_id: str,
+                            role: str, data: dict = None, agent_id: str = "default",
+                            parent_message_id: str = None,
+                            prompt_tokens: int = None, completion_tokens: int = None,
+                            total_tokens: int = None,
+                            status: str = "completed") -> SessionMessageModel:
+        """添加会话消息。"""
+        if not agent_id:
+            agent_id = "default"
+        
+        max_index = db.query(func.max(SessionMessageModel.message_index)).filter(
+            SessionMessageModel.session_id == session_id
+        ).scalar()
+        if max_index is None:
+            max_index = -1
+        
+        message = SessionMessageModel(
+            session_id=session_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            role=role,
+            data=data,
+            status=status,
+            message_index=max_index + 1,
+            parent_message_id=parent_message_id,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            timestamp=datetime.now(timezone.utc),
+        )
+        db.add(message)
+        db.commit()
+        db.refresh(message)
+        return message
+
+    def get_session_messages(self, db: Session, session_id: str,
+                             limit: int = None, offset: int = 0) -> List[SessionMessageModel]:
+        """获取会话消息列表。"""
+        query = db.query(SessionMessageModel).filter(
+            SessionMessageModel.session_id == session_id
+        ).order_by(SessionMessageModel.message_index)
+        if offset:
+            query = query.offset(offset)
+        if limit:
+            query = query.limit(limit)
+        return query.all()
+    
+    def get_session_messages_by_agent(self, db: Session, session_id: str,
+                                       agent_id: str = None) -> List[SessionMessageModel]:
+        """获取会话消息列表，按 agent_id 分组返回。"""
+        query = db.query(SessionMessageModel).filter(
+            SessionMessageModel.session_id == session_id
+        )
+        if agent_id:
+            query = query.filter(SessionMessageModel.agent_id == agent_id)
+        return query.order_by(SessionMessageModel.message_index).all()
+
+    def update_session_token_usage(self, db: Session, session_id: str,
+                                   prompt_tokens: int = 0, completion_tokens: int = 0) -> Optional[AgenticFlowSessionModel]:
+        """更新会话 token 统计。"""
+        session = self.get_session(db, session_id)
+        if not session:
+            return None
+        
+        current_usage = session.token_usage or {}
+        current_usage["prompt_tokens"] = current_usage.get("prompt_tokens", 0) + prompt_tokens
+        current_usage["completion_tokens"] = current_usage.get("completion_tokens", 0) + completion_tokens
+        current_usage["total_tokens"] = current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens
+        
+        session.token_usage = current_usage
+        session.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(session)
+        return session
 
     def create_skills_package(self, db: Session, user_id: str, name: str, 
                               description: str = None, folder_path: str = None,
                               pkg_version: str = "1.0.0", author: str = None, 
-                              tags: List[str] = None) -> SkillsPackageModel:
+                              tags: List[str] = None, icon: str = None) -> SkillsPackageModel:
         """创建Skills包。"""
+        # 转换为相对路径
+        rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
+        
         package = SkillsPackageModel(
             user_id=user_id,
             name=name,
             description=description,
-            folder_path=folder_path,
+            folder_path=rel_folder_path,
             pkg_version=pkg_version,
             author=author,
             tags=tags or [],
+            icon=icon,
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
         db.add(package)
         db.commit()
         db.refresh(package)
+        
+        # 返回时转换为绝对路径
+        if package.folder_path:
+            package.folder_path = DataPaths.to_absolute_path(package.folder_path)
+        
         return package
 
     def get_skills_packages(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
         """获取用户的Skills包（包括停用和启用的）。"""
-        return db.query(SkillsPackageModel).filter(
+        packages = db.query(SkillsPackageModel).filter(
             SkillsPackageModel.user_id == user_id
-        ).order_by(SkillsPackageModel.updated_at.desc()).all()
+        ).order_by(SkillsPackageModel.created_at.desc()).all()
+        
+        # 转换为绝对路径
+        for package in packages:
+            if package.folder_path:
+                package.folder_path = DataPaths.to_absolute_path(package.folder_path)
+        
+        return packages
 
     def get_skills_package(self, db: Session, package_id: str, user_id: str = None) -> Optional[SkillsPackageModel]:
         """获取Skills包。"""
         query = db.query(SkillsPackageModel).filter(SkillsPackageModel.id == package_id)
         if user_id:
-            query = query.filter(SkillsPackageModel.user_id == user_id)
-        return query.first()
+            # 查找用户自己的skill或系统skill
+            query = query.filter(
+                or_(
+                    SkillsPackageModel.user_id == user_id,
+                    SkillsPackageModel.user_id == "system"
+                )
+            )
+        package = query.first()
+        
+        # 转换为绝对路径
+        if package and package.folder_path:
+            package.folder_path = DataPaths.to_absolute_path(package.folder_path)
+        
+        return package
 
     def update_skills_package(self, db: Session, package_id: str, user_id: str,
                               version: int = None, **kwargs) -> Optional[SkillsPackageModel]:
         """更新Skills包（带乐观锁）。"""
-        package = self.get_skills_package(db, package_id, user_id)
+        # 直接查询数据库，不使用get_skills_package，避免路径转换干扰
+        query = db.query(SkillsPackageModel).filter(SkillsPackageModel.id == package_id)
+        if user_id:
+            query = query.filter(SkillsPackageModel.user_id == user_id)
+        package = query.first()
+        
         if not package:
             return None
         
@@ -668,11 +886,21 @@ class DatabaseManager:
             )
         
         for key, value in kwargs.items():
+            if key == 'folder_path' and value:
+                # 转换为相对路径
+                value = DataPaths.to_relative_path(value)
+            
             if hasattr(package, key):
                 setattr(package, key, value)
+        
         package.version = (package.version or 0) + 1
         db.commit()
         db.refresh(package)
+        
+        # 返回时转换为绝对路径
+        if package.folder_path:
+            package.folder_path = DataPaths.to_absolute_path(package.folder_path)
+        
         return package
 
     def delete_skills_package(self, db: Session, package_id: str, user_id: str) -> bool:
@@ -683,78 +911,6 @@ class DatabaseManager:
             db.commit()
             return True
         return False
-
-    def add_memory(self, db: Session, user_id: str, role: str, content: str,
-                   agent_id: str = None, flow_id: str = None, run_id: str = None,
-                   run_project_id: str = None, metadata: Dict = None) -> AgentMemoryModel:
-        """添加Agent记忆。"""
-        memory = AgentMemoryModel(
-            agent_id=agent_id,
-            user_id=user_id,
-            agentic_flow_id=flow_id,
-            run_id=run_id,
-            run_project_id=run_project_id,
-            role=role,
-            content=content,
-            meta_data=metadata or {},
-        )
-        db.add(memory)
-        db.commit()
-        db.refresh(memory)
-        return memory
-
-    def get_memories(self, db: Session, user_id: str, flow_id: str = None, 
-                     run_id: str = None, run_project_id: str = None, 
-                     limit: int = 100) -> List[AgentMemoryModel]:
-        """获取Agent记忆。"""
-        query = db.query(AgentMemoryModel).filter(AgentMemoryModel.user_id == user_id)
-        if flow_id:
-            query = query.filter(AgentMemoryModel.agentic_flow_id == flow_id)
-        if run_id:
-            query = query.filter(AgentMemoryModel.run_id == run_id)
-        if run_project_id:
-            query = query.filter(AgentMemoryModel.run_project_id == run_project_id)
-        return query.order_by(AgentMemoryModel.created_at.desc()).limit(limit).all()
-
-    def add_execution_step(self, db: Session, run_id: str, step_type: str,
-                           node_id: str = None, node_name: str = None,
-                           thought: str = None, action: str = None,
-                           action_input: Dict = None, observation: str = None,
-                           error: str = None, duration_ms: int = None) -> ExecutionStepModel:
-        """添加执行步骤。"""
-        step = ExecutionStepModel(
-            run_id=run_id,
-            step_type=step_type,
-            node_id=node_id,
-            node_name=node_name,
-            thought=thought,
-            action=action,
-            action_input=action_input,
-            observation=observation,
-            error=error,
-            duration_ms=duration_ms,
-        )
-        db.add(step)
-        db.commit()
-        db.refresh(step)
-        return step
-
-    def add_tool_call(self, db: Session, run_id: str, tool_name: str,
-                      arguments: Dict = None, result: str = None, 
-                      error: str = None, duration_ms: int = None) -> ToolCallRecordModel:
-        """添加工具调用记录。"""
-        tool_call = ToolCallRecordModel(
-            run_id=run_id,
-            tool_name=tool_name,
-            arguments=arguments,
-            result=result,
-            error=error,
-            duration_ms=duration_ms,
-        )
-        db.add(tool_call)
-        db.commit()
-        db.refresh(tool_call)
-        return tool_call
 
     def create_llm_config(self, db: Session, user_id: str, name: str, provider: str,
                           model_name: str, api_key: str = None, base_url: str = None,
@@ -854,65 +1010,6 @@ class DatabaseManager:
             return True
         return False
 
-    def get_execution(self, db: Session, execution_id: str) -> Optional[AgenticFlowRunModel]:
-        """获取执行记录。"""
-        return db.query(AgenticFlowRunModel).filter(AgenticFlowRunModel.id == execution_id).first()
-
-    def create_execution(self, db: Session, project_name: str, input_message: str = None,
-                         user_id: str = "default_user", flow_id: str = None) -> AgenticFlowRunModel:
-        """创建执行记录（兼容接口）。"""
-        run = AgenticFlowRunModel(
-            agentic_flow_id=flow_id or str(uuid.uuid4()),
-            user_id=user_id,
-            input_message=input_message,
-            status="pending",
-        )
-        db.add(run)
-        db.commit()
-        db.refresh(run)
-        return run
-
-    def update_execution(self, db: Session, execution_id: str, version: int = None,
-                         **kwargs) -> Optional[AgenticFlowRunModel]:
-        """更新执行记录（兼容接口，带乐观锁）。"""
-        return self.update_run(db, execution_id, version=version, **kwargs)
-
-    def add_execution_step(self, db: Session, execution_id: str, step_type: str,
-                           node_id: str = None, node_name: str = None,
-                           thought: str = None, action: str = None,
-                           action_input: Dict = None, observation: str = None,
-                           error: str = None, duration_ms: int = None) -> ExecutionStepModel:
-        """添加执行步骤（兼容接口）。"""
-        return self.add_execution_step_internal(
-            db, run_id=execution_id, step_type=step_type, node_id=node_id,
-            node_name=node_name, thought=thought, action=action,
-            action_input=action_input, observation=observation, error=error,
-            duration_ms=duration_ms
-        )
-
-    def add_execution_step_internal(self, db: Session, run_id: str, step_type: str,
-                                    node_id: str = None, node_name: str = None,
-                                    thought: str = None, action: str = None,
-                                    action_input: Dict = None, observation: str = None,
-                                    error: str = None, duration_ms: int = None) -> ExecutionStepModel:
-        """添加执行步骤。"""
-        step = ExecutionStepModel(
-            run_id=run_id,
-            step_type=step_type,
-            node_id=node_id,
-            node_name=node_name,
-            thought=thought,
-            action=action,
-            action_input=action_input,
-            observation=observation,
-            error=error,
-            duration_ms=duration_ms,
-        )
-        db.add(step)
-        db.commit()
-        db.refresh(step)
-        return step
-
     def get_agent(self, db: Session, agent_id: str) -> Optional[AgentModel]:
         """获取Agent。"""
         return db.query(AgentModel).filter(AgentModel.id == agent_id).first()
@@ -934,16 +1031,6 @@ class DatabaseManager:
         db.commit()
         db.refresh(agent)
         return agent
-
-    def list_executions(self, db: Session, agent_id: str = None, status: str = None, 
-                        limit: int = 50) -> List[AgenticFlowRunModel]:
-        """列出执行记录。"""
-        query = db.query(AgenticFlowRunModel)
-        if agent_id:
-            query = query.filter(AgenticFlowRunModel.agentic_flow_id == agent_id)
-        if status:
-            query = query.filter(AgenticFlowRunModel.status == status)
-        return query.order_by(AgenticFlowRunModel.started_at.desc()).limit(limit).all()
 
     def create_project(self, db: Session, user_id: str, name: str, 
                        description: str = None, canvas_data: Dict = None) -> ProjectModel:
@@ -1002,11 +1089,13 @@ class DatabaseManager:
             return True
         return False
 
-    def create_run_project(self, db: Session, user_id: str, name: str,
+    def create_run_project(self, db: Session, user_id: str, agentic_flow_id: str, name: str,
                            folder_path: str, description: str = None) -> RunProjectModel:
         """创建运行项目。"""
+        # run_project表使用绝对路径，不做转换
         project = RunProjectModel(
             user_id=user_id,
+            agentic_flow_id=agentic_flow_id,
             name=name,
             folder_path=folder_path,
             description=description,
@@ -1014,6 +1103,7 @@ class DatabaseManager:
         db.add(project)
         db.commit()
         db.refresh(project)
+        
         return project
 
     def get_run_project(self, db: Session, project_id: str, user_id: str = None) -> Optional[RunProjectModel]:
@@ -1021,27 +1111,45 @@ class DatabaseManager:
         query = db.query(RunProjectModel).filter(RunProjectModel.id == project_id)
         if user_id:
             query = query.filter(RunProjectModel.user_id == user_id)
-        return query.first()
+        project = query.first()
+        
+        # run_project表使用绝对路径，不做转换
+        return project
 
-    def get_run_project_by_path(self, db: Session, user_id: str, folder_path: str) -> Optional[RunProjectModel]:
+    def get_run_project_by_path(self, db: Session, user_id: str, agentic_flow_id: str, folder_path: str) -> Optional[RunProjectModel]:
         """通过路径获取运行项目。"""
-        return db.query(RunProjectModel).filter(
+        # run_project表使用绝对路径，直接查询
+        project = db.query(RunProjectModel).filter(
             RunProjectModel.user_id == user_id,
+            RunProjectModel.agentic_flow_id == agentic_flow_id,
             RunProjectModel.folder_path == folder_path,
             RunProjectModel.is_active == True
         ).first()
+        
+        return project
 
-    def get_active_run_project(self, db: Session, user_id: str) -> Optional[RunProjectModel]:
+    def get_active_run_project(self, db: Session, user_id: str, agentic_flow_id: str = None) -> Optional[RunProjectModel]:
         """获取用户当前活动的运行项目。"""
-        return db.query(RunProjectModel).filter(
+        query = db.query(RunProjectModel).filter(
             RunProjectModel.user_id == user_id,
             RunProjectModel.is_active == True
-        ).order_by(RunProjectModel.last_accessed_at.desc()).first()
+        )
+        if agentic_flow_id:
+            query = query.filter(RunProjectModel.agentic_flow_id == agentic_flow_id)
+        project = query.order_by(RunProjectModel.last_accessed_at.desc()).first()
+        
+        # run_project表使用绝对路径，不做转换
+        return project
 
     def update_run_project(self, db: Session, project_id: str, user_id: str,
                            version: int = None, **kwargs) -> Optional[RunProjectModel]:
         """更新运行项目（带乐观锁）。"""
-        project = self.get_run_project(db, project_id, user_id)
+        # 直接查询数据库，不使用get_run_project，避免路径转换干扰
+        query = db.query(RunProjectModel).filter(RunProjectModel.id == project_id)
+        if user_id:
+            query = query.filter(RunProjectModel.user_id == user_id)
+        project = query.first()
+        
         if not project:
             return None
         
@@ -1053,9 +1161,12 @@ class DatabaseManager:
         for key, value in kwargs.items():
             if hasattr(project, key) and key != "version":
                 setattr(project, key, value)
+        
         project.version = (project.version or 0) + 1
         db.commit()
         db.refresh(project)
+        
+        # run_project表使用绝对路径，不做转换
         return project
 
     def delete_run_project(self, db: Session, project_id: str, user_id: str) -> bool:
@@ -1070,6 +1181,7 @@ class DatabaseManager:
     def add_recent_project(self, db: Session, user_id: str, project_id: str,
                            folder_path: str, project_name: str) -> RecentProjectModel:
         """添加最近访问项目记录。"""
+        # recent_projects表使用绝对路径，不做转换
         existing = db.query(RecentProjectModel).filter(
             RecentProjectModel.user_id == user_id,
             RecentProjectModel.project_id == project_id
@@ -1081,6 +1193,7 @@ class DatabaseManager:
             existing.project_name = project_name
             db.commit()
             db.refresh(existing)
+            
             return existing
         
         recent = RecentProjectModel(
@@ -1099,9 +1212,12 @@ class DatabaseManager:
 
     def get_recent_projects(self, db: Session, user_id: str, limit: int = 10) -> List[RecentProjectModel]:
         """获取用户最近访问的项目列表。"""
-        return db.query(RecentProjectModel).filter(
+        recent_projects = db.query(RecentProjectModel).filter(
             RecentProjectModel.user_id == user_id
         ).order_by(RecentProjectModel.accessed_at.desc()).limit(limit).all()
+        
+        # recent_projects表使用绝对路径，不做转换
+        return recent_projects
 
     def _cleanup_recent_projects(self, db: Session, user_id: str, max_count: int = 10):
         """清理超出限制的最近项目记录。"""
@@ -1115,9 +1231,9 @@ class DatabaseManager:
             db.commit()
 
     def get_system_skills(self, db: Session) -> List[SkillsPackageModel]:
-        """获取所有系统skill（author='system'）。"""
+        """获取所有系统skill（user_id='system'）。"""
         return db.query(SkillsPackageModel).filter(
-            SkillsPackageModel.author == "system",
+            SkillsPackageModel.user_id == "system",
             SkillsPackageModel.is_active == True
         ).order_by(SkillsPackageModel.name).all()
 
@@ -1134,22 +1250,32 @@ class DatabaseManager:
         注意：is_active只控制skill是否可用，不影响显示。
         按创建时间降序排列。
         """
-        return db.query(SkillsPackageModel).filter(
+        packages = db.query(SkillsPackageModel).filter(
             or_(
-                SkillsPackageModel.author == "system",
+                SkillsPackageModel.user_id == "system",
                 SkillsPackageModel.user_id == user_id
             )
         ).order_by(SkillsPackageModel.created_at.desc()).all()
+        
+        # 转换为绝对路径
+        for package in packages:
+            if package.folder_path:
+                package.folder_path = DataPaths.to_absolute_path(package.folder_path)
+        
+        return packages
 
     def create_system_skill(self, db: Session, name: str, folder_path: str,
                             description: str = None, tags: List[str] = None,
                             instructions: str = None, pkg_version: str = "1.0.0") -> SkillsPackageModel:
         """创建系统skill。"""
+        # 转换为相对路径
+        rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
+        
         skill = SkillsPackageModel(
             name=name,
-            folder_path=folder_path,
+            folder_path=rel_folder_path,
             description=description,
-            author="system",
+            user_id="system",
             tags=tags or [],
             instructions=instructions,
             pkg_version=pkg_version,
@@ -1158,7 +1284,88 @@ class DatabaseManager:
         db.add(skill)
         db.commit()
         db.refresh(skill)
+        
+        # 返回时转换为绝对路径
+        if skill.folder_path:
+            skill.folder_path = DataPaths.to_absolute_path(skill.folder_path)
+        
         return skill
+
+    def create_mcp_server(self, db: Session, user_id: str, name: str, transport: str,
+                         url: str = None, command: str = None, args: List[str] = None,
+                         env: Dict[str, str] = None, headers: Dict[str, str] = None,
+                         timeout: int = 30) -> MCPServerModel:
+        """创建MCP服务器。"""
+        server = MCPServerModel(
+            user_id=user_id,
+            name=name,
+            transport=transport,
+            url=url,
+            command=command,
+            args=args,
+            env=env,
+            headers=headers,
+            timeout=timeout,
+        )
+        db.add(server)
+        db.commit()
+        db.refresh(server)
+        return server
+
+    def get_mcp_servers(self, db: Session, user_id: str) -> List[MCPServerModel]:
+        """获取用户可见的MCP服务器（系统 + 用户）。"""
+        from sqlalchemy import or_
+        return db.query(MCPServerModel).filter(
+            or_(
+                MCPServerModel.user_id == "system",
+                MCPServerModel.user_id == user_id
+            )
+        ).order_by(MCPServerModel.created_at.desc()).all()
+    
+    def get_mcp_server(self, db: Session, mcp_server_id: str, user_id: str = None) -> Optional[MCPServerModel]:
+        """获取MCP服务器。"""
+        query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
+        if user_id:
+            query = query.filter(MCPServerModel.user_id == user_id)
+        return query.first()
+
+    def update_mcp_server(self, db: Session, mcp_server_id: str, user_id: str,
+                         version: int = None, **kwargs) -> Optional[MCPServerModel]:
+        """更新MCP服务器配置（带乐观锁）。"""
+        query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
+        if user_id:
+            query = query.filter(MCPServerModel.user_id == user_id)
+        server = query.first()
+        
+        if not server:
+            return None
+        
+        if version is not None and server.version != version:
+            raise OptimisticLockError(
+                f"Optimistic lock conflict: expected version {version}, but current version is {server.version}"
+            )
+        
+        for key, value in kwargs.items():
+            if hasattr(server, key):
+                setattr(server, key, value)
+        
+        server.version = (server.version or 0) + 1
+        db.commit()
+        db.refresh(server)
+        return server
+
+    def delete_mcp_server(self, db: Session, mcp_server_id: str, user_id: str) -> bool:
+        """删除MCP服务器。"""
+        query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
+        if user_id:
+            query = query.filter(MCPServerModel.user_id == user_id)
+        server = query.first()
+        
+        if server:
+            db.delete(server)
+            db.commit()
+            return True
+        return False
 
 db_manager = DatabaseManager()
 

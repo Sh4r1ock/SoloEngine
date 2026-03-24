@@ -15,7 +15,13 @@
  */
 
 import { create } from 'zustand';
-import { runProjectApi, ProjectInfo, RecentProjectInfo, FileInfo, SelectFolderResponse } from '../services/runProjectApi';
+import { 
+  runProjectApi, 
+  ProjectInfo, 
+  RecentProjectInfo, 
+  FileInfo, 
+  SelectOrCreateProjectResponse
+} from '../services/runProjectApi';
 
 interface RunProjectState {
   currentProject: ProjectInfo | null;
@@ -25,13 +31,12 @@ interface RunProjectState {
   loading: boolean;
   error: string | null;
 
-  selectFolder: (folderPath: string) => Promise<boolean>;
-  openNativeFolderDialog: () => Promise<SelectFolderResponse | null>;
-  setProjectFromDialog: (data: SelectFolderResponse) => void;
+  selectOrCreateProject: (agenticFlowId: string, folderPath: string) => Promise<SelectOrCreateProjectResponse | null>;
+  openNativeFolderDialog: (agenticFlowId: string, title?: string, initialdir?: string) => Promise<SelectOrCreateProjectResponse | null>;
+  setProjectFromSelectOrCreate: (data: SelectOrCreateProjectResponse) => void;
   setProjectLoading: (loading: boolean) => void;
-  loadCurrentProject: () => Promise<void>;
-  loadRecentProjects: () => Promise<void>;
-  switchProject: (projectId: string) => Promise<boolean>;
+  loadCurrentProject: (agenticFlowId?: string) => Promise<void>;
+  loadRecentProjects: (agenticFlowId: string) => Promise<void>;
   listFiles: (path?: string, pattern?: string) => Promise<void>;
   setCurrentPath: (path: string) => void;
   clearProject: () => void;
@@ -46,37 +51,11 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
   loading: false,
   error: null,
 
-  selectFolder: async (folderPath: string) => {
+  selectOrCreateProject: async (agenticFlowId: string, folderPath: string) => {
     set({ loading: true, error: null });
     try {
-      const response = await runProjectApi.selectFolder(folderPath);
+      const response = await runProjectApi.selectOrCreateProject(agenticFlowId, folderPath);
       if (response.code === 200) {
-        set({
-          currentProject: {
-            id: response.data.project_id,
-            name: response.data.project_name,
-            folder_path: response.data.folder_path,
-          },
-          recentProjects: response.data.recent_projects,
-          loading: false,
-          currentPath: '',
-        });
-        return true;
-      }
-      set({ loading: false, error: '选择文件夹失败' });
-      return false;
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || error.message || '选择文件夹失败';
-      set({ loading: false, error: errorMsg });
-      return false;
-    }
-  },
-
-  openNativeFolderDialog: async () => {
-    set({ loading: true, error: null });
-    try {
-      const response = await runProjectApi.openNativeFolderDialog('选择项目文件夹');
-      if (response.code === 200 && response.data) {
         set({
           currentProject: {
             id: response.data.project_id,
@@ -89,7 +68,32 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
         });
         return response.data;
       }
+      set({ loading: false, error: '选择或创建项目失败' });
+      return null;
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || error.message || '选择或创建项目失败';
+      set({ loading: false, error: errorMsg });
+      return null;
+    }
+  },
+
+  openNativeFolderDialog: async (agenticFlowId: string, title: string = '选择项目文件夹', initialdir: string = '') => {
+    set({ loading: true, error: null });
+    try {
+      const response = await runProjectApi.openNativeFolderDialog(agenticFlowId, title, initialdir);
       set({ loading: false });
+      if (response.code === 200 && response.data) {
+        set({
+          currentProject: {
+            id: response.data.project_id,
+            name: response.data.project_name,
+            folder_path: response.data.folder_path,
+          },
+          recentProjects: response.data.recent_projects || [],
+          currentPath: '',
+        });
+        return response.data;
+      }
       return null;
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || '选择文件夹失败';
@@ -98,7 +102,7 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
     }
   },
 
-  setProjectFromDialog: (data: SelectFolderResponse) => {
+  setProjectFromSelectOrCreate: (data: SelectOrCreateProjectResponse) => {
     set({
       currentProject: {
         id: data.project_id,
@@ -114,10 +118,10 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
     set({ loading });
   },
 
-  loadCurrentProject: async () => {
+  loadCurrentProject: async (agenticFlowId?: string) => {
     set({ loading: true, error: null });
     try {
-      const response = await runProjectApi.getCurrentProject();
+      const response = await runProjectApi.getCurrentProject(agenticFlowId);
       if (response.code === 200 && response.data) {
         set({
           currentProject: response.data,
@@ -134,9 +138,9 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
     }
   },
 
-  loadRecentProjects: async () => {
+  loadRecentProjects: async (agenticFlowId: string) => {
     try {
-      const response = await runProjectApi.getRecentProjects(10);
+      const response = await runProjectApi.getRecentProjects(agenticFlowId, 10);
       if (response.code === 200) {
         set({ recentProjects: response.data });
       }
@@ -144,28 +148,6 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
       const errorMsg = error.response?.data?.detail || error.message || '获取最近项目失败';
       set({ error: errorMsg });
       console.error('Failed to load recent projects:', error);
-    }
-  },
-
-  switchProject: async (projectId: string) => {
-    set({ loading: true, error: null });
-    try {
-      const response = await runProjectApi.switchProject(projectId);
-      if (response.code === 200) {
-        set({
-          currentProject: response.data,
-          loading: false,
-          currentPath: '',
-        });
-        await get().loadRecentProjects();
-        return true;
-      }
-      set({ loading: false, error: '切换项目失败' });
-      return false;
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || error.message || '切换项目失败';
-      set({ loading: false, error: errorMsg });
-      return false;
     }
   },
 

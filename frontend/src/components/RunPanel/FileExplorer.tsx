@@ -1,13 +1,13 @@
 /**
  * @file FileExplorer.tsx
  * @description 文件资源管理器组件 - 项目文件浏览、编辑功能
- * @author SoloEngine Team
- * @date 2026-02-23
  */
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { Tree, Input, Button, Space, Spin, Empty, Dropdown, Modal, message, Typography, Tooltip } from 'antd';
 import {
   FolderOutlined,
+  FolderOpenOutlined,
   FileOutlined,
   FileTextOutlined,
   FileMarkdownOutlined,
@@ -22,7 +22,7 @@ import {
   EditOutlined,
   CopyOutlined,
 } from '@ant-design/icons';
-import type { MenuProps, TreeDataNode } from 'antd';
+import type { MenuProps, TreeDataNode, TreeProps } from 'antd';
 import { useRunProjectStore } from '../../store/runProjectStore';
 import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 
@@ -31,9 +31,15 @@ const { Text } = Typography;
 interface FileExplorerProps {
   onFileSelect?: (file: FileInfo) => void;
   onFileEdit?: (file: FileInfo) => void;
+  onActionsReady?: (actions: { refresh: () => void; openNewFileDialog: () => void; openNewFolderDialog: () => void }) => void;
 }
 
-const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit }) => {
+interface FileTreeNode extends TreeDataNode {
+  file?: FileInfo;
+  children?: FileTreeNode[];
+}
+
+const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, onActionsReady }) => {
   const {
     currentProject,
     files,
@@ -45,6 +51,9 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
 
   const [selectedFile, setSelectedFile] = useState<FileInfo | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const [loadedKeys, setLoadedKeys] = useState<string[]>([]);
+  const [treeData, setTreeData] = useState<FileTreeNode[]>([]);
+  const [loadingKeys, setLoadingKeys] = useState<string[]>([]);
   const [contextMenuFile, setContextMenuFile] = useState<FileInfo | null>(null);
   const [newFileDialogVisible, setNewFileDialogVisible] = useState(false);
   const [newFileName, setNewFileName] = useState('');
@@ -52,15 +61,48 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
   const [newFolderName, setNewFolderName] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
 
+  const handleRefresh = useCallback(() => {
+    setLoadedKeys([]);
+    setExpandedKeys([]);
+    setTreeData([]);
+    listFiles('');
+  }, [listFiles]);
+
+  const openNewFileDialog = useCallback(() => {
+    setNewFileDialogVisible(true);
+  }, []);
+
+  const openNewFolderDialog = useCallback(() => {
+    setNewFolderDialogVisible(true);
+  }, []);
+
+  useEffect(() => {
+    if (onActionsReady) {
+      onActionsReady({
+        refresh: handleRefresh,
+        openNewFileDialog,
+        openNewFolderDialog,
+      });
+    }
+  }, [onActionsReady, handleRefresh, openNewFileDialog, openNewFolderDialog]);
+
   useEffect(() => {
     if (currentProject) {
       listFiles('');
     }
   }, [currentProject]);
 
-  const getFileIcon = (file: FileInfo) => {
+  useEffect(() => {
+    if (files.length > 0 && loadedKeys.length === 0) {
+      setTreeData(buildTreeData(files));
+    }
+  }, [files, loadedKeys.length]);
+
+  const getFileIcon = (file: FileInfo, isOpen?: boolean) => {
     if (file.is_dir) {
-      return <FolderOutlined style={{ color: '#f59e0b' }} />;
+      return isOpen ? 
+        <FolderOpenOutlined style={{ color: '#f59e0b' }} /> : 
+        <FolderOutlined style={{ color: '#f59e0b' }} />;
     }
 
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -105,7 +147,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const buildTreeData = (fileList: FileInfo[]): TreeDataNode[] => {
+  const buildTreeData = (fileList: FileInfo[]): FileTreeNode[] => {
     const folders = fileList.filter(f => f.is_dir);
     const files = fileList.filter(f => !f.is_dir);
 
@@ -117,61 +159,129 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
     return [...sortedFolders, ...sortedFiles].map(file => ({
       key: file.path,
       title: (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            width: '100%',
-            paddingRight: 8,
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setContextMenuFile(file);
-          }}
+        <Dropdown
+          menu={{ items: contextMenuItems }}
+          trigger={['contextMenu']}
         >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              width: '100%',
+              padding: '1px 0',
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenuFile(file);
+            }}
+          >
             {getFileIcon(file)}
-            <Text style={{ fontSize: 13 }}>{file.name}</Text>
-          </span>
-          {!file.is_dir && (
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {formatFileSize(file.size)}
+            <Text style={{ 
+              fontSize: 13, 
+              flex: 1, 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis', 
+              whiteSpace: 'nowrap',
+            }}>
+              {file.name}
             </Text>
-          )}
-        </div>
+            {!file.is_dir && (
+              <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                {formatFileSize(file.size)}
+              </Text>
+            )}
+          </div>
+        </Dropdown>
       ),
-      icon: file.is_dir ? <FolderOutlined /> : <FileOutlined />,
       isLeaf: !file.is_dir,
-      children: file.is_dir ? undefined : undefined,
+      file: file,
+      children: file.is_dir ? [] : undefined,
     }));
   };
 
   const handleSelect = (selectedKeys: React.Key[], info: any) => {
     if (selectedKeys.length > 0) {
       const path = selectedKeys[0] as string;
-      const file = files.find(f => f.path === path);
+      const file = findFileByPath(treeData, path);
       if (file) {
         setSelectedFile(file);
-        if (!file.is_dir && onFileSelect) {
+        if (file.is_dir) {
+          if (expandedKeys.includes(path)) {
+            setExpandedKeys(expandedKeys.filter(key => key !== path));
+          } else {
+            setExpandedKeys([...expandedKeys, path]);
+          }
+        } else if (onFileSelect) {
           onFileSelect(file);
         }
       }
     }
   };
 
-  const handleExpand = (expandedKeys: React.Key[]) => {
+  const findFileByPath = (nodes: FileTreeNode[], path: string): FileInfo | null => {
+    for (const node of nodes) {
+      if (node.key === path && node.file) {
+        return node.file;
+      }
+      if (node.children) {
+        const found = findFileByPath(node.children, path);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const handleExpand: TreeProps['onExpand'] = (expandedKeys, info) => {
     setExpandedKeys(expandedKeys as string[]);
+  };
+
+  const handleLoadData: TreeProps['loadData'] = async ({ key, children }) => {
+    if (children && children.length > 0) return;
+    if (loadingKeys.includes(key as string)) return;
+
+    setLoadingKeys(prev => [...prev, key as string]);
+    
+    try {
+      const response = await runProjectApi.listFiles(key as string, '*');
+      if (response.code === 200 && response.data.files.length > 0) {
+        const newChildren = buildTreeData(response.data.files);
+        
+        setTreeData(prev => updateTreeChildren(prev, key as string, newChildren));
+        setLoadedKeys(prev => [...prev, key as string]);
+      } else {
+        setLoadedKeys(prev => [...prev, key as string]);
+      }
+    } catch (error) {
+      console.error('Failed to load directory:', error);
+    } finally {
+      setLoadingKeys(prev => prev.filter(k => k !== key));
+    }
+  };
+
+  const updateTreeChildren = (
+    nodes: FileTreeNode[], 
+    targetKey: string, 
+    newChildren: FileTreeNode[]
+  ): FileTreeNode[] => {
+    return nodes.map(node => {
+      if (node.key === targetKey) {
+        return { ...node, children: newChildren };
+      }
+      if (node.children) {
+        return { 
+          ...node, 
+          children: updateTreeChildren(node.children, targetKey, newChildren) 
+        };
+      }
+      return node;
+    });
   };
 
   const handleDoubleClick = (file: FileInfo) => {
     if (!file.is_dir && onFileEdit) {
       onFileEdit(file);
     }
-  };
-
-  const handleRefresh = () => {
-    listFiles(currentPath);
   };
 
   const handleCreateFile = async () => {
@@ -187,7 +297,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
       message.success('文件创建成功');
       setNewFileDialogVisible(false);
       setNewFileName('');
-      listFiles(currentPath);
+      handleRefresh();
     } catch (error: any) {
       message.error('创建文件失败: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -208,7 +318,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
       message.success('文件夹创建成功');
       setNewFolderDialogVisible(false);
       setNewFolderName('');
-      listFiles(currentPath);
+      handleRefresh();
     } catch (error: any) {
       message.error('创建文件夹失败: ' + (error.response?.data?.detail || error.message));
     } finally {
@@ -227,7 +337,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
         try {
           await runProjectApi.deleteFile(file.path);
           message.success('删除成功');
-          listFiles(currentPath);
+          handleRefresh();
           if (selectedFile?.path === file.path) {
             setSelectedFile(null);
           }
@@ -284,78 +394,62 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit })
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div
-        style={{
-          padding: '8px 12px',
-          borderBottom: '1px solid var(--border-color-light)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: 'var(--bg-secondary)',
-        }}
-      >
-        <Text strong style={{ fontSize: 13 }}>
-          文件资源管理器
-        </Text>
-        <Space size={4}>
-          <Tooltip title="新建文件">
-            <Button
-              type="text"
-              size="small"
-              icon={<FileAddOutlined />}
-              onClick={() => setNewFileDialogVisible(true)}
-            />
-          </Tooltip>
-          <Tooltip title="新建文件夹">
-            <Button
-              type="text"
-              size="small"
-              icon={<FolderAddOutlined />}
-              onClick={() => setNewFolderDialogVisible(true)}
-            />
-          </Tooltip>
-          <Tooltip title="刷新">
-            <Button
-              type="text"
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={handleRefresh}
-              loading={loading}
-            />
-          </Tooltip>
-        </Space>
-      </div>
-
-      <div style={{ flex: 1, overflow: 'auto', padding: '8px 0' }}>
-        {loading ? (
+      <style>{`
+        .custom-file-tree .ant-tree-switcher {
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          width: 20px !important;
+          min-width: 20px !important;
+          line-height: 20px !important;
+        }
+        .custom-file-tree .ant-tree-node-content-wrapper {
+          display: flex !important;
+          align-items: center !important;
+          min-height: 22px !important;
+          line-height: 22px !important;
+        }
+        .custom-file-tree .ant-tree-title {
+          display: flex !important;
+          align-items: center !important;
+          width: 100% !important;
+        }
+        .custom-file-tree .ant-tree-switcher-line-icon {
+          vertical-align: middle !important;
+        }
+      `}</style>
+      <div style={{ flex: 1, overflow: 'auto', padding: '8px 4px' }}>
+        {loading && treeData.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 24 }}>
             <Spin />
           </div>
-        ) : files.length === 0 ? (
+        ) : treeData.length === 0 ? (
           <Empty
             description="空文件夹"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             style={{ padding: 24 }}
           />
         ) : (
-          <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
-            <div>
-              <Tree
-                showIcon
-                blockNode
-                selectedKeys={selectedFile ? [selectedFile.path] : []}
-                expandedKeys={expandedKeys}
-                treeData={buildTreeData(files)}
-                onSelect={handleSelect}
-                onExpand={handleExpand}
-                onDoubleClick={(e, node) => {
-                  const file = files.find(f => f.path === node.key);
-                  if (file) handleDoubleClick(file);
-                }}
-                style={{ background: 'transparent' }}
-              />
-            </div>
-          </Dropdown>
+          <Tree
+            showLine={{ showLeafIcon: false }}
+            blockNode
+            selectedKeys={selectedFile ? [selectedFile.path] : []}
+            expandedKeys={expandedKeys}
+            loadedKeys={loadedKeys}
+            treeData={treeData}
+            onSelect={handleSelect}
+            onExpand={handleExpand}
+            loadData={handleLoadData}
+            onDoubleClick={(e, node) => {
+              const file = findFileByPath(treeData, node.key as string);
+              if (file) handleDoubleClick(file);
+            }}
+            style={{ 
+              background: 'transparent', 
+              fontSize: 13,
+            }}
+            className="custom-file-tree"
+          />
         )}
       </div>
 

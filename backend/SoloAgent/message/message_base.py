@@ -27,6 +27,7 @@
     - user: 用户消息
     - assistant: 助手消息
     - system: 系统消息
+    - tool: 工具调用结果消息
 
 设计理念：
     消息是 Agent 对话的基本单位，支持结构化的多模态内容。
@@ -71,6 +72,7 @@ class Msg:
         - user: 用户发送的消息
         - assistant: 助手（LLM）生成的消息
         - system: 系统提示消息
+        - tool: 工具调用结果消息
     
     内容格式：
         消息内容可以是：
@@ -107,7 +109,7 @@ class Msg:
         self,
         name: str,
         content: str | Sequence[ContentBlock],
-        role: Literal["user", "assistant", "system"],
+        role: Literal["user", "assistant", "system", "tool"],
         metadata: dict[str, JSONSerializableObject] | None = None,
         timestamp: str | None = None,
         invocation_id: str | None = None,
@@ -120,10 +122,11 @@ class Msg:
             content (str | Sequence[ContentBlock]): 消息内容，可以是：
                 - 字符串：纯文本消息
                 - 内容块列表：多模态或结构化消息
-            role (Literal["user", "assistant", "system"]): 消息角色：
+            role (Literal["user", "assistant", "system", "tool"]): 消息角色：
                 - "user": 用户消息
                 - "assistant": 助手消息
                 - "system": 系统消息
+                - "tool": 工具调用结果消息
             metadata (dict[str, JSONSerializableObject] | None, optional):
                 消息元数据，可存储结构化输出、标签等额外信息。
                 默认为 None。
@@ -154,7 +157,7 @@ class Msg:
 
         self.content = content
 
-        assert role in ["user", "assistant", "system"]
+        assert role in ["user", "assistant", "system", "tool"]
         self.role = role
 
         self.metadata = metadata

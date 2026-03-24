@@ -37,6 +37,7 @@ export interface SkillsPackage {
   is_default?: boolean;
   source?: string;
   lock_version?: number;
+  icon?: string;
   created_at: string;
   updated_at: string;
   metadata?: {
@@ -60,6 +61,7 @@ export interface CreatePackageRequest {
   description?: string;
   author?: string;
   tags?: string[];
+  icon?: string;
 }
 
 class SkillsApi {

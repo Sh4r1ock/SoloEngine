@@ -32,9 +32,9 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
 
     try {
       const result = await projectApi.runProject(currentProject.id, input);
-      const newTaskId = result.task_id;
+      const newSessionId = result.session_id;
 
-      await wsService.connect(newTaskId);
+      await wsService.connect(newSessionId);
 
       wsService.onMessage((event: WebSocketEvent) => {
         setLogs((prev) => [...prev, event]);

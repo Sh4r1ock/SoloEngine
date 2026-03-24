@@ -25,10 +25,11 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, AgenticFlowModel, AgenticFlowRunModel, OptimisticLockError
+from app.core.database import get_db, db_manager, AgenticFlowModel, OptimisticLockError
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
-from app.core.agenticflow_storage import agenticflow_storage
+from app.core.agenticflow_storage import AgenticFlowStorage
+from app.core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,14 @@ router = APIRouter(prefix="/api/v1/agentic-flows", tags=["agentic-flows"])
 class CreateFlowRequest(BaseModel):
     name: str = Field(..., description="Agentic名称")
     description: Optional[str] = Field(None, description="Agentic描述")
+    icon: Optional[str] = Field(None, description="图标")
     canvas_data: Optional[Dict[str, Any]] = Field(None, description="画布数据")
 
 
 class UpdateFlowRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    icon: Optional[str] = None
     canvas_data: Optional[Dict[str, Any]] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
 
@@ -63,14 +66,17 @@ async def list_flows(
     
     data = []
     for flow in flows:
-        canvas_data = agenticflow_storage.load_canvas(flow.id)
+        storage = AgenticFlowStorage(flow.user_id)
+        canvas_data = storage.load_canvas(flow.id)
         if canvas_data is None:
-            canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+            canvas_data = {"nodes": [], "edges": []}
         data.append({
             "id": flow.id,
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
+            "icon": flow.icon,
+            "folder_path": flow.folder_path,
             "canvas_data": canvas_data,
             "is_template": flow.is_template,
             "is_active": flow.is_active,
@@ -100,11 +106,16 @@ async def create_flow(
         user_id=user_id,
         name=request.name,
         description=request.description,
-        canvas_data=None,
+        folder_path=None,
+        icon=request.icon,
     )
     
     if request.canvas_data:
-        agenticflow_storage.save_canvas(flow.id, request.canvas_data)
+        storage = AgenticFlowStorage(flow.user_id)
+        storage.save_canvas(flow.id, request.canvas_data)
+        folder_path = storage._get_flow_dir(flow.id)
+        db_manager.update_agentic_flow(db, flow.id, user_id, folder_path=DataPaths.to_relative_path(folder_path))
+        db.refresh(flow)
     
     return {
         "code": 200,
@@ -114,6 +125,8 @@ async def create_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
+            "icon": flow.icon,
+            "folder_path": flow.folder_path,
             "canvas_data": request.canvas_data or {"nodes": [], "edges": []},
             "is_template": flow.is_template,
             "is_active": flow.is_active,
@@ -123,22 +136,23 @@ async def create_flow(
     }
 
 
-@router.get("/{flow_id}")
+@router.get("/{agentic_flow_id}")
 async def get_flow(
-    flow_id: str,
+    agentic_flow_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """获取指定的AgenticFlow。"""
     user_id = current_user.id
-    flow = db_manager.get_agentic_flow(db, flow_id, user_id)
+    flow = db_manager.get_agentic_flow(db, agentic_flow_id, user_id)
     
     if not flow:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+        raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
-    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    storage = AgenticFlowStorage(flow.user_id)
+    canvas_data = storage.load_canvas(agentic_flow_id)
     if canvas_data is None:
-        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+        canvas_data = {"nodes": [], "edges": []}
     
     return {
         "code": 200,
@@ -148,6 +162,8 @@ async def get_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
+            "icon": flow.icon,
+            "folder_path": flow.folder_path,
             "canvas_data": canvas_data,
             "is_template": flow.is_template,
             "is_active": flow.is_active,
@@ -158,9 +174,9 @@ async def get_flow(
     }
 
 
-@router.put("/{flow_id}")
+@router.put("/{agentic_flow_id}")
 async def update_flow(
-    flow_id: str,
+    agentic_flow_id: str,
     request: UpdateFlowRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -173,23 +189,28 @@ async def update_flow(
         update_data["name"] = request.name
     if request.description is not None:
         update_data["description"] = request.description
+    if request.icon is not None:
+        update_data["icon"] = request.icon
     
     try:
         flow = db_manager.update_agentic_flow(
-            db, flow_id, user_id, version=request.version, **update_data
+            db, agentic_flow_id, user_id, version=request.version, **update_data
         )
     except OptimisticLockError as e:
         raise HTTPException(status_code=409, detail=str(e))
     
     if not flow:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+        raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
+    storage = AgenticFlowStorage(flow.user_id)
     if request.canvas_data is not None:
-        agenticflow_storage.save_canvas(flow_id, request.canvas_data)
+        storage.save_canvas(agentic_flow_id, request.canvas_data)
+        folder_path = storage._get_flow_dir(agentic_flow_id)
+        flow = db_manager.update_agentic_flow(db, agentic_flow_id, user_id, folder_path=DataPaths.to_relative_path(folder_path))
     
-    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    canvas_data = storage.load_canvas(agentic_flow_id)
     if canvas_data is None:
-        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+        canvas_data = {"nodes": [], "edges": []}
     
     return {
         "code": 200,
@@ -199,6 +220,8 @@ async def update_flow(
             "user_id": flow.user_id,
             "name": flow.name,
             "description": flow.description,
+            "icon": flow.icon,
+            "folder_path": flow.folder_path,
             "canvas_data": canvas_data,
             "is_template": flow.is_template,
             "is_active": flow.is_active,
@@ -209,44 +232,46 @@ async def update_flow(
     }
 
 
-@router.delete("/{flow_id}")
+@router.delete("/{agentic_flow_id}")
 async def delete_flow(
-    flow_id: str,
+    agentic_flow_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """删除AgenticFlow。"""
     user_id = current_user.id
-    success = db_manager.delete_agentic_flow(db, flow_id, user_id)
+    success = db_manager.delete_agentic_flow(db, agentic_flow_id, user_id)
     
     if not success:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+        raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
-    agenticflow_storage.delete_canvas(flow_id)
+    storage = AgenticFlowStorage(user_id)
+    storage.delete_flow(agentic_flow_id)
     
     return {
         "code": 200,
         "message": "AgenticFlow deleted",
-        "data": {"flow_id": flow_id},
+        "data": {"agentic_flow_id": agentic_flow_id},
     }
 
 
-@router.get("/{flow_id}/canvas")
+@router.get("/{agentic_flow_id}/canvas")
 async def get_canvas(
-    flow_id: str,
+    agentic_flow_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """获取AgenticFlow的画布数据。"""
     user_id = current_user.id
-    flow = db_manager.get_agentic_flow(db, flow_id, user_id)
+    flow = db_manager.get_agentic_flow(db, agentic_flow_id, user_id)
     
     if not flow:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+        raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
-    canvas_data = agenticflow_storage.load_canvas(flow_id)
+    storage = AgenticFlowStorage(flow.user_id)
+    canvas_data = storage.load_canvas(agentic_flow_id)
     if canvas_data is None:
-        canvas_data = flow.canvas_data or {"nodes": [], "edges": []}
+        canvas_data = {"nodes": [], "edges": []}
     
     return {
         "code": 200,
@@ -255,9 +280,9 @@ async def get_canvas(
     }
 
 
-@router.put("/{flow_id}/canvas")
+@router.put("/{agentic_flow_id}/canvas")
 async def save_canvas(
-    flow_id: str,
+    agentic_flow_id: str,
     request: UpdateFlowRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -265,84 +290,19 @@ async def save_canvas(
     """保存AgenticFlow的画布数据。"""
     user_id = current_user.id
     
-    flow = db_manager.get_agentic_flow(db, flow_id, user_id)
+    flow = db_manager.get_agentic_flow(db, agentic_flow_id, user_id)
     
     if not flow:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
+        raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
+    storage = AgenticFlowStorage(flow.user_id)
     if request.canvas_data is not None:
-        agenticflow_storage.save_canvas(flow_id, request.canvas_data)
-        db_manager.update_agentic_flow(db, flow_id, user_id)
+        storage.save_canvas(agentic_flow_id, request.canvas_data)
+        folder_path = storage._get_flow_dir(agentic_flow_id)
+        db_manager.update_agentic_flow(db, agentic_flow_id, user_id, folder_path=DataPaths.to_relative_path(folder_path))
     
     return {
         "code": 200,
         "message": "Canvas data saved",
-        "data": {"flow_id": flow_id},
-    }
-
-
-@router.get("/{flow_id}/runs")
-async def get_runs(
-    flow_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """获取AgenticFlow的运行历史。"""
-    user_id = current_user.id
-    runs = db_manager.get_runs(db, flow_id=flow_id, user_id=user_id)
-    
-    return {
-        "code": 200,
-        "message": "Runs retrieved",
-        "data": [
-            {
-                "id": run.id,
-                "agentic_flow_id": run.agentic_flow_id,
-                "user_id": run.user_id,
-                "status": run.status,
-                "input_message": run.input_message,
-                "output_message": run.output_message,
-                "error": run.error,
-                "token_usage": run.token_usage,
-                "duration_ms": run.duration_ms,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "completed_at": run.completed_at.isoformat() if run.completed_at else None,
-            }
-            for run in runs
-        ],
-    }
-
-
-@router.post("/{flow_id}/run")
-async def run_flow(
-    flow_id: str,
-    request: RunFlowRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """运行AgenticFlow。"""
-    user_id = current_user.id
-    flow = db_manager.get_agentic_flow(db, flow_id, user_id)
-    
-    if not flow:
-        raise HTTPException(status_code=404, detail=f"AgenticFlow '{flow_id}' not found")
-    
-    run = db_manager.create_run(
-        db=db,
-        flow_id=flow_id,
-        user_id=user_id,
-        input_message=request.input_message,
-    )
-    
-    return {
-        "code": 200,
-        "message": "Run created",
-        "data": {
-            "id": run.id,
-            "agentic_flow_id": run.agentic_flow_id,
-            "user_id": run.user_id,
-            "status": run.status,
-            "input_message": run.input_message,
-            "started_at": run.started_at.isoformat() if run.started_at else None,
-        },
+        "data": {"agentic_flow_id": agentic_flow_id},
     }

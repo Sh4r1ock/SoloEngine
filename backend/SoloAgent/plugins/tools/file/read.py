@@ -92,7 +92,7 @@ class Read(BaseFileTool):
             12→    print("Hello, World!")
             ...
         """
-        self.validate_absolute_path(file_path)
+        file_path = self.validate_absolute_path(file_path)
         
         if limit is None or limit < 0:
             limit = self.DEFAULT_LIMIT
@@ -142,6 +142,41 @@ class Read(BaseFileTool):
             raise FileToolError(f"文件编码错误，请确保文件使用 UTF-8 编码: {file_path}")
         except Exception as e:
             raise FileToolError(f"读取文件失败: {str(e)}")
+    
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取读取工具的规范定义。
+        
+        Returns:
+            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
+        """
+        return {
+            "name": "Read",
+            "description": (
+                "读取文件内容。"
+                "支持指定行号范围读取，返回带行号的格式化输出。"
+                "默认读取最多 2000 行，超过 2000 字符的行会被截断。"
+            ),
+            "parameters": {
+                "file_path": {
+                    "type": "string",
+                    "description": "要读取的文件的绝对路径。",
+                    "required": True,
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "起始行号偏移量（从 0 开始）。默认为 0。",
+                    "required": False,
+                    "default": 0,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "读取行数限制。默认为 2000。",
+                    "required": False,
+                    "default": 2000,
+                },
+            },
+        }
 
 
 def read_file(

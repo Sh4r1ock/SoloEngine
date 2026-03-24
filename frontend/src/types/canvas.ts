@@ -18,6 +18,8 @@ export interface NodeData {
     };
     skills?: string[];
     mcp_tools?: string[];
+    tools?: string[];
+    memory?: boolean;
     text?: string;
     color?: string;
   };
@@ -30,9 +32,16 @@ export interface EdgeData {
   label?: string;
 }
 
+export interface GlobalSettings {
+  maxContextLength: number;
+  maxIterations: number;
+  timeout: number;
+}
+
 export interface CanvasData {
   nodes: NodeData[];
   edges: EdgeData[];
+  globalSettings?: GlobalSettings;
 }
 
 export interface ProjectData {
@@ -52,7 +61,7 @@ export interface WebSocketEvent {
   node_id?: string;
   status?: string;
   message?: string;
-  task_id?: string;
+  session_id?: string;
   result?: any;
 }
 

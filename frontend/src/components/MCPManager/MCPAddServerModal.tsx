@@ -246,12 +246,12 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 }
                 
                 const packageFile = stdioUploadType === 'zip' ? fileList[0].originFileObj : null;
-                const files = stdioUploadType === 'folder' ? fileList.map(f => f.originFileObj) : null;
+                const files = stdioUploadType === 'folder' ? fileList.map(f => f.originFileObj).filter((f): f is File => f !== null) : undefined;
                 
                 const response = await mcpApi.createStdioMCP(
                     values.name,
                     values.description || '',
-                    packageFile,
+                    packageFile || undefined,
                     files
                 );
                 

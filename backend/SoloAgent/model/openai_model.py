@@ -32,6 +32,7 @@ OpenAI 聊天模型类。
 状态: ✅ 完整实现
 """
 
+import asyncio
 import warnings
 from datetime import datetime
 from typing import (
@@ -216,6 +217,7 @@ class OpenAIChatModel(ChatModelBase):
         tools: list[dict] | None = None,
         tool_choice: Literal["auto", "none", "required"] | str | None = None,
         structured_model: Type[BaseModel] | None = None,
+        cancel_event: asyncio.Event = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         """
@@ -342,6 +344,7 @@ class OpenAIChatModel(ChatModelBase):
                     start_datetime,
                     response,
                     structured_model,
+                    cancel_event,
                 )
         else:
             response = await self.client.chat.completions.create(**kwargs)
@@ -351,6 +354,7 @@ class OpenAIChatModel(ChatModelBase):
                 start_datetime,
                 response,
                 structured_model,
+                cancel_event,
             )
 
         parsed_response = self._parse_openai_completion_response(
@@ -366,6 +370,7 @@ class OpenAIChatModel(ChatModelBase):
         start_datetime: datetime,
         response: AsyncStream,
         structured_model: Type[BaseModel] | None = None,
+        cancel_event: asyncio.Event = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """
         解析 OpenAI 流式响应。
@@ -393,12 +398,16 @@ class OpenAIChatModel(ChatModelBase):
         audio = ""
         tool_calls = OrderedDict()
         metadata: dict | None = None
-        last_text = ""  # 记录上次输出的文本，用于计算增量
-        last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
-        finish_reason = None  # 记录 finish_reason
+        last_text = ""
+        last_thinking = ""
+        finish_reason = None
 
         async with response as stream:
             async for item in stream:
+                if cancel_event and cancel_event.is_set():
+                    logger.info("[OpenAI] Cancel event detected, stopping stream")
+                    break
+                
                 if structured_model:
                     if item.type != "chunk":
                         continue
@@ -414,52 +423,66 @@ class OpenAIChatModel(ChatModelBase):
                     )
 
                 if not chunk.choices:
-                    if usage:
-                        # 最后一个 chunk，yield 完整响应
-                        contents = []
-                        if thinking:
-                            contents.append(
-                                ThinkingBlock(
-                                    type="thinking",
-                                    thinking=thinking,
-                                ),
-                            )
+                    # 最后一个 chunk，yield 完整响应（不包含 ToolUseBlock，由 ReActCore 构建）
+                    contents = []
+                    if thinking:
+                        contents.append(
+                            ThinkingBlock(
+                                type="thinking",
+                                thinking=thinking,
+                            ),
+                        )
+                    if text:
+                        contents.append(
+                            TextBlock(
+                                type="text",
+                                text=text,
+                            ),
+                        )
+                    # 不再输出 ToolUseBlock，由 ReActCore 从增量数据构建
+                    if contents or finish_reason:
+                        stop_reason = None
+                        if finish_reason:
+                            if finish_reason == "stop":
+                                stop_reason = "end_turn"
+                            elif finish_reason == "tool_calls":
+                                stop_reason = "tool_use"
+                            else:
+                                stop_reason = finish_reason
+                        
+                        metadata = metadata or {}
+                        original_msg = {
+                            "role": "assistant"
+                        }
                         if text:
-                            contents.append(
-                                TextBlock(
-                                    type="text",
-                                    text=text,
-                                ),
-                            )
-                        for tool_call in tool_calls.values():
-                            contents.append(
-                                ToolUseBlock(
-                                    type=tool_call["type"],
-                                    id=tool_call["id"],
-                                    name=tool_call["name"],
-                                    input=_json_loads_with_repair(
-                                        tool_call["input"] or "{}",
-                                    ),
-                                ),
-                            )
-                        if contents:
-                            # 设置 stop_reason
-                            stop_reason = None
-                            if finish_reason:
-                                if finish_reason == "stop":
-                                    stop_reason = "end_turn"
-                                elif finish_reason == "tool_calls":
-                                    stop_reason = "tool_use"
-                                else:
-                                    stop_reason = finish_reason
-                            res = ChatResponse(
-                                content=contents,
-                                usage=usage,
-                                metadata=metadata,
-                                stop_reason=stop_reason,
-                                finish_reason=finish_reason,
-                            )
-                            yield res
+                            original_msg["content"] = text
+                        if thinking:
+                            original_msg["reasoning_content"] = thinking
+                        if tool_calls:
+                            original_msg["tool_calls"] = [
+                                {
+                                    "id": tc["id"],
+                                    "type": tc["type"],
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": tc["input"]
+                                    }
+                                }
+                                for tc in tool_calls.values()
+                            ]
+                        metadata['original_model_message'] = original_msg
+                        metadata['provider'] = 'openai'
+                        
+                        logger.info(f"[OpenAI] Final chunk with finish_reason: {finish_reason}, tool_calls collected: {list(tool_calls.keys())}")
+                        
+                        res = ChatResponse(
+                            content=contents,
+                            usage=usage,
+                            metadata=metadata,
+                            stop_reason=stop_reason,
+                            finish_reason=finish_reason,
+                        )
+                        yield res
                     continue
 
                 choice = chunk.choices[0]
@@ -469,53 +492,67 @@ class OpenAIChatModel(ChatModelBase):
                     finish_reason = choice.finish_reason
                     logger.info(f"[Stream] finish_reason detected: {finish_reason}")
                     
-                    # 当检测到 finish_reason 时，立即 yield 最终响应
-                    # 这处理了 MAX_TOKENS 和 tool_calls 等情况
-                    if finish_reason in ("length", "max_tokens", "tool_calls", "stop"):
-                        contents = []
-                        if thinking:
-                            contents.append(
-                                ThinkingBlock(
-                                    type="thinking",
-                                    thinking=thinking,
-                                ),
-                            )
+                    # 当检测到 finish_reason 时，yield 完整响应（不包含 ToolUseBlock）
+                    # ToolUseBlock 由 ReActCore 从增量数据构建
+                    contents = []
+                    if thinking:
+                        contents.append(
+                            ThinkingBlock(
+                                type="thinking",
+                                thinking=thinking,
+                            ),
+                        )
+                    if text:
+                        contents.append(
+                            TextBlock(
+                                type="text",
+                                text=text,
+                            ),
+                        )
+                    # 不再输出 ToolUseBlock，由 ReActCore 从增量数据构建
+                    
+                    if contents or finish_reason:
+                        stop_reason = None
+                        if finish_reason == "tool_calls":
+                            stop_reason = "tool_use"
+                        elif finish_reason == "stop":
+                            stop_reason = "end_turn"
+                        else:
+                            stop_reason = finish_reason
+                        
+                        metadata = metadata or {}
+                        original_msg = {
+                            "role": "assistant"
+                        }
                         if text:
-                            contents.append(
-                                TextBlock(
-                                    type="text",
-                                    text=text,
-                                ),
-                            )
-                        for tool_call in tool_calls.values():
-                            contents.append(
-                                ToolUseBlock(
-                                    type=tool_call["type"],
-                                    id=tool_call["id"],
-                                    name=tool_call["name"],
-                                    input=_json_loads_with_repair(
-                                        tool_call["input"] or "{}",
-                                    ),
-                                ),
-                            )
-                        if contents:
-                            # 设置 stop_reason
-                            stop_reason = None
-                            if finish_reason == "stop":
-                                stop_reason = "end_turn"
-                            elif finish_reason == "tool_calls":
-                                stop_reason = "tool_use"
-                            else:
-                                stop_reason = finish_reason
-                            res = ChatResponse(
-                                content=contents,
-                                usage=usage,
-                                metadata=metadata,
-                                stop_reason=stop_reason,
-                                finish_reason=finish_reason,
-                            )
-                            logger.info(f"[Stream] Yielding final response with {len(contents)} blocks, stop_reason={stop_reason}")
-                            yield res
+                            original_msg["content"] = text
+                        if thinking:
+                            original_msg["reasoning_content"] = thinking
+                        if tool_calls:
+                            original_msg["tool_calls"] = [
+                                {
+                                    "id": tc["id"],
+                                    "type": tc["type"],
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": tc["input"]
+                                    }
+                                }
+                                for tc in tool_calls.values()
+                            ]
+                        metadata['original_model_message'] = original_msg
+                        metadata['provider'] = 'openai'
+                        
+                        logger.info(f"[OpenAI] finish_reason={finish_reason}, tool_calls collected: {list(tool_calls.keys())}")
+                        
+                        res = ChatResponse(
+                            content=contents,
+                            usage=usage,
+                            metadata=metadata,
+                            stop_reason=stop_reason,
+                            finish_reason=finish_reason,
+                        )
+                        yield res
 
                 delta_dict = choice.delta.model_dump() if hasattr(choice.delta, 'model_dump') else {}
                 delta_thinking = delta_dict.get("reasoning_content") or ""
@@ -539,21 +576,6 @@ class OpenAIChatModel(ChatModelBase):
                     and "transcript" in choice.delta.audio
                 ):
                     text += choice.delta.audio["transcript"]
-
-                for tool_call in choice.delta.tool_calls or []:
-                    if tool_call.index in tool_calls:
-                        if tool_call.function.arguments is not None:
-                            tool_calls[tool_call.index][
-                                "input"
-                            ] += tool_call.function.arguments
-
-                    else:
-                        tool_calls[tool_call.index] = {
-                            "type": "tool_use",
-                            "id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "input": tool_call.function.arguments or "",
-                        }
 
                 # 构建增量内容
                 contents = []
@@ -599,29 +621,80 @@ class OpenAIChatModel(ChatModelBase):
                     if structured_model:
                         metadata = _json_loads_with_repair(text)
 
-                # 工具调用只在完成时输出（不增量输出）
-                # 检查是否有新的工具调用完成
-                if tool_calls and not delta_text and not delta_thinking:
-                    # 只在没有文本输出时才输出工具调用
-                    for tool_call in tool_calls.values():
-                        contents.append(
-                            ToolUseBlock(
-                                type=tool_call["type"],
-                                id=tool_call["id"],
-                                name=tool_call["name"],
-                                input=_json_loads_with_repair(
-                                    tool_call["input"] or "{}",
-                                ),
-                            ),
-                        )
+                # 输出增量的工具调用 - 纯转发 OpenAI delta
+                for tool_call in choice.delta.tool_calls or []:
+                    logger.info(f"[OpenAI] Raw delta tool_call: index={tool_call.index}, id={tool_call.id}, name={tool_call.function.name}, args_len={len(tool_call.function.arguments) if tool_call.function.arguments else 0}")
+                    
+                    if tool_call.index in tool_calls:
+                        if tool_call.function.arguments is not None:
+                            tool_calls[tool_call.index]["input"] += tool_call.function.arguments
+                    else:
+                        tool_calls[tool_call.index] = {
+                            "type": "tool_use",
+                            "id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "input": tool_call.function.arguments or "",
+                        }
+                    
+                    tool_call_delta = {
+                        "index": tool_call.index,
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments or "",
+                        }
+                    }
+                    contents.append({
+                        "type": "tool_calls",
+                        "tool_calls": [tool_call_delta],
+                    })
+                    logger.info(f"[OpenAI] Yield tool_calls delta: index={tool_call.index}, id={tool_call.id}, name={tool_call.function.name}, args_len={len(tool_call.function.arguments or '')}")
 
                 if not contents:
                     continue
 
+                if len(contents) == 1:
+                    res = ChatResponse(
+                        content=contents,
+                        usage=usage,
+                        metadata=metadata,
+                    )
+                    yield res
+                else:
+                    for single_content in contents:
+                        res = ChatResponse(
+                            content=[single_content],
+                            usage=usage,
+                            metadata=metadata,
+                        )
+                        yield res
+        
+        if cancel_event and cancel_event.is_set():
+            logger.info("[OpenAI] Returning collected content after cancellation")
+            contents = []
+            if thinking:
+                contents.append(
+                    ThinkingBlock(
+                        type="thinking",
+                        thinking=thinking,
+                    ),
+                )
+            if text:
+                contents.append(
+                    TextBlock(
+                        type="text",
+                        text=text,
+                    ),
+                )
+            # 不再输出 ToolUseBlock，由 ReActCore 从增量数据构建
+            if contents:
                 res = ChatResponse(
                     content=contents,
                     usage=usage,
                     metadata=metadata,
+                    stop_reason="end_turn",
+                    finish_reason="stop",
                 )
                 yield res
 
@@ -733,6 +806,29 @@ class OpenAIChatModel(ChatModelBase):
                     stop_reason = "tool_use"
                 else:
                     stop_reason = finish_reason
+
+        metadata = metadata or {}
+        original_msg = {
+            "role": "assistant"
+        }
+        if choice.message.content:
+            original_msg["content"] = choice.message.content
+        if hasattr(choice.message, "reasoning_content") and choice.message.reasoning_content:
+            original_msg["reasoning_content"] = choice.message.reasoning_content
+        if choice.message.tool_calls:
+            original_msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments
+                    }
+                }
+                for tc in choice.message.tool_calls
+            ]
+        metadata['original_model_message'] = original_msg
+        metadata['provider'] = 'openai'
 
         parsed_response = ChatResponse(
             content=content_blocks,

@@ -6,9 +6,13 @@ import os
 import json
 import logging
 import re
+import sys
 from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'app')))
+from app.core.data_paths import DataPaths
 
 
 class ConfigLoader:
@@ -143,11 +147,7 @@ class ConfigLoader:
             "tools": [],
         }
         
-        base_path = os.path.join(
-            os.path.dirname(__file__),
-            "..", "..", "..", "data", "system_skills",
-            skill_name
-        )
+        base_path = os.path.join(DataPaths.get_system_skills_dir(), skill_name)
         
         skill_json_path = os.path.join(base_path, "skill.json")
         skill_md_path = os.path.join(base_path, "SKILL.md")
@@ -232,14 +232,7 @@ class ConfigLoader:
         }
         
         mcp_config_paths = [
-            os.path.join(
-                os.path.dirname(__file__),
-                "..", "..", "..", "data", "mcp_config.json"
-            ),
-            os.path.join(
-                os.path.dirname(__file__),
-                "..", "..", "..", "..", "data", "mcp_config.json"
-            ),
+            os.path.join(DataPaths.get_data_root(), "mcp_config.json"),
         ]
         
         for mcp_config_path in mcp_config_paths:
@@ -258,8 +251,7 @@ class ConfigLoader:
         
         if not config.get("command"):
             server_main_path = os.path.join(
-                os.path.dirname(__file__),
-                "..", "..", "..", "data", "mcp_servers", server_name, "main.py"
+                DataPaths.get_system_mcp_servers_dir(), server_name, "main.py"
             )
             if os.path.exists(server_main_path):
                 config["command"] = sys.executable

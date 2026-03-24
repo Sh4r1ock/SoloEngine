@@ -9,6 +9,7 @@ AgenticFlow 编译器
 - 完整数据库持久化
 - 自动加载 LLM/MCP/Skills 配置
 """
+import os
 import uuid
 import logging
 import time
@@ -17,11 +18,12 @@ import json
 from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
 from collections import OrderedDict
 from threading import Lock
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from ..config import SoloAgentConfig
 from ..agent import SoloAgent
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +36,7 @@ class ExecutionEvent:
     agent_name: Optional[str] = None
     agent_type: Optional[str] = None
     content: Optional[str] = None
+    message: Optional[Dict[str, Any]] = None
     tool_name: Optional[str] = None
     tool_args: Optional[Dict[str, Any]] = None
     tool_result: Optional[str] = None
@@ -59,28 +62,36 @@ class CompiledFlow:
         agents: Dict[str, SoloAgent],
         edges: Dict[str, List[str]],
         orchestrator_id: Optional[str] = None,
-        flow_id: str = None,
-        run_id: str = None,
+        agentic_flow_id: str = None,
+        session_id: str = None,
         user_id: str = None,
+        run_project_id: str = None,
     ):
         self.agents = agents
         self.edges = edges
         self.orchestrator_id = orchestrator_id
-        self.flow_id = flow_id
-        self.run_id = run_id
+        self.agentic_flow_id = agentic_flow_id
+        self.session_id = session_id
         self.user_id = user_id
+        self.run_project_id = run_project_id
         self._start_time: Optional[datetime] = None
         self._token_usage: Dict[str, int] = {}
         self._event_callback: Optional[Callable[[ExecutionEvent], None]] = None
         self._stream_callback: Optional[Callable[[str], None]] = None
+        self._agent_memories: Dict[str, List[Dict]] = {}
+        self._created_time: float = time.time()
     
     def set_event_callback(self, callback: Callable[[ExecutionEvent], None]):
         """设置事件回调函数"""
         self._event_callback = callback
     
-    def set_stream_callback(self, callback: Callable[[str], None]):
+    def set_stream_callback(self, callback: Callable[[dict], None]):
         """设置流式输出回调函数"""
         self._stream_callback = callback
+    
+    def set_agent_memories(self, memories: Dict[str, List[Dict]]) -> None:
+        """设置按 agent_id 分组的记忆（由 AgenticFlow实例层调用）"""
+        self._agent_memories = memories
     
     def _emit_event(self, event: ExecutionEvent):
         """发送执行事件"""
@@ -116,44 +127,40 @@ class CompiledFlow:
             target_nodes.update(child_ids)
         return [node_id for node_id in self.agents.keys() if node_id not in target_nodes]
     
-    async def run(self, input_message: str, context: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def run(self, input_message: str, context: Dict[str, Any] = None, cancel_event: asyncio.Event = None) -> Dict[str, Any]:
         """运行 AgenticFlow，返回完整执行结果"""
         context = context or {}
         self._start_time = datetime.now()
+        
+        logger.info(f"[CompiledFlow.run] Starting run with session_id={self.session_id}, user_id={self.user_id}, run_project_id={self.run_project_id}, agentic_flow_id={self.agentic_flow_id}")
         
         from app.core.database import db_manager, get_db_context
         
         self._emit_event(ExecutionEvent(
             event_type="execution_start",
             content=input_message,
-            metadata={"flow_id": self.flow_id, "user_id": self.user_id}
+            metadata={"agentic_flow_id": self.agentic_flow_id, "user_id": self.user_id, "session_id": self.session_id, "run_project_id": self.run_project_id}
         ))
         
         with get_db_context() as db:
-            if self.flow_id:
-                run = db_manager.create_run(
-                    db,
-                    flow_id=self.flow_id,
-                    user_id=self.user_id or "default_user",
-                    input_message=input_message
-                )
-                self.run_id = run.id
-                
-                for agent in self.agents.values():
-                    if hasattr(agent.config, 'agentic_flow_run_id'):
-                        agent.config.agentic_flow_run_id = self.run_id
-                    
-                    if agent.config.memory and hasattr(agent, '_init_memory'):
-                        agent._memory_plugin = None
-                        agent._message_history = []
-                        agent._initialized = False
-            
             orchestrator = self.get_orchestrator()
             
             if orchestrator is None:
                 if len(self.agents) == 1:
                     agent = list(self.agents.values())[0]
-                    result = await self._execute_agent(agent, input_message, db, context)
+                    result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
+                    
+                    if self.session_id and result:
+                        end_time = datetime.now()
+                        duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
+                        db_manager.update_session(
+                            db, self.session_id,
+                            status="completed",
+                            duration_ms=duration_ms,
+                            token_usage=self._token_usage if self._token_usage else None,
+                            completed_at=datetime.now(timezone.utc)
+                        )
+                    
                     return result
                 else:
                     entry_nodes = self.get_entry_nodes()
@@ -164,7 +171,7 @@ class CompiledFlow:
                     for entry_id in entry_nodes:
                         agent = self.agents.get(entry_id)
                         if agent:
-                            result = await self._execute_agent(agent, input_message, db, context)
+                            result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
                             results[entry_id] = result
                     
                     output = self._aggregate_results(results)
@@ -172,13 +179,13 @@ class CompiledFlow:
                     end_time = datetime.now()
                     duration_ms = int((end_time - self._start_time).total_seconds() * 1000)
                     
-                    if self.run_id:
-                        db_manager.update_run(
-                            db, self.run_id,
+                    if self.session_id:
+                        db_manager.update_session(
+                            db, self.session_id,
                             status="completed",
-                            output_message=output,
                             duration_ms=duration_ms,
-                            token_usage=self._token_usage if self._token_usage else None
+                            token_usage=self._token_usage if self._token_usage else None,
+                            completed_at=datetime.now(timezone.utc)
                         )
                     
                     self._emit_event(ExecutionEvent(
@@ -188,8 +195,9 @@ class CompiledFlow:
                     ))
                     
                     return {
-                        "run_id": self.run_id,
-                        "agentic_flow_id": self.flow_id,
+                        "session_id": self.session_id,
+                        "agentic_flow_id": self.agentic_flow_id,
+                        "run_project_id": self.run_project_id,
                         "status": "completed",
                         "output": output,
                         "node_results": results,
@@ -197,7 +205,7 @@ class CompiledFlow:
                         "token_usage": self._token_usage
                     }
             
-            result = await self._execute_agent(orchestrator, input_message, db, context)
+            result = await self._execute_agent(orchestrator, input_message, db, context, cancel_event=cancel_event)
             return result
     
     async def _execute_agent(
@@ -205,7 +213,8 @@ class CompiledFlow:
         agent: SoloAgent, 
         input_message: str,
         db,
-        context: Dict[str, Any]
+        context: Dict[str, Any],
+        cancel_event: asyncio.Event = None
     ) -> Dict[str, Any]:
         """执行单个 Agent 并记录"""
         from app.core.database import db_manager
@@ -221,16 +230,12 @@ class CompiledFlow:
             content=input_message
         ))
         
-        db_manager.add_execution_step(
-            db,
-            execution_id=self.run_id,
-            step_type="agent_execution",
-            node_id=agent_id,
-            node_name=agent_name
-        )
-        
         if self._stream_callback and hasattr(agent, 'set_stream_callback'):
             agent.set_stream_callback(self._stream_callback)
+        
+        agent_memory = self._agent_memories.get(agent_id, [])
+        if agent_memory and hasattr(agent, 'set_message_history'):
+            agent.set_message_history(agent_memory)
         
         if not agent._initialized:
             await agent.initialize()
@@ -239,13 +244,13 @@ class CompiledFlow:
             original_reply = agent.reply
             
             async def wrapped_reply(message: str) -> str:
-                response = await original_reply(message)
+                response = await original_reply(message, cancel_event=cancel_event)
                 
                 if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
                     for tool_call in agent._last_tool_calls:
                         tool_name = tool_call.get("name")
                         if not tool_name:
-                            continue  # 跳过无效的工具调用
+                            continue
                         
                         self._emit_event(ExecutionEvent(
                             event_type="tool_call",
@@ -255,14 +260,6 @@ class CompiledFlow:
                             tool_args=tool_call.get("args"),
                             tool_result=tool_call.get("result")
                         ))
-                        
-                        db_manager.add_tool_call(
-                            db,
-                            run_id=self.run_id,
-                            tool_name=tool_name,
-                            arguments=tool_call.get("args"),
-                            result=tool_call.get("result")
-                        )
                 
                 if hasattr(agent, '_last_skill_calls'):
                     for skill_call in agent._last_skill_calls:
@@ -290,27 +287,43 @@ class CompiledFlow:
             
             response = await wrapped_reply(input_message)
             
-            self._emit_stream(response)
-            
             end_time = datetime.now()
             duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
             
-            # 获取工具调用记录
             tool_calls = []
             if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
                 tool_calls = agent._last_tool_calls.copy()
+            
+            openai_message = agent.get_last_openai_message() if hasattr(agent, 'get_last_openai_message') else {"role": "assistant", "content": response, "reasoning_content": None}
+            
+            tokens = None
+            if hasattr(agent, '_last_response') and hasattr(agent._last_response, 'usage') and agent._last_response.usage:
+                usage = agent._last_response.usage
+                tokens = {
+                    "prompt_tokens": getattr(usage, 'input_tokens', None),
+                    "completion_tokens": getattr(usage, 'output_tokens', None),
+                    "total_tokens": getattr(usage, 'output_tokens', 0) + getattr(usage, 'input_tokens', 0) if getattr(usage, 'input_tokens', None) is not None and getattr(usage, 'output_tokens', None) is not None else None,
+                }
+                if tokens.get("prompt_tokens") is not None:
+                    self._token_usage["prompt_tokens"] = self._token_usage.get("prompt_tokens", 0) + (tokens.get("prompt_tokens") or 0)
+                    self._token_usage["completion_tokens"] = self._token_usage.get("completion_tokens", 0) + (tokens.get("completion_tokens") or 0)
+                    self._token_usage["total_tokens"] = self._token_usage.get("total_tokens", 0) + (tokens.get("total_tokens") or 0)
+                    logger.info(f"[Token Usage] Accumulated: {tokens}")
             
             result = {
                 "agent_id": agent_id,
                 "agent_name": agent_name,
                 "agent_type": agent.agent_type,
                 "user_id": self.user_id,
-                "agentic_flow_id": self.flow_id,
-                "run_id": self.run_id,
+                "agentic_flow_id": self.agentic_flow_id,
+                "run_project_id": self.run_project_id,
+                "session_id": self.session_id,
                 "output": response,
+                "message": openai_message,
                 "status": "completed",
                 "duration_ms": duration_ms,
-                "tool_calls": tool_calls
+                "tool_calls": tool_calls,
+                "tokens": tokens,
             }
             
             child_ids = self.edges.get(agent_id, [])
@@ -329,7 +342,7 @@ class CompiledFlow:
                         ))
                         
                         child_result = await self._execute_agent(
-                            child_agent, response, db, context
+                            child_agent, response, db, context, cancel_event=cancel_event
                         )
                         child_results.append(child_result)
                         
@@ -347,14 +360,17 @@ class CompiledFlow:
                 event_type="agent_complete",
                 agent_id=agent_id,
                 agent_name=agent_name,
-                content=response,
+                content=openai_message.get("content", response) if openai_message else response,
+                message=openai_message,
                 status="completed"
             ))
             
             return result
             
         except Exception as e:
+            import traceback
             logger.error(f"Agent execution failed: {agent_name} - {e}")
+            logger.error(traceback.format_exc())
             
             self._emit_event(ExecutionEvent(
                 event_type="agent_error",
@@ -364,9 +380,9 @@ class CompiledFlow:
                 status="failed"
             ))
             
-            if self.run_id:
-                db_manager.update_run(
-                    db, self.run_id,
+            if self.session_id:
+                db_manager.update_session(
+                    db, self.session_id,
                     status="failed",
                     error=str(e)
                 )
@@ -403,10 +419,13 @@ class CompiledFlow:
 
 
 class CompiledFlowFactory:
-    """CompiledFlow 工厂，带 LRU 缓存、并发控制和自动清理"""
+    """CompiledFlow 工厂，带 LRU 缓存、并发控制和自动清理
+    
+    缓存 key 格式: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}
+    """
     
     MAX_INSTANCES = 100
-    INSTANCE_TIMEOUT = 3600
+    CACHE_TIMEOUT = int(os.getenv("COMPILED_FLOW_CACHE_TIMEOUT", "1800"))
     
     _instances: OrderedDict[str, tuple] = OrderedDict()
     _lock = Lock()
@@ -414,67 +433,77 @@ class CompiledFlowFactory:
     _flow_users: Dict[str, set] = {}
     
     @classmethod
-    def create(cls, flow_id: str, compiled_flow: CompiledFlow) -> CompiledFlow:
+    def _make_cache_key(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> str:
+        """生成四参数缓存 key"""
+        return f"{user_id}:{agentic_flow_id}:{session_id}:{run_project_id}"
+    
+    @classmethod
+    def create(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str, compiled_flow: CompiledFlow) -> CompiledFlow:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        
         with cls._lock:
             cls._cleanup_expired()
             
-            if flow_id in cls._instances:
-                cls._instances.move_to_end(flow_id)
-                compiled_flow, _ = cls._instances[flow_id]
+            if cache_key in cls._instances:
+                cls._instances.move_to_end(cache_key)
+                compiled_flow, _ = cls._instances[cache_key]
                 return compiled_flow
             
             if len(cls._instances) >= cls.MAX_INSTANCES:
-                oldest_id = next(iter(cls._instances))
-                del cls._instances[oldest_id]
-                if oldest_id in cls._execution_locks:
-                    del cls._execution_locks[oldest_id]
-                if oldest_id in cls._flow_users:
-                    del cls._flow_users[oldest_id]
-                logger.info(f"Removed oldest CompiledFlow instance: {oldest_id}")
+                oldest_key = next(iter(cls._instances))
+                del cls._instances[oldest_key]
+                if oldest_key in cls._execution_locks:
+                    del cls._execution_locks[oldest_key]
+                if oldest_key in cls._flow_users:
+                    del cls._flow_users[oldest_key]
+                logger.info(f"Removed oldest CompiledFlow instance: {oldest_key}")
             
-            cls._instances[flow_id] = (compiled_flow, time.time())
+            cls._instances[cache_key] = (compiled_flow, time.time())
             
-            if flow_id not in cls._execution_locks:
-                cls._execution_locks[flow_id] = asyncio.Lock()
+            if cache_key not in cls._execution_locks:
+                cls._execution_locks[cache_key] = asyncio.Lock()
             
-            if flow_id not in cls._flow_users:
-                cls._flow_users[flow_id] = set()
+            if cache_key not in cls._flow_users:
+                cls._flow_users[cache_key] = set()
             
             return compiled_flow
     
     @classmethod
-    def get(cls, flow_id: str) -> Optional[CompiledFlow]:
+    def get(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> Optional[CompiledFlow]:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        
         with cls._lock:
-            if flow_id in cls._instances:
-                cls._instances.move_to_end(flow_id)
-                compiled_flow, _ = cls._instances[flow_id]
+            if cache_key in cls._instances:
+                cls._instances.move_to_end(cache_key)
+                compiled_flow, _ = cls._instances[cache_key]
                 return compiled_flow
             return None
     
     @classmethod
-    def get_execution_lock(cls, flow_id: str) -> Optional[asyncio.Lock]:
-        """获取指定 flow 的执行锁"""
-        return cls._execution_locks.get(flow_id)
+    def get_execution_lock(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> Optional[asyncio.Lock]:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        return cls._execution_locks.get(cache_key)
     
     @classmethod
-    def register_user(cls, flow_id: str, user_id: str) -> None:
-        """注册用户到 flow"""
+    def register_user(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str, user_id_to_register: str) -> None:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        
         with cls._lock:
-            if flow_id not in cls._flow_users:
-                cls._flow_users[flow_id] = set()
-            cls._flow_users[flow_id].add(user_id)
+            if cache_key not in cls._flow_users:
+                cls._flow_users[cache_key] = set()
+            cls._flow_users[cache_key].add(user_id_to_register)
     
     @classmethod
-    def get_flow_users(cls, flow_id: str) -> set:
-        """获取 flow 的所有用户"""
-        return cls._flow_users.get(flow_id, set())
+    def get_flow_users(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> set:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        return cls._flow_users.get(cache_key, set())
     
     @classmethod
     def _cleanup_expired(cls):
         current_time = time.time()
         expired_ids = [
             fid for fid, (_, created_time) in cls._instances.items()
-            if current_time - created_time > cls.INSTANCE_TIMEOUT
+            if current_time - created_time > cls.CACHE_TIMEOUT
         ]
         for fid in expired_ids:
             del cls._instances[fid]
@@ -485,14 +514,16 @@ class CompiledFlowFactory:
             logger.info(f"Removed expired CompiledFlow instance: {fid}")
     
     @classmethod
-    def remove(cls, flow_id: str) -> bool:
+    def remove(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> bool:
+        cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
+        
         with cls._lock:
-            if flow_id in cls._instances:
-                del cls._instances[flow_id]
-                if flow_id in cls._execution_locks:
-                    del cls._execution_locks[flow_id]
-                if flow_id in cls._flow_users:
-                    del cls._flow_users[flow_id]
+            if cache_key in cls._instances:
+                del cls._instances[cache_key]
+                if cache_key in cls._execution_locks:
+                    del cls._execution_locks[cache_key]
+                if cache_key in cls._flow_users:
+                    del cls._flow_users[cache_key]
                 return True
             return False
     
@@ -510,7 +541,7 @@ class CompiledFlowFactory:
             return {
                 "total_instances": len(cls._instances),
                 "max_instances": cls.MAX_INSTANCES,
-                "instance_timeout": cls.INSTANCE_TIMEOUT,
+                "cache_timeout": cls.CACHE_TIMEOUT,
                 "total_execution_locks": len(cls._execution_locks),
                 "flow_users_count": {fid: len(users) for fid, users in cls._flow_users.items()}
             }
@@ -534,7 +565,9 @@ class AgenticFlowCompiler:
         self,
         flow_data: Dict[str, Any],
         user_id: str = None,
-        flow_id: str = None,
+        agentic_flow_id: str = None,
+        session_id: str = None,
+        run_project_id: str = None,
         use_cache: bool = True,
         register_gateway: bool = True,
     ) -> CompiledFlow:
@@ -542,8 +575,10 @@ class AgenticFlowCompiler:
         
         Args:
             flow_data: AgenticFlow JSON 数据
-            user_id: 用户 ID
-            flow_id: AgenticFlow ID
+            user_id: 用户 ID（必需）
+            agentic_flow_id: AgenticFlow ID（必需）
+            session_id: 会话 ID（必需）
+            run_project_id: 项目 ID（必需）
             use_cache: 是否使用缓存
             register_gateway: 是否注册到网关
             
@@ -551,16 +586,30 @@ class AgenticFlowCompiler:
             CompiledFlow: 编译后的可执行结构
         """
         user_id = user_id or self.user_id
-        flow_id = flow_id or flow_data.get("flow_id", str(uuid.uuid4()))
+        agentic_flow_id = agentic_flow_id or flow_data.get("agentic_flow_id")
+        
+        if not agentic_flow_id:
+            raise ValueError("agentic_flow_id is required. It must be provided either as a parameter or in flow_data.")
+        
+        if not user_id:
+            raise ValueError("user_id is required.")
+        
+        if not session_id:
+            raise ValueError("session_id is required.")
+        
+        if not run_project_id:
+            raise ValueError("run_project_id is required.")
         
         if use_cache:
-            cached = CompiledFlowFactory.get(flow_id)
+            cached = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
             if cached:
-                logger.info(f"Using cached CompiledFlow for flow_id: {flow_id}")
-                CompiledFlowFactory.register_user(flow_id, user_id)
+                logger.info(f"Using cached CompiledFlow for key: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}")
+                CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
+                cached.session_id = session_id
+                cached.run_project_id = run_project_id
+                cached.user_id = user_id
+                cached.agentic_flow_id = agentic_flow_id
                 return cached
-        
-        run_id = str(uuid.uuid4())
         
         canvas_data = flow_data.get("canvas_data", flow_data)
         nodes = canvas_data.get("nodes", [])
@@ -577,14 +626,16 @@ class AgenticFlowCompiler:
             agent = self._compile_node(
                 node=node,
                 user_id=user_id,
-                flow_id=flow_id,
-                run_id=run_id,
+                agentic_flow_id=agentic_flow_id,
+                session_id=session_id,
+                run_project_id=run_project_id,
                 llm_configs=llm_configs,
                 mcp_configs=mcp_configs,
                 skills_configs=skills_configs,
+                canvas_data=canvas_data,
             )
             agents[agent.agent_id] = agent
-            
+
             if node.get("data", {}).get("agentType") == "orchestrator":
                 orchestrator_id = agent.agent_id
         
@@ -600,17 +651,18 @@ class AgenticFlowCompiler:
             agents=agents,
             edges=edge_map,
             orchestrator_id=orchestrator_id,
-            flow_id=flow_id,
-            run_id=run_id,
+            agentic_flow_id=agentic_flow_id,
+            session_id=session_id,
             user_id=user_id,
+            run_project_id=run_project_id,
         )
         
         if use_cache:
-            CompiledFlowFactory.create(flow_id, compiled_flow)
-            CompiledFlowFactory.register_user(flow_id, user_id)
+            CompiledFlowFactory.create(user_id, agentic_flow_id, session_id, run_project_id, compiled_flow)
+            CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
         
         if register_gateway:
-            self._register_to_gateway(flow_id, compiled_flow)
+            self._register_to_gateway(agentic_flow_id, compiled_flow)
         
         logger.info(
             f"Compiled AgenticFlow with {len(agents)} agents, "
@@ -652,24 +704,24 @@ class AgenticFlowCompiler:
             logger.warning(f"Failed to load Skills configs: {e}")
             return {}
     
-    def _get_work_dir(self, user_id: str) -> Optional[str]:
+    def _get_work_dir(self, user_id: str, agentic_flow_id: str = None) -> Optional[str]:
         """获取用户的活动项目工作目录"""
         try:
             from app.core.database import db_manager, get_db_context
             with get_db_context() as db:
-                project = db_manager.get_active_run_project(db, user_id)
+                project = db_manager.get_active_run_project(db, user_id, agentic_flow_id)
                 if project:
                     return project.folder_path
         except Exception as e:
             logger.warning(f"Failed to get work_dir: {e}")
         return None
     
-    def _register_to_gateway(self, flow_id: str, compiled_flow: CompiledFlow) -> None:
+    def _register_to_gateway(self, agentic_flow_id: str, compiled_flow: CompiledFlow) -> None:
         """注册编译后的 Flow 到网关"""
         try:
             from app.core.agenticflow_gateway import agenticflow_gateway
-            agenticflow_gateway.register_compiled_flow(flow_id, compiled_flow)
-            logger.info(f"Registered AgenticFlow to gateway: {flow_id}")
+            agenticflow_gateway.register_compiled_flow(agentic_flow_id, compiled_flow)
+            logger.info(f"Registered AgenticFlow to gateway: {agentic_flow_id}")
         except Exception as e:
             logger.warning(f"Failed to register to gateway: {e}")
     
@@ -677,11 +729,13 @@ class AgenticFlowCompiler:
         self,
         node: Dict[str, Any],
         user_id: str,
-        flow_id: str,
-        run_id: str,
+        agentic_flow_id: str,
+        session_id: str = None,
+        run_project_id: str = None,
         llm_configs: Dict[str, Any] = None,
         mcp_configs: Dict[str, Any] = None,
         skills_configs: Dict[str, Any] = None,
+        canvas_data: Dict[str, Any] = None,
     ) -> SoloAgent:
         """编译单个节点为 Agent"""
         node_id = node.get("id")
@@ -737,7 +791,12 @@ class AgenticFlowCompiler:
                 if skills_configs and skill in skills_configs:
                     skill_config = skills_configs[skill]
                     skill_dict["name"] = skill_config.name
-                    skill_dict["folder_path"] = getattr(skill_config, "folder_path", None)
+                    rel_folder_path = getattr(skill_config, "folder_path", None)
+                    if rel_folder_path:
+                        from app.core.data_paths import DataPaths
+                        skill_dict["folder_path"] = DataPaths.to_absolute_path(rel_folder_path)
+                    else:
+                        skill_dict["folder_path"] = None
                     skill_dict["instructions"] = getattr(skill_config, "instructions", None)
                     skill_dict["tools"] = getattr(skill_config, "tools", [])
                 enriched_skills.append(skill_dict)
@@ -781,7 +840,13 @@ class AgenticFlowCompiler:
             "ask_user_question": "AskUserQuestion",
             "open_preview": "OpenPreview",
         }
-        tools = [tool_name_map.get(t, t) for t in raw_tools]
+        mapped_tools = set(tool_name_map.values())
+        tools = []
+        for t in raw_tools:
+            if t in mapped_tools:
+                tools.append(t)
+            else:
+                tools.append(tool_name_map.get(t, t))
         logger.info(f"[FlowCompiler] Raw tools: {raw_tools} -> Mapped tools: {tools}")
         
         config = SoloAgentConfig(
@@ -795,15 +860,21 @@ class AgenticFlowCompiler:
             tools=tools,
             mcp_servers=enriched_mcp,
             child_agents=[],
-            memory=node_data.get("memory", False),
+            memory=node_data.get("memory", True),
             user_id=user_id,
-            agentic_flow_id=flow_id,
-            agentic_flow_run_id=run_id,
+            agentic_flow_id=agentic_flow_id,
+            run_project_id=run_project_id,
             agent_id=node_id,
-            max_iters=node_data.get("max_iters", 10),
+            session_id=session_id,
+            max_memory_length=node_data.get("max_memory_length"),
+            max_iters=(
+                (canvas_data or {}).get("globalSettings", {}).get("maxIterations")
+                or node_data.get("max_iters")
+                or settings.DEFAULT_MAX_ITERS
+            ),
             stream=node_data.get("stream", True),
             agent_type=node_data.get("agentType", "executor"),
-            work_dir=self._get_work_dir(user_id),
+            work_dir=self._get_work_dir(user_id, agentic_flow_id),
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -838,39 +909,56 @@ class FlowRunner:
         json_data: Dict[str, Any], 
         input_message: str,
         user_id: str = None,
-        flow_id: str = None,
+        agentic_flow_id: str = None,
+        session_id: str = None,
+        run_project_id: str = None,
         context: Dict[str, Any] = None,
         event_callback: Callable[[ExecutionEvent], None] = None,
-        stream_callback: Callable[[str], None] = None,
+        stream_callback: Callable[[dict], None] = None,
+        agent_memories: Dict[str, List[Dict]] = None,
+        cancel_event: asyncio.Event = None,
     ) -> Dict[str, Any]:
         """运行 JSON 格式的工作流
         
         Args:
             json_data: 画布 JSON 数据
             input_message: 输入消息
-            user_id: 用户 ID
-            flow_id: AgenticFlow ID
+            user_id: 用户 ID（必需）
+            agentic_flow_id: AgenticFlow ID（必需）
+            session_id: 会话 ID（必需）
+            run_project_id: 项目 ID（必需）
             context: 执行上下文
             event_callback: 事件回调函数
             stream_callback: 流式输出回调函数
+            agent_memories: 按 agent_id 分组的记忆
             
         Returns:
             执行结果
         """
         compiler = AgenticFlowCompiler(user_id=user_id)
-        compiled_flow = compiler.compile(json_data, user_id=user_id, flow_id=flow_id)
+        compiled_flow = compiler.compile(
+            json_data, 
+            user_id=user_id, 
+            agentic_flow_id=agentic_flow_id,
+            session_id=session_id,
+            run_project_id=run_project_id,
+        )
         
         if event_callback:
             compiled_flow.set_event_callback(event_callback)
+        
         if stream_callback:
             compiled_flow.set_stream_callback(stream_callback)
         
-        execution_lock = CompiledFlowFactory.get_execution_lock(flow_id)
+        if agent_memories:
+            compiled_flow.set_agent_memories(agent_memories)
+        
+        execution_lock = CompiledFlowFactory.get_execution_lock(user_id, agentic_flow_id, session_id, run_project_id)
         if execution_lock:
             async with execution_lock:
-                return await compiled_flow.run(input_message, context)
+                return await compiled_flow.run(input_message, context, cancel_event=cancel_event)
         else:
-            return await compiled_flow.run(input_message, context)
+            return await compiled_flow.run(input_message, context, cancel_event=cancel_event)
     
     @staticmethod
     async def run_node(
@@ -878,27 +966,110 @@ class FlowRunner:
         node_id: str,
         input_message: str,
         user_id: str = None,
-        flow_id: str = None,
-        context: Dict[str, Any] = None
+        agentic_flow_id: str = None,
+        session_id: str = None,
+        run_project_id: str = None,
+        context: Dict[str, Any] = None,
+        agent_memories: Dict[str, List[Dict]] = None,
+        cancel_event: asyncio.Event = None,
     ) -> Dict[str, Any]:
         """运行指定节点"""
+        from app.core.database import db_manager, get_db_context
+        from datetime import datetime, timezone
+        
+        if not session_id:
+            raise ValueError("session_id is required for data isolation")
+        if not user_id:
+            raise ValueError("user_id is required for data isolation")
+        if not agentic_flow_id:
+            raise ValueError("agentic_flow_id is required for data isolation")
+        if not run_project_id:
+            raise ValueError("run_project_id is required for data isolation")
+        
         compiler = AgenticFlowCompiler(user_id=user_id)
-        compiled_flow = compiler.compile(json_data, user_id=user_id, flow_id=flow_id)
+        compiled_flow = compiler.compile(
+            json_data, 
+            user_id=user_id, 
+            agentic_flow_id=agentic_flow_id, 
+            session_id=session_id,
+            run_project_id=run_project_id
+        )
         
         agent = compiled_flow.get_agent(node_id)
         if agent is None:
             return {"error": f"Agent '{node_id}' not found"}
         
+        if agent_memories:
+            compiled_flow.set_agent_memories(agent_memories)
+        
         if not agent._initialized:
             await agent.initialize()
+
+        if hasattr(agent, 'set_stream_callback'):
+            agent.set_stream_callback(compiled_flow._stream_callback)
         
-        response = await agent.reply(input_message)
+        start_time = datetime.now()
+        error_message = None
+        try:
+            response = await agent.reply(input_message)
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Error during agent reply: {error_message}")
+            response = f"Error: {error_message}"
+        end_time = datetime.now()
+        
+        if error_message:
+            if session_id:
+                duration_ms = int((end_time - start_time).total_seconds() * 1000)
+                with get_db_context() as db:
+                    db_manager.update_session(
+                        db, session_id,
+                        status="failed",
+                        duration_ms=duration_ms,
+                        error_message=error_message,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+            
+            return {
+                "agent_id": node_id,
+                "agent_name": agent.name,
+                "output": response,
+                "status": "failed",
+                "error": error_message
+            }
+        
+        openai_message = agent.get_last_openai_message() if hasattr(agent, 'get_last_openai_message') else {"content": response}
+        
+        tokens = None
+        try:
+            if hasattr(agent, '_last_response') and agent._last_response and hasattr(agent._last_response, 'usage') and agent._last_response.usage:
+                usage = agent._last_response.usage
+                tokens = {
+                    "prompt_tokens": getattr(usage, 'input_tokens', None),
+                    "completion_tokens": getattr(usage, 'output_tokens', None),
+                    "total_tokens": (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0)
+                }
+        except Exception as e:
+            logger.error(f"Error getting token usage: {e}")
+        
+        if session_id:
+            duration_ms = int((end_time - start_time).total_seconds() * 1000)
+            with get_db_context() as db:
+                db_manager.update_session(
+                    db, session_id,
+                    status="completed",
+                    duration_ms=duration_ms,
+                    token_usage=tokens,
+                    completed_at=datetime.now(timezone.utc)
+                )
         
         return {
             "agent_id": node_id,
             "agent_name": agent.name,
             "output": response,
-            "status": "completed"
+            "status": "completed",
+            "message": openai_message,
+            "tokens": tokens
         }
     
     @staticmethod
@@ -906,7 +1077,9 @@ class FlowRunner:
         json_data: Dict[str, Any], 
         input_message: str,
         user_id: str = None,
-        flow_id: str = None,
+        agentic_flow_id: str = None,
+        session_id: str = None,
+        run_project_id: str = None,
         context: Dict[str, Any] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """流式运行 JSON 格式的工作流
@@ -914,8 +1087,10 @@ class FlowRunner:
         Args:
             json_data: 画布 JSON 数据
             input_message: 输入消息
-            user_id: 用户 ID
-            flow_id: AgenticFlow ID
+            user_id: 用户 ID（必需）
+            agentic_flow_id: AgenticFlow ID（必需）
+            session_id: 会话 ID（必需）
+            run_project_id: 项目 ID（必需）
             context: 执行上下文
             
         Yields:
@@ -929,7 +1104,7 @@ class FlowRunner:
         async def run_flow():
             try:
                 result = await FlowRunner.run_from_json(
-                    json_data, input_message, user_id, flow_id, context,
+                    json_data, input_message, user_id, agentic_flow_id, session_id, run_project_id, context,
                     event_callback=event_callback
                 )
                 await events_queue.put({"type": "final_result", "data": result})

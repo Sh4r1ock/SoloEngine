@@ -140,12 +140,24 @@ class ToolRegistry:
     @classmethod
     def _create_tool_config(cls, name: str, tool: Any) -> Optional[Dict[str, Any]]:
         """创建工具配置"""
-        spec = getattr(tool, 'spec', None)
-        if spec is None:
-            spec = getattr(tool, 'get_spec', lambda: None)()
+        spec = None
+        
+        if hasattr(tool, 'get_tool_spec'):
+            try:
+                spec_result = tool.get_tool_spec()
+                if spec_result:
+                    if 'function' in spec_result:
+                        spec = spec_result['function']
+                    elif 'name' in spec_result:
+                        spec = spec_result
+            except Exception as e:
+                logger.debug(f"Could not get spec via get_tool_spec for '{name}': {e}")
+        
+        if spec is None and hasattr(tool, 'spec'):
+            spec = tool.spec
         
         if spec is None:
-            spec = cls._get_tool_spec_from_module(name)
+            spec = getattr(tool, 'get_spec', lambda: None)()
         
         if not spec:
             logger.warning(f"No spec found for tool '{name}'")

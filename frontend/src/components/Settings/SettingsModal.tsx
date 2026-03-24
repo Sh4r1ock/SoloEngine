@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
-import { Modal, Form, Button, Space, Typography, Divider, Tabs } from 'antd';
-import { useCanvasStore, GlobalSettings } from '../../store/canvasStore';
+import { Modal, Form, Button, Space, Typography, Tabs, InputNumber } from 'antd';
+import { useCanvasStore } from '../../store/canvasStore';
+import { GlobalSettings } from '../../types/canvas';
 import LLMConfig from './LLMConfig';
 import TimezoneSettings from './TimezoneSettings';
 
@@ -48,11 +49,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                   <Form.Item
                     label="最大上下文长度"
                     name="maxContextLength"
-                    rules={[{ required: true }]}
+                    rules={[{ required: true, type: 'number', min: 1 }]}
                   >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      4096
-                    </Text>
+                    <InputNumber min={1} max={100000} style={{ width: '100%' }} />
                     <div style={{ marginTop: 4 }}>
                       <Text style={{ fontSize: 12, color: '#00000073' }}>
                         Agentic 单次执行的最大上下文长度（token 数）
@@ -63,76 +62,25 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                   <Form.Item
                     label="最大循环次数"
                     name="maxIterations"
-                    rules={[{ required: true }]}
+                    rules={[{ required: true, type: 'number', min: 1, max: 1000 }]}
                   >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      10
-                    </Text>
+                    <InputNumber min={1} max={1000} style={{ width: '100%' }} />
                     <div style={{ marginTop: 4 }}>
                       <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        Agentic 执行的最大循环次数
+                        Agentic 执行的最大循环次数（默认 100）
                       </Text>
                     </div>
                   </Form.Item>
 
                   <Form.Item
-                    label="超时时间（秒）"
+                    label="超时时间（毫秒）"
                     name="timeout"
-                    rules={[{ required: true }]}
+                    rules={[{ required: true, type: 'number', min: 1000 }]}
                   >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      300
-                    </Text>
+                    <InputNumber min={1000} max={600000} style={{ width: '100%' }} />
                     <div style={{ marginTop: 4 }}>
                       <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        单个 Agent 执行的超时时间
-                      </Text>
-                    </div>
-                  </Form.Item>
-
-                  <Divider style={{ margin: '24px 0 16px 0' }}>Agentic 配置</Divider>
-
-                  <Form.Item
-                    label="最大上下文长度"
-                    name="maxContextLength"
-                    rules={[{ required: true }]}
-                  >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      4096
-                    </Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        Agentic 单次执行的最大上下文长度（token 数）
-                      </Text>
-                    </div>
-                  </Form.Item>
-
-                  <Form.Item
-                    label="最大循环次数"
-                    name="maxIterations"
-                    rules={[{ required: true }]}
-                  >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      10
-                    </Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        Agentic 执行的最大循环次数
-                      </Text>
-                    </div>
-                  </Form.Item>
-
-                  <Form.Item
-                    label="超时时间（秒）"
-                    name="timeout"
-                    rules={[{ required: true }]}
-                  >
-                    <Text style={{ fontSize: 12, color: '#000000a6' }}>
-                      300
-                    </Text>
-                    <div style={{ marginTop: 4 }}>
-                      <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        Agentic 执行的超时时间
+                        单个 Agent 执行的超时时间（毫秒）
                       </Text>
                     </div>
                   </Form.Item>

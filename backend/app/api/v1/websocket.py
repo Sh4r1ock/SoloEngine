@@ -141,17 +141,30 @@ async def websocket_endpoint(
             elif data.get("type") == "execute":
                 canvas_data = data.get("canvas_data", {})
                 input_message = data.get("input_message", "")
-                flow_id = data.get("flow_id")
+                agentic_flow_id = data.get("agentic_flow_id")
+                session_id = data.get("session_id")
+                run_project_id = data.get("run_project_id")
                 
-                await execute_canvas(task_id, canvas_data, input_message, user_id, flow_id)
+                await execute_canvas(
+                    task_id, 
+                    canvas_data, 
+                    input_message, 
+                    user_id, 
+                    agentic_flow_id=agentic_flow_id,
+                    session_id=session_id,
+                    run_project_id=run_project_id
+                )
             
             elif data.get("type") == "clear-cache":
-                flow_id = data.get("flow_id")
-                if flow_id:
-                    CompiledFlowFactory.remove(flow_id)
+                agentic_flow_id = data.get("agentic_flow_id")
+                session_id = data.get("session_id")
+                run_project_id = data.get("run_project_id")
+                user_id_from_data = data.get("user_id")
+                if agentic_flow_id and session_id and run_project_id and user_id_from_data:
+                    CompiledFlowFactory.remove(user_id_from_data, agentic_flow_id, session_id, run_project_id)
                     await manager.send_event(task_id, {
                         "type": "cache-cleared",
-                        "flow_id": flow_id
+                        "agentic_flow_id": agentic_flow_id
                     })
                 else:
                     CompiledFlowFactory.clear_all()
@@ -175,7 +188,7 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str, user_
     执行工作流。
     """
     async with get_db_context_async() as db:
-        project = db_manager.get_project(db, project_id)
+        project = db_manager.get_project(db, project_id, user_id)
         if not project:
             await manager.send_event(task_id, {
                 "type": "error",
@@ -200,7 +213,9 @@ async def execute_canvas(
     canvas_data: Dict[str, Any], 
     input_message: str, 
     user_id: str,
-    flow_id: str = None
+    agentic_flow_id: str = None,
+    session_id: str = None,
+    run_project_id: str = None
 ):
     """
     执行画布工作流，支持流式事件推送。
@@ -249,7 +264,9 @@ async def execute_canvas(
         compiled_flow = compiler.compile(
             {"canvas_data": canvas_data},
             user_id=user_id,
-            flow_id=flow_id
+            agentic_flow_id=agentic_flow_id,
+            session_id=session_id,
+            run_project_id=run_project_id
         )
         
         compiled_flow.set_event_callback(event_callback)

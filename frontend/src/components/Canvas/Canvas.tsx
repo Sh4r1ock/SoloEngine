@@ -536,7 +536,7 @@ const Canvas: React.FC = () => {
               selectNodesOnDrag={false}
               multiSelectionKeyCode="Shift"
               panOnScroll
-              panOnScrollMode="free"
+              panOnScrollMode={1 as any}
             >
               <Controls />
               <MiniMap />

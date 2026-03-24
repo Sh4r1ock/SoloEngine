@@ -15,6 +15,8 @@ export interface AgenticFlow {
   canvas_data: any;
   is_template: boolean;
   is_active: boolean;
+  icon?: string;
+  tags?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -23,12 +25,14 @@ export interface CreateFlowRequest {
   name: string;
   description?: string;
   canvas_data?: any;
+  icon?: string;
 }
 
 export interface UpdateFlowRequest {
   name?: string;
   description?: string;
   canvas_data?: any;
+  icon?: string;
 }
 
 export interface AgenticFlowRun {
@@ -51,8 +55,8 @@ class AgenticFlowApi {
     return response.data || [];
   }
 
-  async getFlow(flowId: string): Promise<AgenticFlow> {
-    const response = await api.get(`/agentic-flows/${flowId}`);
+  async getFlow(agenticFlowId: string): Promise<AgenticFlow> {
+    const response = await api.get(`/agentic-flows/${agenticFlowId}`);
     return response.data;
   }
 
@@ -61,34 +65,34 @@ class AgenticFlowApi {
     return response.data;
   }
 
-  async updateFlow(flowId: string, data: UpdateFlowRequest): Promise<AgenticFlow> {
-    const response = await api.put(`/agentic-flows/${flowId}`, data);
+  async updateFlow(agenticFlowId: string, data: UpdateFlowRequest): Promise<AgenticFlow> {
+    const response = await api.put(`/agentic-flows/${agenticFlowId}`, data);
     return response.data;
   }
 
-  async deleteFlow(flowId: string): Promise<void> {
-    await api.delete(`/agentic-flows/${flowId}`);
+  async deleteFlow(agenticFlowId: string): Promise<void> {
+    await api.delete(`/agentic-flows/${agenticFlowId}`);
   }
 
-  async getRuns(flowId: string): Promise<AgenticFlowRun[]> {
-    const response = await api.get(`/agentic-flows/${flowId}/runs`);
+  async getRuns(agenticFlowId: string): Promise<AgenticFlowRun[]> {
+    const response = await api.get(`/agentic-flows/${agenticFlowId}/runs`);
     return response.data || [];
   }
 
-  async runFlow(flowId: string, inputMessage: string): Promise<AgenticFlowRun> {
-    const response = await api.post(`/agentic-flows/${flowId}/run`, {
+  async runFlow(agenticFlowId: string, inputMessage: string): Promise<AgenticFlowRun> {
+    const response = await api.post(`/agentic-flows/${agenticFlowId}/run`, {
       input_message: inputMessage,
     });
     return response.data;
   }
 
-  async getCanvas(flowId: string): Promise<any> {
-    const response = await api.get(`/agentic-flows/${flowId}/canvas`);
+  async getCanvas(agenticFlowId: string): Promise<any> {
+    const response = await api.get(`/agentic-flows/${agenticFlowId}/canvas`);
     return response.data;
   }
 
-  async saveCanvas(flowId: string, canvasData: any): Promise<void> {
-    await api.put(`/agentic-flows/${flowId}/canvas`, {
+  async saveCanvas(agenticFlowId: string, canvasData: any): Promise<void> {
+    await api.put(`/agentic-flows/${agenticFlowId}/canvas`, {
       canvas_data: canvasData,
     });
   }

@@ -2,6 +2,7 @@
 # pylint: disable=too-many-branches, too-many-nested-blocks
 """The OpenAI formatter for agentscope."""
 import base64
+import copy
 import json
 import os
 from typing import Any
@@ -20,7 +21,9 @@ from ..message import (
     Base64Source,
     ToolUseBlock,
     ToolResultBlock,
+    ThinkingBlock,
 )
+from ..model.model_response import ChatResponse
 from ..token_counter import TokenCounterBase
 
 
@@ -70,8 +73,6 @@ def _to_openai_image_url(url: str) -> str:
         url (`str`):
             The local or public url of the image.
     """
-    # See https://platform.openai.com/docs/guides/vision for details of
-    # support image extensions.
     support_image_extensions = (
         ".png",
         ".jpg",
@@ -84,12 +85,10 @@ def _to_openai_image_url(url: str) -> str:
 
     lower_url = url.lower()
 
-    # Web url
     if not os.path.exists(url) and parsed_url.scheme != "":
         if any(lower_url.endswith(_) for _ in support_image_extensions):
             return url
 
-    # Check if it is a local file
     elif os.path.exists(url) and os.path.isfile(url):
         if any(lower_url.endswith(_) for _ in support_image_extensions):
             with open(url, "rb") as image_file:
@@ -119,7 +118,6 @@ def _to_openai_audio_data(source: URLSource | Base64Source) -> dict:
             with open(source["url"], "rb") as audio_file:
                 data = base64.b64encode(audio_file.read()).decode("utf-8")
 
-        # web url
         elif parsed_url.scheme != "":
             response = requests.get(source["url"])
             response.raise_for_status()
@@ -161,13 +159,8 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
     """
 
     support_tools_api: bool = True
-    """Whether support tools API"""
-
     support_multiagent: bool = True
-    """Whether support multi-agent conversation"""
-
     support_vision: bool = True
-    """Whether support vision models"""
 
     supported_blocks: list[type] = [
         TextBlock,
@@ -175,8 +168,8 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         AudioBlock,
         ToolUseBlock,
         ToolResultBlock,
+        ThinkingBlock,
     ]
-    """Supported message blocks for OpenAI API"""
 
     def __init__(
         self,
@@ -184,24 +177,6 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         token_counter: TokenCounterBase | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        """Initialize the OpenAI chat formatter.
-
-        Args:
-            promote_tool_result_images (`bool`, defaults to `False`):
-                Whether to promote images from tool results to user messages.
-                Most LLM APIs don't support images in tool result blocks, but
-                do support them in user message blocks. When `True`, images are
-                extracted and appended as a separate user message with
-                explanatory text indicating their source.
-            token_counter (`TokenCounterBase | None`, optional):
-                A token counter instance used to count tokens in the messages.
-                If not provided, the formatter will format the messages
-                without considering token limits.
-            max_tokens (`int | None`, optional):
-                The maximum number of tokens allowed in the formatted
-                messages. If not provided, the formatter will not truncate
-                the messages.
-        """
         super().__init__(token_counter=token_counter, max_tokens=max_tokens)
         self.promote_tool_result_images = promote_tool_result_images
 
@@ -209,30 +184,42 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         self,
         msgs: list[Msg],
     ) -> list[dict[str, Any]]:
-        """Format message objects into OpenAI API required format.
-
-        Args:
-            msgs (`list[Msg]`):
-                The list of Msg objects to format.
-
-        Returns:
-            `list[dict[str, Any]]`:
-                A list of dictionaries, where each dictionary has "name",
-                "role", and "content" keys.
-        """
         self.assert_list_of_msgs(msgs)
 
         messages: list[dict] = []
         i = 0
         while i < len(msgs):
             msg = msgs[i]
+            
+            # 对于assistant消息，直接使用to_openai_message()方法构建
+            if msg.role == "assistant":
+                # 创建一个临时的ChatResponse对象来使用to_openai_message()方法
+                chat_response = ChatResponse(content=msg.content if msg.content else [])
+                openai_msg = chat_response.to_openai_message()
+                openai_msg["name"] = msg.name
+                messages.append(openai_msg)
+                i += 1
+                continue
+            
             content_blocks = []
             tool_calls = []
+            reasoning_content = None
 
             for block in msg.get_content_blocks():
                 typ = block.get("type")
                 if typ == "text":
                     content_blocks.append({**block})
+                elif typ == "content":
+                    content_blocks.append({"type": "text", "text": block.get("content", "")})
+
+                elif typ == "thinking":
+                    reasoning_content = block.get("thinking")
+                
+                elif typ == "reasoning_content":
+                    if "reasoning_content" in block:
+                        reasoning_content = block.get("reasoning_content")
+                    elif "content" in block:
+                        reasoning_content = block.get("content", "")
 
                 elif typ == "tool_use":
                     tool_calls.append(
@@ -249,6 +236,11 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                         },
                     )
 
+                elif typ == "tool_calls":
+                    # 流式格式的 tool_calls 块
+                    for tc in block.get("tool_calls", []):
+                        tool_calls.append(tc)
+
                 elif typ == "tool_result":
                     (
                         textual_output,
@@ -259,14 +251,11 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                         {
                             "role": "tool",
                             "tool_call_id": block.get("id"),
-                            "content": (  # type: ignore[arg-type]
-                                textual_output
-                            ),
+                            "content": textual_output,
                             "name": block.get("name"),
                         },
                     )
 
-                    # Then, handle the multimodal data if any
                     promoted_blocks: list = []
                     for url, multimodal_block in multimodal_data:
                         if (
@@ -290,7 +279,6 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                             )
 
                     if promoted_blocks:
-                        # Insert promoted blocks as new user message(s)
                         promoted_blocks = [
                             TextBlock(
                                 type="text",
@@ -317,7 +305,7 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                 elif typ == "image":
                     content_blocks.append(
                         _format_openai_image_block(
-                            block,  # type: ignore[arg-type]
+                            block,
                         ),
                     )
 
@@ -345,32 +333,56 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
             if tool_calls:
                 msg_openai["tool_calls"] = tool_calls
 
-            # When both content and tool_calls are None, skipped
-            if msg_openai["content"] or msg_openai.get("tool_calls"):
+            has_content = msg_openai["content"] is not None and (
+                not isinstance(msg_openai["content"], list) or len(msg_openai["content"]) > 0
+            )
+            has_valid_content = has_content or tool_calls
+            
+            if has_valid_content:
+                # 即使没有original_model_message，也从content中提取thinking内容
+                if reasoning_content is not None and msg.role == "assistant":
+                    msg_openai["reasoning_content"] = reasoning_content
+                # 关键修复：确保所有有tool_calls的assistant消息都有reasoning_content字段
+                if tool_calls and msg.role == "assistant" and "reasoning_content" not in msg_openai:
+                    # 如果没有reasoning_content，添加一个空字符串
+                    msg_openai["reasoning_content"] = ""
+                    logger.warning(f"[OpenAIChatFormatter] Added empty reasoning_content to assistant message with tool_calls")
                 messages.append(msg_openai)
 
-            # Move to next message
             i += 1
 
         return messages
 
+    async def format(self, msgs: list[Msg]) -> list[dict[str, Any]]:
+        """Format messages to OpenAI format, with debug logging."""
+        logger.info(f"[OpenAIChatFormatter] Input {len(msgs)} Msg objects:")
+        for i, msg in enumerate(msgs):
+            has_original = msg.metadata and 'original_model_message' in msg.metadata
+            provider = msg.metadata.get('provider', 'N/A') if msg.metadata else 'N/A'
+            logger.info(f"  Msg {i}: role={msg.role}, has_original={has_original}, provider={provider}")
+            if msg.metadata:
+                logger.info(f"    Msg {i} metadata keys: {list(msg.metadata.keys())}")
+                if has_original:
+                    original = msg.metadata['original_model_message']
+                    logger.info(f"    Original message: role={original.get('role')}, has_rc={'reasoning_content' in original}, has_tc={'tool_calls' in original}")
+                    logger.info(f"    Original message full: {original}")
+        
+        formatted = await self._format(msgs)
+        logger.info(f"[OpenAIChatFormatter] Sending {len(formatted)} messages to API:")
+        for i, msg in enumerate(formatted):
+            logger.info(f"  Message {i}: role={msg.get('role')}, has_tool_calls={'tool_calls' in msg}, has_reasoning_content={'reasoning_content' in msg}")
+            if 'tool_calls' in msg and 'reasoning_content' not in msg:
+                logger.error(f"  !!! ERROR: Message {i} has tool_calls but NO reasoning_content!")
+                logger.error(f"  Message {i} full: {msg}")
+        return formatted
+
 
 class OpenAIMultiAgentFormatter(TruncatedFormatterBase):
-    """
-    OpenAI formatter for multi-agent conversations, where more than
-    a user and an agent are involved.
-    .. tip:: This formatter is compatible with OpenAI API and
-    OpenAI-compatible services like vLLM, Azure OpenAI, and others.
-    """
+    """OpenAI formatter for multi-agent conversations."""
 
     support_tools_api: bool = True
-    """Whether support tools API"""
-
     support_multiagent: bool = True
-    """Whether support multi-agent conversation"""
-
     support_vision: bool = True
-    """Whether support vision models"""
 
     supported_blocks: list[type] = [
         TextBlock,
@@ -378,8 +390,8 @@ class OpenAIMultiAgentFormatter(TruncatedFormatterBase):
         AudioBlock,
         ToolUseBlock,
         ToolResultBlock,
+        ThinkingBlock,
     ]
-    """Supported message blocks for OpenAI API"""
 
     def __init__(
         self,
@@ -392,128 +404,6 @@ class OpenAIMultiAgentFormatter(TruncatedFormatterBase):
         token_counter: TokenCounterBase | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        """Initialize the OpenAI multi-agent formatter.
-
-        Args:
-            conversation_history_prompt (`str`):
-                The prompt to use for the conversation history section.
-            promote_tool_result_images (`bool`, defaults to `False`):
-                Whether to promote images from tool results to user messages.
-                Most LLM APIs don't support images in tool result blocks, but
-                do support them in user message blocks. When `True`, images are
-                extracted and appended as a separate user message with
-                explanatory text indicating their source.
-            token_counter (`TokenCounterBase | None`, optional):
-                A token counter instance used to count tokens in the messages.
-                If not provided, the formatter will format the messages
-                without considering token limits.
-            max_tokens (`int | None`, optional):
-                The maximum number of tokens allowed in the formatted
-                messages. If not provided, the formatter will not truncate
-                the messages.
-        """
         super().__init__(token_counter=token_counter, max_tokens=max_tokens)
         self.conversation_history_prompt = conversation_history_prompt
-        self.promote_tool_result_images = promote_tool_result_images
-
-    async def _format_tool_sequence(
-        self,
-        msgs: list[Msg],
-    ) -> list[dict[str, Any]]:
-        """Given a sequence of tool call/result messages, format them into
-        the required format for the OpenAI API."""
-        return await OpenAIChatFormatter(
-            promote_tool_result_images=self.promote_tool_result_images,
-        ).format(msgs)
-
-    async def _format_agent_message(
-        self,
-        msgs: list[Msg],
-        is_first: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Given a sequence of messages without tool calls/results, format
-        them into the required format for the OpenAI API."""
-
-        if is_first:
-            conversation_history_prompt = self.conversation_history_prompt
-        else:
-            conversation_history_prompt = ""
-
-        # Format into required OpenAI format
-        formatted_msgs: list[dict] = []
-
-        conversation_blocks: list = []
-        accumulated_text = []
-        images = []
-        audios = []
-
-        for msg in msgs:
-            for block in msg.get_content_blocks():
-                if block["type"] == "text":
-                    accumulated_text.append(f"{msg.name}: {block['text']}")
-
-                elif block["type"] == "image":
-                    images.append(_format_openai_image_block(block))
-                elif block["type"] == "audio":
-                    input_audio = _to_openai_audio_data(block["source"])
-                    audios.append(
-                        {
-                            "type": "input_audio",
-                            "input_audio": input_audio,
-                        },
-                    )
-
-        if accumulated_text:
-            conversation_blocks.append(
-                {"text": "\n".join(accumulated_text)},
-            )
-
-        if conversation_blocks:
-            if conversation_blocks[0].get("text"):
-                conversation_blocks[0]["text"] = (
-                    conversation_history_prompt
-                    + "<history>\n"
-                    + conversation_blocks[0]["text"]
-                )
-
-            else:
-                conversation_blocks.insert(
-                    0,
-                    {
-                        "text": conversation_history_prompt + "<history>\n",
-                    },
-                )
-
-            if conversation_blocks[-1].get("text"):
-                conversation_blocks[-1]["text"] += "\n</history>"
-
-            else:
-                conversation_blocks.append({"text": "</history>"})
-
-        conversation_blocks_text = "\n".join(
-            conversation_block.get("text", "")
-            for conversation_block in conversation_blocks
-        )
-
-        content_list: list[dict[str, Any]] = []
-        if conversation_blocks_text:
-            content_list.append(
-                {
-                    "type": "text",
-                    "text": conversation_blocks_text,
-                },
-            )
-        if images:
-            content_list.extend(images)
-        if audios:
-            content_list.extend(audios)
-
-        user_message = {
-            "role": "user",
-            "content": content_list,
-        }
-
-        if content_list:
-            formatted_msgs.append(user_message)
-
-        return formatted_msgs
+        self.prom

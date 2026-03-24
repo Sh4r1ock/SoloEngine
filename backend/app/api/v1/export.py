@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from .auth import get_current_user
 from ...core.database import UserModel as User
+from ...core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
@@ -48,11 +49,6 @@ def get_flows_dir() -> str:
     return os.path.join(os.path.dirname(__file__), "..", "..", "..", "flows")
 
 
-def get_skills_dir() -> str:
-    """获取 Skills 存储目录。"""
-    return os.path.join(os.path.dirname(__file__), "..", "..", "..", "skills")
-
-
 @router.post("/project/{project_name}")
 async def export_project(
     project_name: str,
@@ -77,6 +73,7 @@ async def export_project(
     metadata = ExportMetadata(
         project_name=project_name,
         exported_at=datetime.now().isoformat(),
+        exported_by=current_user.username,
     )
 
     if format == "json":
@@ -86,7 +83,7 @@ async def export_project(
         }
 
         if include_skills:
-            skills_dir = get_skills_dir()
+            skills_dir = DataPaths.get_user_skills_dir(current_user.id)
             if os.path.exists(skills_dir):
                 export_data["skills"] = []
                 for skill_name in os.listdir(skills_dir):
@@ -116,7 +113,7 @@ async def export_project(
             zf.writestr("flow.json", json.dumps(flow_data, indent=2, ensure_ascii=False))
 
             if include_skills:
-                skills_dir = get_skills_dir()
+                skills_dir = DataPaths.get_user_skills_dir(current_user.id)
                 if os.path.exists(skills_dir):
                     for skill_name in os.listdir(skills_dir):
                         skill_path = os.path.join(skills_dir, skill_name)
@@ -173,7 +170,7 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
                 json.dump(flow_data, f, indent=2, ensure_ascii=False)
 
             if "skills" in import_data:
-                skills_dir = get_skills_dir()
+                skills_dir = DataPaths.get_user_skills_dir(current_user.id)
                 os.makedirs(skills_dir, exist_ok=True)
                 for skill in import_data["skills"]:
                     skill_path = os.path.join(skills_dir, skill["name"])
@@ -212,14 +209,13 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
                 with open(flow_file, "w", encoding="utf-8") as f:
                     json.dump(flow_data, f, indent=2, ensure_ascii=False)
 
-                skills_dir = get_skills_dir()
+                skills_dir = DataPaths.get_user_skills_dir(current_user.id)
                 os.makedirs(skills_dir, exist_ok=True)
 
                 for name in zf.namelist():
                     if name.startswith("skills/"):
-                        target_path = os.path.join(
-                            os.path.dirname(__file__), "..", "..", "..", name
-                        )
+                        rel_path = name[len("skills/"):]
+                        target_path = os.path.join(skills_dir, rel_path)
                         if name.endswith("/"):
                             os.makedirs(target_path, exist_ok=True)
                         else:

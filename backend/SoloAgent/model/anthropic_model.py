@@ -35,6 +35,7 @@ API 差异：
 """
 
 from datetime import datetime
+import json
 from typing import (
     Any,
     TYPE_CHECKING,
@@ -457,11 +458,14 @@ class AnthropicChatModel(ChatModelBase):
         current_response_id = None
         last_text = ""  # 记录上次输出的文本，用于计算增量
         last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
+        stop_reason = None  # 记录停止原因
 
         async with response as stream:
             async for event in stream:
                 if event.type == "message_start":
                     current_response_id = event.message.id
+                    if hasattr(event.message, "stop_reason"):
+                        stop_reason = event.message.stop_reason
                 elif event.type == "content_block_start":
                     if event.content_block.type == "text":
                         text = ""
@@ -522,6 +526,7 @@ class AnthropicChatModel(ChatModelBase):
                         yield res
                         
                 elif event.type == "content_block_stop":
+                    # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
                     contents = []
                     if thinking:
                         contents.append(
@@ -537,15 +542,21 @@ class AnthropicChatModel(ChatModelBase):
                                 text=text,
                             ),
                         )
-                    for tool_call in tool_calls.values():
-                        contents.append(
-                            SoloToolUseBlock(
-                                type=tool_call["type"],
-                                id=tool_call["id"],
-                                name=tool_call["name"],
-                                input=tool_call["input"],
-                            ),
-                        )
+                    # 工具调用输出增量格式
+                    for tool_id, tool_call in tool_calls.items():
+                        tool_call_delta = {
+                            "index": list(tool_calls.keys()).index(tool_id),
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call["name"],
+                                "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                            }
+                        }
+                        contents.append({
+                            "type": "tool_calls",
+                            "tool_calls": [tool_call_delta],
+                        })
                     if contents:
                         res = ChatResponse(
                             content=contents,
@@ -556,7 +567,11 @@ class AnthropicChatModel(ChatModelBase):
                 elif event.type == "message_delta":
                     if event.delta.type == "delta" and event.delta.text:
                         text += event.delta.text
+                    if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
+                        stop_reason = event.delta.stop_reason
+                        logger.info(f"[Anthropic Stream] stop_reason detected: {stop_reason}")
                 elif event.type == "message_stop":
+                    # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
                     contents = []
                     if thinking:
                         contents.append(
@@ -572,20 +587,29 @@ class AnthropicChatModel(ChatModelBase):
                                 text=text,
                             ),
                         )
-                    for tool_call in tool_calls.values():
-                        contents.append(
-                            SoloToolUseBlock(
-                                type=tool_call["type"],
-                                id=tool_call["id"],
-                                name=tool_call["name"],
-                                input=tool_call["input"],
-                            ),
-                        )
+                    # 工具调用输出增量格式
+                    for tool_id, tool_call in tool_calls.items():
+                        tool_call_delta = {
+                            "index": list(tool_calls.keys()).index(tool_id),
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call["name"],
+                                "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                            }
+                        }
+                        contents.append({
+                            "type": "tool_calls",
+                            "tool_calls": [tool_call_delta],
+                        })
+                    
                     if contents:
                         res = ChatResponse(
                             content=contents,
                             usage=usage,
                             metadata=metadata,
+                            stop_reason=stop_reason,
+                            finish_reason="tool_calls" if tool_calls else stop_reason,
                         )
                         yield res
                 elif event.type == "error":
@@ -670,8 +694,17 @@ class AnthropicChatModel(ChatModelBase):
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"Failed to parse structured output: {e}")
 
+        stop_reason = getattr(response, "stop_reason", None)
+        if stop_reason:
+            logger.info(f"[Anthropic Completion] stop_reason: {stop_reason}")
+
+        metadata = metadata or {}
+        metadata['original_model_message'] = response
+        metadata['provider'] = 'anthropic'
+
         return ChatResponse(
             content=content_blocks,
             usage=usage,
             metadata=metadata,
+            stop_reason=stop_reason,
         )

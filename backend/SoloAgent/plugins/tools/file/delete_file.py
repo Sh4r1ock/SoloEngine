@@ -124,6 +124,31 @@ class DeleteFile(BaseFileTool):
             "success_count": success_count,
             "fail_count": fail_count,
         }
+    
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取删除文件工具的规范定义。
+        
+        Returns:
+            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
+        """
+        return {
+            "name": "DeleteFile",
+            "description": (
+                "删除一个或多个文件。"
+                "删除前会验证文件是否存在。"
+                "支持批量删除，返回每个文件的删除结果。"
+                "注意：删除操作不可逆。"
+            ),
+            "parameters": {
+                "file_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "要删除的文件绝对路径列表。",
+                    "required": True,
+                },
+            },
+        }
 
 
 def delete_files(

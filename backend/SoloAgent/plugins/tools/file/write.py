@@ -95,6 +95,35 @@ class Write(BaseFileTool):
             
         except Exception as e:
             raise FileToolError(f"写入文件失败: {str(e)}")
+    
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取写入工具的规范定义。
+        
+        Returns:
+            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
+        """
+        return {
+            "name": "Write",
+            "description": (
+                "写入内容到文件。"
+                "使用 UTF-8 编码，会自动创建父目录。"
+                "如果文件存在则覆盖。"
+                "注意：对于已存在的文件，必须先使用 Read 工具读取。"
+            ),
+            "parameters": {
+                "file_path": {
+                    "type": "string",
+                    "description": "要写入的文件的绝对路径。",
+                    "required": True,
+                },
+                "content": {
+                    "type": "string",
+                    "description": "要写入文件的内容。",
+                    "required": True,
+                },
+            },
+        }
 
 
 def write_file(

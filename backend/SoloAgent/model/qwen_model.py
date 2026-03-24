@@ -315,18 +315,36 @@ class QwenChatModel(ChatModelBase):
         tool_calls = OrderedDict()
         last_text = ""  # 记录上次输出的文本，用于计算增量
         last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
+        last_tool_calls = OrderedDict()  # 记录上次输出的工具调用，用于计算增量
+        finish_reason = None  # 记录完成原因
+        stop_reason = None  # 记录停止原因
+        total_input_tokens = None
+        total_output_tokens = None
 
         async with response as stream:
             async for chunk in stream:
                 if hasattr(chunk, "usage") and chunk.usage:
-                    usage = ChatUsage(
-                        input_tokens=chunk.usage.input_tokens,
-                        output_tokens=chunk.usage.output_tokens,
-                        time=(datetime.now() - start_datetime).total_seconds(),
-                    )
+                    total_input_tokens = getattr(chunk.usage, 'input_tokens', None) or getattr(chunk.usage, 'prompt_tokens', None)
+                    total_output_tokens = getattr(chunk.usage, 'output_tokens', None) or getattr(chunk.usage, 'completion_tokens', None)
 
                 if hasattr(chunk, "output") and chunk.output:
                     output = chunk.output
+                    if hasattr(chunk, "finish_reason"):
+                        finish_reason = chunk.finish_reason
+                        if finish_reason == "stop":
+                            stop_reason = "end_turn"
+                            # 流结束时设置usage
+                            if total_input_tokens is not None or total_output_tokens is not None:
+                                usage = ChatUsage(
+                                    input_tokens=total_input_tokens,
+                                    output_tokens=total_output_tokens,
+                                    time=(datetime.now() - start_datetime).total_seconds(),
+                                )
+                                logger.info(f"[Qwen Stream] usage at end: input={total_input_tokens}, output={total_output_tokens}")
+                        elif finish_reason == "tool_calls":
+                            stop_reason = "tool_use"
+                        logger.info(f"[Qwen Stream] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
+                    
                     # Qwen streaming format is a list of Message objects
                     if isinstance(output, list) and output:
                         for msg in output:
@@ -380,20 +398,76 @@ class QwenChatModel(ChatModelBase):
                         ),
                     )
                     last_text = text
-                for tool_call in tool_calls.values():
-                    contents.append(
-                        SoloToolUseBlock(
-                            type=tool_call["type"],
-                            id=tool_call["id"],
-                            name=tool_call["name"],
-                            input=tool_call["input"],
-                        ),
-                    )
+                
+                # 工具调用输出增量格式，而非完整 ToolUseBlock
+                # 由 ReActCore 的 ToolCallEventManager 管理状态
+                for tool_id, tool_call in tool_calls.items():
+                    index = list(tool_calls.keys()).index(tool_id)
+                    last_call = last_tool_calls.get(tool_id)
+                    tool_call_chunks = []
+                    
+                    if last_call is None:
+                        # 新工具调用开始
+                        # 第一个 chunk：包含 id 和 name，arguments 可能为空
+                        tool_call_chunks.append({
+                            "index": index,
+                            "id": tool_id,
+                            "type": "function",
+                            "function": {
+                                "name": tool_call["name"],
+                                "arguments": "",
+                            }
+                        })
+                        logger.info(f"[Qwen] Tool call start: index={index}, id={tool_id}, name={tool_call.get('name')}")
+                        
+                        # 如果有 arguments，单独发送
+                        if tool_call.get("input"):
+                            args_str = json.dumps(tool_call["input"], ensure_ascii=False)
+                            tool_call_chunks.append({
+                                "index": index,
+                                "id": None,
+                                "type": "function",
+                                "function": {
+                                    "name": None,
+                                    "arguments": args_str,
+                                }
+                            })
+                            logger.info(f"[Qwen] Tool call initial args: index={index}, args={args_str[:50]}...")
+                    else:
+                        # 后续增量：只包含 arguments 增量
+                        current_input = tool_call.get("input", {})
+                        last_input = last_call.get("input", {})
+                        current_args = json.dumps(current_input, ensure_ascii=False)
+                        last_args = json.dumps(last_input, ensure_ascii=False)
+                        if current_args and len(current_args) > len(last_args):
+                            delta_args = current_args[len(last_args):]
+                            if delta_args:
+                                tool_call_chunks.append({
+                                    "index": index,
+                                    "id": None,
+                                    "type": "function",
+                                    "function": {
+                                        "name": None,
+                                        "arguments": delta_args,
+                                    }
+                                })
+                                logger.info(f"[Qwen] Tool call args delta: index={index}, delta={delta_args[:50]}...")
+                    
+                    for chunk_data in tool_call_chunks:
+                        contents.append({
+                            "type": "tool_calls",
+                            "tool_calls": [chunk_data],
+                        })
+                
+                last_tool_calls = OrderedDict(tool_calls)
+                
                 if contents:
                     res = ChatResponse(
                         content=contents,
                         usage=usage,
                         metadata=None,
+                        stop_reason=stop_reason,
+                        finish_reason=finish_reason,
                     )
                     yield res
 
@@ -481,14 +555,33 @@ class QwenChatModel(ChatModelBase):
 
         usage = None
         if hasattr(response, "usage") and response.usage:
-            usage = ChatUsage(
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                time=(datetime.now() - start_datetime).total_seconds(),
-            )
+            input_tok = getattr(response.usage, 'input_tokens', None) or getattr(response.usage, 'prompt_tokens', None)
+            output_tok = getattr(response.usage, 'output_tokens', None) or getattr(response.usage, 'completion_tokens', None)
+            if input_tok is not None or output_tok is not None:
+                usage = ChatUsage(
+                    input_tokens=input_tok,
+                    output_tokens=output_tok,
+                    time=(datetime.now() - start_datetime).total_seconds(),
+                )
+                logger.info(f"[Qwen Completion] usage: input={input_tok}, output={output_tok}")
+
+        finish_reason = getattr(response, "finish_reason", None)
+        stop_reason = None
+        if finish_reason:
+            if finish_reason == "stop":
+                stop_reason = "end_turn"
+            elif finish_reason == "tool_calls":
+                stop_reason = "tool_use"
+            logger.info(f"[Qwen Completion] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
+
+        metadata = metadata or {}
+        metadata['original_model_message'] = response
+        metadata['provider'] = 'qwen'
 
         return ChatResponse(
             content=content_blocks,
             usage=usage,
             metadata=metadata,
+            stop_reason=stop_reason,
+            finish_reason=finish_reason,
         )

@@ -38,47 +38,18 @@ from sqlalchemy import or_
 from app.core.database import get_db, db_manager, SkillsPackageModel, OptimisticLockError
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
+from app.core.data_paths import DataPaths
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
 
 
-SKILLS_ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "skills"))
-os.makedirs(SKILLS_ROOT_DIR, exist_ok=True)
-
-SYSTEM_SKILLS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "data", "system_skills"))
-
-
 def get_user_skills_dir(user_id: str) -> str:
-    """获取用户的Skills目录。"""
-    user_dir = os.path.join(SKILLS_ROOT_DIR, user_id)
-    os.makedirs(user_dir, exist_ok=True)
-    return user_dir
-
-
-def copy_skill_template(template_name: str, target_dir: str) -> bool:
-    """从模板目录复制skill包内容到目标目录。
-    
-    Args:
-        template_name: 模板名称（如 'pdf', 'docx' 等）
-        target_dir: 目标目录路径
-        
-    Returns:
-        bool: 是否成功复制了模板
-    """
-    template_dir = os.path.join(SKILL_TEMPLATES_DIR, template_name)
-    
-    if os.path.exists(template_dir) and os.path.isdir(template_dir):
-        try:
-            if os.path.exists(target_dir):
-                shutil.rmtree(target_dir)
-            shutil.copytree(template_dir, target_dir)
-            logger.info(f"Copied skill template '{template_name}' to {target_dir}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to copy skill template: {e}")
-    return False
+    """获取用户Skills目录。"""
+    path = DataPaths.get_user_skills_dir(user_id)
+    DataPaths.ensure_dir(path)
+    return path
 
 
 def parse_skill_md(skill_md_path: str) -> Dict[str, Any]:
@@ -212,7 +183,7 @@ def delete_file_or_folder(path: str) -> bool:
 def sync_system_skills(db: Session) -> int:
     """同步系统skill到数据库。
     
-    扫描SYSTEM_SKILLS_DIR目录，将所有系统skill存入skills_packages表（author='system'）。
+    扫描SYSTEM_SKILLS_DIR目录，将所有系统skill存入skills_packages表（user_id='system'）。
     
     Args:
         db: 数据库会话
@@ -220,6 +191,8 @@ def sync_system_skills(db: Session) -> int:
     Returns:
         int: 同步的skill数量
     """
+    SYSTEM_SKILLS_DIR = DataPaths.get_system_skills_dir()
+    
     if not os.path.exists(SYSTEM_SKILLS_DIR):
         logger.warning(f"System skills directory not found: {SYSTEM_SKILLS_DIR}")
         return 0
@@ -239,26 +212,32 @@ def sync_system_skills(db: Session) -> int:
         skill_info = parse_skill_md(skill_md_path)
         
         existing = db.query(SkillsPackageModel).filter(
-            SkillsPackageModel.author == "system",
+            SkillsPackageModel.user_id == "system",
             SkillsPackageModel.name == skill_name
         ).first()
         
         if existing:
-            existing.folder_path = skill_path
+            existing.folder_path = DataPaths.to_relative_path(skill_path)
             existing.description = skill_info.get("description", existing.description)
-            existing.tags = skill_info.get("tags", existing.tags)
+            tags = skill_info.get("tags", existing.tags or [])
+            if "system" not in tags:
+                tags.append("system")
+            existing.tags = tags
             existing.instructions = skill_info.get("instructions", existing.instructions)
             existing.pkg_version = skill_info.get("version", existing.pkg_version)
             existing.version = (existing.version or 0) + 1
             logger.info(f"Updated system skill: {skill_name}")
         else:
             from datetime import datetime, timezone
+            tags = skill_info.get("tags", [])
+            if "system" not in tags:
+                tags.append("system")
             skill = SkillsPackageModel(
                 name=skill_name,
-                folder_path=skill_path,
+                folder_path=DataPaths.to_relative_path(skill_path),
                 description=skill_info.get("description", ""),
-                author="system",
-                tags=skill_info.get("tags", []),
+                user_id="system",
+                tags=tags,
                 instructions=skill_info.get("instructions", ""),
                 pkg_version=skill_info.get("version", "1.0.0"),
                 is_public=True,
@@ -281,6 +260,7 @@ class CreateSkillPackageRequest(BaseModel):
     author: str = Field("", description="作者")
     tags: List[str] = Field(default_factory=list, description="标签列表")
     pkg_version: str = Field("1.0.0", description="版本号")
+    icon: Optional[str] = Field(None, description="图标")
 
 
 class UpdateSkillPackageRequest(BaseModel):
@@ -291,6 +271,7 @@ class UpdateSkillPackageRequest(BaseModel):
     pkg_version: Optional[str] = None
     is_active: Optional[bool] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
+    icon: Optional[str] = None
 
 
 class GeneratePromptRequest(BaseModel):
@@ -315,7 +296,7 @@ async def list_packages(
     
     result = []
     for pkg in all_skills:
-        is_system = pkg.author == "system"
+        is_system = pkg.user_id == "system"
         result.append({
             "id": pkg.id,
             "user_id": pkg.user_id,
@@ -330,6 +311,7 @@ async def list_packages(
             "is_public": pkg.is_public,
             "is_system": is_system,
             "version": pkg.version,
+            "icon": pkg.icon,
             "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
             "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
         })
@@ -350,18 +332,12 @@ async def get_package(
     """获取指定的 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    is_system = pkg.author == "system"
+    is_system = pkg.user_id == "system"
     
     return {
         "code": 200,
@@ -380,6 +356,7 @@ async def get_package(
             "is_public": pkg.is_public,
             "is_system": is_system,
             "version": pkg.version,
+            "icon": pkg.icon,
             "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
             "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
         },
@@ -426,15 +403,20 @@ tags:
     common_dir = os.path.join(package_dir, "common")
     os.makedirs(common_dir, exist_ok=True)
     
+    tags = request.tags.copy() if request.tags else []
+    if user_id == "system" and "system" not in tags:
+        tags.append("system")
+    
     pkg = db_manager.create_skills_package(
         db=db,
         user_id=user_id,
         name=request.name,
         description=request.description,
-        folder_path=package_dir,
+        folder_path=DataPaths.to_relative_path(package_dir),
         pkg_version=request.pkg_version,
         author=request.author,
-        tags=request.tags,
+        tags=tags,
+        icon=request.icon,
     )
     
     return {
@@ -450,6 +432,7 @@ tags:
             "tags": pkg.tags or [],
             "folder_path": pkg.folder_path,
             "is_active": pkg.is_active,
+            "icon": pkg.icon,
             "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
         },
     }
@@ -469,6 +452,14 @@ async def update_package(
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
+    # 检查是否是系统skill
+    if pkg.user_id == "system" and user_id != "system":
+        # 系统skill只允许修改is_active状态，其他修改不允许
+        allowed_fields = ['is_active']
+        for key in request.__dict__:
+            if key not in allowed_fields and getattr(request, key) is not None:
+                raise HTTPException(status_code=403, detail="System skills cannot be edited")
+    
     update_data = {}
     if request.name is not None:
         new_name = request.name.strip()
@@ -481,17 +472,19 @@ async def update_package(
             if existing:
                 raise HTTPException(status_code=400, detail=f"包名称 '{new_name}' 已存在，请使用其他名称")
             
-            if pkg.folder_path and os.path.exists(pkg.folder_path):
-                parent_dir = os.path.dirname(pkg.folder_path)
-                new_folder_path = os.path.join(parent_dir, new_name)
-                if os.path.exists(new_folder_path):
-                    raise HTTPException(status_code=400, detail=f"文件夹 '{new_name}' 已存在，请使用其他名称")
-                try:
-                    os.rename(pkg.folder_path, new_folder_path)
-                    update_data["folder_path"] = new_folder_path
-                except Exception as e:
-                    logger.error(f"重命名文件夹失败: {e}")
-                    raise HTTPException(status_code=500, detail=f"重命名文件夹失败: {str(e)}")
+            if pkg.folder_path:
+                abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+                if os.path.exists(abs_folder_path):
+                    parent_dir = os.path.dirname(abs_folder_path)
+                    new_abs_folder_path = os.path.join(parent_dir, new_name)
+                    if os.path.exists(new_abs_folder_path):
+                        raise HTTPException(status_code=400, detail=f"文件夹 '{new_name}' 已存在，请使用其他名称")
+                    try:
+                        os.rename(abs_folder_path, new_abs_folder_path)
+                        update_data["folder_path"] = DataPaths.to_relative_path(new_abs_folder_path)
+                    except Exception as e:
+                        logger.error(f"重命名文件夹失败: {e}")
+                        raise HTTPException(status_code=500, detail=f"重命名文件夹失败: {str(e)}")
             
             update_data["name"] = new_name
     
@@ -500,11 +493,17 @@ async def update_package(
     if request.author is not None:
         update_data["author"] = request.author
     if request.tags is not None:
+        # 如果是系统skill，确保system标签不会被删除
+        if pkg.user_id == "system":
+            if "system" not in request.tags:
+                request.tags.append("system")
         update_data["tags"] = request.tags
     if request.pkg_version is not None:
         update_data["pkg_version"] = request.pkg_version
     if request.is_active is not None:
         update_data["is_active"] = request.is_active
+    if request.icon is not None:
+        update_data["icon"] = request.icon
     
     try:
         pkg = db_manager.update_skills_package(
@@ -527,6 +526,7 @@ async def update_package(
             "is_active": pkg.is_active,
             "folder_path": pkg.folder_path,
             "version": pkg.version,
+            "icon": pkg.icon,
         },
     }
 
@@ -540,22 +540,21 @@ async def delete_package(
     """删除 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        SkillsPackageModel.user_id == user_id
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if pkg.author == "system":
+    if pkg.user_id == "system" and user_id != "system":
         raise HTTPException(status_code=403, detail="System skills cannot be deleted")
     
-    if pkg.folder_path and os.path.exists(pkg.folder_path):
-        try:
-            shutil.rmtree(pkg.folder_path)
-        except Exception as e:
-            logger.error(f"删除文件夹失败: {e}")
+    if pkg.folder_path:
+        abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+        if os.path.exists(abs_folder_path):
+            try:
+                shutil.rmtree(abs_folder_path)
+            except Exception as e:
+                logger.error(f"删除文件夹失败: {e}")
     
     db.delete(pkg)
     db.commit()
@@ -646,7 +645,7 @@ async def import_package(
                     user_id=user_id,
                     name=metadata.get("name", package_name),
                     description=metadata.get("description", ""),
-                    folder_path=extract_dir,
+                    folder_path=DataPaths.to_relative_path(extract_dir),
                     pkg_version=metadata.get("version", "1.0.0"),
                     author=metadata.get("author", ""),
                     tags=metadata.get("tags", []),
@@ -685,18 +684,20 @@ async def export_package(
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
         raise HTTPException(status_code=404, detail="Package folder not found")
     
-    import tempfile
-    import zipfile
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
     export_path = os.path.join(tempfile.gettempdir(), f"{pkg.name}.zip")
     
     with zipfile.ZipFile(export_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
-        for root, dirs, files in os.walk(pkg.folder_path):
+        for root, dirs, files in os.walk(abs_folder_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, pkg.folder_path)
+                arcname = os.path.relpath(file_path, abs_folder_path)
                 zip_ref.write(file_path, arcname)
     
     return {
@@ -763,13 +764,7 @@ async def activate_package(
     """激活 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
@@ -797,13 +792,7 @@ async def deactivate_package(
     """停用 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
@@ -838,15 +827,19 @@ async def get_skill_content(
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
         raise HTTPException(status_code=404, detail="Package folder not found")
     
     safe_skill_name = os.path.basename(skill_name)
     if not re.match(r'^[\w\-\.]+$', safe_skill_name):
         raise HTTPException(status_code=400, detail="Invalid skill name format")
     
-    skill_path = os.path.normpath(os.path.join(pkg.folder_path, "skills", safe_skill_name))
-    if not skill_path.startswith(os.path.normpath(pkg.folder_path)):
+    skill_path = os.path.normpath(os.path.join(abs_folder_path, "skills", safe_skill_name))
+    if not skill_path.startswith(os.path.normpath(abs_folder_path)):
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     
     if not os.path.exists(skill_path):
@@ -923,21 +916,19 @@ async def get_package_files(
     """获取 Skills 包的文件树。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
         raise HTTPException(status_code=404, detail="Package folder not found")
     
-    file_tree = build_file_tree(pkg.folder_path)
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    file_tree = build_file_tree(abs_folder_path)
     
     return {
         "code": 200,
@@ -960,26 +951,24 @@ async def get_file_content(
     """获取指定文件的内容。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
         raise HTTPException(status_code=404, detail="Package folder not found")
     
     safe_path = os.path.normpath(file_path)
     if safe_path.startswith("..") or safe_path.startswith("/") or safe_path.startswith("\\"):
         raise HTTPException(status_code=400, detail="Invalid file path")
     
-    full_path = os.path.normpath(os.path.join(pkg.folder_path, safe_path))
-    if not full_path.startswith(os.path.normpath(pkg.folder_path)):
+    full_path = os.path.normpath(os.path.join(abs_folder_path, safe_path))
+    if not full_path.startswith(os.path.normpath(abs_folder_path)):
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     
     if not os.path.exists(full_path):
@@ -1016,21 +1005,19 @@ async def save_file(
     """保存文件内容。"""
     user_id = current_user.id
     
-    pkg = db.query(SkillsPackageModel).filter(
-        SkillsPackageModel.id == package_id,
-        or_(
-            SkillsPackageModel.author == "system",
-            SkillsPackageModel.user_id == user_id
-        )
-    ).first()
+    pkg = db_manager.get_skills_package(db, package_id, user_id)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if pkg.author == "system":
+    if pkg.user_id == "system" and user_id != "system":
         raise HTTPException(status_code=403, detail="System skills are read-only")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
         raise HTTPException(status_code=404, detail="Package folder not found")
     
     # 安全检查
@@ -1038,8 +1025,8 @@ async def save_file(
     if safe_path.startswith("..") or safe_path.startswith("/") or safe_path.startswith("\\"):
         raise HTTPException(status_code=400, detail="Invalid file path")
     
-    full_path = os.path.normpath(os.path.join(pkg.folder_path, safe_path))
-    if not full_path.startswith(os.path.normpath(pkg.folder_path)):
+    full_path = os.path.normpath(os.path.join(abs_folder_path, safe_path))
+    if not full_path.startswith(os.path.normpath(abs_folder_path)):
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     
     success = save_file_content(full_path, request.content)
@@ -1076,7 +1063,11 @@ async def create_file_or_folder(
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
         raise HTTPException(status_code=404, detail="Package folder not found")
     
     # 安全检查
@@ -1084,8 +1075,8 @@ async def create_file_or_folder(
     if safe_path.startswith("..") or safe_path.startswith("/") or safe_path.startswith("\\"):
         raise HTTPException(status_code=400, detail="Invalid file path")
     
-    full_path = os.path.normpath(os.path.join(pkg.folder_path, safe_path))
-    if not full_path.startswith(os.path.normpath(pkg.folder_path)):
+    full_path = os.path.normpath(os.path.join(abs_folder_path, safe_path))
+    if not full_path.startswith(os.path.normpath(abs_folder_path)):
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     
     if os.path.exists(full_path):
@@ -1131,7 +1122,11 @@ async def delete_file_or_folder_endpoint(
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
     
-    if not pkg.folder_path or not os.path.exists(pkg.folder_path):
+    if not pkg.folder_path:
+        raise HTTPException(status_code=404, detail="Package folder not found")
+    
+    abs_folder_path = DataPaths.to_absolute_path(pkg.folder_path)
+    if not os.path.exists(abs_folder_path):
         raise HTTPException(status_code=404, detail="Package folder not found")
     
     # 安全检查
@@ -1139,15 +1134,15 @@ async def delete_file_or_folder_endpoint(
     if safe_path.startswith("..") or safe_path.startswith("/") or safe_path.startswith("\\"):
         raise HTTPException(status_code=400, detail="Invalid file path")
     
-    full_path = os.path.normpath(os.path.join(pkg.folder_path, safe_path))
-    if not full_path.startswith(os.path.normpath(pkg.folder_path)):
+    full_path = os.path.normpath(os.path.join(abs_folder_path, safe_path))
+    if not full_path.startswith(os.path.normpath(abs_folder_path)):
         raise HTTPException(status_code=403, detail="Access denied: path traversal detected")
     
     if not os.path.exists(full_path):
         raise HTTPException(status_code=404, detail=f"File or folder '{request.file_path}' not found")
     
     # 防止删除整个skills包
-    if os.path.normpath(full_path) == os.path.normpath(pkg.folder_path):
+    if os.path.normpath(full_path) == os.path.normpath(abs_folder_path):
         raise HTTPException(status_code=403, detail="Cannot delete the root package folder")
     
     success = delete_file_or_folder(full_path)

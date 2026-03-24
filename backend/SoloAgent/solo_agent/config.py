@@ -28,8 +28,10 @@ class SoloAgentConfig:
     memory: bool = False
     user_id: Optional[str] = None
     agentic_flow_id: Optional[str] = None
-    agentic_flow_run_id: Optional[str] = None
+    run_project_id: Optional[str] = None
     agent_id: Optional[str] = None
+    session_id: Optional[str] = None
+    max_memory_length: Optional[int] = None
     
     max_iters: int = 10
     stream: bool = True
@@ -63,8 +65,10 @@ class SoloAgentConfig:
             memory=data.get("memory", False),
             user_id=data.get("user_id"),
             agentic_flow_id=data.get("agentic_flow_id"),
-            agentic_flow_run_id=data.get("agentic_flow_run_id"),
+            run_project_id=data.get("run_project_id"),
             agent_id=data.get("agent_id"),
+            session_id=data.get("session_id"),
+            max_memory_length=data.get("max_memory_length"),
             max_iters=data.get("max_iters", 10),
             stream=data.get("stream", True),
             api_key=data.get("api_key"),
@@ -89,8 +93,10 @@ class SoloAgentConfig:
             "memory": self.memory,
             "user_id": self.user_id,
             "agentic_flow_id": self.agentic_flow_id,
-            "agentic_flow_run_id": self.agentic_flow_run_id,
+            "run_project_id": self.run_project_id,
             "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "max_memory_length": self.max_memory_length,
             "max_iters": self.max_iters,
             "stream": self.stream,
             "api_key": self.api_key,
