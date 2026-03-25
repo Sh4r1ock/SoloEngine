@@ -784,8 +784,8 @@ const PropertyPanel: React.FC = () => {
           >
             {skillsPackages.map(pkg => (
               <Select.Option 
-                key={pkg.name} 
-                value={pkg.name}
+                key={pkg.id} 
+                value={pkg.id}
                 label={pkg.name}
               >
                 <div style={{ display: 'flex', flexDirection: 'column' }}>

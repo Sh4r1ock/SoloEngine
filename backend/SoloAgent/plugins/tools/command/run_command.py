@@ -251,6 +251,9 @@ class RunCommand(BaseCommandTool):
                 "exit_code": cmd_info.exit_code,
                 "success": cmd_info.exit_code == 0,
                 "command_id": cmd_info.command_id,
+                "metadata": {
+                    "command_id": cmd_info.command_id
+                }
             }
             
         except CommandToolError:
@@ -298,6 +301,9 @@ class RunCommand(BaseCommandTool):
                 "command_id": cmd_info.command_id,
                 "status": cmd_info.state.value,
                 "message": "命令已启动，使用 CheckCommandStatus 查询状态",
+                "metadata": {
+                    "command_id": cmd_info.command_id
+                }
             }
             
         except CommandToolError:

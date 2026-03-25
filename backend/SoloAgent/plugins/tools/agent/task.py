@@ -232,14 +232,21 @@ class TaskTool(BaseAgentTool):
             subagent = await self._create_subagent(config)
             result = await self._run_subagent(subagent, config)
             
-            return self.create_success_response(
-                content=result,
-                metadata={
-                    "subagent_type": subagent_type,
-                    "description": description,
-                    "response_language": response_language
+            return {
+                "success": True,
+                "content": result,
+                "subagent_type": subagent_type,
+                "description": description,
+                "response_language": response_language,
+                "metadata": {
+                    "tokens": {
+                        "user": 0,
+                        "system": 0,
+                        "assistant": 0,
+                        "total": 0
+                    }
                 }
-            )
+            }
             
         except Exception as e:
             logger.error(f"SubAgent execution failed: {e}")

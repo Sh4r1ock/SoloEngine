@@ -16,15 +16,35 @@ class DataPaths:
     
     @staticmethod
     def to_relative_path(absolute_path: str) -> str:
-        """将绝对路径转换为相对于项目根目录的相对路径。"""
-        project_root = DataPaths.get_project_root()
-        return os.path.relpath(absolute_path, project_root)
-    
+        r"""将绝对路径转换为相对于项目根目录的相对路径。
+
+        Args:
+            absolute_path: 绝对路径
+
+        Returns:
+            相对于项目根目录的相对路径，例如: \data\{user_id}\skills\{skill_name}
+        """
+        project_root = os.path.normpath(DataPaths.get_project_root())
+        abs_path = os.path.normpath(absolute_path)
+        rel_path = os.path.relpath(abs_path, project_root)
+        if not rel_path.startswith('\\'):
+            rel_path = '\\' + rel_path
+        return rel_path
+
     @staticmethod
     def to_absolute_path(relative_path: str) -> str:
-        """将相对于项目根目录的相对路径转换为绝对路径。"""
-        project_root = DataPaths.get_project_root()
-        return os.path.abspath(os.path.join(project_root, relative_path))
+        r"""将相对于项目根目录的相对路径转换为绝对路径。
+
+        Args:
+            relative_path: 相对于项目根目录的相对路径，例如: \data\{user_id}\skills\{skill_name}
+
+        Returns:
+            绝对路径
+        """
+        project_root = os.path.normpath(DataPaths.get_project_root())
+        rel_path = relative_path.replace('/', os.sep).replace('\\', os.sep)
+        rel_path = rel_path.lstrip('\\')
+        return os.path.abspath(os.path.join(project_root, rel_path))
     
     @staticmethod
     def get_user_dir(user_id: str) -> str:

@@ -26,7 +26,7 @@ class SoloAgent:
     - 延迟加载：配置细节在运行时按需加载
     - 支持多模型：通过 provider + model 自动选择模型
     - 支持流式输出：原生支持流式响应
-    - 支持子Agent调用：通过 child_agents 列表
+    - 支持子Agent调用：通过 subagents 列表
     
     注意：记忆管理由 CompiledFlow 层统一处理，Agent 不再管理 _memory_plugin
     """
@@ -39,7 +39,8 @@ class SoloAgent:
         self._core: Optional["ReActCore"] = None
         self._mcp_clients: List["MCPClient"] = []
         self._tools: Dict[str, Any] = {}
-        self._child_agents: Dict[str, "SoloAgent"] = {}
+        self._subagents: Dict[str, "SoloAgent"] = {}
+        self._subagents_info: List[Dict[str, Any]] = []
         self._message_history: List[Dict[str, Any]] = []
         self._last_tool_calls: List[Dict[str, Any]] = []
         self._last_response: Optional[Any] = None
@@ -54,8 +55,8 @@ class SoloAgent:
         return self.config.agent_id or self.config.name
     
     @property
-    def child_agents(self) -> List[str]:
-        return self.config.child_agents
+    def subagents(self) -> List[Dict[str, Any]]:
+        return self.config.subagents
     
     @property
     def agent_type(self) -> str:
@@ -68,13 +69,19 @@ class SoloAgent:
     def set_last_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> None:
         self._last_tool_calls = tool_calls or []
     
-    def set_child_agents(self, agents: Dict[str, "SoloAgent"]) -> None:
-        self._child_agents = agents
-        if agents:
-            self.config.child_agents = list(agents.keys())
+    def set_subagents(self, agents: Dict[str, "SoloAgent"], subagents_info: List[Dict[str, Any]] = None) -> None:
+        self._subagents = agents
+        if subagents_info:
+            self._subagents_info = subagents_info
+            self.config.subagents = subagents_info
+        elif agents:
+            self.config.subagents = [
+                {"subagent_name": name, "subagent_id": agent.agent_id, "description": agent.config.system_prompt[:100] if agent.config.system_prompt else ""}
+                for name, agent in agents.items()
+            ]
     
-    def get_child_agent(self, agent_id: str) -> Optional["SoloAgent"]:
-        return self._child_agents.get(agent_id)
+    def get_subagent(self, agent_id: str) -> Optional["SoloAgent"]:
+        return self._subagents.get(agent_id)
     
     def set_stream_callback(self, callback: callable) -> None:
         """设置流式输出回调函数"""
@@ -82,6 +89,10 @@ class SoloAgent:
         if self._core:
             self._core.stream_callback = callback
             self._core.agent_id = self.agent_id
+        
+        for subagent in self._subagents.values():
+            if subagent._initialized and hasattr(subagent, 'set_stream_callback'):
+                subagent.set_stream_callback(callback)
     
     def set_message_history(self, history: List[Dict[str, Any]]) -> None:
         """设置消息历史（由 CompiledFlow 层调用）"""
@@ -137,11 +148,11 @@ class SoloAgent:
             mcp_tool_configs = await self._load_mcp_servers(self.config.mcp_servers)
             tool_configs.extend(mcp_tool_configs)
         
-        if self.config.child_agents:
+        if self.config.subagents:
             from .tools import create_task_tool_config
             task_config = create_task_tool_config(self)
             tool_configs.append(task_config)
-            logger.info(f"[Child Agents] Added Task tool for child agents: {self.config.child_agents}")
+            logger.info(f"[SubAgents] Added Task tool for subagents: {[s.get('subagent_name') for s in self.config.subagents]}")
         
         toolkit_executor = ToolkitExecutor(tool_configs) if tool_configs else None
         
@@ -178,22 +189,41 @@ class SoloAgent:
         self._initialized = True
         logger.info(f"SoloAgent '{self.name}' initialized with {len(tool_configs)} tools")
     
-    async def _load_skills(self, skill_names: List[str]) -> List[Dict[str, Any]]:
-        """加载技能工具配置"""
+    async def _load_skills(self, skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """加载技能工具配置
+        
+        Args:
+            skills: 已在编译阶段组装的 Skills 信息列表
+                [{"id": "...", "name": "...", "folder_path": "...", "description": "...", ...}]
+        """
         tool_configs = []
-        for skill_name in skill_names:
-            try:
-                skill_config = await ConfigLoader.load_skill_config(skill_name)
-                if skill_config.get("tools"):
-                    for tool_name in skill_config["tools"]:
-                        tool_config = ToolRegistry.get_tool_config(tool_name)
-                        if tool_config:
-                            tool_configs.append(tool_config)
-                if skill_config.get("system_prompt"):
-                    self.config.system_prompt = f"{self.config.system_prompt}\n\n{skill_config['system_prompt']}"
-                logger.info(f"Loaded skill '{skill_name}' with {len(skill_config.get('tools', []))} tools")
-            except Exception as e:
-                logger.warning(f"Failed to load skill '{skill_name}': {e}")
+        
+        from ..plugins.tools.agent.skill import SkillTool
+        
+        skill_tool = SkillTool(skills_info=skills)
+        
+        tool_configs.append({
+            "name": "Skill",
+            "function": skill_tool.execute,
+            "description": skill_tool.get_tool_spec()["description"],
+            "parameters": skill_tool.get_tool_spec()["parameters"],
+        })
+        
+        for skill in skills:
+            if isinstance(skill, dict):
+                skill_tools = skill.get("tools", [])
+                for tool_name in skill_tools:
+                    tool_config = ToolRegistry.get_tool_config(tool_name)
+                    if tool_config:
+                        tool_configs.append(tool_config)
+                
+                instructions = skill.get("instructions")
+                if instructions:
+                    self.config.system_prompt = f"{self.config.system_prompt}\n\n{instructions}"
+                
+                skill_name = skill.get("name", skill.get("id", "unknown"))
+                logger.info(f"Loaded skill '{skill_name}' with {len(skill_tools)} tools")
+        
         return tool_configs
     
     async def _load_mcp_servers(self, server_names: List[str]) -> List[Dict[str, Any]]:
@@ -395,19 +425,24 @@ class SoloAgent:
         else:
             raise ValueError(f"Tool '{tool_name}' does not have execute method")
     
-    async def call_subagent(self, agent_id: str, message: str) -> str:
-        child = self.get_child_agent(agent_id)
-        if child is None:
-            raise ValueError(f"Child agent '{agent_id}' not found")
+    async def call_subagent(self, subagent_name: str, task: str) -> str:
+        subagent = self.get_subagent(subagent_name)
+        if subagent is None:
+            for agent in self._subagents.values():
+                if agent.config.name == subagent_name:
+                    subagent = agent
+                    break
         
-        logger.info(f"[call_subagent] Calling child agent '{agent_id}' with message: {message[:100]}...")
+        if subagent is None:
+            raise ValueError(f"Subagent '{subagent_name}' not found")
         
-        if not child._initialized:
-            await child.initialize()
+        logger.info(f"[call_subagent] Calling subagent '{subagent_name}' with task: {task[:100]}...")
         
-        result = await child.reply(message)
+        if not subagent._initialized:
+            await subagent.initialize()
         
-        # 提取文本内容
+        result = await subagent.reply(task)
+        
         if hasattr(result, 'content'):
             content = result.content
         elif isinstance(result, dict):
@@ -415,7 +450,7 @@ class SoloAgent:
         else:
             content = str(result)
         
-        logger.info(f"[call_subagent] Child agent '{agent_id}' returned: {content[:200]}...")
+        logger.info(f"[call_subagent] Subagent '{subagent_name}' returned: {content[:200]}...")
         return content
     
     def interrupt(self) -> None:

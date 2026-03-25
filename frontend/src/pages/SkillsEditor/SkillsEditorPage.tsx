@@ -481,37 +481,42 @@ const SkillsEditorPage: React.FC = () => {
             borderRight: '1px solid #e8e8e8',
           }}
         >
-          <div style={{ padding: '12px', borderBottom: '1px solid #e8e8e8' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text strong style={{ fontSize: 13 }}>资源管理器</Text>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<FileAddOutlined />}
-                  onClick={() => { 
-                    setNewItemType('file'); 
-                    setNewItemParent('');
-                    setNewItemModalVisible(true); 
-                  }}
-                  title="新建文件"
-                />
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<FolderAddOutlined />}
-                  onClick={() => { 
-                    setNewItemType('folder'); 
-                    setNewItemParent('');
-                    setNewItemModalVisible(true); 
-                  }}
-                  title="新建文件夹"
-                />
+          <div style={{ 
+            height: '100%', 
+            display: 'flex', 
+            flexDirection: 'column',
+          }}>
+            <div style={{ padding: '12px', borderBottom: '1px solid #e8e8e8', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text strong style={{ fontSize: 13 }}>资源管理器</Text>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<FileAddOutlined />}
+                    onClick={() => { 
+                      setNewItemType('file'); 
+                      setNewItemParent('');
+                      setNewItemModalVisible(true); 
+                    }}
+                    title="新建文件"
+                  />
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<FolderAddOutlined />}
+                    onClick={() => { 
+                      setNewItemType('folder'); 
+                      setNewItemParent('');
+                      setNewItemModalVisible(true); 
+                    }}
+                    title="新建文件夹"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-          
-          <div style={{ padding: '8px', overflow: 'auto', height: 'calc(100vh - 150px)' }}>
+            
+            <div style={{ padding: '8px', overflow: 'auto', flex: 1 }}>
             {fileTree.length > 0 ? (
               <Tree
                 showLine
@@ -525,6 +530,7 @@ const SkillsEditorPage: React.FC = () => {
             ) : (
               <Empty description="暂无文件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             )}
+            </div>
           </div>
         </Sider>
         

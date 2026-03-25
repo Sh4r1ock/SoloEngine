@@ -34,6 +34,7 @@
 """
 
 from typing import List, Dict, Any, Optional, Callable, Union, Awaitable
+from datetime import datetime, timezone
 import inspect
 import asyncio
 
@@ -57,6 +58,8 @@ class ToolResponse:
         success (bool): 执行是否成功。默认为 True。
         error_message (Optional[str]): 错误信息。执行失败时包含
             错误描述。默认为 None。
+        metadata (Optional[Dict]): 元数据信息。包含额外字段如
+            resources_used, command_id 等。默认为 None。
     
     Example:
         >>> # 成功响应
@@ -79,6 +82,7 @@ class ToolResponse:
         content: Union[str, List[Dict[str, Any]]],
         success: bool = True,
         error_message: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         初始化工具响应。
@@ -87,23 +91,29 @@ class ToolResponse:
             content (Union[str, List[Dict]]): 执行结果内容。
             success (bool, optional): 是否成功。默认为 True。
             error_message (Optional[str], optional): 错误信息。默认为 None。
+            metadata (Optional[Dict], optional): 元数据信息。默认为 None。
         """
         self.content = content
         self.success = success
         self.error_message = error_message
+        self.metadata = metadata or {}
     
     def to_dict(self) -> Dict[str, Any]:
         """
         转换为字典格式。
         
         Returns:
-            Dict[str, Any]: 包含 content、success、error_message 的字典。
+            Dict[str, Any]: 包含 content、success、error_message、metadata 的字典。
         """
-        return {
+        result = {
             "content": self.content,
             "success": self.success,
-            "error_message": self.error_message,
         }
+        if self.error_message:
+            result["error_message"] = self.error_message
+        if self.metadata:
+            result["metadata"] = self.metadata
+        return result
 
 
 class ToolkitExecutor(IToolExecutor):
@@ -223,18 +233,30 @@ class ToolkitExecutor(IToolExecutor):
             else:
                 result = tool_func(**arguments)
             
+            execution_time = datetime.now(timezone.utc).isoformat()
+            
             if isinstance(result, ToolResponse):
-                return result.to_dict()
+                result_dict = result.to_dict()
             elif isinstance(result, dict):
-                return result
+                result_dict = result
             else:
-                return {"content": str(result), "success": True}
+                result_dict = {"content": str(result), "success": True}
+            
+            if "metadata" not in result_dict:
+                result_dict["metadata"] = {}
+            result_dict["metadata"]["execution_time"] = execution_time
+            
+            return result_dict
                 
         except Exception as e:
+            execution_time = datetime.now(timezone.utc).isoformat()
             return {
                 "content": str(e),
                 "success": False,
                 "error_message": str(e),
+                "metadata": {
+                    "execution_time": execution_time,
+                }
             }
     
     def get_available_tools(self) -> List[Dict[str, Any]]:

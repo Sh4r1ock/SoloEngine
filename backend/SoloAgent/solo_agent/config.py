@@ -2,8 +2,20 @@
 SoloAgent 配置模块
 提供简洁的声明式配置接口
 """
+import uuid
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+
+
+@dataclass
+class SubAgentInfo:
+    """SubAgent 信息数据类
+    
+    用于存储 SubAgent 的元信息，分为显示给模型的字段和后端使用的字段。
+    """
+    subagent_name: str
+    description: str
+    subagent_id: str
 
 
 @dataclass
@@ -23,7 +35,7 @@ class SoloAgentConfig:
     tools: List[str] = field(default_factory=list)
     mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
     
-    child_agents: List[str] = field(default_factory=list)
+    subagents: List[Dict[str, Any]] = field(default_factory=list)
     
     memory: bool = False
     user_id: Optional[str] = None
@@ -49,7 +61,7 @@ class SoloAgentConfig:
     
     def __post_init__(self):
         if self.agent_id is None:
-            self.agent_id = self.name
+            self.agent_id = str(uuid.uuid4())
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SoloAgentConfig":
@@ -61,7 +73,7 @@ class SoloAgentConfig:
             skills=data.get("skills", []),
             tools=data.get("tools", []),
             mcp_servers=data.get("mcp_servers", []),
-            child_agents=data.get("child_agents", []),
+            subagents=data.get("subagents", data.get("child_agents", [])),
             memory=data.get("memory", False),
             user_id=data.get("user_id"),
             agentic_flow_id=data.get("agentic_flow_id"),
@@ -89,7 +101,7 @@ class SoloAgentConfig:
             "skills": self.skills,
             "tools": self.tools,
             "mcp_servers": self.mcp_servers,
-            "child_agents": self.child_agents,
+            "subagents": self.subagents,
             "memory": self.memory,
             "user_id": self.user_id,
             "agentic_flow_id": self.agentic_flow_id,
