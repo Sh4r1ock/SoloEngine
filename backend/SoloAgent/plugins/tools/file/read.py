@@ -136,6 +136,9 @@ class Read(BaseFileTool):
                 "error_message": None,
                 "total_lines": total_lines,
                 "lines_read": len(selected_lines),
+                "metadata": {
+                    "resources_used": [file_path]
+                }
             }
             
         except UnicodeDecodeError as e:

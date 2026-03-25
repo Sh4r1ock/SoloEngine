@@ -14,23 +14,11 @@
         "system_prompt": "帮我列出当前目录的文件\n",
         "user_prompt": "",
         "skills": [
-          "test",
-          "algorithmic-art",
-          "brand-guidelines",
-          "canvas-design",
-          "doc-coauthoring",
-          "docx",
-          "frontend-design",
-          "internal-comms",
-          "mcp-builder",
-          "pdf",
-          "pptx",
-          "skill-creator",
-          "slack-gif-creator",
-          "theme-factory",
-          "web-artifacts-builder",
-          "webapp-testing",
-          "xlsx"
+          "0b254cb6-a82d-4a2e-b8d0-075dcc33a754",
+          "95ad307d-a959-4fac-af47-90b45c73aa61",
+          "c8616a1a-28b2-45c2-aae8-a34c6b53bddb",
+          "000945bd-a5a0-4910-bb09-a9fc036c9ad7",
+          "7d14a3f7-c1dc-4eb8-90f3-a8c95dfb3c02"
         ],
         "llm_config_id": "70a10f67-e13f-4b52-ac89-b223d5bc0b3f",
         "model_config": {
@@ -64,18 +52,75 @@
       },
       "width": 222,
       "height": 125,
-      "selected": true,
+      "selected": false,
       "positionAbsolute": {
         "x": 860,
         "y": 400
       },
       "dragging": false
+    },
+    {
+      "id": "node_1774444890734",
+      "type": "agent",
+      "position": {
+        "x": 860,
+        "y": 600
+      },
+      "data": {
+        "name": "测试节点",
+        "desc": "具备计算能力",
+        "agentType": "executor",
+        "system_prompt": "",
+        "user_prompt": "",
+        "skills": [
+          "568c6e74-594c-4b2b-8a5b-c3323805893b"
+        ],
+        "llm_config_id": "70a10f67-e13f-4b52-ac89-b223d5bc0b3f",
+        "model_config": {
+          "config_id": "70a10f67-e13f-4b52-ac89-b223d5bc0b3f",
+          "config_name": "DeepSeek-Reasoner",
+          "provider": "deepseek",
+          "model": "deepseek-reasoner"
+        },
+        "mcp_tools": [],
+        "tools": [
+          "LS",
+          "DeleteFile",
+          "Write",
+          "Read",
+          "Grep",
+          "Glob",
+          "SearchCodebase",
+          "RunCommand",
+          "CheckCommandStatus",
+          "StopCommand",
+          "GetDiagnostics",
+          "WebFetch",
+          "WebSearch",
+          "Skill",
+          "Task",
+          "TodoWrite",
+          "AskUserQuestion",
+          "OpenPreview"
+        ],
+        "memory": true
+      },
+      "width": 222,
+      "height": 125,
+      "selected": true,
+      "positionAbsolute": {
+        "x": 860,
+        "y": 600
+      },
+      "dragging": false
     }
   ],
-  "edges": [],
-  "globalSettings": {
-    "maxContextLength": 4096,
-    "maxIterations": 100,
-    "timeout": 30000
-  }
+  "edges": [
+    {
+      "id": "e_node_1773897210093_node_1774444890734",
+      "source": "node_1773897210093",
+      "target": "node_1774444890734",
+      "label": "调用"
+    }
+  ]
 }

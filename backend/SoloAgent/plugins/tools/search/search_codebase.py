@@ -462,6 +462,7 @@ class SearchCodebase(BaseSearchTool):
                     "total_results": len(formatted_results),
                     "query": information_request,
                     "directories": [self.get_relative_path(d) for d in resolved_dirs],
+                    "resources_used": resolved_dirs
                 },
             )
             

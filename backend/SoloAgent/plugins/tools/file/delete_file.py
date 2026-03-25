@@ -123,6 +123,9 @@ class DeleteFile(BaseFileTool):
             "results": results,
             "success_count": success_count,
             "fail_count": fail_count,
+            "metadata": {
+                "resources_used": file_paths
+            }
         }
     
     def get_tool_spec(self) -> Dict[str, Any]:

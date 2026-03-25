@@ -121,6 +121,9 @@ class SearchReplace(BaseFileTool):
                 "success": True,
                 "error_message": None,
                 "occurrences": occurrences,
+                "metadata": {
+                    "resources_used": [file_path]
+                }
             }
             
         except FileToolError:

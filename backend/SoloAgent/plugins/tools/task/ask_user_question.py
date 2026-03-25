@@ -247,9 +247,11 @@ class AskUserQuestion(BaseTaskTool):
             "questions": formatted_questions,
             "formatted_text": "\n\n".join(formatted_texts),
             "question_count": len(formatted_questions),
+            "success": True,
+            "metadata": {}
         }
         
-        return self.format_success(result, "问题格式化成功")
+        return result
     
     def get_tool_spec(self) -> Dict[str, Any]:
         """

@@ -33,7 +33,7 @@ import SessionList from './components/SessionList';
 import AgenticPanel from './components/AgenticPanel';
 import FileExplorer from './FileExplorer';
 
-import type { LLMMessage, DataBlock, FileTab, CallRecord, ChildAgentOutput } from './types';
+import type { LLMMessage, DataBlock, FileTab, CallRecord, SubagentOutput } from './types';
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -61,10 +61,10 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     setCurrentMsgId,
     callRecords,
     setCallRecords,
-    addChildAgentOutput,
-    updateChildAgentOutput,
-    setChildAgentOutputs,
-    clearChildAgentOutputs,
+    addSubagentOutput,
+    updateSubagentOutput,
+    setSubagentOutputs,
+    clearSubagentOutputs,
     streamingData,
     editorTabs,
     documentTabs,
@@ -255,7 +255,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     switch (event.event_type) {
       case 'execution_start':
         setCallRecords([]);
-        clearChildAgentOutputs();
+        clearSubagentOutputs();
         streamingDataHook.resetStream();
         messageAddedRef.current = false;
         startRunning();
@@ -436,9 +436,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         });
         break;
 
-      case 'child_agent_start':
-        setChildAgentOutputs((prev: ChildAgentOutput[]) => {
-          const existingIndex = prev.findIndex(ca => ca.id === (event as any).child_agent_id);
+      case 'subagent_start':
+        setSubagentOutputs((prev: SubagentOutput[]) => {
+          const existingIndex = prev.findIndex(sa => sa.id === (event as any).subagent_id);
           
           if (existingIndex >= 0) {
             const updated = [...prev];
@@ -446,40 +446,40 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               ...updated[existingIndex],
               status: 'running',
               startTime: Date.now(),
-              input: (event as any).child_agent_input,
-              agentType: (event as any).child_agent_type,
+              input: (event as any).subagent_input,
+              agentType: (event as any).subagent_type,
             };
             return updated;
           }
           
           return [...prev, {
-            id: (event as any).child_agent_id || generateId(),
-            name: (event as any).child_agent_name || 'Unknown Agent',
+            id: (event as any).subagent_id || generateId(),
+            name: (event as any).subagent_name || 'Unknown Agent',
             output: '',
             status: 'running',
             calls: [],
             startTime: Date.now(),
-            input: (event as any).child_agent_input,
-            agentType: (event as any).child_agent_type,
+            input: (event as any).subagent_input,
+            agentType: (event as any).subagent_type,
           }];
         });
         break;
 
-      case 'child_agent_complete':
-        setChildAgentOutputs((prev: ChildAgentOutput[]) => {
+      case 'subagent_complete':
+        setSubagentOutputs((prev: SubagentOutput[]) => {
           const endTime = Date.now();
-          return prev.map(ca => {
-            if (ca.id === (event as any).child_agent_id) {
-              const startTime = ca.startTime || endTime;
+          return prev.map(sa => {
+            if (sa.id === (event as any).subagent_id) {
+              const startTime = sa.startTime || endTime;
               return {
-                ...ca,
-                output: (event as any).content || (event as any).child_agent_output || '',
+                ...sa,
+                output: (event as any).content || (event as any).subagent_output || '',
                 status: event.error ? 'error' : 'completed',
                 endTime,
                 duration: endTime - startTime,
               };
             }
-            return ca;
+            return sa;
           });
         });
         break;
@@ -567,7 +567,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         }
         break;
     }
-  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, streamingDataHook, clearChildAgentOutputs, setChildAgentOutputs]);
+  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, streamingDataHook, clearSubagentOutputs, setSubagentOutputs]);
 
   const handleWebSocketMessage = useCallback((msg: any) => {
     if (msg.type === 'execution_result') {
@@ -1154,7 +1154,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 };
 
 const isCodeFile = (fileName: string): boolean => {
-  const codeExtensions = ['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php', 'cs', 'swift', 'kt', 'scala', 'vue', 'svelte', 'css', 'scss', 'less', 'html', 'xml', 'json', 'yaml', 'yml', 'sh', 'bash', 'ps1', 'bat', 'sql', 'log', 'ini', 'conf', 'cfg', 'env', 'toml'];
+  const codeExtensions = ['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'go', 'rs', 'rb', 'php', 'cs', 'swift', 'kt', 'scala', 'vue', 'svelte', 'css', 'scss', 'less', 'html', 'xml', 'json', 'yaml', 'yml', 'sh', 'bash', 'ps1', 'bat', 'sql', 'log', 'ini', 'conf', 'cfg', 'env', 'toml', 'md', 'markdown'];
   return codeExtensions.includes(fileName.split('.').pop()?.toLowerCase() || '');
 };
 

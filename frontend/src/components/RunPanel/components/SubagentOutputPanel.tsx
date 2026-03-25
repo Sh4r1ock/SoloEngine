@@ -1,5 +1,5 @@
 /**
- * @file components/ChildAgentOutputPanel.tsx
+ * @file components/SubagentOutputPanel.tsx
  * @description 子模型输出面板组件
  */
 
@@ -12,16 +12,16 @@ import {
   LoadingOutlined,
   CopyOutlined,
 } from '@ant-design/icons';
-import type { ChildAgentOutput } from '../types';
+import type { SubagentOutput } from '../types';
 
 const { Text, Paragraph } = Typography;
 
-interface ChildAgentOutputPanelProps {
-  outputs: ChildAgentOutput[];
+interface SubagentOutputPanelProps {
+  outputs: SubagentOutput[];
   maxHeight?: number;
 }
 
-const ChildAgentOutputPanel: React.FC<ChildAgentOutputPanelProps> = ({
+const SubagentOutputPanel: React.FC<SubagentOutputPanelProps> = ({
   outputs,
   maxHeight = 400,
 }) => {
@@ -83,7 +83,7 @@ const ChildAgentOutputPanel: React.FC<ChildAgentOutputPanelProps> = ({
       ) : (
         <List
           dataSource={sortedOutputs}
-          renderItem={(output: ChildAgentOutput) => {
+          renderItem={(output: SubagentOutput) => {
             return (
               <div
                 key={output.id}
@@ -201,4 +201,4 @@ const ChildAgentOutputPanel: React.FC<ChildAgentOutputPanelProps> = ({
   );
 };
 
-export default ChildAgentOutputPanel;
+export default SubagentOutputPanel;
