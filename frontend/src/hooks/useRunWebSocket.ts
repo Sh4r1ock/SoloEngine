@@ -21,8 +21,8 @@ export type ExecutionEventType =
   | 'skill_result'
   | 'mcp_call'
   | 'mcp_result'
-  | 'child_agent_start'
-  | 'child_agent_complete'
+  | 'subagent_start'
+  | 'subagent_complete'
   | 'stream'
   | 'thinking'
   | 'action'
@@ -57,11 +57,11 @@ export interface ExecutionEvent {
   mcp_result?: string;
   mcp_call_id?: string;
   mcp_server?: string;
-  child_agent_id?: string;
-  child_agent_name?: string;
-  child_agent_type?: string;
-  child_agent_input?: string;
-  child_agent_output?: string;
+  subagent_id?: string;
+  subagent_name?: string;
+  subagent_type?: string;
+  subagent_input?: string;
+  subagent_output?: string;
   status?:'pending' | 'running' | 'success' | 'error' | 'completed' | 'stopped' | 'cancelled';
   error?: string;
   timestamp: string;

@@ -10,7 +10,7 @@ import type {
   LLMMessage,
   DataBlock,
   CallRecord,
-  ChildAgentOutput,
+  SubagentOutput,
   FileTab,
   AgenticPanel,
   ExtendedRunSession,
@@ -36,7 +36,7 @@ interface RunPanelState {
   currentMsgId: string;
 
   callRecords: CallRecord[];
-  childAgentOutputs: ChildAgentOutput[];
+  subagentOutputs: SubagentOutput[];
 
   editorTabs: FileTab[];
   documentTabs: FileTab[];
@@ -80,10 +80,10 @@ interface RunPanelState {
   setCallRecords: (records: CallRecord[] | ((prev: CallRecord[]) => CallRecord[])) => void;
   clearCallRecords: () => void;
 
-  addChildAgentOutput: (output: ChildAgentOutput) => void;
-  updateChildAgentOutput: (id: string, updates: Partial<ChildAgentOutput>) => void;
-  setChildAgentOutputs: (outputs: ChildAgentOutput[] | ((prev: ChildAgentOutput[]) => ChildAgentOutput[])) => void;
-  clearChildAgentOutputs: () => void;
+  addSubagentOutput: (output: SubagentOutput) => void;
+  updateSubagentOutput: (id: string, updates: Partial<SubagentOutput>) => void;
+  setSubagentOutputs: (outputs: SubagentOutput[] | ((prev: SubagentOutput[]) => SubagentOutput[])) => void;
+  clearSubagentOutputs: () => void;
 
   addEditorTab: (tab: FileTab) => void;
   updateEditorTab: (id: string, updates: Partial<FileTab>) => void;
@@ -138,7 +138,7 @@ export const useRunPanelStore = create<RunPanelState>()(
       currentMsgId: '',
 
       callRecords: [],
-      childAgentOutputs: [],
+      subagentOutputs: [],
 
       editorTabs: [],
       documentTabs: [],
@@ -214,18 +214,18 @@ export const useRunPanelStore = create<RunPanelState>()(
       },
       clearCallRecords: () => set({ callRecords: [] }),
 
-      addChildAgentOutput: (output) => set((state) => ({ childAgentOutputs: [...state.childAgentOutputs, output] })),
-      updateChildAgentOutput: (id, updates) => set((state) => ({
-        childAgentOutputs: state.childAgentOutputs.map((o) => (o.id === id ? { ...o, ...updates } : o)),
+      addSubagentOutput: (output) => set((state) => ({ subagentOutputs: [...state.subagentOutputs, output] })),
+      updateSubagentOutput: (id, updates) => set((state) => ({
+        subagentOutputs: state.subagentOutputs.map((o) => (o.id === id ? { ...o, ...updates } : o)),
       })),
-      setChildAgentOutputs: (outputsOrUpdater) => {
+      setSubagentOutputs: (outputsOrUpdater) => {
         if (typeof outputsOrUpdater === 'function') {
-          set((state) => ({ childAgentOutputs: outputsOrUpdater(state.childAgentOutputs) }));
+          set((state) => ({ subagentOutputs: outputsOrUpdater(state.subagentOutputs) }));
         } else {
-          set({ childAgentOutputs: outputsOrUpdater });
+          set({ subagentOutputs: outputsOrUpdater });
         }
       },
-      clearChildAgentOutputs: () => set({ childAgentOutputs: [] }),
+      clearSubagentOutputs: () => set({ subagentOutputs: [] }),
 
       addEditorTab: (tab) => set((state) => ({ editorTabs: [...state.editorTabs, tab] })),
       updateEditorTab: (id, updates) => set((state) => ({
@@ -356,7 +356,7 @@ export const useRunPanelStore = create<RunPanelState>()(
               ...s,
               messages: existingSession?.messages || [],
               toolCalls: existingSession?.toolCalls || [],
-              childAgentOutputs: existingSession?.childAgentOutputs || [],
+              subagentOutputs: existingSession?.subagentOutputs || [],
             };
           });
           set({ sessions: extendedSessions });

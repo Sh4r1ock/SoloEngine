@@ -390,6 +390,9 @@ class WebFetch(BaseNetworkTool):
                 "content": content,
                 "success": True,
                 "url": url,
+                "metadata": {
+                    "resources_used": [url]
+                }
             }
         except NetworkToolError as e:
             return {
@@ -397,6 +400,9 @@ class WebFetch(BaseNetworkTool):
                 "success": False,
                 "error_message": e.message,
                 "url": url,
+                "metadata": {
+                    "resources_used": [url]
+                }
             }
         except Exception as e:
             return {
@@ -404,6 +410,9 @@ class WebFetch(BaseNetworkTool):
                 "success": False,
                 "error_message": str(e),
                 "url": url,
+                "metadata": {
+                    "resources_used": [url]
+                }
             }
     
     def get_tool_spec(self) -> Dict[str, Any]:

@@ -128,6 +128,9 @@ class LS(BaseFileTool):
                 "total_count": len(entries),
                 "file_count": file_count,
                 "dir_count": dir_count,
+                "metadata": {
+                    "resources_used": [path]
+                }
             }
             
         except Exception as e:

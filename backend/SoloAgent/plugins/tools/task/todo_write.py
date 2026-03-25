@@ -120,12 +120,15 @@ class TodoWrite(BaseTaskTool):
         result = {
             "todos": validated_todos,
             "statistics": statistics,
+            "success": True,
         }
         
         if summary:
             result["summary"] = summary
         
-        return self.format_success(result, "任务列表更新成功")
+        result["metadata"] = {}
+        
+        return result
     
     def get_tool_spec(self) -> Dict[str, Any]:
         """

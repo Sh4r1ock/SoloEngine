@@ -140,6 +140,9 @@ class StopCommand(BaseCommandTool):
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "exit_code": cmd_info.exit_code,
+                "metadata": {
+                    "command_id": command_id
+                }
             }
             
         except ProcessLookupError:
@@ -150,6 +153,9 @@ class StopCommand(BaseCommandTool):
                 "message": "命令已停止（进程已结束）",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
+                "metadata": {
+                    "command_id": command_id
+                }
             }
         except Exception as e:
             cmd_info.state = CommandState.ERROR

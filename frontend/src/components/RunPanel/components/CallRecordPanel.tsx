@@ -55,7 +55,7 @@ const getTypeConfig = (type: string) => {
       return { icon: RobotOutlined, color: '#52c41a', label: '技能' };
     case 'mcp':
       return { icon: ApiOutlined, color: '#722ed1', label: 'MCP' };
-    case 'child_agent':
+    case 'subagent':
       return { icon: RobotOutlined, color: '#eb2f96', label: '子模型' };
     default:
       return { icon: ToolOutlined, color: '#1890ff', label: '工具' };

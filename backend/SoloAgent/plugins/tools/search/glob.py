@@ -146,6 +146,7 @@ class Glob(BaseSearchTool):
                     "path": self.get_relative_path(search_path),
                     "total_matches": len(relative_paths),
                     "files": [m.to_dict() for m in sorted_matches],
+                    "resources_used": [search_path]
                 },
             )
             

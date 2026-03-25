@@ -165,6 +165,9 @@ class GetDiagnostics:
             "warning_count": warning_count,
             "information_count": information_count,
             "hint_count": hint_count,
+            "metadata": {
+                "resources_used": [uri] if uri else []
+            }
         }
     
     @classmethod

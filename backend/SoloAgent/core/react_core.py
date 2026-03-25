@@ -957,7 +957,7 @@ class ReActCore:
             if self.tool_executor:
                 try:
                     result = await self.tool_executor.execute(tool_call)
-                    result_content = result.get("content", str(result))
+                    result_content = result.get("content", str(result)) if isinstance(result, dict) else str(result)
                     
                     # 使用 ToolCallEventManager 发送 TOOL_CALL_RESULT
                     self._tool_call_event_manager.on_tool_call_result(
@@ -982,7 +982,8 @@ class ReActCore:
                     self._last_tool_results.append({
                         "name": tool_call.get("name"),
                         "args": tool_call.get("arguments", {}),
-                        "result": result_content
+                        "result": result_content,
+                        "full_result": result,
                     })
                     logger.info(f"[_acting] Tool {tool_call.get('name')} executed successfully, result length: {len(str(result_content))}")
                 except Exception as e:

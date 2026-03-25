@@ -154,7 +154,8 @@ class OpenPreviewTool(BaseOtherTool):
             action=action,
             metadata={
                 "command_id": command_id,
-                "preview_url": preview_url
+                "preview_url": preview_url,
+                "resources_used": [preview_url]
             }
         )
     

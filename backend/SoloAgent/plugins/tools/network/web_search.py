@@ -387,6 +387,9 @@ class WebSearch(BaseNetworkTool):
                     "content": f"未找到关于 '{query}' 的搜索结果。",
                     "success": True,
                     "results": [],
+                    "metadata": {
+                        "resources_used": [f"https://duckduckgo.com/?q={query}"]
+                    }
                 }
             
             formatted = self.format_results(results)
@@ -395,6 +398,9 @@ class WebSearch(BaseNetworkTool):
                 "content": formatted,
                 "success": True,
                 "results": [r.to_dict() for r in results],
+                "metadata": {
+                    "resources_used": [f"https://duckduckgo.com/?q={query}"]
+                }
             }
             
         except NetworkToolError as e:
@@ -403,6 +409,9 @@ class WebSearch(BaseNetworkTool):
                 "success": False,
                 "error_message": e.message,
                 "results": [],
+                "metadata": {
+                    "resources_used": [f"https://duckduckgo.com/?q={query}"]
+                }
             }
         except Exception as e:
             return {
@@ -410,6 +419,9 @@ class WebSearch(BaseNetworkTool):
                 "success": False,
                 "error_message": str(e),
                 "results": [],
+                "metadata": {
+                    "resources_used": [f"https://duckduckgo.com/?q={query}"]
+                }
             }
     
     @property

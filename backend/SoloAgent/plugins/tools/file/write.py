@@ -91,6 +91,9 @@ class Write(BaseFileTool):
                 "success": True,
                 "error_message": None,
                 "bytes_written": bytes_written,
+                "metadata": {
+                    "resources_used": [file_path]
+                }
             }
             
         except Exception as e:

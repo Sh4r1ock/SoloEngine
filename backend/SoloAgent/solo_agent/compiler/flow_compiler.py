@@ -46,8 +46,8 @@ class ExecutionEvent:
     mcp_name: Optional[str] = None
     mcp_args: Optional[Dict[str, Any]] = None
     mcp_result: Optional[str] = None
-    child_agent_id: Optional[str] = None
-    child_agent_name: Optional[str] = None
+    subagent_id: Optional[str] = None
+    subagent_name: Optional[str] = None
     status: Optional[str] = None
     error: Optional[str] = None
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -117,9 +117,9 @@ class CompiledFlow:
             return self.agents.get(self.orchestrator_id)
         return None
     
-    def get_child_agents(self, agent_id: str) -> List[SoloAgent]:
-        child_ids = self.edges.get(agent_id, [])
-        return [self.agents[aid] for aid in child_ids if aid in self.agents]
+    def get_subagents(self, agent_id: str) -> List[SoloAgent]:
+        subagent_ids = self.edges.get(agent_id, [])
+        return [self.agents[aid] for aid in subagent_ids if aid in self.agents]
     
     def get_entry_nodes(self) -> List[str]:
         target_nodes = set()
@@ -326,36 +326,6 @@ class CompiledFlow:
                 "tokens": tokens,
             }
             
-            child_ids = self.edges.get(agent_id, [])
-            if child_ids:
-                child_results = []
-                for child_id in child_ids:
-                    child_agent = self.agents.get(child_id)
-                    if child_agent:
-                        self._emit_event(ExecutionEvent(
-                            event_type="child_agent_start",
-                            agent_id=agent_id,
-                            agent_name=agent_name,
-                            child_agent_id=child_id,
-                            child_agent_name=child_agent.name,
-                            content=response
-                        ))
-                        
-                        child_result = await self._execute_agent(
-                            child_agent, response, db, context, cancel_event=cancel_event
-                        )
-                        child_results.append(child_result)
-                        
-                        self._emit_event(ExecutionEvent(
-                            event_type="child_agent_complete",
-                            agent_id=agent_id,
-                            agent_name=agent_name,
-                            child_agent_id=child_id,
-                            child_agent_name=child_agent.name,
-                            content=child_result.get("output")
-                        ))
-                result["child_results"] = child_results
-            
             self._emit_event(ExecutionEvent(
                 event_type="agent_complete",
                 agent_id=agent_id,
@@ -556,10 +526,70 @@ class AgenticFlowCompiler:
     - 自动从数据库加载 LLM/MCP/Skills 配置
     - 编译后自动注册到网关
     - 支持并发执行
+    - 从下向上编译（拓扑排序）
     """
     
     def __init__(self, user_id: str = None):
         self.user_id = user_id
+    
+    def _calculate_compilation_order(self, nodes: List[Dict], edges: List[Dict]) -> List[str]:
+        """通过边关系拓扑排序，确定编译顺序
+        
+        边关系：source → target 表示 source 是上级，target 是下级（subagent）
+        编译顺序：先编译下级（没有出边的节点），再编译上级
+        
+        Args:
+            nodes: 节点列表
+            edges: 边列表
+        
+        Returns:
+            List[str]: 编译顺序（节点 ID 列表）
+        """
+        out_edges: Dict[str, List[str]] = {}
+        in_edges: Dict[str, List[str]] = {}
+        
+        for edge in edges:
+            source = edge.get("source")
+            target = edge.get("target")
+            if source and target:
+                if source not in out_edges:
+                    out_edges[source] = []
+                out_edges[source].append(target)
+                
+                if target not in in_edges:
+                    in_edges[target] = []
+                in_edges[target].append(source)
+        
+        all_nodes = {n["id"] for n in nodes}
+        nodes_with_out_edges = set(out_edges.keys())
+        bottom_nodes = all_nodes - nodes_with_out_edges
+        
+        compilation_order = []
+        visited = set()
+        queue = list(bottom_nodes)
+        
+        while queue:
+            node_id = queue.pop(0)
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+            compilation_order.append(node_id)
+            
+            for parent_id in in_edges.get(node_id, []):
+                all_subagents_compiled = all(
+                    subagent_id in visited 
+                    for subagent_id in out_edges.get(parent_id, [])
+                )
+                if all_subagents_compiled and parent_id not in visited:
+                    queue.append(parent_id)
+        
+        for node in nodes:
+            node_id = node.get("id")
+            if node_id and node_id not in visited:
+                compilation_order.append(node_id)
+        
+        logger.info(f"[Compilation Order] {compilation_order}")
+        return compilation_order
     
     def compile(
         self,
@@ -619,10 +649,20 @@ class AgenticFlowCompiler:
         mcp_configs = self._load_mcp_configs(user_id)
         skills_configs = self._load_skills_configs(user_id)
         
+        compilation_order = self._calculate_compilation_order(nodes, edges)
+        
+        edge_map = self._compile_edges(edges)
+        
         agents: Dict[str, SoloAgent] = {}
         orchestrator_id: Optional[str] = None
         
-        for node in nodes:
+        node_map = {n["id"]: n for n in nodes}
+        
+        for node_id in compilation_order:
+            node = node_map.get(node_id)
+            if not node:
+                continue
+            
             agent = self._compile_node(
                 node=node,
                 user_id=user_id,
@@ -638,14 +678,23 @@ class AgenticFlowCompiler:
 
             if node.get("data", {}).get("agentType") == "orchestrator":
                 orchestrator_id = agent.agent_id
-        
-        edge_map = self._compile_edges(edges)
-        
-        for agent_id, child_ids in edge_map.items():
-            if agent_id in agents:
-                agents[agent_id].config.child_agents = child_ids
-                child_agents = {cid: agents[cid] for cid in child_ids if cid in agents}
-                agents[agent_id].set_child_agents(child_agents)
+            
+            subagent_ids = edge_map.get(agent.agent_id, [])
+            if subagent_ids:
+                subagents = {}
+                subagents_info = []
+                for sid in subagent_ids:
+                    if sid in agents:
+                        sub_agent = agents[sid]
+                        subagents[sid] = sub_agent
+                        subagents_info.append({
+                            "subagent_name": sub_agent.config.name,
+                            "subagent_id": sub_agent.agent_id,
+                            "description": sub_agent.config.system_prompt[:100] if sub_agent.config.system_prompt else f"SubAgent: {sub_agent.config.name}"
+                        })
+                if subagents:
+                    agent.set_subagents(subagents, subagents_info)
+                    logger.info(f"[SubAgents] Agent '{agent.config.name}' has subagents: {[s['subagent_name'] for s in subagents_info]}")
         
         compiled_flow = CompiledFlow(
             agents=agents,
@@ -791,6 +840,7 @@ class AgenticFlowCompiler:
                 if skills_configs and skill in skills_configs:
                     skill_config = skills_configs[skill]
                     skill_dict["name"] = skill_config.name
+                    skill_dict["description"] = getattr(skill_config, "description", "")
                     rel_folder_path = getattr(skill_config, "folder_path", None)
                     if rel_folder_path:
                         from app.core.data_paths import DataPaths
@@ -859,7 +909,7 @@ class AgenticFlowCompiler:
             skills=enriched_skills,
             tools=tools,
             mcp_servers=enriched_mcp,
-            child_agents=[],
+            subagents=[],
             memory=node_data.get("memory", True),
             user_id=user_id,
             agentic_flow_id=agentic_flow_id,
@@ -1140,8 +1190,8 @@ class FlowRunner:
                         "mcp_name": event.mcp_name,
                         "mcp_args": event.mcp_args,
                         "mcp_result": event.mcp_result,
-                        "child_agent_id": event.child_agent_id,
-                        "child_agent_name": event.child_agent_name,
+                        "subagent_id": event.subagent_id,
+                        "subagent_name": event.subagent_name,
                         "status": event.status,
                         "error": event.error,
                         "timestamp": event.timestamp,

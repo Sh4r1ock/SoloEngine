@@ -223,7 +223,29 @@ const MessageList: React.FC<MessageListProps> = ({
                   参数: {tc.function?.arguments}
                   {tc.result && (
                     <div style={{ marginTop: 6 }}>
-                      <span style={{ fontWeight: 500 }}>结果:</span> {tc.result}
+                      <span style={{ fontWeight: 500 }}>结果:</span>
+                      {(() => {
+                        try {
+                          const parsed = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
+                          if (parsed && typeof parsed === 'object') {
+                            return (
+                              <div style={{ marginTop: 4 }}>
+                                {Object.entries(parsed).map(([key, value]) => (
+                                  <div key={key} style={{ marginTop: 2 }}>
+                                    <span style={{ fontWeight: 500, color: 'var(--text-200)' }}>{key}:</span>{' '}
+                                    <span style={{ color: 'var(--text-100)' }}>
+                                      {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          }
+                        } catch {
+                          return ` ${tc.result}`;
+                        }
+                        return ` ${tc.result}`;
+                      })()}
                     </div>
                   )}
                 </div>

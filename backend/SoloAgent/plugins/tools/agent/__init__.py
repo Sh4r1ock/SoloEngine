@@ -51,7 +51,6 @@ from .task import (
 from .skill import (
     SkillTool,
     SkillContext,
-    SkillMetadata,
     skill_tool_function,
     get_skill_tool_spec,
 )
@@ -73,7 +72,6 @@ __all__ = [
     "SubAgentType",
     "ResponseLanguage",
     "SkillContext",
-    "SkillMetadata",
     "task_tool_function",
     "skill_tool_function",
     "get_task_tool_spec",

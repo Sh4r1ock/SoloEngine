@@ -217,53 +217,139 @@ class ToolRegistry:
 
 
 def create_task_tool_config(agent: "SoloAgent") -> Dict[str, Any]:
-    """创建 Task 工具配置，用于调用子 Agent"""
+    """创建 Task 工具配置，用于调用子 Agent
+    
+    Args:
+        agent: SoloAgent 实例，包含 subagents 信息
+    
+    Returns:
+        Dict[str, Any]: Task 工具配置
+    """
     
     class SubAgentTaskTool:
-        """子 Agent 调用工具"""
-        
-        spec = {
-            "name": "Task",
-            "description": "调用子 Agent 执行任务",
-            "parameters": {
-                "agent_id": {
-                    "type": "string",
-                    "description": "要调用的子 Agent ID",
-                    "required": True,
-                },
-                "message": {
-                    "type": "string",
-                    "description": "发送给子 Agent 的消息",
-                    "required": True,
-                }
-            }
-        }
+        """子 Agent 调用工具 - 基于 SubAgentInfo 结构"""
         
         def __init__(self, parent_agent):
             self.parent_agent = parent_agent
+            self._subagents_info: Dict[str, Dict[str, Any]] = {}
+            self._name_to_id: Dict[str, str] = {}
+            
+            for sa in parent_agent.config.subagents:
+                name = sa.get("subagent_name")
+                subagent_id = sa.get("subagent_id")
+                description = sa.get("description", "")
+                if name:
+                    self._subagents_info[name] = {
+                        "subagent_name": name,
+                        "description": description,
+                        "subagent_id": subagent_id or name
+                    }
+                    self._name_to_id[name] = subagent_id or name
         
-        async def execute(self, agent_id: str, message: str) -> str:
-            """执行子 Agent 调用"""
-            return await self.parent_agent.call_subagent(agent_id, message)
+        def get_tool_spec(self) -> Dict[str, Any]:
+            names = list(self._subagents_info.keys())
+            xml = self._format_available_subagents_xml()
+            
+            return {
+                "name": "Task",
+                "description": f"""Launch a agent and assign a task to it.
+
+Available agents:
+{xml}
+
+When to use this tool:
+  - When the task requires specialized capabilities
+  - When you need to delegate a task to a subagent
+
+IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subagent_name": {
+                            "type": "string",
+                            "description": "The subagent name to call",
+                            "enum": names
+                        },
+                        "task": {
+                            "type": "string",
+                            "description": "Detailed task description"
+                        }
+                    },
+                    "required": ["subagent_name", "task"]
+                }
+            }
+        
+        def _format_available_subagents_xml(self) -> str:
+            lines = ["<available_subagents>"]
+            for name, info in self._subagents_info.items():
+                lines.append(f"- {name}: {info.get('description', '')}")
+            lines.append("</available_subagents>")
+            return "\n".join(lines)
+        
+        async def execute(self, subagent_name: str, task: str) -> Dict[str, Any]:
+            subagent_id = self._name_to_id.get(subagent_name)
+            if not subagent_id:
+                return {"success": False, "error": f"Subagent '{subagent_name}' not found"}
+            
+            subagent = self.parent_agent.get_subagent(subagent_id)
+            if not subagent:
+                for agent in self.parent_agent._subagents.values():
+                    if agent.config.name == subagent_name:
+                        subagent = agent
+                        break
+            
+            if not subagent:
+                return {"success": False, "error": f"Subagent instance '{subagent_id}' not found"}
+            
+            if not subagent._initialized:
+                await subagent.initialize()
+            
+            if hasattr(self.parent_agent, '_stream_callback') and self.parent_agent._stream_callback:
+                subagent.set_stream_callback(self.parent_agent._stream_callback)
+            
+            if hasattr(self.parent_agent, '_stream_callback') and self.parent_agent._stream_callback:
+                try:
+                    self.parent_agent._stream_callback(
+                        {"type": "subagent_start", "subagent_id": subagent_id, "subagent_name": subagent_name},
+                        agent_id=subagent_id,
+                        agent_name=subagent_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send subagent_start event: {e}")
+            
+            result = await subagent.reply(task)
+            
+            if hasattr(self.parent_agent, '_stream_callback') and self.parent_agent._stream_callback:
+                try:
+                    self.parent_agent._stream_callback(
+                        {"type": "subagent_complete", "subagent_id": subagent_id, "subagent_name": subagent_name},
+                        agent_id=subagent_id,
+                        agent_name=subagent_name
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send subagent_complete event: {e}")
+            
+            if hasattr(result, 'content'):
+                content = result.content
+            elif isinstance(result, dict):
+                content = result.get('content', str(result))
+            else:
+                content = str(result)
+            
+            return {
+                "success": True,
+                "subagent_name": subagent_name,
+                "result": content
+            }
     
     tool = SubAgentTaskTool(agent)
+    spec = tool.get_tool_spec()
     
     return {
-        "name": "Task",
+        "name": spec["name"],
         "function": tool.execute,
-        "description": "调用子 Agent 执行任务",
-        "parameters": {
-            "agent_id": {
-                "type": "string",
-                "description": "要调用的子 Agent ID",
-                "required": True,
-            },
-            "message": {
-                "type": "string",
-                "description": "发送给子 Agent 的消息",
-                "required": True,
-            }
-        }
+        "description": spec["description"],
+        "parameters": spec["parameters"],
     }
 
 

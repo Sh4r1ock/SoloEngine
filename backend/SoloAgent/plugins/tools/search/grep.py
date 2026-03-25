@@ -541,6 +541,7 @@ class Grep(BaseSearchTool):
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
                     "total_files": len(lines),
+                    "resources_used": [path]
                 },
             )
         
@@ -554,6 +555,7 @@ class Grep(BaseSearchTool):
                     "output_mode": output_mode,
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
+                    "resources_used": [path]
                 },
             )
         
@@ -568,6 +570,7 @@ class Grep(BaseSearchTool):
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
                     "total_matches": len(lines),
+                    "resources_used": [path]
                 },
             )
     
@@ -608,6 +611,7 @@ class Grep(BaseSearchTool):
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
                     "total_files": len(files_with_matches),
+                    "resources_used": [path]
                 },
             )
         
@@ -625,6 +629,7 @@ class Grep(BaseSearchTool):
                     "output_mode": output_mode,
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
+                    "resources_used": [path]
                 },
             )
         
@@ -647,6 +652,7 @@ class Grep(BaseSearchTool):
                     "pattern": pattern,
                     "path": self.get_relative_path(path),
                     "total_matches": len(results),
+                    "resources_used": [path]
                 },
             )
     
