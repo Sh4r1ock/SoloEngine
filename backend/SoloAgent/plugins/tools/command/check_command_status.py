@@ -185,6 +185,9 @@ class CheckCommandStatus(BaseCommandTool):
             "command": cmd_info.command,
             "command_type": cmd_info.command_type.value,
             "command_id": cmd_info.command_id,
+            "metadata": {
+                "command_id": command_id
+            }
         }
         
         return result

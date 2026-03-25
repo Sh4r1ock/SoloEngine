@@ -5,14 +5,14 @@
 
 import { useCallback } from 'react';
 import { useRunPanelStore } from '../stores/runPanelStore';
-import type { CallRecord, ChildAgentOutput } from '../types';
+import type { CallRecord, SubagentOutput } from '../types';
 
 export const useCallRecords = () => {
   const {
     callRecords,
     setCallRecords,
-    childAgentOutputs,
-    setChildAgentOutputs,
+    subagentOutputs,
+    setSubagentOutputs,
   } = useRunPanelStore();
 
   const addCallRecord = useCallback((record: CallRecord) => {
@@ -32,22 +32,22 @@ export const useCallRecords = () => {
     setCallRecords([]);
   }, [setCallRecords]);
 
-  const addChildAgentOutput = useCallback((output: ChildAgentOutput) => {
-    setChildAgentOutputs(prev => [...prev, output]);
-  }, [setChildAgentOutputs]);
+  const addSubagentOutput = useCallback((output: SubagentOutput) => {
+    setSubagentOutputs(prev => [...prev, output]);
+  }, [setSubagentOutputs]);
 
-  const updateChildAgentOutput = useCallback((id: string, updates: Partial<ChildAgentOutput>) => {
-    setChildAgentOutputs(prev => prev.map(output => {
+  const updateSubagentOutput = useCallback((id: string, updates: Partial<SubagentOutput>) => {
+    setSubagentOutputs(prev => prev.map(output => {
       if (output.id === id) {
         return { ...output, ...updates };
       }
       return output;
     }));
-  }, [setChildAgentOutputs]);
+  }, [setSubagentOutputs]);
 
-  const clearChildAgentOutputs = useCallback(() => {
-    setChildAgentOutputs([]);
-  }, [setChildAgentOutputs]);
+  const clearSubagentOutputs = useCallback(() => {
+    setSubagentOutputs([]);
+  }, [setSubagentOutputs]);
 
   const handleToolCallEvent = useCallback((event: any) => {
     if (event.event_type === 'tool_call_start') {
@@ -70,36 +70,36 @@ export const useCallRecords = () => {
     }
   }, [addCallRecord, updateCallRecord]);
 
-  const handleChildAgentEvent = useCallback((event: any) => {
-    if (event.event_type === 'child_agent_start') {
-      const output: ChildAgentOutput = {
+  const handleSubagentEvent = useCallback((event: any) => {
+    if (event.event_type === 'subagent_start') {
+      const output: SubagentOutput = {
         id: event.agent_id || `agent_${Date.now()}`,
         name: event.agent_name,
         status: 'running',
         input: event.input,
         startTime: Date.now(),
       };
-      addChildAgentOutput(output);
-    } else if (event.event_type === 'child_agent_end') {
-      updateChildAgentOutput(event.agent_id, {
+      addSubagentOutput(output);
+    } else if (event.event_type === 'subagent_end') {
+      updateSubagentOutput(event.agent_id, {
         status: event.error ? 'error' : 'completed',
         output: event.output,
         error: event.error,
         duration: event.duration,
       });
     }
-  }, [addChildAgentOutput, updateChildAgentOutput]);
+  }, [addSubagentOutput, updateSubagentOutput]);
 
   return {
     callRecords,
-    childAgentOutputs,
+    subagentOutputs,
     addCallRecord,
     updateCallRecord,
     clearCallRecords,
-    addChildAgentOutput,
-    updateChildAgentOutput,
-    clearChildAgentOutputs,
+    addSubagentOutput,
+    updateSubagentOutput,
+    clearSubagentOutputs,
     handleToolCallEvent,
-    handleChildAgentEvent,
+    handleSubagentEvent,
   };
 };

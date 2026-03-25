@@ -32,7 +32,7 @@ export interface LLMMessage {
   tokens?: number;
 }
 
-export type CallType = 'tool' | 'skill' | 'mcp' | 'child_agent';
+export type CallType = 'tool' | 'skill' | 'mcp' | 'subagent';
 export type CallStatus = 'pending' | 'running' | 'success' | 'error';
 
 export interface CallRecord {
@@ -53,7 +53,7 @@ export interface CallRecord {
   childCalls?: CallRecord[];
 }
 
-export interface ChildAgentOutput {
+export interface SubagentOutput {
   id: string;
   name: string;
   output: string;
@@ -114,7 +114,7 @@ export interface ExtendedRunSession extends RunSession {
   agentName?: string;
   messages?: SessionMessage[];
   toolCalls?: ToolCallRecord[];
-  childAgentOutputs?: ChildAgentOutput[];
+  subagentOutputs?: SubagentOutput[];
   startTime?: number;
   firstAssistantContent?: string;
 }
@@ -192,3 +192,38 @@ export const TOOL_NAME_MAP: Record<string, string> = {
   'mcp_list_tools': 'MCP工具列表',
   'mcp_call_tool': 'MCP调用工具',
 };
+
+export type FileCategory = 
+  | 'code' 
+  | 'markdown' 
+  | 'office'
+  | 'pdf' 
+  | 'image' 
+  | 'text' 
+  | 'binary' 
+  | 'unsupported';
+
+export interface FileTypeInfo {
+  category: FileCategory;
+  language?: string;
+  editable: boolean;
+  viewer: string;
+  requiresOnlyOffice?: boolean;
+  fallbackViewer?: string;
+}
+
+export interface EditorInstance {
+  instanceId: string;
+  viewerName: string;
+  category: FileCategory;
+  tabId: string;
+  createdAt: number;
+}
+
+export type EditorStatus = 'unloaded' | 'loading' | 'loaded';
+
+export interface EditorRegistryEntry {
+  status: EditorStatus;
+  refCount: number;
+  instanceIds: Set<string>;
+}

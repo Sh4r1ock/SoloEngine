@@ -41,7 +41,7 @@ export interface ToolCallRecord {
   duration?: number;
 }
 
-export interface ChildAgentOutput {
+export interface SubagentOutput {
   id: string;
   name: string;
   output: string;
@@ -56,11 +56,11 @@ export interface ExtendedRunSession extends RunSession {
   agentName?: string;
   messages?: SessionMessage[];
   toolCalls?: ToolCallRecord[];
-  childAgentOutputs?: ChildAgentOutput[];
+  subagentOutputs?: SubagentOutput[];
   startTime?: number;
 }
 
-export type OperationPanelType = 'tools' | 'childAgents' | 'history' | null;
+export type OperationPanelType = 'tools' | 'subagents' | 'history' | null;
 
 interface RunState {
   sessions: ExtendedRunSession[];
@@ -74,7 +74,7 @@ interface RunState {
   isRunning: boolean;
   isPaused: boolean;
   toolCalls: ToolCallRecord[];
-  childAgentOutputs: ChildAgentOutput[];
+  subagentOutputs: SubagentOutput[];
   sessionHistory: ExtendedRunSession[];
   activeOperationPanel: OperationPanelType;
 
@@ -90,9 +90,9 @@ interface RunState {
   addToolCall: (toolCall: ToolCallRecord) => void;
   updateToolCall: (id: string, updates: Partial<ToolCallRecord>) => void;
   clearToolCalls: () => void;
-  addChildAgentOutput: (output: ChildAgentOutput) => void;
-  updateChildAgentOutput: (id: string, updates: Partial<ChildAgentOutput>) => void;
-  clearChildAgentOutputs: () => void;
+  addSubagentOutput: (output: SubagentOutput) => void;
+  updateSubagentOutput: (id: string, updates: Partial<SubagentOutput>) => void;
+  clearSubagentOutputs: () => void;
   loadSessionHistory: (sessions: ExtendedRunSession[]) => void;
   addToSessionHistory: (session: ExtendedRunSession) => void;
   clearSessionHistory: () => void;
@@ -118,7 +118,7 @@ export const useRunStore = create<RunState>()(
       isRunning: false,
       isPaused: false,
       toolCalls: [],
-      childAgentOutputs: [],
+      subagentOutputs: [],
       sessionHistory: [],
       activeOperationPanel: null,
 
@@ -187,22 +187,22 @@ export const useRunStore = create<RunState>()(
         set({ toolCalls: [] });
       },
 
-      addChildAgentOutput: (output: ChildAgentOutput) => {
+      addSubagentOutput: (output: SubagentOutput) => {
         set((state) => ({
-          childAgentOutputs: [...state.childAgentOutputs, output],
+          subagentOutputs: [...state.subagentOutputs, output],
         }));
       },
 
-      updateChildAgentOutput: (id: string, updates: Partial<ChildAgentOutput>) => {
+      updateSubagentOutput: (id: string, updates: Partial<SubagentOutput>) => {
         set((state) => ({
-          childAgentOutputs: state.childAgentOutputs.map((cao) =>
-            cao.id === id ? { ...cao, ...updates } : cao
+          subagentOutputs: state.subagentOutputs.map((so) =>
+            so.id === id ? { ...so, ...updates } : so
           ),
         }));
       },
 
-      clearChildAgentOutputs: () => {
-        set({ childAgentOutputs: [] });
+      clearSubagentOutputs: () => {
+        set({ subagentOutputs: [] });
       },
 
       loadSessionHistory: (sessions: ExtendedRunSession[]) => {
@@ -240,7 +240,7 @@ export const useRunStore = create<RunState>()(
               ...s,
               messages: existingSession?.messages || [],
               toolCalls: existingSession?.toolCalls || [],
-              childAgentOutputs: existingSession?.childAgentOutputs || [],
+              subagentOutputs: existingSession?.subagentOutputs || [],
             };
           });
           set({ sessions: extendedSessions, sessionHistory: extendedSessions });
