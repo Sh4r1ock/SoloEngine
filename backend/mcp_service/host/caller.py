@@ -14,7 +14,7 @@ import asyncio
 
 from .registry import ServiceRegistry, MCPServerInfo, ServerStatus, service_registry
 from .lifecycle import LifecycleManager, lifecycle_manager
-from ..clients import BaseClient
+from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
