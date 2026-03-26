@@ -1077,24 +1077,24 @@ async def disconnect_server(
 @router.post("/servers/test")
 async def test_server(server: MCPServerCreate):
     """测试 MCP 服务器连接。"""
-    from .clients import ClientFactory
+    from SoloAgent.plugins.mcp.mcp_client import MCPClient
     
-    server_info = MCPServerInfo(
-        id="test",
-        user_id="test",
-        name=server.name,
-        transport=server.transport,
-        url=server.url,
-        command=server.command,
-        args=server.args or [],
-        env=server.env or {},
-        headers=server.headers or {},
-        timeout=server.timeout,
-    )
+    client_config = {
+        "transport": server.transport,
+        "timeout": server.timeout,
+    }
+    
+    if server.transport == "stdio":
+        client_config["command"] = server.command
+        client_config["args"] = server.args or []
+        client_config["env"] = server.env or {}
+    elif server.transport in ("sse", "http"):
+        client_config["url"] = server.url
+        client_config["headers"] = server.headers or {}
     
     client = None
     try:
-        client = ClientFactory.create_client(server_info)
+        client = MCPClient(client_config)
         await client.connect()
         tools = await client.get_tools()
         
@@ -1300,8 +1300,8 @@ async def health_check():
         "message": "MCP Service is running",
         "data": {
             "service": "mcp-service",
-            "version": "2.0.0",
-            "port": 8992,
+            "version": "2.1.0",
+            "integrated": True,
         },
     }
 

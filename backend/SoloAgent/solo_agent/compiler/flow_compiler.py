@@ -591,7 +591,7 @@ class AgenticFlowCompiler:
         logger.info(f"[Compilation Order] {compilation_order}")
         return compilation_order
     
-    def compile(
+    async def compile(
         self,
         flow_data: Dict[str, Any],
         user_id: str = None,
@@ -649,6 +649,23 @@ class AgenticFlowCompiler:
         mcp_configs = self._load_mcp_configs(user_id)
         skills_configs = self._load_skills_configs(user_id)
         
+        all_mcp_server_ids = set()
+        node_map = {n["id"]: n for n in nodes}
+        for node in nodes:
+            node_data = node.get("data", {})
+            mcp_tools = node_data.get("mcp_tools", [])
+            for mcp in mcp_tools:
+                if isinstance(mcp, str):
+                    all_mcp_server_ids.add(mcp)
+                elif isinstance(mcp, dict) and mcp.get("id"):
+                    all_mcp_server_ids.add(mcp["id"])
+        
+        mcp_servers_info = {}
+        if all_mcp_server_ids:
+            mcp_servers_info = await self._build_mcp_servers_info(
+                list(all_mcp_server_ids), mcp_configs
+            )
+        
         compilation_order = self._calculate_compilation_order(nodes, edges)
         
         edge_map = self._compile_edges(edges)
@@ -656,14 +673,12 @@ class AgenticFlowCompiler:
         agents: Dict[str, SoloAgent] = {}
         orchestrator_id: Optional[str] = None
         
-        node_map = {n["id"]: n for n in nodes}
-        
         for node_id in compilation_order:
             node = node_map.get(node_id)
             if not node:
                 continue
             
-            agent = self._compile_node(
+            agent = await self._compile_node(
                 node=node,
                 user_id=user_id,
                 agentic_flow_id=agentic_flow_id,
@@ -673,6 +688,7 @@ class AgenticFlowCompiler:
                 mcp_configs=mcp_configs,
                 skills_configs=skills_configs,
                 canvas_data=canvas_data,
+                mcp_servers_info=mcp_servers_info,
             )
             agents[agent.agent_id] = agent
 
@@ -742,6 +758,87 @@ class AgenticFlowCompiler:
             logger.warning(f"Failed to load MCP configs: {e}")
             return {}
     
+    async def _build_mcp_servers_info(
+        self,
+        mcp_server_ids: List[str],
+        mcp_configs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """编译阶段建立MCP连接并组装mcp_servers_info
+        
+        Args:
+            mcp_server_ids: MCP服务器ID列表
+            mcp_configs: MCP配置字典
+        
+        Returns:
+            Dict[str, MCPServerInfo]: mcp_servers_info字典
+        """
+        from ..plugins.tools.agent.mcp import MCPServerInfo
+        from ..plugins.mcp.mcp_client import MCPClient
+        
+        mcp_servers_info: Dict[str, MCPServerInfo] = {}
+        
+        for server_id in mcp_server_ids:
+            if server_id not in mcp_configs:
+                logger.warning(f"MCP server '{server_id}' not found in configs")
+                continue
+            
+            config = mcp_configs[server_id]
+            server_name = config.name
+            
+            try:
+                transport = getattr(config, "transport", "stdio")
+                
+                client_config = {
+                    "transport": transport,
+                    "timeout": getattr(config, "timeout", 30),
+                }
+                
+                if transport == "stdio":
+                    client_config["command"] = getattr(config, "command", None)
+                    client_config["args"] = getattr(config, "args", []) or []
+                    client_config["env"] = getattr(config, "env", {}) or {}
+                elif transport in ("sse", "http"):
+                    client_config["url"] = getattr(config, "url", "")
+                    client_config["headers"] = getattr(config, "headers", {}) or {}
+                
+                client = MCPClient(client_config)
+                await client.connect()
+                
+                tools = await client.get_tools()
+                resources = await client.get_resources()
+                prompts = await client.get_prompts()
+                
+                server_info = MCPServerInfo(
+                    server_id=server_id,
+                    server_name=server_name,
+                    server_description=getattr(config, "description", ""),
+                    tools=tools,
+                    resources=resources,
+                    prompts=prompts,
+                    client=client,
+                    is_connected=True,
+                )
+                
+                mcp_servers_info[server_name] = server_info
+                logger.info(f"[MCP] Connected to '{server_name}' with {len(tools)} tools")
+                
+            except Exception as e:
+                logger.warning(f"[MCP] Failed to connect to '{server_name}': {e}")
+                
+                server_info = MCPServerInfo(
+                    server_id=server_id,
+                    server_name=server_name,
+                    server_description=getattr(config, "description", ""),
+                    tools=[],
+                    resources=[],
+                    prompts=[],
+                    client=None,
+                    is_connected=False,
+                )
+                mcp_servers_info[server_name] = server_info
+        
+        return mcp_servers_info
+    
     def _load_skills_configs(self, user_id: str) -> Dict[str, Any]:
         """从数据库加载用户的 Skills 配置"""
         try:
@@ -774,7 +871,7 @@ class AgenticFlowCompiler:
         except Exception as e:
             logger.warning(f"Failed to register to gateway: {e}")
     
-    def _compile_node(
+    async def _compile_node(
         self,
         node: Dict[str, Any],
         user_id: str,
@@ -785,8 +882,25 @@ class AgenticFlowCompiler:
         mcp_configs: Dict[str, Any] = None,
         skills_configs: Dict[str, Any] = None,
         canvas_data: Dict[str, Any] = None,
+        mcp_servers_info: Dict[str, Any] = None,
     ) -> SoloAgent:
-        """编译单个节点为 Agent"""
+        """编译单个节点为 Agent
+        
+        Args:
+            node: 节点数据
+            user_id: 用户ID
+            agentic_flow_id: AgenticFlow ID
+            session_id: 会话ID
+            run_project_id: 项目ID
+            llm_configs: LLM配置字典
+            mcp_configs: MCP配置字典
+            skills_configs: Skills配置字典
+            canvas_data: 画布数据
+            mcp_servers_info: MCP服务器信息字典（编译阶段已建立连接）
+        
+        Returns:
+            SoloAgent: 编译后的Agent实例
+        """
         node_id = node.get("id")
         node_data = node.get("data", {})
         
@@ -854,20 +968,19 @@ class AgenticFlowCompiler:
                 enriched_skills.append(skill)
         
         mcp_tools = node_data.get("mcp_tools", [])
-        enriched_mcp = []
+        node_mcp_servers_info = {}
         for mcp in mcp_tools:
             if isinstance(mcp, str):
-                mcp_dict = {"id": mcp, "name": mcp}
+                server_name = mcp
                 if mcp_configs and mcp in mcp_configs:
-                    mcp_config = mcp_configs[mcp]
-                    mcp_dict["name"] = mcp_config.name
-                    mcp_dict["command"] = getattr(mcp_config, "command", None)
-                    mcp_dict["args"] = getattr(mcp_config, "args", [])
-                    mcp_dict["env"] = getattr(mcp_config, "env", {})
-                    mcp_dict["transport"] = getattr(mcp_config, "transport", "stdio")
-                enriched_mcp.append(mcp_dict)
+                    server_name = mcp_configs[mcp].name
             elif isinstance(mcp, dict):
-                enriched_mcp.append(mcp)
+                server_name = mcp.get("name", mcp.get("id"))
+            else:
+                continue
+            
+            if mcp_servers_info and server_name in mcp_servers_info:
+                node_mcp_servers_info[server_name] = mcp_servers_info[server_name]
         
         raw_tools = node_data.get("tools", [])
         tool_name_map = {
@@ -908,7 +1021,7 @@ class AgenticFlowCompiler:
             system_prompt=node_data.get("system_prompt", ""),
             skills=enriched_skills,
             tools=tools,
-            mcp_servers=enriched_mcp,
+            mcp_servers=node_mcp_servers_info,
             subagents=[],
             memory=node_data.get("memory", True),
             user_id=user_id,
@@ -929,7 +1042,9 @@ class AgenticFlowCompiler:
             temperature=temperature,
         )
         
-        return SoloAgent(config)
+        agent = SoloAgent(config)
+        agent._mcp_servers_info = node_mcp_servers_info
+        return agent
     
     def _compile_edges(self, edges: List[Dict[str, Any]]) -> Dict[str, List[str]]:
         """编译边关系
@@ -986,7 +1101,7 @@ class FlowRunner:
             执行结果
         """
         compiler = AgenticFlowCompiler(user_id=user_id)
-        compiled_flow = compiler.compile(
+        compiled_flow = await compiler.compile(
             json_data, 
             user_id=user_id, 
             agentic_flow_id=agentic_flow_id,
@@ -1037,7 +1152,7 @@ class FlowRunner:
             raise ValueError("run_project_id is required for data isolation")
         
         compiler = AgenticFlowCompiler(user_id=user_id)
-        compiled_flow = compiler.compile(
+        compiled_flow = await compiler.compile(
             json_data, 
             user_id=user_id, 
             agentic_flow_id=agentic_flow_id, 

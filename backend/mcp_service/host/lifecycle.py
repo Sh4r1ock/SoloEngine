@@ -3,8 +3,8 @@
 生命周期管理 - 管理MCP服务器的生命周期。
 
 职责：
-- 注册 → 创建Client → 连接Server → 注册网关路由
-- 注销 → 断开连接 → 销毁Client → 注销网关路由
+- 注册 → 创建Client → 连接Server
+- 注销 → 断开连接 → 销毁Client
 - 启动 → 启动Server进程
 - 停止 → 停止Server进程
 """
@@ -15,8 +15,7 @@ from datetime import datetime
 import asyncio
 
 from .registry import ServiceRegistry, MCPServerInfo, ServerStatus, service_registry
-from ..clients import ClientFactory, BaseClient
-from ..gateway import mcp_gateway
+from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +25,7 @@ class LifecycleManager:
     
     def __init__(self, registry: ServiceRegistry = None):
         self._registry = registry or service_registry
-        self._clients: Dict[str, BaseClient] = {}
+        self._clients: Dict[str, MCPClient] = {}
         self._lock = asyncio.Lock()
     
     async def register_and_connect(
@@ -66,8 +65,20 @@ class LifecycleManager:
         await self._registry.update_status(server_id, ServerStatus.CONNECTING)
         
         try:
-            client = ClientFactory.create_client(server_info)
+            client_config = {
+                "transport": server_info.transport,
+                "timeout": server_info.timeout,
+            }
             
+            if server_info.transport == "stdio":
+                client_config["command"] = server_info.command
+                client_config["args"] = server_info.args or []
+                client_config["env"] = server_info.env or {}
+            elif server_info.transport in ("sse", "http"):
+                client_config["url"] = server_info.url
+                client_config["headers"] = server_info.headers or {}
+            
+            client = MCPClient(client_config)
             await client.connect()
             
             async with self._lock:
@@ -75,12 +86,6 @@ class LifecycleManager:
             
             await self._registry.update_status(server_id, ServerStatus.CONNECTED)
             logger.info(f"Connected to MCP server: {server_info.name}")
-            
-            try:
-                await mcp_gateway.register_route(server_info.name, server_id)
-                logger.info(f"Gateway route registered: /{server_info.name}")
-            except Exception as e:
-                logger.warning(f"Failed to register gateway route for {server_info.name}: {e}")
             
             return True
             
@@ -95,15 +100,6 @@ class LifecycleManager:
     
     async def disconnect(self, server_id: str) -> bool:
         """断开服务器连接。"""
-        server_info = await self._registry.get_server(server_id)
-        
-        if server_info:
-            try:
-                await mcp_gateway.unregister_route(server_info.name)
-                logger.info(f"Gateway route unregistered: /{server_info.name}")
-            except Exception as e:
-                logger.warning(f"Failed to unregister gateway route for {server_info.name}: {e}")
-        
         client = self._clients.pop(server_id, None)
         
         if client:
@@ -126,7 +122,7 @@ class LifecycleManager:
         await self.disconnect(server_id)
         return await self._registry.unregister(server_id)
     
-    async def get_client(self, server_id: str) -> Optional[BaseClient]:
+    async def get_client(self, server_id: str) -> Optional[MCPClient]:
         """获取服务器对应的客户端。"""
         return self._clients.get(server_id)
     
@@ -145,7 +141,7 @@ class LifecycleManager:
         for server_id in server_ids:
             await self.disconnect(server_id)
     
-    async def get_connected_servers(self) -> Dict[str, BaseClient]:
+    async def get_connected_servers(self) -> Dict[str, MCPClient]:
         """获取所有已连接的服务器。"""
         return dict(self._clients)
     
