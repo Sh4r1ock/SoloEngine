@@ -21,6 +21,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings
+from mcp_service.routes import router as mcp_router
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,3 +84,4 @@ app.include_router(agentic_flows.router)
 app.include_router(agent_tools.router)
 app.include_router(run_project.router)
 app.include_router(settings.router)
+app.include_router(mcp_router)

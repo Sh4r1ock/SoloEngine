@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..model.model_base import BaseLLM
     from ..plugins.memory.database_memory import DatabaseMemoryPlugin
     from ..plugins.mcp.mcp_client import MCPClient
+    from ..plugins.tools.agent.mcp import MCPServerInfo
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class SoloAgent:
         self._llm: Optional["BaseLLM"] = None
         self._core: Optional["ReActCore"] = None
         self._mcp_clients: List["MCPClient"] = []
+        self._mcp_servers_info: Dict[str, "MCPServerInfo"] = {}
         self._tools: Dict[str, Any] = {}
         self._subagents: Dict[str, "SoloAgent"] = {}
         self._subagents_info: List[Dict[str, Any]] = []
@@ -144,9 +146,16 @@ class SoloAgent:
             skill_tool_configs = await self._load_skills(self.config.skills)
             tool_configs.extend(skill_tool_configs)
         
-        if self.config.mcp_servers:
-            mcp_tool_configs = await self._load_mcp_servers(self.config.mcp_servers)
+        if hasattr(self, '_mcp_servers_info') and self._mcp_servers_info:
+            mcp_tool_configs = await self._load_mcp_tools(self._mcp_servers_info)
             tool_configs.extend(mcp_tool_configs)
+        elif self.config.mcp_servers:
+            if isinstance(self.config.mcp_servers, dict) and any(
+                isinstance(v, dict) and 'client' in v 
+                for v in self.config.mcp_servers.values()
+            ):
+                mcp_tool_configs = await self._load_mcp_tools(self.config.mcp_servers)
+                tool_configs.extend(mcp_tool_configs)
         
         if self.config.subagents:
             from .tools import create_task_tool_config
@@ -223,6 +232,50 @@ class SoloAgent:
                 
                 skill_name = skill.get("name", skill.get("id", "unknown"))
                 logger.info(f"Loaded skill '{skill_name}' with {len(skill_tools)} tools")
+        
+        return tool_configs
+    
+    async def _load_mcp_tools(
+        self, 
+        mcp_servers_info: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """加载MCP工具配置 - 使用编译阶段注入的mcp_servers_info
+        
+        参考SkillTool的设计模式：
+        - 编译时注入mcp_servers_info（包含MCPClient实例）
+        - 统一入口调用方式
+        - XML标签展示可用工具
+        - 直接调用MCPClient，不通过HTTP
+        
+        Args:
+            mcp_servers_info: MCP服务器信息字典
+                {"server_name": MCPServerInfo(...), ...}
+        
+        Returns:
+            List[Dict[str, Any]]: 工具配置列表
+        """
+        tool_configs = []
+        
+        from ..plugins.tools.agent.mcp import MCPTool, MCPServerInfo
+        
+        mcp_tool = MCPTool(mcp_servers_info=mcp_servers_info)
+        
+        tool_configs.append({
+            "name": "MCP",
+            "function": mcp_tool.execute,
+            "description": mcp_tool.get_tool_spec()["description"],
+            "parameters": mcp_tool.get_tool_spec()["parameters"],
+        })
+        
+        for server_name, server_info in mcp_servers_info.items():
+            if isinstance(server_info, MCPServerInfo):
+                if server_info.client:
+                    self._mcp_clients.append(server_info.client)
+                logger.info(
+                    f"[MCP] Loaded MCP server '{server_name}' "
+                    f"with {len(server_info.tools)} tools, "
+                    f"connected={server_info.is_connected}"
+                )
         
         return tool_configs
     

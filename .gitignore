@@ -216,25 +216,19 @@ npm_cache/
 备份文件/
 参考/
 代码审查/
-技术文档/
 开发计划/
 开发文档/
 软件著作权/
 提示词模板/
 执行要求/
-技术文档/
 专利/
 .idea/
-.idea
 .vscode/
 .trae/
+.vscode
 official_mcp_servers/
 test_plans/
 test_sessions/
 tests/
 test_screenshots/
 SoloEngine.zip
-
-
-# 数据目录
-data/packages/

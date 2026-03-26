@@ -18,13 +18,13 @@
  * 注意事项：
  * - 支持多种传输协议（stdio、sse、http）
  * - 需要正确配置服务器连接参数
- * - MCP服务独立部署于端口8992
+ * - MCP服务已集成到主后端端口8990
  * 
  * 状态: ✅ 完整实现
  */
 import axios, { AxiosResponse, AxiosError } from 'axios';
 
-const MCP_SERVICE_URL = 'http://localhost:8992/api/v1';
+const MCP_SERVICE_URL = 'http://localhost:8990/api/v1';
 const MCP_REQUEST_TIMEOUT = 30000;
 
 export interface ApiResponse<T = any> {
