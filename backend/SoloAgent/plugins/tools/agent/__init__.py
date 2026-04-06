@@ -17,8 +17,8 @@ Agent工具模块。
 工具类型：
     Task工具：
         - 启动专门的SubAgent处理特定任务
-        - 支持search和general_purpose_task两种类型
         - SubAgent拥有隔离的上下文
+        - 消息自动存储到数据库
     
     Skill工具：
         - 在主对话中执行技能
@@ -33,7 +33,7 @@ Agent工具模块。
 使用示例：
     from SoloAgent.tools.agent import Task, Skill, MCP
     from SoloAgent.tools.agent import TaskTool, SkillTool, MCPTool
-    from SoloAgent.tools.agent import task_tool_function, skill_tool_function, mcp_tool_function
+    from SoloAgent.tools.agent import get_task_tool_spec, get_skill_tool_spec, get_mcp_tool_spec
 
 状态: ✅ 模块初始化完成
 """
@@ -47,10 +47,6 @@ from .base import (
 
 from .task import (
     TaskTool,
-    SubAgentConfig,
-    SubAgentType,
-    ResponseLanguage,
-    task_tool_function,
     get_task_tool_spec,
 )
 
@@ -85,13 +81,9 @@ __all__ = [
     "AgentToolError",
     "ToolContext",
     "ToolPermission",
-    "SubAgentConfig",
-    "SubAgentType",
-    "ResponseLanguage",
     "SkillContext",
     "MCPServerInfo",
     "MCPConnectionConfig",
-    "task_tool_function",
     "skill_tool_function",
     "mcp_tool_function",
     "get_task_tool_spec",

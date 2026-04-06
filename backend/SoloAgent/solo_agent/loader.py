@@ -39,6 +39,8 @@ class ConfigLoader:
         base_url: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
+        frequency_penalty: float = 0.5,
+        presence_penalty: float = 0.5,
     ) -> Dict[str, Any]:
         """加载 LLM 配置
         
@@ -54,6 +56,8 @@ class ConfigLoader:
             "base_url": base_url,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "frequency_penalty": frequency_penalty,
+            "presence_penalty": presence_penalty,
         }
         
         if api_key:
@@ -83,14 +87,17 @@ class ConfigLoader:
             llm_config = query.first()
             
             if llm_config:
-                if not api_key:
+                if not config.get("api_key"):
                     config["api_key"] = llm_config.api_key
-                if not base_url:
+                if not config.get("base_url"):
                     config["base_url"] = llm_config.base_url
-                config["temperature"] = llm_config.temperature or 0.7
-                config["max_tokens"] = llm_config.max_tokens or 4096
-                
-                cls._llm_configs[cache_key] = config
+
+                cls._llm_configs[cache_key] = {
+                    "provider": provider,
+                    "model": model,
+                    "api_key": config.get("api_key"),
+                    "base_url": config.get("base_url"),
+                }
                 
         except Exception as e:
             logger.warning(f"Failed to load LLM config from database: {e}")

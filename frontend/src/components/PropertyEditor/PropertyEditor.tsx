@@ -24,8 +24,8 @@
  * - 配置数据存储在节点数据的 llm_config_id 字段
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Form, Input, Select, Button, Typography, Divider, message, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
-import { ReloadOutlined, ToolOutlined, FolderOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined, DatabaseOutlined } from '@ant-design/icons';
+import { Form, Input, InputNumber, Select, Button, Typography, Divider, message, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
+import { ReloadOutlined, ToolOutlined, FolderOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined, DatabaseOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useMCPStore } from '../../store/mcpStore';
@@ -35,7 +35,8 @@ import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import { mcpApi, MCPTool } from '../../services/mcpApi';
 import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
-import { toolsApi, ToolInfo } from '../../services/toolsApi';
+import { toolsApi, ToolInfo, AgentPreset } from '../../services/toolsApi';
+import { getPresets } from '../../stores/presetsStore';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
 
 const { TextArea } = Input;
@@ -198,7 +199,9 @@ const PropertyPanel: React.FC = () => {
   const saveTimeoutRef = useRef<number | null>(null);
   
   const [skillsPackages, setSkillsPackages] = useState<SkillsPackage[]>([]);
+  const [allSkillsPackages, setAllSkillsPackages] = useState<SkillsPackage[]>([]);
   const [mcpTools, setMcpTools] = useState<MCPTool[]>([]);
+  const [allMcpTools, setAllMcpTools] = useState<MCPTool[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [loadingTools, setLoadingTools] = useState(false);
   const [localTools, setLocalTools] = useState<ToolInfo[]>([]);
@@ -218,6 +221,7 @@ const PropertyPanel: React.FC = () => {
 
   useEffect(() => {
     if (selectedNode) {
+      const nodeModelConfig = selectedNode.data.model_config || {};
       form.setFieldsValue({
         name: selectedNode.data.name || '',
         desc: selectedNode.data.desc || '',
@@ -230,6 +234,10 @@ const PropertyPanel: React.FC = () => {
         mcp_tools: selectedNode.data.mcp_tools || [],
         tools: selectedNode.data.tools || [],
         memory: selectedNode.data.memory !== undefined ? selectedNode.data.memory : true,
+        temperature: nodeModelConfig.temperature ?? 0.7,
+        max_tokens: nodeModelConfig.max_tokens ?? 4096,
+        frequency_penalty: nodeModelConfig.frequency_penalty ?? 0.5,
+        presence_penalty: nodeModelConfig.presence_penalty ?? 0.5,
       });
       
       if (selectedNode.data.llm_config_id) {
@@ -266,16 +274,17 @@ const PropertyPanel: React.FC = () => {
           selectedLLMConfigRef.current = null;
         });
       } else if (selectedNode.data.model_config) {
+        const mc = selectedNode.data.model_config;
         setSelectedLLMConfig({
-          id: selectedNode.data.model_config.config_id || '',
-          name: selectedNode.data.model_config.config_name || '',
-          provider: selectedNode.data.model_config.provider,
-          model_name: selectedNode.data.model_config.model,
-          temperature: 0.7,
-          max_tokens: 2048,
+          id: mc.config_id || '',
+          name: mc.config_name || '',
+          provider: mc.provider,
+          model_name: mc.model,
+          temperature: mc.temperature ?? 0.7,
+          max_tokens: mc.max_tokens ?? 4096,
           top_p: 1.0,
-          frequency_penalty: 0,
-          presence_penalty: 0,
+          frequency_penalty: mc.frequency_penalty ?? 0.5,
+          presence_penalty: mc.presence_penalty ?? 0.5,
           timeout: 60,
           extra_params: {},
           is_default: false,
@@ -293,7 +302,9 @@ const PropertyPanel: React.FC = () => {
     try {
       const response = await skillsApi.getPackages();
       if (response.code === 200) {
-        setSkillsPackages(response.data || []);
+        const allPackages = response.data || [];
+        setAllSkillsPackages(allPackages);
+        setSkillsPackages(allPackages.filter(pkg => pkg.is_active));
       }
     } catch (error) {
       console.error('Failed to load skills packages:', error);
@@ -308,19 +319,27 @@ const PropertyPanel: React.FC = () => {
       const response = await mcpApi.getServers();
       if (response.code === 200 && response.data) {
         const allTools: MCPTool[] = [];
+        const enabledTools: MCPTool[] = [];
+        
         for (const server of response.data) {
+          const isEnabled = server.is_enabled ?? server.enabled;
           if (server.status === 'connected') {
             try {
               const toolsResponse = await mcpApi.getServerTools(server.id);
               if (toolsResponse.code === 200 && toolsResponse.data) {
-                allTools.push(...toolsResponse.data);
+                const serverTools = toolsResponse.data;
+                allTools.push(...serverTools);
+                if (isEnabled) {
+                  enabledTools.push(...serverTools);
+                }
               }
             } catch (e) {
               console.error(`Failed to get tools for server ${server.id}:`, e);
             }
           }
         }
-        setMcpTools(allTools);
+        setAllMcpTools(allTools);
+        setMcpTools(enabledTools);
       }
     } catch (error) {
       console.error('Failed to load MCP tools:', error);
@@ -333,8 +352,8 @@ const PropertyPanel: React.FC = () => {
     setLoadingLocalTools(true);
     try {
       const response = await toolsApi.getTools();
-      if (response.code === 200 && response.data) {
-        setLocalTools(response.data);
+      if (response.code === 200) {
+        setLocalTools(response.data || []);
       }
     } catch (error) {
       console.error('Failed to load local tools:', error);
@@ -370,6 +389,10 @@ const PropertyPanel: React.FC = () => {
           config_name: currentConfig.name,
           provider: currentConfig.provider,
           model: currentConfig.model_name,
+          temperature: values.temperature,
+          max_tokens: values.max_tokens,
+          frequency_penalty: values.frequency_penalty,
+          presence_penalty: values.presence_penalty,
         } : undefined,
         skills: values.skills || [],
         mcp_tools: values.mcp_tools || [],
@@ -389,6 +412,33 @@ const PropertyPanel: React.FC = () => {
     saveTimeoutRef.current = setTimeout(() => {
       handleSave();
     }, 500) as unknown as number;
+  };
+
+  const getPresetIcon = (iconName: string) => {
+    const iconMap: Record<string, React.ReactNode> = {
+      'TeamOutlined': <TeamOutlined />,
+      'UserOutlined': <UserOutlined />,
+      'ToolOutlined': <ToolOutlined />,
+      'SettingOutlined': <SettingOutlined />,
+    };
+    return iconMap[iconName] || <SettingOutlined />;
+  };
+
+  const handlePresetChange = (presetId: string) => {
+    const preset = getPresets().find(p => p.id === presetId);
+    if (preset) {
+      form.setFieldsValue({
+        agentType: preset.id,
+        tools: preset.tools,
+        skills: preset.skills,
+        mcp_tools: preset.mcp_tools,
+        system_prompt: preset.system_prompt,
+      });
+      updateNode(selectedNode.id, {
+        color: preset.color || '#3F51B5',
+      });
+      handleValuesChange();
+    }
   };
 
   useEffect(() => {
@@ -442,6 +492,16 @@ const PropertyPanel: React.FC = () => {
     setSelectedLLMConfig(config);
     selectedLLMConfigRef.current = config;
     form.setFieldsValue({ llm_config_id: configId });
+
+    if (config) {
+      form.setFieldsValue({
+        temperature: config.temperature ?? 0.7,
+        max_tokens: config.max_tokens ?? 4096,
+        frequency_penalty: config.frequency_penalty ?? 0.5,
+        presence_penalty: config.presence_penalty ?? 0.5,
+      });
+    }
+
     handleValuesChange();
   };
 
@@ -579,10 +639,28 @@ const PropertyPanel: React.FC = () => {
           rules={[{ required: true, message: '请选择 Agent 类型' }]}
           className="property-panel-form-item"
         >
-          <Select>
-            <Select.Option value="orchestrator">协调者</Select.Option>
-            <Select.Option value="planner">规划者</Select.Option>
-            <Select.Option value="executor">执行者</Select.Option>
+          <Select
+            placeholder="请选择 Agent 类型"
+            onChange={handlePresetChange}
+            optionLabelProp="label"
+          >
+            {getPresets().map(preset => (
+              <Select.Option 
+                key={preset.id} 
+                value={preset.id}
+                label={preset.name}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: preset.color || '#3F51B5' }}>
+                    {getPresetIcon(preset.icon)}
+                  </span>
+                  <span>{preset.name}</span>
+                  <span style={{ fontSize: 12, color: '#999', marginLeft: 'auto' }}>
+                    {preset.description}
+                  </span>
+                </div>
+              </Select.Option>
+            ))}
           </Select>
         </Form.Item>
 
@@ -638,7 +716,7 @@ const PropertyPanel: React.FC = () => {
                 {selectedLLMConfig.provider}
               </Tag>
               <Tag className="property-panel-tag property-panel-tag-model">
-                {selectedLLMConfig.model_name}
+                {selectedLLMConfig.name}
               </Tag>
               {selectedLLMConfig.is_default && (
                 <Tag className="property-panel-tag property-panel-tag-default">
@@ -646,10 +724,22 @@ const PropertyPanel: React.FC = () => {
                 </Tag>
               )}
             </div>
-            <div className="property-panel-meta">
-              <span>🌡️ 温度: {selectedLLMConfig.temperature}</span>
-              <span>📊 最大Token: {selectedLLMConfig.max_tokens}</span>
-            </div>
+
+            <Form.Item name="temperature" label="温度 (0-2)" style={{ marginBottom: 8 }}>
+              <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item name="max_tokens" label="最大Token" style={{ marginBottom: 8 }}>
+              <InputNumber min={1} max={128000} style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item name="frequency_penalty" label="频率惩罚 (-2 到 2)" style={{ marginBottom: 8 }}>
+              <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
+
+            <Form.Item name="presence_penalty" label="存在惩罚 (-2 到 2)" style={{ marginBottom: 8 }}>
+              <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
+            </Form.Item>
           </Card>
         )}
 
@@ -776,28 +866,54 @@ const PropertyPanel: React.FC = () => {
             </div>
           }
         >
-          <Select 
-            mode="multiple" 
+          <Select
+            mode="multiple"
             placeholder={loadingSkills ? "加载中..." : "请选择 Skills 包"}
             loading={loadingSkills}
             optionLabelProp="label"
           >
-            {skillsPackages.map(pkg => (
-              <Select.Option 
-                key={pkg.id} 
-                value={pkg.id}
-                label={pkg.name}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>{pkg.name}</span>
-                  {pkg.metadata?.description && (
-                    <span style={{ fontSize: 12, color: '#999' }}>
-                      {pkg.metadata.description.substring(0, 50)}...
-                    </span>
-                  )}
-                </div>
-              </Select.Option>
-            ))}
+            {(() => {
+              const selectedSkills = form.getFieldValue('skills') || [];
+              const enabledIds = new Set(skillsPackages.map(pkg => pkg.id));
+
+              return [
+                ...skillsPackages.map(pkg => (
+                  <Select.Option
+                    key={pkg.id}
+                    value={pkg.id}
+                    label={pkg.name}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span>{pkg.name}</span>
+                      {pkg.metadata?.description && (
+                        <span style={{ fontSize: 12, color: '#999' }}>
+                          {pkg.metadata.description.substring(0, 50)}...
+                        </span>
+                      )}
+                    </div>
+                  </Select.Option>
+                )),
+                ...allSkillsPackages
+                  .filter(pkg => !enabledIds.has(pkg.id) && selectedSkills.includes(pkg.id))
+                  .map(pkg => (
+                    <Select.Option
+                      key={pkg.id}
+                      value={pkg.id}
+                      label={pkg.name}
+                      disabled
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span>{pkg.name}</span>
+                        {pkg.metadata?.description && (
+                          <span style={{ fontSize: 12, color: '#999' }}>
+                            {pkg.metadata.description.substring(0, 50)}...
+                          </span>
+                        )}
+                      </div>
+                    </Select.Option>
+                  ))
+              ];
+            })()}
           </Select>
         </Form.Item>
 
@@ -876,33 +992,67 @@ const PropertyPanel: React.FC = () => {
             </div>
           }
         >
-          <Select 
-            mode="multiple" 
+          <Select
+            mode="multiple"
             placeholder={loadingTools ? "加载中..." : "请选择 MCP 工具"}
             loading={loadingTools}
             optionLabelProp="label"
           >
-            {mcpTools.map(tool => (
-              <Select.Option 
-                key={`${tool.server_id}:${tool.name}`} 
-                value={`${tool.server_id}:${tool.name}`}
-                label={tool.name}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>{tool.name}</span>
-                    <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
-                      {servers.find(s => s.id === tool.server_id)?.name || '未知服务器'}
-                    </Tag>
-                  </div>
-                  {tool.description && (
-                    <span style={{ fontSize: 12, color: '#999' }}>
-                      {tool.description.substring(0, 50)}...
-                    </span>
-                  )}
-                </div>
-              </Select.Option>
-            ))}
+            {(() => {
+              const selectedMcpTools = form.getFieldValue('mcp_tools') || [];
+              const enabledToolKeys = new Set(mcpTools.map(tool => `${tool.server_id}:${tool.name}`));
+
+              return [
+                ...mcpTools.map(tool => (
+                  <Select.Option
+                    key={`${tool.server_id}:${tool.name}`}
+                    value={`${tool.server_id}:${tool.name}`}
+                    label={tool.name}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span>{tool.name}</span>
+                        <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
+                          {servers.find(s => s.id === tool.server_id)?.name || '未知服务器'}
+                        </Tag>
+                      </div>
+                      {tool.description && (
+                        <span style={{ fontSize: 12, color: '#999' }}>
+                          {tool.description.substring(0, 50)}...
+                        </span>
+                      )}
+                    </div>
+                  </Select.Option>
+                )),
+                ...allMcpTools
+                  .filter(tool => {
+                    const toolKey = `${tool.server_id}:${tool.name}`;
+                    return !enabledToolKeys.has(toolKey) && selectedMcpTools.includes(toolKey);
+                  })
+                  .map(tool => (
+                    <Select.Option
+                      key={`${tool.server_id}:${tool.name}`}
+                      value={`${tool.server_id}:${tool.name}`}
+                      label={tool.name}
+                      disabled
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span>{tool.name}</span>
+                          <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
+                            {servers.find(s => s.id === tool.server_id)?.name || '未知服务器'}
+                          </Tag>
+                        </div>
+                        {tool.description && (
+                          <span style={{ fontSize: 12, color: '#999' }}>
+                            {tool.description.substring(0, 50)}...
+                          </span>
+                        )}
+                      </div>
+                    </Select.Option>
+                  ))
+              ];
+            })()}
           </Select>
         </Form.Item>
       </Form>

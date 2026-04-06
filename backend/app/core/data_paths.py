@@ -26,9 +26,20 @@ class DataPaths:
         """
         project_root = os.path.normpath(DataPaths.get_project_root())
         abs_path = os.path.normpath(absolute_path)
-        rel_path = os.path.relpath(abs_path, project_root)
+        data_root = os.path.normpath(DataPaths.get_data_root())
+
+        if abs_path.startswith(data_root):
+            rel_path = abs_path[len(project_root):]
+        else:
+            rel_path = os.path.relpath(abs_path, project_root)
+
         if not rel_path.startswith('\\'):
             rel_path = '\\' + rel_path
+
+        rel_path = rel_path.replace('..\\', '').replace('../', '')
+        while '\\\\' in rel_path:
+            rel_path = rel_path.replace('\\\\', '\\')
+
         return rel_path
 
     @staticmethod
@@ -80,6 +91,16 @@ class DataPaths:
     def get_system_mcp_servers_dir() -> str:
         """获取系统MCP Servers目录。"""
         return DataPaths.get_user_mcp_servers_dir("system")
+    
+    @staticmethod
+    def get_config_dir() -> str:
+        """获取配置目录。"""
+        return os.path.join(DataPaths.get_data_root(), "config")
+    
+    @staticmethod
+    def get_agent_presets_path() -> str:
+        """获取Agent预设配置文件路径。"""
+        return os.path.join(DataPaths.get_config_dir(), "agent_presets.json")
     
     @staticmethod
     def ensure_dir(path: str) -> None:

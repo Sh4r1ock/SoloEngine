@@ -87,7 +87,7 @@ SoloEngine 采用 SQLite 数据库实现完整的会话持久化：
 **会话管理**：
 
 - `AgenticFlowSessionModel`：会话元数据（状态、Token 使用量、执行时长）
-- `SessionMessageModel`：消息记录（按 agent\_id 分组、支持父消息关联）
+- `SessionMessageModel`：消息记录（按 agent_id 分组，支持 parent_agent_id 记录 SubAgent 层级关系）
 
 **记忆分发机制**：
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, message, Alert } from 'antd';
+import { Modal, Form, Input, message, Alert, Tag } from 'antd';
 import { skillsApi } from '../../services/skillsApi';
 import { useAuthStore } from '../../store/authStore';
 
@@ -34,15 +34,41 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
   const [form] = Form.useForm();
   const [creating, setCreating] = useState(false);
   const { user } = useAuthStore();
+  const [tags, setTags] = useState<string[]>([]);
+  const [inputTagValue, setInputTagValue] = useState('');
 
   useEffect(() => {
     if (visible) {
       form.resetFields();
+      setTags([]);
+      setInputTagValue('');
       if (user?.username) {
         form.setFieldsValue({ author: user.username });
       }
     }
   }, [visible, form, user]);
+
+  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInputTagValue(e.target.value);
+  };
+
+  const handleTagInputConfirm = () => {
+    if (inputTagValue && !tags.includes(inputTagValue)) {
+      setTags([...tags, inputTagValue]);
+    }
+    setInputTagValue('');
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleTagInputConfirm();
+    }
+  };
+
+  const handleTagRemove = (removedTag: string) => {
+    setTags(tags.filter(tag => tag !== removedTag));
+  };
 
   const handleCreate = async () => {
     try {
@@ -53,7 +79,7 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
         name: values.name,
         description: values.description || '',
         author: values.author || '',
-        tags: values.tags ? values.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t) : [],
+        tags: tags,
       };
 
       const response = await skillsApi.createPackage(request);
@@ -128,11 +154,74 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
           <Input placeholder="作者名称" />
         </Form.Item>
 
-        <Form.Item
-          label="标签"
-          name="tags"
-        >
-          <Input placeholder="用逗号分隔，例如: coding, assistant, productivity" />
+        <Form.Item label="标签">
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 4,
+              alignItems: 'center',
+              padding: '1px 11px',
+              border: '1px solid #d9d9d9',
+              borderRadius: 6,
+              minHeight: 30,
+              backgroundColor: '#fff',
+              fontSize: 14,
+              transition: 'all 0.2s',
+              cursor: 'text',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#4096ff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#d9d9d9';
+            }}
+            onClick={(e) => {
+              const input = e.currentTarget.querySelector('input');
+              if (input) {
+                input.focus();
+              }
+            }}
+          >
+            {tags.map((tag, index) => (
+              <Tag
+                key={tag}
+                closable
+                onClose={(e) => {
+                  e.stopPropagation();
+                  handleTagRemove(tag);
+                }}
+                color={index < 2 ? 'blue' : 'default'}
+                style={{
+                  margin: 0,
+                  padding: '0 7px',
+                  fontSize: 14,
+                  lineHeight: '20px',
+                  borderRadius: 4,
+                }}
+              >
+                {tag}
+              </Tag>
+            ))}
+            <Input
+              type="text"
+              style={{
+                width: tags.length === 0 ? 120 : 80,
+                border: 'none',
+                backgroundColor: 'transparent',
+                boxShadow: 'none',
+                padding: 0,
+                fontSize: 14,
+                lineHeight: '20px',
+              }}
+              placeholder={tags.length === 0 ? "按回车添加标签" : ""}
+              value={inputTagValue}
+              onChange={handleTagInputChange}
+              onBlur={handleTagInputConfirm}
+              onKeyDown={handleTagInputKeyDown}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </Form.Item>
       </Form>
     </Modal>

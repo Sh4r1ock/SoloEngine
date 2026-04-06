@@ -20,13 +20,23 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings
-from mcp_service.routes import router as mcp_router
+from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers
 import logging
 
 logger = logging.getLogger(__name__)
 
+
+
 app = FastAPI(title="SoloEngine API", version="1.0.0", description="Agentic Builder API")
+
+from fastapi.exceptions import RequestValidationError
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"[422 VALIDATION ERROR] path={request.url.path} errors={exc.errors()} body={exc.body}")
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 app.add_middleware(
     CORSMiddleware,
@@ -84,4 +94,4 @@ app.include_router(agentic_flows.router)
 app.include_router(agent_tools.router)
 app.include_router(run_project.router)
 app.include_router(settings.router)
-app.include_router(mcp_router)
+app.include_router(mcp_servers.router)

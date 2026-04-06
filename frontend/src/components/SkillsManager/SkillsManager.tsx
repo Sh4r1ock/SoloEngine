@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, Modal, message, Empty, Spin, Input } from 'antd';
+import { Typography, Modal, message, Empty, Spin, Input, Tag } from 'antd';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import SkillsPackageList from './SkillsPackageList';
@@ -24,6 +24,7 @@ const SkillsManager: React.FC = () => {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editTags, setEditTags] = useState<string[]>([]);
+  const [editInputTagValue, setEditInputTagValue] = useState('');
 
   const loadPackages = async () => {
     setLoading(true);
@@ -79,7 +80,30 @@ const SkillsManager: React.FC = () => {
     setEditName(pkg.name || '');
     setEditDescription(pkg.description || '');
     setEditTags(pkg.tags || []);
+    setEditInputTagValue('');
     setEditInfoModalVisible(true);
+  };
+
+  const handleEditTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditInputTagValue(e.target.value);
+  };
+
+  const handleEditTagInputConfirm = () => {
+    if (editInputTagValue && !editTags.includes(editInputTagValue)) {
+      setEditTags([...editTags, editInputTagValue]);
+    }
+    setEditInputTagValue('');
+  };
+
+  const handleEditTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleEditTagInputConfirm();
+    }
+  };
+
+  const handleEditTagRemove = (removedTag: string) => {
+    setEditTags(editTags.filter(tag => tag !== removedTag));
   };
 
   const handleSaveEditInfo = async () => {
@@ -124,7 +148,7 @@ const SkillsManager: React.FC = () => {
 
   const allTags = Array.from(new Set(
     packages.flatMap(pkg => [
-      ...(pkg.is_default ? ['system'] : []),
+      ...(pkg.is_system ? ['system'] : []),
       ...(pkg.tags || []),
     ])
   )).sort();
@@ -135,7 +159,7 @@ const SkillsManager: React.FC = () => {
     if (selectedTags.length > 0) {
       result = result.filter(pkg => {
         const pkgTags = [
-          ...(pkg.is_default ? ['system'] : []),
+          ...(pkg.is_system ? ['system'] : []),
           ...(pkg.tags || []),
         ];
         return selectedTags.some(tag => pkgTags.includes(tag));
@@ -287,11 +311,73 @@ const SkillsManager: React.FC = () => {
         </div>
         <div>
           <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>标签:</label>
-          <Input
-            value={editTags.join(', ')}
-            onChange={(e) => setEditTags(e.target.value.split(',').map(t => t.trim()).filter(t => t))}
-            placeholder="输入标签，用逗号分隔"
-          />
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 4,
+              alignItems: 'center',
+              padding: '1px 11px',
+              border: '1px solid #d9d9d9',
+              borderRadius: 6,
+              minHeight: 30,
+              backgroundColor: '#fff',
+              fontSize: 14,
+              transition: 'all 0.2s',
+              cursor: 'text',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#4096ff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#d9d9d9';
+            }}
+            onClick={(e) => {
+              const input = e.currentTarget.querySelector('input');
+              if (input) {
+                input.focus();
+              }
+            }}
+          >
+            {editTags.map((tag, index) => (
+              <Tag
+                key={tag}
+                closable
+                onClose={(e) => {
+                  e.stopPropagation();
+                  handleEditTagRemove(tag);
+                }}
+                color={index < 2 ? 'blue' : 'default'}
+                style={{
+                  margin: 0,
+                  padding: '0 7px',
+                  fontSize: 14,
+                  lineHeight: '20px',
+                  borderRadius: 4,
+                }}
+              >
+                {tag}
+              </Tag>
+            ))}
+            <Input
+              type="text"
+              style={{
+                width: editTags.length === 0 ? 120 : 80,
+                border: 'none',
+                backgroundColor: 'transparent',
+                boxShadow: 'none',
+                padding: 0,
+                fontSize: 14,
+                lineHeight: '20px',
+              }}
+              placeholder={editTags.length === 0 ? "按回车添加标签" : ""}
+              value={editInputTagValue}
+              onChange={handleEditTagInputChange}
+              onBlur={handleEditTagInputConfirm}
+              onKeyDown={handleEditTagInputKeyDown}
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       </Modal>
     </div>

@@ -1,6 +1,11 @@
 /**
  * @file hooks/useStreamingData.ts
- * @description 流式数据处理 Hook
+ * @description 流式数据处理 Hook - 方案2：引用方式实现流式输出接续
+ * 
+ * 核心设计：
+ * - pushScope：currentBlock 追加到 completedBlocks（显示），保存引用到堆栈
+ * - popScope：恢复 currentBlock 引用，继续增量更新
+ * - JavaScript 引用机制：堆栈中的引用和数组中的块是同一个对象
  */
 
 import { useRef, useCallback } from 'react';
@@ -9,290 +14,413 @@ import type { DataBlock, DataBlockType, ToolCall } from '../types';
 
 type ChunkType = 'reasoning_content' | 'content' | 'tool_calls' | null;
 
+interface StreamingState {
+  completedBlocks: DataBlock[];
+  currentBlock: DataBlock | null;
+  lastChunkType: ChunkType;
+}
+
+interface ScopeState {
+  currentBlock: DataBlock | null;
+  lastChunkType: ChunkType;
+  agentId: string;
+  pendingToolCalls: Map<string, ToolCall>;
+}
+
 export const useStreamingData = () => {
   const {
     streamingData,
     setStreamingData,
     clearStreamingData,
-    expandedReasoning,
-    expandedToolCalls,
-    streamingExpandedKeys,
-    setStreamingExpandedKeys,
-    setExpandedReasoning,
-    setExpandedToolCalls,
     currentMsgId,
   } = useRunPanelStore();
 
-  const lastChunkTypeRef = useRef<ChunkType>(null);
-  const streamingDataRef = useRef<DataBlock[]>([]);
-  const streamingToolCallIdsRef = useRef<Set<string>>(new Set());
-  const streamingExpandedKeysRef = useRef<Set<string>>(new Set());
+  const stateRef = useRef<StreamingState>({
+    completedBlocks: [],
+    currentBlock: null,
+    lastChunkType: null,
+  });
+  const scopeStackRef = useRef<ScopeState[]>([]);
+  const currentAgentIdRef = useRef<string | null>(null);
+  const rootAgentIdRef = useRef<string | null>(null);
+  const pendingToolCallsRef = useRef<Map<string, ToolCall>>(new Map());
   const currentMsgIdRef = useRef<string>('');
 
   const detectChunkType = (delta: any): ChunkType => {
-    if (delta.reasoning_content) {
-      return 'reasoning_content';
-    }
-    if (delta.tool_calls) {
-      return 'tool_calls';
-    }
-    if (delta.content) {
-      return 'content';
-    }
+    if (delta.reasoning_content) return 'reasoning_content';
+    if (delta.tool_calls) return 'tool_calls';
+    if (delta.content) return 'content';
     return null;
   };
 
-  const mergeStreamingData = useCallback((
-    prev: DataBlock[],
-    delta: any,
-    currentType: ChunkType,
-    prevType: ChunkType
-  ): DataBlock[] => {
-    const newData = [...prev];
-
-    if (prevType !== currentType) {
-      if (currentType === 'reasoning_content') {
-        newData.push({
-          type: 'reasoning_content',
-          reasoning_content: delta.reasoning_content,
-        });
-      } else if (currentType === 'tool_calls') {
-        const toolCalls = delta.tool_calls || [];
-        const lastBlockIdx = newData.length - 1;
-
-        if (lastBlockIdx >= 0 && newData[lastBlockIdx].type === 'tool_calls') {
-          const existingToolCalls = newData[lastBlockIdx].tool_calls || [];
-          const updatedToolCalls = [...existingToolCalls];
-
-          toolCalls.forEach((tc: ToolCall) => {
-            const existingIdx = updatedToolCalls.findIndex(
-              (existingTc) => existingTc.id === tc.id
-            );
-
-            if (existingIdx >= 0) {
-              const existingTc = updatedToolCalls[existingIdx];
-              updatedToolCalls[existingIdx] = {
-                ...existingTc,
-                ...tc,
-                function: {
-                  ...existingTc.function,
-                  ...tc.function,
-                  arguments: (existingTc.function?.arguments || '') + (tc.function?.arguments || ''),
-                },
-              };
-            } else {
-              updatedToolCalls.push(tc);
-            }
-          });
-
-          newData[lastBlockIdx] = {
-            ...newData[lastBlockIdx],
-            tool_calls: updatedToolCalls,
-          };
-        } else {
-          newData.push({
-            type: 'tool_calls',
-            tool_calls: toolCalls,
-          });
-        }
-      } else if (currentType === 'content') {
-        newData.push({
-          type: 'content',
-          content: delta.content,
-        });
-      }
-    } else if (prevType && prevType === currentType && newData.length > 0) {
-      const lastIdx = newData.length - 1;
-
-      if (currentType === 'reasoning_content') {
-        newData[lastIdx] = {
-          ...newData[lastIdx],
-          reasoning_content: (newData[lastIdx].reasoning_content || '') + delta.reasoning_content,
-        };
-      } else if (currentType === 'tool_calls') {
-        const toolCalls = delta.tool_calls || [];
-        const existingToolCalls = newData[lastIdx].tool_calls || [];
-        const updatedToolCalls = [...existingToolCalls];
-
-        toolCalls.forEach((tc: ToolCall) => {
-          const existingIdx = updatedToolCalls.findIndex(
-            (existingTc) => existingTc.id === tc.id
-          );
-
-          if (existingIdx >= 0) {
-            const existingTc = updatedToolCalls[existingIdx];
-            updatedToolCalls[existingIdx] = {
-              ...existingTc,
-              ...tc,
-              function: {
-                ...existingTc.function,
-                ...tc.function,
-                arguments: (existingTc.function?.arguments || '') + (tc.function?.arguments || ''),
-              },
-            };
-          } else {
-            updatedToolCalls.push(tc);
-          }
-        });
-
-        newData[lastIdx] = {
-          ...newData[lastIdx],
-          tool_calls: updatedToolCalls,
-        };
-      } else if (currentType === 'content') {
-        newData[lastIdx] = {
-          ...newData[lastIdx],
-          content: (newData[lastIdx].content || '') + delta.content,
-        };
+  const updateStreamingData = useCallback(() => {
+    const allBlocks = [...stateRef.current.completedBlocks];
+    if (stateRef.current.currentBlock) {
+      // 检查currentBlock是否已经在completedBlocks中（引用比较）
+      const isInCompleted = stateRef.current.completedBlocks.includes(
+        stateRef.current.currentBlock
+      );
+      if (!isInCompleted) {
+        allBlocks.push(stateRef.current.currentBlock);
       }
     }
+    setStreamingData(allBlocks);
+  }, [setStreamingData]);
 
-    streamingDataRef.current = newData;
-    return newData;
+  const finalizeCurrentBlock = useCallback(() => {
+    if (stateRef.current.currentBlock) {
+      // 检查currentBlock是否已经在completedBlocks中（引用比较）
+      const isInCompleted = stateRef.current.completedBlocks.includes(
+        stateRef.current.currentBlock
+      );
+      if (!isInCompleted) {
+        stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      }
+      // 无论如何，都将currentBlock设为null，确保后续逻辑正确创建新块
+      stateRef.current.currentBlock = null;
+    }
   }, []);
 
-  const collapsePreviousBlocks = useCallback(() => {
-    const keysToCollapse = Array.from(streamingExpandedKeysRef.current);
-    if (keysToCollapse.length > 0) {
-      setExpandedReasoning((prev) => {
-        const newSet = new Set(prev);
-        keysToCollapse.forEach((key) => newSet.delete(key));
-        return newSet;
-      });
-      setExpandedToolCalls((prev) => {
-        const newSet = new Set(prev);
-        keysToCollapse.forEach((key) => newSet.delete(key));
-        return newSet;
-      });
+  const mergeToolCall = (existing: ToolCall, incoming: ToolCall): ToolCall => {
+    const result: ToolCall = { ...existing, ...incoming };
+    if (incoming.function && existing.function) {
+      result.function = {
+        ...existing.function,
+        ...incoming.function,
+        arguments: (existing.function.arguments || '') + (incoming.function.arguments || ''),
+      };
     }
-    setStreamingExpandedKeys(new Set());
-    streamingExpandedKeysRef.current = new Set();
-  }, [setExpandedReasoning, setExpandedToolCalls, setStreamingExpandedKeys]);
+    return result;
+  };
 
-  const expandCurrentBlock = useCallback((blockIdx: number, block: DataBlock) => {
-    const msgId = currentMsgIdRef.current;
-    if (block.type === 'reasoning_content') {
-      const key = `${msgId}-reasoning-${blockIdx}`;
-      setStreamingExpandedKeys((prev) => {
-        const newSet = new Set(prev).add(key);
-        streamingExpandedKeysRef.current = newSet;
-        return newSet;
-      });
-      setExpandedReasoning((prev) => new Set(prev).add(key));
-    } else if (block.type === 'tool_calls') {
-      block.tool_calls?.forEach((tc, tcIdx) => {
-        const key = `${msgId}-${blockIdx}-${tcIdx}`;
-        setStreamingExpandedKeys((prev) => {
-          const newSet = new Set(prev).add(key);
-          streamingExpandedKeysRef.current = newSet;
-          return newSet;
-        });
-        setExpandedToolCalls((prev) => new Set(prev).add(key));
-      });
+  /**
+   * 在completedBlocks中查找指定toolId的tool_call所在的块
+   * 用于堆栈恢复后，找到之前创建的tool_calls块并更新
+   */
+  const findToolCallBlockInCompleted = useCallback((toolId: string): { block: DataBlock | null, blockIndex: number, toolIndex: number } => {
+    for (let i = 0; i < stateRef.current.completedBlocks.length; i++) {
+      const block = stateRef.current.completedBlocks[i];
+      if (block.type === 'tool_calls' && block.tool_calls) {
+        const toolIndex = block.tool_calls.findIndex((tc) => tc.id === toolId);
+        if (toolIndex >= 0) {
+          return { block, blockIndex: i, toolIndex };
+        }
+      }
     }
-  }, [setStreamingExpandedKeys, setExpandedReasoning, setExpandedToolCalls]);
+    return { block: null, blockIndex: -1, toolIndex: -1 };
+  }, []);
 
-  const processStreamChunk = useCallback((delta: any) => {
-    const currentType = detectChunkType(delta);
-    const prevType = lastChunkTypeRef.current;
-    const chunkTypeChanged = prevType && prevType !== currentType;
+  const addOrUpdateToolCallInCurrentBlock = useCallback((tc: ToolCall, agentId?: string, agentName?: string, agentLevel?: number) => {
+    const toolId = tc.id;
 
-    if (currentType) {
-      if (chunkTypeChanged) {
-        collapsePreviousBlocks();
+    if (stateRef.current.currentBlock?.type === 'tool_calls') {
+      const existingIdx = stateRef.current.currentBlock.tool_calls?.findIndex(
+        (existing) => existing.id === toolId
+      );
+
+      if (existingIdx !== undefined && existingIdx >= 0) {
+        stateRef.current.currentBlock.tool_calls![existingIdx] = tc;
+      } else {
+        stateRef.current.currentBlock.tool_calls = [
+          ...(stateRef.current.currentBlock.tool_calls || []),
+          tc,
+        ];
+      }
+    } else {
+      // 当前块不是tool_calls类型，尝试在completedBlocks中查找
+      // 这可能发生在堆栈恢复后，currentBlock被设置为其他类型的块
+      const { block: existingBlock, toolIndex } = findToolCallBlockInCompleted(toolId);
+
+      if (existingBlock && existingBlock.type === 'tool_calls') {
+        // 在completedBlocks中找到对应的块，更新它
+        existingBlock.tool_calls![toolIndex] = tc;
+        // 将currentBlock设置为这个块，以便后续更新
+        stateRef.current.currentBlock = existingBlock;
+      } else {
+        // 没有找到对应的块，创建新块
+        if (stateRef.current.currentBlock) {
+          stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+        }
+        stateRef.current.currentBlock = {
+          type: 'tool_calls',
+          tool_calls: [tc],
+          agent_id: agentId,
+          agent_name: agentName,
+          agent_level: agentLevel,
+        };
+      }
+    }
+  }, [findToolCallBlockInCompleted]);
+
+  const processToolCalls = useCallback((toolCalls: ToolCall[], agentId?: string, agentName?: string, agentLevel?: number) => {
+    for (const tc of toolCalls) {
+      const toolId = tc.id;
+      const hasResult = 'result' in tc || 'error' in tc;
+
+      if (toolId && pendingToolCallsRef.current.has(toolId)) {
+        const existingTc = pendingToolCallsRef.current.get(toolId)!;
+        const mergedTc = mergeToolCall(existingTc, tc);
+        pendingToolCallsRef.current.set(toolId, mergedTc);
+        addOrUpdateToolCallInCurrentBlock(mergedTc, agentId, agentName, agentLevel);
+
+        if (hasResult) {
+          pendingToolCallsRef.current.delete(toolId);
+        }
+      } else if (toolId && !hasResult) {
+        pendingToolCallsRef.current.set(toolId, { ...tc });
+        addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel);
+      } else if (toolId) {
+        // 带有result但不在pending中，可能是堆栈恢复后的情况
+        // 首先尝试在completedBlocks中查找
+        const { block: existingBlock, toolIndex } = findToolCallBlockInCompleted(toolId);
+
+        if (existingBlock && existingBlock.type === 'tool_calls') {
+          // 找到对应的块，更新tool_call
+          const existingTc = existingBlock.tool_calls![toolIndex];
+          const mergedTc = mergeToolCall(existingTc, tc);
+          existingBlock.tool_calls![toolIndex] = mergedTc;
+          // 设置currentBlock为这个块
+          stateRef.current.currentBlock = existingBlock;
+        } else {
+          // 没有找到，创建新的
+          pendingToolCallsRef.current.set(toolId, { ...tc });
+          addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel);
+        }
+        pendingToolCallsRef.current.delete(toolId);
+      }
+    }
+  }, [addOrUpdateToolCallInCurrentBlock, findToolCallBlockInCompleted]);
+
+  const processContentChunk = useCallback((delta: any, chunkType: 'reasoning_content' | 'content', agentId?: string, agentName?: string, agentLevel?: number) => {
+    const content = delta[chunkType] || '';
+
+    if (stateRef.current.currentBlock?.type === chunkType) {
+      stateRef.current.currentBlock[chunkType] =
+        (stateRef.current.currentBlock[chunkType] || '') + content;
+    } else {
+      if (stateRef.current.currentBlock) {
+        stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      }
+      stateRef.current.currentBlock = {
+        type: chunkType,
+        [chunkType]: content,
+        agent_id: agentId,
+        agent_name: agentName,
+        agent_level: agentLevel,
+      };
+    }
+  }, []);
+
+
+
+  const pushScope = useCallback((newAgentId: string, newAgentName: string) => {
+    // 1. 折叠 MainAgent 正在增量的块（仅当用户未手动操作时）
+    if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+      stateRef.current.currentBlock._isExpanding = false;
+    }
+
+    // 2. 如果有 currentBlock，追加到 completedBlocks
+    if (stateRef.current.currentBlock) {
+      stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+    }
+
+    // 3. 保存引用到堆栈
+    scopeStackRef.current.push({
+      currentBlock: stateRef.current.currentBlock,
+      lastChunkType: stateRef.current.lastChunkType,
+      agentId: currentAgentIdRef.current || '',
+      pendingToolCalls: new Map(pendingToolCallsRef.current),
+    });
+
+    // 4. 清空 currentBlock 和 lastChunkType
+    stateRef.current.currentBlock = null;
+    stateRef.current.lastChunkType = null;
+    pendingToolCallsRef.current = new Map();
+    currentAgentIdRef.current = newAgentId;
+
+    // 5. 更新 UI
+    updateStreamingData();
+  }, [updateStreamingData]);
+
+  const popScope = useCallback(() => {
+    // 1. SubAgent 的 currentBlock 追加到 completedBlocks（并折叠）
+    if (stateRef.current.currentBlock) {
+      if (!stateRef.current.currentBlock._userToggled) {
+        stateRef.current.currentBlock._isExpanding = false;
+      }
+      stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+    }
+
+    // 2. 从堆栈恢复
+    if (scopeStackRef.current.length > 0) {
+      const parentState = scopeStackRef.current.pop()!;
+
+      // 3. 恢复 currentBlock 引用（指向 completedBlocks 中的同一个对象）
+      stateRef.current.currentBlock = parentState.currentBlock;
+      stateRef.current.lastChunkType = parentState.lastChunkType;
+      pendingToolCallsRef.current = new Map(parentState.pendingToolCalls);
+      currentAgentIdRef.current = parentState.agentId;
+
+      // 4. 恢复 MainAgent 的块为展开状态（仅当用户未手动操作时）
+      if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+        stateRef.current.currentBlock._isExpanding = true;
       }
 
-      setStreamingData((prev) => mergeStreamingData(prev, delta, currentType, prevType));
-
-      setTimeout(() => {
-        const currentData = streamingDataRef.current;
-        if (currentData.length === 0) return;
-
-        const lastBlockIdx = currentData.length - 1;
-        const lastBlock = currentData[lastBlockIdx];
-        expandCurrentBlock(lastBlockIdx, lastBlock);
-      }, 0);
-
-      lastChunkTypeRef.current = currentType;
+      // 5. 更新 UI（MainAgent + SubAgent 数据都显示）
+      updateStreamingData();
     }
-  }, [mergeStreamingData, collapsePreviousBlocks, expandCurrentBlock, setStreamingData]);
+  }, [updateStreamingData]);
 
-  const processLegacyStream = useCallback((content: string, contentType: string) => {
+  const handleAgentSwitch = useCallback((newAgentId: string, newAgentName: string) => {
+    if (!rootAgentIdRef.current) {
+      rootAgentIdRef.current = newAgentId;
+      currentAgentIdRef.current = newAgentId;
+      return;
+    }
+
+    if (newAgentId === rootAgentIdRef.current) {
+      while (scopeStackRef.current.length > 0) {
+        popScope();
+      }
+    } else if (newAgentId !== currentAgentIdRef.current) {
+      pushScope(newAgentId, newAgentName);
+    }
+  }, [pushScope, popScope]);
+
+  // 使用 useRef 存储所有回调函数，避免依赖链问题
+  const callbacksRef = useRef({
+    updateStreamingData,
+    finalizeCurrentBlock,
+    processContentChunk,
+    processToolCalls,
+    handleAgentSwitch,
+  });
+
+  // 更新 ref
+  callbacksRef.current = {
+    updateStreamingData,
+    finalizeCurrentBlock,
+    processContentChunk,
+    processToolCalls,
+    handleAgentSwitch,
+  };
+
+  // 使用 useRef 定义 processStreamChunk，避免依赖链问题
+  const processStreamChunkRef = useRef((delta: any, agentId?: string, agentName?: string) => {
+    const callbacks = callbacksRef.current;
+
+    if (agentId) {
+      callbacks.handleAgentSwitch(agentId, agentName || agentId);
+    }
+
+    // 计算当前 agent 的 level（堆栈深度）
+    const agentLevel = scopeStackRef.current.length;
+
+    const currentType = detectChunkType(delta);
+    const prevType = stateRef.current.lastChunkType;
+    const chunkTypeChanged = prevType && prevType !== currentType;
+
+    if (!currentType) return;
+
+    if (chunkTypeChanged) {
+      // 类型变化：折叠之前的块（仅当用户未手动操作）
+      if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+        stateRef.current.currentBlock._isExpanding = false;
+      }
+      callbacks.finalizeCurrentBlock();
+    }
+
+    if (currentType === 'tool_calls') {
+      callbacks.processToolCalls(delta.tool_calls || [], agentId, agentName, agentLevel);
+    } else {
+      callbacks.processContentChunk(delta, currentType, agentId, agentName, agentLevel);
+    }
+
+    stateRef.current.lastChunkType = currentType;
+
+    // 设置当前块为展开状态（仅当用户未手动操作）
+    if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+      stateRef.current.currentBlock._isExpanding = true;
+    }
+
+    // 更新 UI
+    callbacks.updateStreamingData();
+  });
+
+  // 返回稳定的函数引用
+  const processStreamChunk = useCallback((delta: any, agentId?: string, agentName?: string) => {
+    processStreamChunkRef.current(delta, agentId, agentName);
+  }, []);
+
+  // 使用 useRef 定义 processLegacyStream，避免依赖链问题
+  const processLegacyStreamRef = useRef((content: string, contentType: string) => {
+    const callbacks = callbacksRef.current;
+
     const legacyType = contentType === 'thinking' ? 'reasoning_content' : 'content';
-    const prevType = lastChunkTypeRef.current;
+    const prevType = stateRef.current.lastChunkType;
     const chunkTypeChanged = prevType && prevType !== legacyType;
 
     if (chunkTypeChanged) {
-      collapsePreviousBlocks();
+      // 类型变化：折叠之前的块（仅当用户未手动操作）
+      if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+        stateRef.current.currentBlock._isExpanding = false;
+      }
+      callbacks.finalizeCurrentBlock();
     }
 
-    setStreamingData((prev) => {
-      const newData = [...prev];
+    callbacks.processContentChunk({ [legacyType]: content }, legacyType);
+    stateRef.current.lastChunkType = legacyType;
 
-      if (prevType !== legacyType) {
-        if (legacyType === 'reasoning_content') {
-          newData.push({
-            type: 'reasoning_content',
-            reasoning_content: content,
-          });
-        } else {
-          newData.push({
-            type: 'content',
-            content,
-          });
-        }
-      } else if (prevType && prevType === legacyType && newData.length > 0) {
-        const lastIdx = newData.length - 1;
-        if (legacyType === 'reasoning_content') {
-          newData[lastIdx] = {
-            ...newData[lastIdx],
-            reasoning_content: (newData[lastIdx].reasoning_content || '') + content,
-          };
-        } else {
-          newData[lastIdx] = {
-            ...newData[lastIdx],
-            content: (newData[lastIdx].content || '') + content,
-          };
-        }
-      }
+    // 设置当前块为展开状态（仅当用户未手动操作）
+    if (stateRef.current.currentBlock && !stateRef.current.currentBlock._userToggled) {
+      stateRef.current.currentBlock._isExpanding = true;
+    }
 
-      streamingDataRef.current = newData;
-      return newData;
-    });
+    callbacks.updateStreamingData();
+  });
 
-    setTimeout(() => {
-      const currentData = streamingDataRef.current;
-      if (currentData.length === 0) return;
-
-      const lastBlockIdx = currentData.length - 1;
-      const lastBlock = currentData[lastBlockIdx];
-      expandCurrentBlock(lastBlockIdx, lastBlock);
-    }, 0);
-
-    lastChunkTypeRef.current = legacyType;
-  }, [collapsePreviousBlocks, expandCurrentBlock, setStreamingData]);
+  // 返回稳定的函数引用
+  const processLegacyStream = useCallback((content: string, contentType: string) => {
+    processLegacyStreamRef.current(content, contentType);
+  }, []);
 
   const finalizeStream = useCallback((): DataBlock[] => {
-    const finalData = streamingDataRef.current.length > 0 
-      ? streamingDataRef.current 
-      : streamingData;
+    while (scopeStackRef.current.length > 0) {
+      popScope();
+    }
+
+    if (stateRef.current.currentBlock) {
+      stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+    }
+
+    const finalData = [...stateRef.current.completedBlocks];
+
     clearStreamingData();
-    lastChunkTypeRef.current = null;
-    streamingDataRef.current = [];
-    streamingToolCallIdsRef.current.clear();
-    setStreamingExpandedKeys(new Set());
-    streamingExpandedKeysRef.current = new Set();
-    return finalData;
-  }, [streamingData, clearStreamingData, setStreamingExpandedKeys]);
+    stateRef.current = {
+      completedBlocks: [],
+      currentBlock: null,
+      lastChunkType: null,
+    };
+    pendingToolCallsRef.current = new Map();
+    scopeStackRef.current = [];
+    currentAgentIdRef.current = null;
+    rootAgentIdRef.current = null;
+
+    return finalData.length > 0 ? finalData : streamingData;
+  }, [streamingData, clearStreamingData, popScope]);
 
   const resetStream = useCallback(() => {
     clearStreamingData();
-    lastChunkTypeRef.current = null;
-    streamingDataRef.current = [];
-    streamingToolCallIdsRef.current.clear();
-    setStreamingExpandedKeys(new Set());
-    streamingExpandedKeysRef.current = new Set();
-  }, [clearStreamingData, setStreamingExpandedKeys]);
+    stateRef.current = {
+      completedBlocks: [],
+      currentBlock: null,
+      lastChunkType: null,
+    };
+    pendingToolCallsRef.current = new Map();
+    scopeStackRef.current = [];
+    currentAgentIdRef.current = null;
+    rootAgentIdRef.current = null;
+  }, [clearStreamingData]);
 
   const setCurrentMsgIdRef = useCallback((msgId: string) => {
     currentMsgIdRef.current = msgId;
@@ -300,12 +428,12 @@ export const useStreamingData = () => {
 
   return {
     streamingData,
-    streamingDataRef,
+    streamingDataRef: { current: streamingData },
     processStreamChunk,
     processLegacyStream,
     finalizeStream,
     resetStream,
-    lastChunkType: lastChunkTypeRef.current,
+    lastChunkType: stateRef.current.lastChunkType,
     currentMsgIdRef,
     setCurrentMsgIdRef,
   };

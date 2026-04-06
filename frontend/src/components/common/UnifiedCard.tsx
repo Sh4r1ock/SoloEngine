@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Popconfirm, Tooltip } from 'antd';
+import { Popconfirm, Tooltip, Switch } from 'antd';
+import { CheckCircleOutlined } from '@ant-design/icons';
 import { formatTime as formatTimezone } from '../../utils/timezone';
 import IconSelector from './IconSelector';
 
@@ -13,7 +14,7 @@ export interface CardItemProps {
   statusText?: string;
   isTemplate?: boolean;
   isActive?: boolean;
-  isDefault?: boolean;
+  isSystem?: boolean;
   meta1?: any;
   meta2?: any;
   updatedAt?: string;
@@ -45,7 +46,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
   statusText,
   isTemplate,
   isActive,
-  isDefault,
+  isSystem,
   meta1,
   meta2,
   updatedAt,
@@ -62,7 +63,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
   deleteConfirmText = '确定要删除此项吗？',
   deleteWarning,
 }) => {
-  const [switchChecked, setSwitchChecked] = useState(isActive || false);
+  const systemTag = isSystem;
   const [nameTruncated, setNameTruncated] = useState(false);
   const [descTruncated, setDescTruncated] = useState(false);
   const nameRef = useRef<HTMLSpanElement>(null);
@@ -81,13 +82,6 @@ const UnifiedCard: React.FC<CardItemProps> = ({
     window.addEventListener('resize', checkTruncation);
     return () => window.removeEventListener('resize', checkTruncation);
   }, [name, description]);
-
-  function handleSwitchChange(e: React.MouseEvent) {
-    e.stopPropagation();
-    const newChecked = !switchChecked;
-    setSwitchChecked(newChecked);
-    onSwitchChange?.(newChecked);
-  }
 
   const isMCPConnected = status === 'connected';
 
@@ -188,43 +182,16 @@ const UnifiedCard: React.FC<CardItemProps> = ({
           </div>
 
           {showSwitch && (
-            <label className="toggle-switch tooltip" onClick={handleSwitchChange} style={{
-              position: 'relative',
-              width: '44px',
-              height: '24px',
-              flexShrink: 0,
-            }}>
-              <Tooltip title={switchChecked ? '已开启' : '已关闭'}>
-                <div>
-                  <input type="checkbox" checked={switchChecked} readOnly style={{ opacity: 0, width: 0, height: 0 }} />
-                  <span className="toggle-slider" style={{
-                    position: 'absolute',
-                    cursor: 'pointer',
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: switchChecked ? 'var(--primary-100)' : 'var(--bg-300)',
-                    transition: '0.3s',
-                    borderRadius: '24px',
-                  }}>
-                    <span style={{
-                      position: 'absolute',
-                      content: '',
-                      height: '18px',
-                      width: '18px',
-                      left: '3px',
-                      bottom: '3px',
-                      backgroundColor: 'white',
-                      transition: '0.3s',
-                      borderRadius: '50%',
-                      boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
-                      transform: switchChecked ? 'translateX(20px)' : 'translateX(0)',
-                    }} />
-                  </span>
-                </div>
-              </Tooltip>
-            </label>
+            <Tooltip title={isActive ? '已开启' : '已关闭'}>
+              <Switch
+                size="small"
+                checked={isActive || false}
+                onChange={onSwitchChange}
+                onClick={(checked, e) => e?.stopPropagation?.()}
+                checkedChildren={<CheckCircleOutlined />}
+                style={{ flexShrink: 0 }}
+              />
+            </Tooltip>
           )}
         </div>
 
@@ -272,7 +239,7 @@ const UnifiedCard: React.FC<CardItemProps> = ({
           minHeight: '18px',
           flexShrink: 0,
         }}>
-          {[...(isDefault ? ['system'] : []), ...tags.filter(t => t !== 'system')].slice(0, 2).map((tag, index) => (
+          {[...(systemTag ? ['system'] : []), ...tags.filter(t => t !== 'system')].slice(0, 2).map((tag, index) => (
             <span
               key={index}
               className={`card-tag ${tag === 'system' ? 'system-tag' : ''}`}

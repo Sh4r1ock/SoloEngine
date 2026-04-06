@@ -193,6 +193,44 @@ async def list_configs(
     }
 
 
+@router.get("/configs/active")
+async def list_active_configs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """获取用户的活跃LLM配置（仅is_active=True，用于画布节点编辑面板）。"""
+    user_id = current_user.id
+    configs = db_manager.get_active_llm_configs(db, user_id)
+
+    return {
+        "code": 200,
+        "message": "success",
+        "data": [
+            {
+                "id": c.id,
+                "user_id": c.user_id,
+                "name": c.name,
+                "provider": c.provider,
+                "model_name": c.model_name,
+                "base_url": c.base_url,
+                "temperature": c.temperature,
+                "max_tokens": c.max_tokens,
+                "top_p": c.top_p,
+                "frequency_penalty": c.frequency_penalty,
+                "presence_penalty": c.presence_penalty,
+                "timeout": c.timeout,
+                "extra_params": c.extra_params or {},
+                "is_default": c.is_default,
+                "is_active": c.is_active,
+                "version": c.version,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+            }
+            for c in configs
+        ],
+    }
+
+
 @router.get("/configs/default")
 async def get_default_config(
     db: Session = Depends(get_db),
