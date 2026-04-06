@@ -111,6 +111,8 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatTimeoutRef = useRef<ReturnType<typeof setInterval> | null>(null);  // 心跳超时检测定时器
+  const lastPongTimeRef = useRef<number>(Date.now());  // 最后一次收到pong的时间
   const connectionKeyRef = useRef<string>('');
   const messageQueueRef = useRef<Array<{
     type: string;
@@ -142,12 +144,37 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
         wsRef.current.send(JSON.stringify({ type: 'ping' }));
       }
     }, 15000);
+    
+    // 启动心跳超时检测（每10秒检查一次，如果45秒内没有收到pong则认为连接断开）
+    if (heartbeatTimeoutRef.current) {
+      clearInterval(heartbeatTimeoutRef.current);
+    }
+    lastPongTimeRef.current = Date.now();
+    heartbeatTimeoutRef.current = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        const timeSinceLastPong = Date.now() - lastPongTimeRef.current;
+        const HEARTBEAT_TIMEOUT = 45000;  // 45秒超时（3倍心跳间隔）
+        
+        if (timeSinceLastPong > HEARTBEAT_TIMEOUT) {
+          console.warn(`[WebSocket] Heartbeat timeout! Last pong was ${Math.round(timeSinceLastPong/1000)}s ago, reconnecting...`);
+          // 关闭当前连接，触发重连机制
+          if (wsRef.current) {
+            wsRef.current.close(4000, 'Heartbeat timeout');
+            wsRef.current = null;
+          }
+        }
+      }
+    }, 10000);  // 每10秒检查一次
   }, []);
 
   const stopHeartbeat = useCallback(() => {
     if (heartbeatIntervalRef.current) {
       clearInterval(heartbeatIntervalRef.current);
       heartbeatIntervalRef.current = null;
+    }
+    if (heartbeatTimeoutRef.current) {  // 停止心跳超时检测
+      clearInterval(heartbeatTimeoutRef.current);
+      heartbeatTimeoutRef.current = null;
     }
   }, []);
 
@@ -241,6 +268,7 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
           const message: WebSocketMessage = JSON.parse(event.data);
 
           if (message.type === 'pong') {
+            lastPongTimeRef.current = Date.now();  // 更新最后收到pong的时间
             return;
           }
 
@@ -248,6 +276,8 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
             const streamEvent: ExecutionEvent = {
               event_type: 'stream',
               delta: (message as any).delta,
+              agent_id: (message as any).agent_id,
+              agent_name: (message as any).agent_name,
               timestamp: (message as any).timestamp || new Date().toISOString(),
             };
             onEventRef.current?.(streamEvent);

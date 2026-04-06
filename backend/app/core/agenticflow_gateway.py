@@ -179,7 +179,12 @@ class AgenticFlowGateway:
         try:
             body = await request.json()
             input_message = body.get("input_message", "")
-            user_id = body.get("user_id", "default_user")
+            user_id = body.get("user_id")
+            if not user_id:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "user_id is required"}
+                )
             session_id = body.get("session_id")
             run_project_id = body.get("run_project_id")
             context = body.get("context", {})
@@ -253,7 +258,10 @@ class AgenticFlowGateway:
             try:
                 body = await request.json()
                 input_message = body.get("input_message", "")
-                user_id = body.get("user_id", "default_user")
+                user_id = body.get("user_id")
+                if not user_id:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'user_id is required'})}\n\n"
+                    return
                 session_id = body.get("session_id")
                 run_project_id = body.get("run_project_id")
                 context = body.get("context", {})

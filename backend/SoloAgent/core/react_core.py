@@ -284,9 +284,10 @@ class ToolCallEventManager:
                 }]
             }
         elif event_type == ToolCallEventType.TOOL_CALL_RESULT:
+            import copy
             result_data = {
                 "id": tool_call_id,
-                "result": event["result"]
+                "result": copy.deepcopy(event["result"])
             }
             if event.get("error"):
                 result_data["error"] = event["error"]
@@ -717,7 +718,7 @@ class ReActCore:
                     logger.info(f"[_reasoning] Chunk #{chunk_count} finish_reason={chunk.finish_reason}")
                     collected_finish_reason = chunk.finish_reason
                 
-                # 收集内容块 - 区分增量块和完整块
+                
                 if hasattr(chunk, 'content') and chunk.content:
                     for block in chunk.content:
                         # 支持 dict 和 dataclass/TypedDict 对象
@@ -814,7 +815,15 @@ class ReActCore:
                                     logger.info(f"[ReActCore] TOOL_CALL_ARGS skipped: delta_args is empty or None")
                             # 不收集到 collected_content，由 ToolCallEventManager 管理
                         else:
-                            collected_content.append(block)
+                            # 与 ChunkCollector 完全一致：只收集增量 chunks，跳过最终组装的 chunk
+                            # 最终 chunk（带 original_model_message metadata）包含完整的 text 和 thinking，
+                            # 与增量 chunks 完全重复，不应收集
+                            is_final_assembled = hasattr(chunk, 'metadata') and chunk.metadata and 'original_model_message' in chunk.metadata
+                            
+                            if not is_final_assembled:
+                                collected_content.append(block)
+                            else:
+                                logger.debug(f"[ReActCore] Skipped block from final assembled chunk (type={block_type})")
                 
                 # 收集 metadata 和 usage
                 if hasattr(chunk, 'metadata') and chunk.metadata:
@@ -959,10 +968,9 @@ class ReActCore:
                     result = await self.tool_executor.execute(tool_call)
                     result_content = result.get("content", str(result)) if isinstance(result, dict) else str(result)
                     
-                    # 使用 ToolCallEventManager 发送 TOOL_CALL_RESULT
                     self._tool_call_event_manager.on_tool_call_result(
                         tool_call_id=tool_call.get("id"),
-                        result=result_content
+                        result=result
                     )
                     
                     tool_result_block = {
@@ -982,8 +990,7 @@ class ReActCore:
                     self._last_tool_results.append({
                         "name": tool_call.get("name"),
                         "args": tool_call.get("arguments", {}),
-                        "result": result_content,
-                        "full_result": result,
+                        "result": result,
                     })
                     logger.info(f"[_acting] Tool {tool_call.get('name')} executed successfully, result length: {len(str(result_content))}")
                 except Exception as e:
@@ -1259,10 +1266,14 @@ class ReActCore:
         """
         reasoning_text = self._extract_text(response)
         
-        # 如果有累积的文本，优先使用
         if self._accumulated_text:
-            final_text = self._accumulated_text + reasoning_text
-            self._accumulated_text = ""  # 重置累积文本
+            if reasoning_text.startswith(self._accumulated_text):
+                final_text = reasoning_text
+                logger.info(f"[_generate_final_response] reasoning_text already contains accumulated_text, using reasoning_text directly (len={len(reasoning_text)})")
+            else:
+                final_text = self._accumulated_text + reasoning_text
+                logger.info(f"[_generate_final_response] concatenating accumulated_text (len={len(self._accumulated_text)}) + reasoning_text (len={len(reasoning_text)})")
+            self._accumulated_text = ""
             if len(final_text) > 500:
                 return final_text[:500] + "..."
             return final_text

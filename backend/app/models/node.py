@@ -3,7 +3,7 @@ from typing import Literal, Dict, Any
 import json
 
 class AgentNode(ABC):
-    def __init__(self, id: str, name: str, node_type: Literal["orchestrator", "planner", "executor"], config: Dict[str, Any]):
+    def __init__(self, id: str, name: str, node_type: Literal["orchestrator", "planner", "executor", "custom"], config: Dict[str, Any]):
         self.id = id
         self.name = name
         self.node_type = node_type

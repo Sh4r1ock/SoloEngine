@@ -371,9 +371,28 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         logger.info(f"[OpenAIChatFormatter] Sending {len(formatted)} messages to API:")
         for i, msg in enumerate(formatted):
             logger.info(f"  Message {i}: role={msg.get('role')}, has_tool_calls={'tool_calls' in msg}, has_reasoning_content={'reasoning_content' in msg}")
+            if msg.get('role') == 'tool':
+                logger.info(f"    Message {i} tool_call_id: {msg.get('tool_call_id')}")
             if 'tool_calls' in msg and 'reasoning_content' not in msg:
                 logger.error(f"  !!! ERROR: Message {i} has tool_calls but NO reasoning_content!")
                 logger.error(f"  Message {i} full: {msg}")
+        
+        # 验证 tool_calls 和 tool 消息是否匹配
+        tool_call_ids = set()
+        tool_ids = set()
+        for msg in formatted:
+            if msg.get('role') == 'assistant' and 'tool_calls' in msg:
+                for tc in msg['tool_calls']:
+                    tool_call_ids.add(tc.get('id'))
+            elif msg.get('role') == 'tool':
+                tool_ids.add(msg.get('tool_call_id'))
+        
+        missing = tool_call_ids - tool_ids
+        if missing:
+            logger.error(f"[OpenAIChatFormatter] Missing tool messages for tool_call_ids: {missing}")
+        else:
+            logger.info(f"[OpenAIChatFormatter] All tool_calls have matching tool messages")
+        
         return formatted
 
 

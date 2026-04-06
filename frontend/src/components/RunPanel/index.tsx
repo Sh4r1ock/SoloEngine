@@ -44,7 +44,37 @@ interface RunPanelProps {
 
 const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const navigate = useNavigate();
-  
+
+  // 统一格式：将 SessionMessage[] 转换为 LLMMessage[]
+  const convertToLLMMessages = (msgs: any[]): LLMMessage[] => {
+    return msgs.map((msg: any) => {
+      const data: DataBlock[] = msg.data || [];
+      let content = '';
+      let reasoningContent: string | undefined;
+      
+      for (const block of data) {
+        if (block.type === 'content') {
+          content = block.content || '';
+        } else if (block.type === 'reasoning_content') {
+          reasoningContent = block.reasoning_content;
+        }
+      }
+      
+      return {
+        id: msg.id,
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: content || msg.content || '',
+        reasoning_content: reasoningContent,
+        data,
+        timestamp: msg.created_at || msg.timestamp || new Date().toISOString(),
+        tokens: msg.total_tokens || msg.tokens,
+        agent_id: msg.agent_id,
+        agent_name: msg.agent_name,
+        parent_agent_id: msg.parent_agent_id,
+      };
+    });
+  };
+
   const {
     sessions,
     currentSessionId,
@@ -209,33 +239,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           
           if (storedSessionId) {
             try {
+              // API 返回 SessionMessage[] 格式（统一格式）
               const msgs = await runApi.getSessionMessages(storedSessionId);
-              if (msgs && msgs.length >= 0) {
+              if (msgs && msgs.length > 0) {
                 setCurrentSessionId(storedSessionId);
-                const restoredMessages: LLMMessage[] = msgs.map((msg: any) => {
-                  const data: DataBlock[] = msg.data || [];
-                  let content = '';
-                  let reasoningContent: string | undefined;
-                  
-                  for (const block of data) {
-                    if (block.type === 'content') {
-                      content = block.content || '';
-                    } else if (block.type === 'reasoning_content') {
-                      reasoningContent = block.reasoning_content;
-                    }
-                  }
-                  
-                  return {
-                    id: msg.id,
-                    role: msg.role as 'user' | 'assistant' | 'system',
-                    content: content || msg.content || '',
-                    reasoning_content: reasoningContent,
-                    data,
-                    timestamp: msg.created_at || new Date().toISOString(),
-                    tokens: msg.total_tokens,
-                  };
-                });
-                setMessages(restoredMessages);
+                setMessages(convertToLLMMessages(msgs));
               }
             } catch {
               setCurrentSessionId(null);
@@ -471,9 +479,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           return prev.map(sa => {
             if (sa.id === (event as any).subagent_id) {
               const startTime = sa.startTime || endTime;
+              // 修复：如果 event.content 为空，保留已有的 output
+              const newOutput = (event as any).content || (event as any).subagent_output;
               return {
                 ...sa,
-                output: (event as any).content || (event as any).subagent_output || '',
+                output: newOutput || sa.output || '',
                 status: event.error ? 'error' : 'completed',
                 endTime,
                 duration: endTime - startTime,
@@ -488,7 +498,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         const delta = event.delta || {} as any;
         if ((delta as any).reasoning_content || (delta as any).tool_calls || (delta as any).content) {
           setIsWaitingReply(false);
-          streamingDataHook.processStreamChunk(delta);
+          streamingDataHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name);
         }
         
         if (event.content !== undefined && event.content_type !== undefined) {
@@ -497,75 +507,92 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         }
         break;
 
-      case 'execution_complete':
-        if (!messageAddedRef.current) {
-          const finalData = streamingDataRef.current.length > 0 
-            ? streamingDataRef.current 
-            : (event.message as any)?.data || [];
-          
-          if (finalData.length > 0) {
-            const assistantMessage: LLMMessage = {
-              id: `msg_${Date.now()}`,
-              role: 'assistant',
-              content: '',
-              data: finalData,
-              timestamp: new Date().toISOString(),
-            };
-            setMessages(prev => {
-              const updatedMessages = [...prev, assistantMessage];
-              
-              if (currentSessionId) {
-                setSessions(sessionsState => sessionsState.map(s => 
-                  s.id === currentSessionId 
-                    ? { 
-                        ...s, 
-                        messages: updatedMessages.map((m, i): any => ({
-                          id: m.id,
-                          role: m.role,
-                          content: m.content || '',
-                          reasoning_content: m.reasoning_content,
-                          data: m.data || [],
-                          message_index: i,
-                          timestamp: m.timestamp,
-                          created_at: m.timestamp,
-                          tokens: m.tokens,
-                        }))
-                      }
-                    : s
-                ));
-              }
-              
-              return updatedMessages;
-            });
-            messageAddedRef.current = true;
-          }
+      case 'execution_complete': {
+        const finalData = streamingDataHook.finalizeStream();
+        if (!messageAddedRef.current && finalData.length > 0) {
+          const assistantMessage: LLMMessage = {
+            id: currentMsgIdRef.current || `msg_${Date.now()}`,
+            role: 'assistant',
+            content: '',
+            data: finalData,
+            timestamp: new Date().toISOString(),
+          };
+          setMessages(prev => {
+            const updatedMessages = [...prev, assistantMessage];
+            
+            if (currentSessionId) {
+              setSessions(sessionsState => sessionsState.map(s => 
+                s.id === currentSessionId 
+                  ? { 
+                      ...s, 
+                      messages: updatedMessages.map((m, i): any => ({
+                        id: m.id,
+                        role: m.role,
+                        content: m.content || '',
+                        reasoning_content: m.reasoning_content,
+                        data: m.data || [],
+                        message_index: i,
+                        timestamp: m.timestamp,
+                        created_at: m.timestamp,
+                        tokens: m.tokens,
+                      }))
+                    }
+                  : s
+              ));
+            }
+            
+            return updatedMessages;
+          });
+          messageAddedRef.current = true;
         }
-        streamingDataHook.resetStream();
         stopRunning();
         setIsWaitingReply(false);
         break;
+      }
 
       case 'execution_cancelled':
       case 'agent_error':
-      case 'execution_error':
+      case 'execution_error': {
+        const finalData = streamingDataHook.finalizeStream();
         const isCancelled = event.event_type === 'execution_cancelled' || event.status === 'stopped';
-        if (isCancelled && streamingDataRef.current.length > 0) {
+        if (finalData.length > 0) {
           const stoppedMessage: LLMMessage = {
-            id: `msg_${Date.now()}`,
+            id: currentMsgIdRef.current || `msg_${Date.now()}`,
             role: 'assistant',
             content: '',
-            data: streamingDataRef.current,
+            data: finalData,
             timestamp: new Date().toISOString(),
           };
           setMessages(prev => [...prev, stoppedMessage]);
+          
+          if (currentSessionId) {
+            setSessions(sessionsState => sessionsState.map(s => 
+              s.id === currentSessionId 
+                ? { 
+                    ...s, 
+                    messages: [...(s.messages || []), {
+                      id: stoppedMessage.id,
+                      role: stoppedMessage.role,
+                      content: stoppedMessage.content || '',
+                      reasoning_content: stoppedMessage.reasoning_content,
+                      data: stoppedMessage.data || [],
+                      message_index: (s.messages?.length || 0),
+                      timestamp: stoppedMessage.timestamp,
+                      created_at: stoppedMessage.timestamp,
+                      tokens: stoppedMessage.tokens,
+                    }]
+                  }
+                : s
+            ));
+          }
         }
-        streamingDataHook.resetStream();
         stopRunning();
         setIsWaitingReply(false);
         if (!isCancelled) {
           message.error(event.error || 'Execution failed');
         }
         break;
+      }
     }
   }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, streamingDataHook, clearSubagentOutputs, setSubagentOutputs]);
 
@@ -605,7 +632,20 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setCallRecords, streamingDataHook]);
 
   const handleSwitchSession = useCallback(async (sessionId: string) => {
-    if (currentSessionId === sessionId) return;
+    if (currentSessionId === sessionId) {
+      // 即使是当前会话，如果没有消息也需要加载
+      if (messages.length === 0) {
+        try {
+          const msgs = await runApi.getSessionMessages(sessionId);
+          if (msgs && msgs.length > 0) {
+            setMessages(convertToLLMMessages(msgs));
+          }
+        } catch (error) {
+          console.warn('Failed to load session messages:', error);
+        }
+      }
+      return;
+    }
 
     setCurrentSessionId(sessionId);
     setMessages([]);
@@ -615,78 +655,25 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     const session = sessions.find(s => s.id === sessionId);
     
     if (session && session.messages && session.messages.length > 0) {
-      const llmMsgs: LLMMessage[] = session.messages.map(msg => {
-        const data: DataBlock[] = msg.data || [];
-        let content = '';
-        let reasoningContent: string | undefined;
-        
-        for (const block of data) {
-          if (block.type === 'content') {
-            content = block.content || '';
-          } else if (block.type === 'reasoning_content') {
-            reasoningContent = block.reasoning_content;
-          }
-        }
-        
-        return {
-          id: msg.id,
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: content || msg.content || '',
-          reasoning_content: reasoningContent,
-          data,
-          timestamp: msg.timestamp || msg.created_at || new Date().toISOString(),
-          tokens: msg.tokens || msg.prompt_tokens,
-        };
-      });
-      setMessages(llmMsgs);
+      setMessages(convertToLLMMessages(session.messages));
     } else {
       try {
+        // API 返回 SessionMessage[] 格式（统一格式）
         const msgs = await runApi.getSessionMessages(sessionId);
-        const restoredMessages: LLMMessage[] = msgs.map((msg: any) => {
-          const data: DataBlock[] = msg.data || [];
-          let content = '';
-          let reasoningContent: string | undefined;
+        if (msgs && msgs.length > 0) {
+          const restoredMessages = convertToLLMMessages(msgs);
+          setMessages(restoredMessages);
           
-          for (const block of data) {
-            if (block.type === 'content') {
-              content = block.content || '';
-            } else if (block.type === 'reasoning_content') {
-              reasoningContent = block.reasoning_content;
-            }
-          }
-          
-          return {
-            id: msg.id,
-            role: msg.role as 'user' | 'assistant' | 'system',
-            content: content || msg.content || '',
-            reasoning_content: reasoningContent,
-            data,
-            timestamp: msg.created_at || new Date().toISOString(),
-            tokens: msg.total_tokens,
-          };
-        });
-        setMessages(restoredMessages);
-        
-        const sessionMessages: any[] = restoredMessages.map((m, i) => ({
-          id: m.id,
-          role: m.role,
-          content: m.content || '',
-          reasoning_content: m.reasoning_content,
-          data: m.data || [],
-          message_index: i,
-          timestamp: m.timestamp,
-          created_at: m.timestamp,
-          tokens: m.tokens,
-        }));
-        
-        setSessions(prev => prev.map(s => 
-          s.id === sessionId ? { ...s, messages: sessionMessages } : s
-        ));
+          // 更新 session 缓存
+          setSessions(prev => prev.map(s => 
+            s.id === sessionId ? { ...s, messages: msgs } : s
+          ));
+        }
       } catch (error) {
         console.warn('Failed to load session messages:', error);
       }
     }
-  }, [currentSessionId, setCurrentSessionId, setMessages, setCallRecords, streamingDataHook, sessions, setSessions]);
+  }, [currentSessionId, setCurrentSessionId, setMessages, setCallRecords, streamingDataHook, sessions, setSessions, messages.length]);
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();

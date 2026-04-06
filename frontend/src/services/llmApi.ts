@@ -83,6 +83,11 @@ class LLMApi {
     return response.data;
   }
 
+  async getActiveConfigs(): Promise<LLMConfig[]> {
+    const response = await api.get('/llm/configs/active');
+    return response.data;
+  }
+
   async getConfig(configId: string): Promise<LLMConfig> {
     const response = await api.get(`/llm/configs/${configId}`);
     return response.data;

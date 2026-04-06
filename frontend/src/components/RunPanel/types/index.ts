@@ -20,6 +20,13 @@ export interface DataBlock {
   content?: string;
   reasoning_content?: string;
   tool_calls?: ToolCall[];
+  agent_id?: string;
+  agent_name?: string;
+  agent_level?: number;
+  // 新增：存储展开状态
+  _isExpanding?: boolean;
+  // 新增：用户是否手动操作过
+  _userToggled?: boolean;
 }
 
 export interface LLMMessage {
@@ -30,6 +37,9 @@ export interface LLMMessage {
   data?: DataBlock[];
   timestamp: string;
   tokens?: number;
+  agent_id?: string;
+  agent_name?: string;
+  parent_agent_id?: string;
 }
 
 export type CallType = 'tool' | 'skill' | 'mcp' | 'subagent';
