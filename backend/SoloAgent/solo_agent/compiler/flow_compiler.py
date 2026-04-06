@@ -633,13 +633,26 @@ class AgenticFlowCompiler:
         if use_cache:
             cached = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
             if cached:
-                logger.info(f"Using cached CompiledFlow for key: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}")
-                CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
-                cached.session_id = session_id
-                cached.run_project_id = run_project_id
-                cached.user_id = user_id
-                cached.agentic_flow_id = agentic_flow_id
-                return cached
+                current_llm_configs = self._load_llm_configs(user_id)
+                
+                cached_config_versions = set()
+                for agent in cached.agents.values():
+                    if hasattr(agent.config, '_llm_config_version') and agent.config._llm_config_version:
+                        cached_config_versions.add(agent.config._llm_config_version)
+                
+                current_config_versions = {cfg.version for cfg in current_llm_configs.values() if cfg.version}
+                
+                if cached_config_versions == current_config_versions and (len(cached_config_versions) > 0 or len(current_config_versions) == 0):
+                    logger.info(f"Using cached CompiledFlow for key: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}")
+                    CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
+                    cached.session_id = session_id
+                    cached.run_project_id = run_project_id
+                    cached.user_id = user_id
+                    cached.agentic_flow_id = agentic_flow_id
+                    return cached
+                else:
+                    logger.info(f"LLM config version changed (cached: {cached_config_versions}, current: {current_config_versions}), recompiling...")
+                    CompiledFlowFactory.remove(user_id, agentic_flow_id, session_id, run_project_id)
         
         canvas_data = flow_data.get("canvas_data", flow_data)
         nodes = canvas_data.get("nodes", [])
@@ -703,10 +716,13 @@ class AgenticFlowCompiler:
                     if sid in agents:
                         sub_agent = agents[sid]
                         subagents[sid] = sub_agent
+                        subagent_desc = sub_agent.config.desc if sub_agent.config.desc else (
+                            sub_agent.config.system_prompt[:100] if sub_agent.config.system_prompt else f"SubAgent: {sub_agent.config.name}"
+                        )
                         subagents_info.append({
                             "subagent_name": sub_agent.config.name,
                             "subagent_id": sub_agent.agent_id,
-                            "description": sub_agent.config.system_prompt[:100] if sub_agent.config.system_prompt else f"SubAgent: {sub_agent.config.name}"
+                            "description": subagent_desc
                         })
                 if subagents:
                     agent.set_subagents(subagents, subagents_info)
@@ -750,10 +766,10 @@ class AgenticFlowCompiler:
     def _load_mcp_configs(self, user_id: str) -> Dict[str, Any]:
         """从数据库加载用户的 MCP 配置"""
         try:
-            from mcp_service.database import mcp_db_manager, get_db_context as get_mcp_db_context
-            with get_mcp_db_context() as db:
+            from app.core.database import mcp_db_manager, get_db_context
+            with get_db_context() as db:
                 servers = mcp_db_manager.get_servers(db, user_id)
-                return {server.id: server for server in servers}
+                return {server.id: server for server in servers}  # ✅ 修复：新规范使用 id 作为主键
         except Exception as e:
             logger.warning(f"Failed to load MCP configs: {e}")
             return {}
@@ -913,32 +929,31 @@ class AgenticFlowCompiler:
         base_url = model_config.get("base_url")
         max_tokens = model_config.get("max_tokens", 4096)
         temperature = model_config.get("temperature", 0.7)
+        frequency_penalty = model_config.get("frequency_penalty", 0.5)
+        presence_penalty = model_config.get("presence_penalty", 0.5)
         
         from app.core.database import encryption_service
         
-        if llm_config_id and llm_configs and llm_config_id in llm_configs:
-            config = llm_configs[llm_config_id]
-            provider = config.provider
-            model = config.model_name
-            if config.base_url:
-                base_url = config.base_url
-            if config.api_key:
-                api_key = encryption_service.decrypt(config.api_key)
-        elif llm_configs:
-            default_config = None
-            for cfg in llm_configs.values():
-                if getattr(cfg, 'is_default', False):
-                    default_config = cfg
-                    break
-            
-            if default_config:
-                provider = default_config.provider
-                model = default_config.model_name
-                if default_config.base_url:
-                    base_url = default_config.base_url
-                if default_config.api_key:
-                    api_key = encryption_service.decrypt(default_config.api_key)
-                logger.info(f"Using default LLM config: {default_config.name} ({provider}/{model})")
+        if not llm_config_id:
+            raise ValueError(
+                f"节点 '{node_data.get('name', node_id)}' 未配置 LLM 模型。"
+                f"请在画布中为该节点选择 LLM 配置后重新保存。"
+            )
+        
+        if llm_config_id not in llm_configs:
+            raise ValueError(
+                f"节点 '{node_data.get('name', node_id)}' 的 LLM 配置 (ID: {llm_config_id}) 不存在或已被删除。"
+                f"请在「设置 > LLM配置」中检查配置，或在画布中重新选择模型。"
+            )
+        
+        config = llm_configs[llm_config_id]
+        provider = config.provider
+        model = config.model_name
+        if config.base_url:
+            base_url = config.base_url
+        if config.api_key:
+            api_key = encryption_service.decrypt(config.api_key)
+        logger.info(f"Using LLM config from agenticflow.json: {config.name} ({provider}/{model}), config_id={llm_config_id}")
         
         if not api_key:
             raise ValueError(
@@ -1019,6 +1034,7 @@ class AgenticFlowCompiler:
             api_key=api_key,
             base_url=base_url,
             system_prompt=node_data.get("system_prompt", ""),
+            desc=node_data.get("desc", ""),
             skills=enriched_skills,
             tools=tools,
             mcp_servers=node_mcp_servers_info,
@@ -1040,6 +1056,10 @@ class AgenticFlowCompiler:
             work_dir=self._get_work_dir(user_id, agentic_flow_id),
             max_tokens=max_tokens,
             temperature=temperature,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            _llm_config_id=llm_config_id,
+            _llm_config_version=config.version if config else None,
         )
         
         agent = SoloAgent(config)

@@ -140,25 +140,6 @@ class AgenticFlowSessionModel(Base):
     user = relationship("UserModel", backref="sessions")
     run_project = relationship("RunProjectModel", backref="sessions")
     messages = relationship("SessionMessageModel", back_populates="session", cascade="all, delete-orphan", order_by="SessionMessageModel.message_index")
-    steps = relationship("ExecutionStepModel", back_populates="session", cascade="all, delete-orphan")
-    tool_calls = relationship("ToolCallRecordModel", back_populates="session", cascade="all, delete-orphan")
-
-
-class AgentModel(Base):
-    """Agent 数据模型（保留用于兼容）。"""
-    __tablename__ = "agents"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
-    agentic_flow_id = Column(String(36), ForeignKey("agentic_flows.id"), nullable=True, index=True)
-    name = Column(String(255), nullable=False)
-    agent_type = Column(String(50), nullable=False)
-    description = Column(Text, nullable=True)
-    config = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    is_active = Column(Boolean, default=True)
-    version = Column(Integer, nullable=False, default=1)
 
 
 class SessionMessageModel(Base):
@@ -168,6 +149,7 @@ class SessionMessageModel(Base):
         一次对话只产生2条数据库记录（1条 user + 1条 assistant）
         使用 data 字段存储消息内容数组
         支持多轮推理过程：reasoning_content、tool_calls、content 可以多次出现
+        parent_agent_id 用于关联 SubAgent 与 MainAgent
     """
     __tablename__ = "session_messages"
     __table_args__ = (
@@ -177,12 +159,14 @@ class SessionMessageModel(Base):
         Index('ix_session_messages_role', 'role'),
         Index('ix_session_messages_session_index', 'session_id', 'message_index'),
         Index('ix_session_messages_created_at', 'created_at'),
+        Index('ix_session_messages_parent_agent_id', 'parent_agent_id'),
     )
 
     session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True, primary_key=True)
     id = Column(String(36), default=lambda: str(uuid.uuid4()), primary_key=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     agent_id = Column(String(36), nullable=False, default="default", index=True)
+    parent_agent_id = Column(String(36), nullable=True, index=True)
     
     role = Column(String(50), nullable=False, index=True)
     data = Column(JSON, nullable=False, default=[])
@@ -201,53 +185,6 @@ class SessionMessageModel(Base):
     
     session = relationship("AgenticFlowSessionModel", back_populates="messages")
     user = relationship("UserModel", backref="session_messages")
-
-
-class ExecutionStepModel(Base):
-    """执行步骤模型。"""
-    __tablename__ = "execution_steps"
-    __table_args__ = (
-        Index('ix_execution_steps_step_type', 'step_type'),
-        Index('ix_execution_steps_session_type', 'session_id', 'step_type'),
-    )
-
-    
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True)
-    step_type = Column(String(50), nullable=False)
-    node_id = Column(String(36), nullable=True)
-    node_name = Column(String(255), nullable=True)
-    thought = Column(Text, nullable=True)
-    action = Column(String(255), nullable=True)
-    action_input = Column(JSON, nullable=True)
-    observation = Column(Text, nullable=True)
-    error = Column(Text, nullable=True)
-    duration_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    version = Column(Integer, nullable=False, default=1)
-    
-    session = relationship("AgenticFlowSessionModel", back_populates="steps")
-
-
-class ToolCallRecordModel(Base):
-    """工具调用记录模型。"""
-    __tablename__ = "tool_call_records"
-    __table_args__ = (
-        Index('ix_tool_call_records_tool_name', 'tool_name'),
-        Index('ix_tool_call_records_session_type', 'session_id', 'tool_name'),
-    )
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    session_id = Column(String(36), ForeignKey("agentic_flow_sessions.id"), nullable=False, index=True)
-    tool_name = Column(String(255), nullable=False)
-    arguments = Column(JSON, nullable=True)
-    result = Column(Text, nullable=True)
-    error = Column(Text, nullable=True)
-    duration_ms = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    version = Column(Integer, nullable=False, default=1)
-
-    session = relationship("AgenticFlowSessionModel", back_populates="tool_calls")
 
 
 class SkillsPackageModel(Base):
@@ -363,29 +300,6 @@ class RecentProjectModel(Base):
 
     user = relationship("UserModel", backref="recent_projects")
     project = relationship("RunProjectModel", backref="recent_records")
-
-
-class MCPServerModel(Base):
-    """MCP服务器配置模型。"""
-    __tablename__ = "mcp_servers"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    transport = Column(String(50), nullable=False)
-    url = Column(String(500), nullable=True)
-    command = Column(String(500), nullable=True)
-    args = Column(JSON, nullable=True)
-    env = Column(JSON, nullable=True)
-    headers = Column(JSON, nullable=True)
-    timeout = Column(Integer, default=30)
-    enabled = Column(Boolean, default=True)
-    is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    version = Column(Integer, nullable=False, default=1)
-
-    user = relationship("UserModel", backref="mcp_servers")
 
 
 def init_db():
@@ -850,14 +764,14 @@ class DatabaseManager:
         return packages
 
     def get_skills_package(self, db: Session, package_id: str, user_id: str = None) -> Optional[SkillsPackageModel]:
-        """获取Skills包。"""
+        """获取Skills包（包含公共数据）。"""
         query = db.query(SkillsPackageModel).filter(SkillsPackageModel.id == package_id)
         if user_id:
-            # 查找用户自己的skill或系统skill
+            # 查找用户自己的skill或公共skill
             query = query.filter(
                 or_(
-                    SkillsPackageModel.user_id == user_id,
-                    SkillsPackageModel.user_id == "system"
+                    SkillsPackageModel.is_public == True,
+                    SkillsPackageModel.user_id == user_id
                 )
             )
         package = query.first()
@@ -948,11 +862,17 @@ class DatabaseManager:
         return config
 
     def get_llm_configs(self, db: Session, user_id: str) -> List[LLMConfigModel]:
-        """获取用户的所有LLM配置。"""
+        """获取用户的所有LLM配置（包括未激活的）。按创建时间降序排列。"""
+        return db.query(LLMConfigModel).filter(
+            LLMConfigModel.user_id == user_id
+        ).order_by(LLMConfigModel.created_at.desc()).all()
+
+    def get_active_llm_configs(self, db: Session, user_id: str) -> List[LLMConfigModel]:
+        """获取用户的活跃LLM配置（仅is_active=True的记录，用于画布节点编辑面板）。按创建时间降序排列。"""
         return db.query(LLMConfigModel).filter(
             LLMConfigModel.user_id == user_id,
             LLMConfigModel.is_active == True
-        ).order_by(LLMConfigModel.is_default.desc(), LLMConfigModel.updated_at.desc()).all()
+        ).order_by(LLMConfigModel.created_at.desc()).all()
 
     def get_llm_config(self, db: Session, config_id: str, user_id: str = None) -> Optional[LLMConfigModel]:
         """获取指定的LLM配置。"""
@@ -1009,28 +929,6 @@ class DatabaseManager:
             db.commit()
             return True
         return False
-
-    def get_agent(self, db: Session, agent_id: str) -> Optional[AgentModel]:
-        """获取Agent。"""
-        return db.query(AgentModel).filter(AgentModel.id == agent_id).first()
-
-    def create_agent(self, db: Session, agent_id: str, name: str, agent_type: str,
-                     description: str = None, config: Dict = None,
-                     user_id: str = None, agentic_flow_id: str = None) -> AgentModel:
-        """创建Agent。"""
-        agent = AgentModel(
-            id=agent_id,
-            name=name,
-            agent_type=agent_type,
-            description=description,
-            config=config,
-            user_id=user_id,
-            agentic_flow_id=agentic_flow_id,
-        )
-        db.add(agent)
-        db.commit()
-        db.refresh(agent)
-        return agent
 
     def create_project(self, db: Session, user_id: str, name: str, 
                        description: str = None, canvas_data: Dict = None) -> ProjectModel:
@@ -1231,9 +1129,9 @@ class DatabaseManager:
             db.commit()
 
     def get_system_skills(self, db: Session) -> List[SkillsPackageModel]:
-        """获取所有系统skill（user_id='system'）。"""
+        """获取所有公共skill（is_public=True）。"""
         return db.query(SkillsPackageModel).filter(
-            SkillsPackageModel.user_id == "system",
+            SkillsPackageModel.is_public == True,
             SkillsPackageModel.is_active == True
         ).order_by(SkillsPackageModel.name).all()
 
@@ -1245,14 +1143,14 @@ class DatabaseManager:
         ).order_by(SkillsPackageModel.name).all()
 
     def get_all_skills_for_user(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
-        """获取用户可见的所有skill（系统skill + 用户skill）。
-        
+        """获取用户可见的所有skill（公共skill + 用户skill）。
+
         注意：is_active只控制skill是否可用，不影响显示。
         按创建时间降序排列。
         """
         packages = db.query(SkillsPackageModel).filter(
             or_(
-                SkillsPackageModel.user_id == "system",
+                SkillsPackageModel.is_public == True,
                 SkillsPackageModel.user_id == user_id
             )
         ).order_by(SkillsPackageModel.created_at.desc()).all()
@@ -1291,52 +1189,167 @@ class DatabaseManager:
         
         return skill
 
-    def create_mcp_server(self, db: Session, user_id: str, name: str, transport: str,
-                         url: str = None, command: str = None, args: List[str] = None,
-                         env: Dict[str, str] = None, headers: Dict[str, str] = None,
-                         timeout: int = 30) -> MCPServerModel:
-        """创建MCP服务器。"""
+class MCPServerModel(Base):
+    """MCP服务器配置模型（统一规范）。"""
+    __tablename__ = "mcp_servers"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    transport_type = Column(String(50), nullable=False)
+    source_type = Column(String(50))
+    description = Column(Text)
+    icon = Column(String(100))
+    is_enabled = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)
+    author = Column(String(255))
+    tags = Column(JSON)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    version = Column(Integer, nullable=False, default=1)
+
+    user = relationship("UserModel", backref="mcp_servers")
+    stdio_config = relationship("MCPStdioConfigModel", back_populates="mcp_server", cascade="all, delete-orphan", uselist=False)
+    sse_config = relationship("MCPSseConfigModel", back_populates="mcp_server", cascade="all, delete-orphan", uselist=False)
+    http_config = relationship("MCPHttpConfigModel", back_populates="mcp_server", cascade="all, delete-orphan", uselist=False)
+
+
+class MCPStdioConfigModel(Base):
+    """MCP Stdio配置模型。"""
+    __tablename__ = "mcp_stdio_configs"
+
+    mcp_server_id = Column(String(36), ForeignKey("mcp_servers.id"), primary_key=True)
+    command = Column(String(500))
+    args = Column(JSON)
+    env = Column(JSON)
+    folder_path = Column(String(500))
+    working_dir = Column(String(500))
+
+    mcp_server = relationship("MCPServerModel", back_populates="stdio_config")
+
+
+class MCPSseConfigModel(Base):
+    """MCP SSE配置模型。"""
+    __tablename__ = "mcp_sse_configs"
+
+    mcp_server_id = Column(String(36), ForeignKey("mcp_servers.id"), primary_key=True)
+    url = Column(String(500), nullable=False)
+    headers = Column(JSON)
+    timeout = Column(Integer, default=30)
+    reconnect = Column(Boolean, default=True)
+    sse_endpoint = Column(String(255), default="/sse")
+    retry_interval = Column(Integer, default=5)
+    max_retries = Column(Integer, default=3)
+
+    mcp_server = relationship("MCPServerModel", back_populates="sse_config")
+
+
+class MCPHttpConfigModel(Base):
+    """MCP HTTP配置模型。"""
+    __tablename__ = "mcp_http_configs"
+
+    mcp_server_id = Column(String(36), ForeignKey("mcp_servers.id"), primary_key=True)
+    url = Column(String(500), nullable=False)
+    headers = Column(JSON)
+    timeout = Column(Integer, default=30)
+    session_id = Column(String(100))
+
+    mcp_server = relationship("MCPServerModel", back_populates="http_config")
+
+
+class MCPDatabaseManager:
+    """MCP数据库管理器。"""
+
+    def __init__(self):
+        self.engine = engine
+        self.SessionLocal = SessionLocal
+
+    def create_server(
+        self,
+        db: Session,
+        user_id: str,
+        name: str,
+        transport_type: str,
+        description: str = None,
+        enabled: bool = True,
+        is_public: bool = False,
+        author: str = None,
+        tags: List[str] = None,
+        source_type: str = None,
+        icon: str = None,
+    ) -> MCPServerModel:
+        """创建MCP服务器配置。"""
+        final_tags = tags.copy() if tags else []
+        if user_id == "system" and "system" not in final_tags:
+            final_tags.append("system")
+        
         server = MCPServerModel(
             user_id=user_id,
             name=name,
-            transport=transport,
-            url=url,
-            command=command,
-            args=args,
-            env=env,
-            headers=headers,
-            timeout=timeout,
+            transport_type=transport_type,
+            source_type=source_type or "upload",
+            description=description,
+            icon=icon,
+            is_enabled=enabled,
+            is_public=is_public,
+            author=author,
+            tags=final_tags,
         )
         db.add(server)
         db.commit()
         db.refresh(server)
         return server
 
-    def get_mcp_servers(self, db: Session, user_id: str) -> List[MCPServerModel]:
-        """获取用户可见的MCP服务器（系统 + 用户）。"""
+    def get_servers(self, db: Session, user_id: str) -> List[MCPServerModel]:
+        """获取用户可见的MCP服务器（公共 + 用户）。"""
         from sqlalchemy import or_
         return db.query(MCPServerModel).filter(
             or_(
-                MCPServerModel.user_id == "system",
+                MCPServerModel.is_public == True,
                 MCPServerModel.user_id == user_id
             )
         ).order_by(MCPServerModel.created_at.desc()).all()
     
-    def get_mcp_server(self, db: Session, mcp_server_id: str, user_id: str = None) -> Optional[MCPServerModel]:
-        """获取MCP服务器。"""
+    def check_server_permission(self, db: Session, server_id: str, user_id: str, action: str = "read") -> Optional[MCPServerModel]:
+        """检查服务器权限（基于is_public和user_id）。"""
+        server = db.query(MCPServerModel).filter(
+            MCPServerModel.id == server_id,
+            or_(
+                MCPServerModel.is_public == True,
+                MCPServerModel.user_id == user_id
+            )
+        ).first()
+        if not server:
+            return None
+        
+        # 写操作只能对自己的数据执行
+        if action in ["update", "delete"] and server.user_id != user_id:
+            return None
+        
+        return server
+
+    def get_server(self, db: Session, mcp_server_id: str, user_id: str = None) -> Optional[MCPServerModel]:
+        """获取MCP服务器（包含公共数据）。"""
         query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
         if user_id:
-            query = query.filter(MCPServerModel.user_id == user_id)
+            query = query.filter(
+                or_(
+                    MCPServerModel.is_public == True,
+                    MCPServerModel.user_id == user_id
+                )
+            )
         return query.first()
 
-    def update_mcp_server(self, db: Session, mcp_server_id: str, user_id: str,
-                         version: int = None, **kwargs) -> Optional[MCPServerModel]:
+    def update_server(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        user_id: str,
+        version: int = None,
+        **kwargs
+    ) -> Optional[MCPServerModel]:
         """更新MCP服务器配置（带乐观锁）。"""
-        query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
-        if user_id:
-            query = query.filter(MCPServerModel.user_id == user_id)
-        server = query.first()
-        
+        server = self.get_server(db, mcp_server_id, user_id)
         if not server:
             return None
         
@@ -1346,26 +1359,185 @@ class DatabaseManager:
             )
         
         for key, value in kwargs.items():
-            if hasattr(server, key):
+            if key == 'tags' and value is not None:
+                if server.user_id == "system":
+                    if "system" not in value:
+                        value.append("system")
                 setattr(server, key, value)
-        
+            elif hasattr(server, key):
+                setattr(server, key, value)
         server.version = (server.version or 0) + 1
         db.commit()
         db.refresh(server)
         return server
 
-    def delete_mcp_server(self, db: Session, mcp_server_id: str, user_id: str) -> bool:
+    def delete_server(self, db: Session, mcp_server_id: str, user_id: str) -> bool:
         """删除MCP服务器。"""
-        query = db.query(MCPServerModel).filter(MCPServerModel.id == mcp_server_id)
-        if user_id:
-            query = query.filter(MCPServerModel.user_id == user_id)
-        server = query.first()
-        
+        server = self.get_server(db, mcp_server_id, user_id)
         if server:
             db.delete(server)
             db.commit()
             return True
         return False
+
+    def get_server_by_name(self, db: Session, user_id: str, name: str) -> Optional[MCPServerModel]:
+        """通过名称获取服务器。"""
+        return db.query(MCPServerModel).filter(
+            MCPServerModel.user_id == user_id,
+            MCPServerModel.name == name
+        ).first()
+
+    def create_stdio_config(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        command: str = None,
+        args: List[str] = None,
+        env: dict = None,
+        folder_path: str = None,
+        working_dir: str = None,
+    ) -> MCPStdioConfigModel:
+        """创建Stdio配置。"""
+        rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
+        rel_working_dir = DataPaths.to_relative_path(working_dir) if working_dir else None
+        
+        config = MCPStdioConfigModel(
+            mcp_server_id=mcp_server_id,
+            command=command,
+            args=args or [],
+            env=env or {},
+            folder_path=rel_folder_path,
+            working_dir=rel_working_dir,
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+        return config
+
+    def get_stdio_config(self, db: Session, mcp_server_id: str) -> Optional[MCPStdioConfigModel]:
+        """获取Stdio配置。"""
+        config = db.query(MCPStdioConfigModel).filter(
+            MCPStdioConfigModel.mcp_server_id == mcp_server_id
+        ).first()
+        
+        if config:
+            if config.folder_path:
+                config.folder_path = DataPaths.to_absolute_path(config.folder_path)
+            if config.working_dir:
+                config.working_dir = DataPaths.to_absolute_path(config.working_dir)
+        
+        return config
+
+    def update_stdio_config(self, db: Session, mcp_server_id: str, **kwargs) -> Optional[MCPStdioConfigModel]:
+        """更新Stdio配置。"""
+        config = db.query(MCPStdioConfigModel).filter(
+            MCPStdioConfigModel.mcp_server_id == mcp_server_id
+        ).first()
+        
+        if config:
+            for key, value in kwargs.items():
+                if key in ['folder_path', 'working_dir'] and value:
+                    value = DataPaths.to_relative_path(value)
+                
+                if hasattr(config, key):
+                    setattr(config, key, value)
+            
+            db.commit()
+            db.refresh(config)
+            
+            if config.folder_path:
+                config.folder_path = DataPaths.to_absolute_path(config.folder_path)
+            if config.working_dir:
+                config.working_dir = DataPaths.to_absolute_path(config.working_dir)
+        
+        return config
+
+    def create_sse_config(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        url: str,
+        headers: dict = None,
+        timeout: int = 30,
+        reconnect: bool = True,
+        sse_endpoint: str = "/sse",
+        retry_interval: int = 5,
+        max_retries: int = 3,
+    ) -> MCPSseConfigModel:
+        """创建SSE配置。"""
+        config = MCPSseConfigModel(
+            mcp_server_id=mcp_server_id,
+            url=url,
+            headers=headers or {},
+            timeout=timeout,
+            reconnect=reconnect,
+            sse_endpoint=sse_endpoint,
+            retry_interval=retry_interval,
+            max_retries=max_retries,
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+        return config
+
+    def get_sse_config(self, db: Session, mcp_server_id: str) -> Optional[MCPSseConfigModel]:
+        """获取SSE配置。"""
+        return db.query(MCPSseConfigModel).filter(
+            MCPSseConfigModel.mcp_server_id == mcp_server_id
+        ).first()
+
+    def update_sse_config(self, db: Session, mcp_server_id: str, **kwargs) -> Optional[MCPSseConfigModel]:
+        """更新SSE配置。"""
+        config = self.get_sse_config(db, mcp_server_id)
+        if config:
+            for key, value in kwargs.items():
+                if hasattr(config, key):
+                    setattr(config, key, value)
+            db.commit()
+            db.refresh(config)
+        return config
+
+    def create_http_config(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        url: str,
+        headers: dict = None,
+        timeout: int = 30,
+        session_id: str = None,
+    ) -> MCPHttpConfigModel:
+        """创建HTTP配置。"""
+        config = MCPHttpConfigModel(
+            mcp_server_id=mcp_server_id,
+            url=url,
+            headers=headers or {},
+            timeout=timeout,
+            session_id=session_id,
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+        return config
+
+    def get_http_config(self, db: Session, mcp_server_id: str) -> Optional[MCPHttpConfigModel]:
+        """获取HTTP配置。"""
+        return db.query(MCPHttpConfigModel).filter(
+            MCPHttpConfigModel.mcp_server_id == mcp_server_id
+        ).first()
+
+    def update_http_config(self, db: Session, mcp_server_id: str, **kwargs) -> Optional[MCPHttpConfigModel]:
+        """更新HTTP配置。"""
+        config = self.get_http_config(db, mcp_server_id)
+        if config:
+            for key, value in kwargs.items():
+                if hasattr(config, key):
+                    setattr(config, key, value)
+            db.commit()
+            db.refresh(config)
+        return config
+
+
+mcp_db_manager = MCPDatabaseManager()
 
 db_manager = DatabaseManager()
 

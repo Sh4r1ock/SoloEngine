@@ -30,6 +30,7 @@ class SoloAgentConfig:
     provider: str
     model: str
     system_prompt: str = ""
+    desc: str = ""
     
     skills: List[Dict[str, Any]] = field(default_factory=list)
     tools: List[str] = field(default_factory=list)
@@ -52,12 +53,17 @@ class SoloAgentConfig:
     base_url: Optional[str] = None
     temperature: float = 0.7
     max_tokens: int = 4096
+    frequency_penalty: float = 0.5
+    presence_penalty: float = 0.5
     
-    agent_type: str = "executor"
+    agent_type: str = "custom"
     
     work_dir: Optional[str] = None
     
     extra: Dict[str, Any] = field(default_factory=dict)
+    
+    _llm_config_id: Optional[str] = field(default=None, repr=False)
+    _llm_config_version: Optional[int] = field(default=None, repr=False)
     
     def __post_init__(self):
         if self.agent_id is None:
@@ -70,6 +76,7 @@ class SoloAgentConfig:
             provider=data.get("provider", data.get("model_config", {}).get("provider", "openai")),
             model=data.get("model", data.get("model_config", {}).get("model", "gpt-4")),
             system_prompt=data.get("system_prompt", ""),
+            desc=data.get("desc", ""),
             skills=data.get("skills", []),
             tools=data.get("tools", []),
             mcp_servers=data.get("mcp_servers", []),
@@ -87,7 +94,9 @@ class SoloAgentConfig:
             base_url=data.get("base_url"),
             temperature=data.get("temperature", 0.7),
             max_tokens=data.get("max_tokens", 4096),
-            agent_type=data.get("agentType", data.get("agent_type", "executor")),
+            frequency_penalty=data.get("frequency_penalty", 0.5),
+            presence_penalty=data.get("presence_penalty", 0.5),
+            agent_type=data.get("agentType", data.get("agent_type", "custom")),
             work_dir=data.get("work_dir"),
             extra=data.get("extra", {}),
         )
@@ -98,6 +107,7 @@ class SoloAgentConfig:
             "provider": self.provider,
             "model": self.model,
             "system_prompt": self.system_prompt,
+            "desc": self.desc,
             "skills": self.skills,
             "tools": self.tools,
             "mcp_servers": self.mcp_servers,
@@ -115,6 +125,8 @@ class SoloAgentConfig:
             "base_url": self.base_url,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "frequency_penalty": self.frequency_penalty,
+            "presence_penalty": self.presence_penalty,
             "agent_type": self.agent_type,
             "work_dir": self.work_dir,
             "extra": self.extra,

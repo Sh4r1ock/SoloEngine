@@ -44,7 +44,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           onChange={(e) => onChange(e.target.value)}
           placeholder="输入消息..."
           autoSize={{ minRows: 1, maxRows: 6 }}
-          bordered={false}
+          variant="borderless"
           disabled={disabled}
           style={{
             resize: 'none',

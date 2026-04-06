@@ -15,8 +15,8 @@
 - 将前端画布数据转换为可执行的协作图
 
 注意事项：
-- 支持orchestrator、planner、executor三种节点类型
-- 验证画布数据的完整性和有效性
+- 支持orchestrator、planner、executor、custom四种Agent类型
+- ReactFlow节点类型统一为'agent'
 """
 import logging
 from typing import Dict, Any, List
@@ -61,17 +61,25 @@ class CanvasParser:
         
         for node_data in canvas_data.get("nodes", []):
             node_id = node_data["id"]
-            node_type = node_data["type"]
-            node_config = node_data["data"]
+            node_type = node_data.get("type")
+            node_config = node_data.get("data", {})
             
-            if node_type == "orchestrator":
+            # 只处理agent类型节点
+            if node_type != "agent":
+                continue
+            
+            # 从node_config中获取agentType
+            agent_type = node_config.get("agentType", "custom")
+            
+            if agent_type == "orchestrator":
                 node = OrchestratorNode(node_id, node_config.get("name", ""), node_config)
-            elif node_type == "planner":
+            elif agent_type == "planner":
                 node = PlannerNode(node_id, node_config.get("name", ""), node_config)
-            elif node_type == "executor":
+            elif agent_type == "executor":
                 node = ExecutorNode(node_id, node_config.get("name", ""), node_config)
             else:
-                continue
+                # custom类型也使用ExecutorNode作为基类
+                node = ExecutorNode(node_id, node_config.get("name", ""), node_config)
             
             nodes[node_id] = node
         

@@ -117,7 +117,20 @@ class TodoWrite(BaseTaskTool):
         
         statistics = self.get_task_statistics(validated_todos)
         
+        # 构建 content 字段 - 将任务列表和统计信息序列化为字符串
+        content_parts = []
+        content_parts.append(f"任务列表已更新（共 {statistics['total']} 个任务）:")
+        content_parts.append(f"- 进行中: {statistics['in_progress']}")
+        content_parts.append(f"- 已完成: {statistics['completed']}")
+        content_parts.append(f"- 待处理: {statistics['pending']}")
+        
+        if summary:
+            content_parts.append(f"\n摘要: {summary}")
+        
+        content = "\n".join(content_parts)
+        
         result = {
+            "content": content,  # 必须包含 content 字段，符合工具返回值规范
             "todos": validated_todos,
             "statistics": statistics,
             "success": True,

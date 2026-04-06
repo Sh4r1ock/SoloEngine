@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, message, Empty, Spin } from 'antd';
+import { Typography, message, Empty, Spin, Modal } from 'antd';
 import { ApiOutlined } from '@ant-design/icons';
 import { mcpApi, MCPServer } from '../../services/mcpApi';
 import MCPAddServerModal from './MCPAddServerModal';
 import UnifiedCard from '../common/UnifiedCard';
 import PageHeader from '../common/PageHeader';
 import { getDefaultIcon } from '../../utils/iconLibrary';
+import MCPTestRunModal from './MCPTestRunModal';
 
 const { Text } = Typography;
 
@@ -17,6 +18,7 @@ const MCPManager: React.FC = () => {
   const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [testRunServer, setTestRunServer] = useState<MCPServer | null>(null);
 
   const loadServerList = async () => {
     setLoading(true);
@@ -53,28 +55,18 @@ const MCPManager: React.FC = () => {
     }
   };
 
-  const handleConnectServer = async (serverId: string) => {
+  const handleToggleEnable = async (server: MCPServer, checked: boolean) => {
     try {
-      const response = await mcpApi.connectServer(serverId);
-      if (response.code === 200) {
-        message.success('连接成功');
-        loadServerList();
-      } else {
-        message.error('连接失败：' + response.message);
-      }
+      await mcpApi.updateServer(server.id, { enabled: checked });
+      message.success(checked ? 'MCP 工具已启用' : 'MCP 工具已停用');
+      loadServerList();
     } catch (error) {
-      message.error('连接失败：' + String(error));
+      message.error('操作失败：' + String(error));
     }
   };
 
-  const handleDisconnectServer = async (serverId: string) => {
-    try {
-      await mcpApi.disconnectServer(serverId);
-      message.success('已断开连接');
-      loadServerList();
-    } catch (error) {
-      message.error('断开连接失败：' + String(error));
-    }
+  const handleTestRun = (server: MCPServer) => {
+    setTestRunServer(server);
   };
 
   const handleRefresh = () => {
@@ -105,15 +97,6 @@ const MCPManager: React.FC = () => {
         return [...prev, tag];
       }
     });
-  };
-
-  const getStatusText = (status?: string) => {
-    switch (status) {
-      case 'connected': return '已连接';
-      case 'connecting': return '连接中';
-      case 'error': return '错误';
-      default: return '未连接';
-    }
   };
 
   const getTransportType = (server: MCPServer) => {
@@ -214,32 +197,32 @@ const MCPManager: React.FC = () => {
         >
           {filteredServers.map((server) => {
             const isSystem = server.user_id === 'system';
-            const baseTags = server.tags || [];
-            const transportTag = getTransportType(server).toUpperCase();
-            const allTags = [...baseTags, transportTag].filter((tag, index, arr) => arr.indexOf(tag) === index);
+            // 只从数据库读取标签，不前端动态添加
+            const allTags = server.tags || [];
             return (
               <UnifiedCard
                 key={server.id}
                 id={server.id}
                 name={server.name}
-                description={server.description || (server.url || server.command || '无地址')}
+                description={server.description || ''}
                 icon={server.icon || getDefaultIcon('mcp')}
                 tags={allTags}
-                status={server.status}
-                statusText={getStatusText(server.status)}
+                isActive={server.is_enabled ?? server.enabled}
+                showSwitch={true}
                 meta1={{ 
                   label: '超时', 
-                  value: `${server.timeout}s` 
+                  value: `${server.timeout || server.stdio_config?.timeout || 30}s` 
+                }}
+                meta2={{ 
+                  label: '传输', 
+                  value: getTransportType(server).toUpperCase() 
                 }}
                 updatedAt={server.updated_at}
-                isDefault={isSystem}
+                isSystem={isSystem}
                 onIconChange={(icon: string) => handleIconChange(server, icon)}
+                onSwitchChange={(checked: boolean) => handleToggleEnable(server, checked)}
                 onClick={() => handleEditServer(server)}
-                onPlay={
-                  server.status === 'connected'
-                    ? () => handleDisconnectServer(server.id)
-                    : () => handleConnectServer(server.id)
-                }
+                onPlay={() => handleTestRun(server)}
                 onDelete={() => handleDeleteServer(server.id)}
                 deleteConfirmText="确定要删除此MCP工具吗？"
               />
@@ -256,6 +239,12 @@ const MCPManager: React.FC = () => {
           setEditingServer(null);
         }}
         onSave={handleSaveServer}
+      />
+
+      <MCPTestRunModal
+        visible={!!testRunServer}
+        server={testRunServer}
+        onClose={() => setTestRunServer(null)}
       />
     </div>
   );

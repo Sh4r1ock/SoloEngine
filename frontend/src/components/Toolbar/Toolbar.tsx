@@ -36,7 +36,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
         data: {
           name: '新节点',
           desc: '',
-          agentType: 'executor' as "orchestrator" | "planner" | "executor",
+          agentType: 'custom' as "orchestrator" | "planner" | "executor" | "custom",
           system_prompt: '',
           user_prompt: '',
           assistant_prompt: '',

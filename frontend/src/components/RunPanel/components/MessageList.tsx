@@ -3,11 +3,11 @@
  * @description 消息列表组件
  */
 
-import React, { useRef, useEffect, MutableRefObject } from 'react';
+import React, { useRef, useEffect, useState, useCallback, MutableRefObject } from 'react';
 import { Typography } from 'antd';
 import { RobotOutlined } from '@ant-design/icons';
 import { useRunPanelStore } from '../stores/runPanelStore';
-import type { LLMMessage, DataBlock } from '../types';
+import type { LLMMessage, DataBlock, SubagentOutput } from '../types';
 import BeautifulMarkdownRenderer from '../../common/BeautifulMarkdownRenderer';
 
 const { Text } = Typography;
@@ -39,6 +39,25 @@ const formatSmartTime = (dateStr?: string) => {
   return `${year}年${month}月${day}日 ${timeStr}`;
 };
 
+const SUBAGENT_BASE_COLOR = '#3F51B5';
+
+const getSubagentColor = (depth: number): string => {
+  if (depth === 0) return 'transparent';
+  
+  const level = ((depth - 1) % 4) + 1;
+  
+  const opacityMap: Record<number, number> = {
+    1: 0.4,
+    2: 0.6,
+    3: 0.8,
+    4: 1.0,
+  };
+  
+  const opacity = opacityMap[level];
+  const alpha = Math.round(opacity * 255).toString(16).padStart(2, '0');
+  return `${SUBAGENT_BASE_COLOR}${alpha}`;
+};
+
 interface MessageListProps {
   messages: LLMMessage[];
   streamingData: DataBlock[];
@@ -55,16 +74,100 @@ const MessageList: React.FC<MessageListProps> = ({
   currentMsgIdRef,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 用于强制重新渲染的状态
+  const [renderVersion, setRenderVersion] = useState(0);
   
   const {
     hoveredMessageId,
     setHoveredMessageId,
-    expandedReasoning,
-    expandedToolCalls,
-    streamingExpandedKeys,
-    toggleReasoningExpand,
-    toggleToolCallsExpand,
+    subagentOutputs,
   } = useRunPanelStore();
+
+  // 强制重新渲染的回调函数
+  const forceUpdate = useCallback(() => {
+    setRenderVersion(v => v + 1);
+  }, []);
+
+  const buildAgentMessageMap = (msgs: LLMMessage[]): Map<string, LLMMessage> => {
+    const map = new Map<string, LLMMessage>();
+    for (const m of msgs) {
+      if (m.agent_id) {
+        map.set(m.agent_id, m);
+      }
+    }
+    return map;
+  };
+
+  const extractSubagentInfo = (block: DataBlock): { id: string; name: string } | null => {
+    if (block.type !== 'tool_calls') return null;
+    for (const tc of block.tool_calls || []) {
+      if (tc.function?.name === 'Task' && tc.result) {
+        try {
+          const result = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
+          if (result.subagent_id && result.subagent_name) {
+            return { id: result.subagent_id, name: result.subagent_name };
+          }
+        } catch {}
+      }
+    }
+    return null;
+  };
+
+  const extractAgentName = (msg: LLMMessage): string | null => {
+    if (msg.agent_name) return msg.agent_name;
+    for (const block of msg.data || []) {
+      if (block.type === 'tool_calls') {
+        for (const tc of block.tool_calls || []) {
+          if (tc.function?.name === 'Task' && tc.result) {
+            try {
+              const result = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
+              if (result.subagent_name) {
+                return result.subagent_name;
+              }
+            } catch {}
+          }
+        }
+      }
+    }
+    return null;
+  };
+
+  const { messageDepths, subagentIds, agentMessageMap } = React.useMemo(() => {
+    const map = new Map<string, LLMMessage>();
+    for (const m of messages) {
+      if (m.agent_id) {
+        map.set(m.agent_id, m);
+      }
+    }
+    
+    const depths = new Map<string, number>();
+    const subIds = new Set<string>();
+    
+    for (const msg of messages) {
+      if (msg.role === 'assistant' && msg.parent_agent_id) {
+        subIds.add(msg.agent_id);
+        
+        let currentDepth = 1;
+        let currentParentId = msg.parent_agent_id;
+        const visited = new Set<string>();
+        
+        while (currentParentId && !visited.has(currentParentId)) {
+          visited.add(currentParentId);
+          const parentMsg = map.get(currentParentId);
+          if (parentMsg && parentMsg.parent_agent_id) {
+            currentDepth++;
+            currentParentId = parentMsg.parent_agent_id;
+          } else {
+            break;
+          }
+        }
+        
+        depths.set(msg.id, currentDepth);
+      }
+    }
+    
+    return { messageDepths: depths, subagentIds: subIds, agentMessageMap: map };
+  }, [messages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -77,26 +180,18 @@ const MessageList: React.FC<MessageListProps> = ({
     isStreaming: boolean = false
   ) => {
     if (block.type === 'reasoning_content') {
-      const key = isStreaming 
-        ? `${currentMsgIdRef.current}-reasoning-${idx}` 
-        : `${msgId}-reasoning-${idx}`;
-      const isExpanded = expandedReasoning.has(key) || streamingExpandedKeys.has(key);
-      
+      // 直接使用 block._isExpanding 判断展开状态
+      const isExpanded = block._isExpanding || false;
+
       return (
         <div key={idx} style={{ width: '100%' }}>
-          <div 
+          <div
             onClick={() => {
-              if (isStreaming) {
-                const newSet = new Set(expandedReasoning);
-                if (newSet.has(key)) {
-                  newSet.delete(key);
-                } else {
-                  newSet.add(key);
-                }
-                useRunPanelStore.getState().setExpandedReasoning(newSet);
-              } else {
-                toggleReasoningExpand(key);
-              }
+              // 直接修改 block 的展开状态和手动操作标志
+              block._isExpanding = !isExpanded;
+              block._userToggled = true;
+              // 触发重新渲染
+              forceUpdate();
             }}
             style={{
               display: 'flex',
@@ -105,8 +200,8 @@ const MessageList: React.FC<MessageListProps> = ({
               cursor: 'pointer',
               userSelect: 'none',
             }}>
-            <span style={{ 
-              fontSize: 12, 
+            <span style={{
+              fontSize: 12,
               color: 'var(--text-200)',
               width: 14,
               display: 'inline-flex',
@@ -152,27 +247,19 @@ const MessageList: React.FC<MessageListProps> = ({
     }
     
     if (block.type === 'tool_calls') {
+      // 直接使用 block._isExpanding 判断展开状态
+      const isExpanded = block._isExpanding || false;
+
       return block.tool_calls?.map((tc, tcIdx) => {
-        const key = isStreaming 
-          ? `${currentMsgIdRef.current}-${idx}-${tcIdx}` 
-          : `${msgId}-${idx}-${tcIdx}`;
-        const isExpanded = expandedToolCalls.has(key) || streamingExpandedKeys.has(key);
-        
         return (
           <div key={tcIdx} style={{ width: '100%' }}>
-            <div 
+            <div
               onClick={() => {
-                if (isStreaming) {
-                  const newSet = new Set(expandedToolCalls);
-                  if (newSet.has(key)) {
-                    newSet.delete(key);
-                  } else {
-                    newSet.add(key);
-                  }
-                  useRunPanelStore.getState().setExpandedToolCalls(newSet);
-                } else {
-                  toggleToolCallsExpand(key);
-                }
+                // 直接修改 block 的展开状态和手动操作标志
+                block._isExpanding = !isExpanded;
+                block._userToggled = true;
+                // 触发重新渲染
+                forceUpdate();
               }}
               style={{
                 display: 'flex',
@@ -182,8 +269,8 @@ const MessageList: React.FC<MessageListProps> = ({
                 userSelect: 'none',
               }}
             >
-              <span style={{ 
-                fontSize: 12, 
+              <span style={{
+                fontSize: 12,
                 color: 'var(--text-200)',
                 width: 14,
                 display: 'inline-flex',
@@ -267,6 +354,106 @@ const MessageList: React.FC<MessageListProps> = ({
     return null;
   };
 
+  // AgentGroup 接口定义
+  interface AgentGroup {
+    agent_id: string;
+    agent_name: string;
+    agent_level: number;
+    blocks: DataBlock[];
+  }
+
+  // 按 agent 分组 DataBlocks
+  const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
+    const groups: AgentGroup[] = [];
+    let currentGroup: AgentGroup | null = null;
+
+    for (const block of blocks) {
+      const agentId = block.agent_id || 'default';
+      const agentName = block.agent_name || 'AI助手';
+      const agentLevel = block.agent_level || 0;
+
+      if (!currentGroup || currentGroup.agent_id !== agentId) {
+        currentGroup = {
+          agent_id: agentId,
+          agent_name: agentName,
+          agent_level: agentLevel,
+          blocks: []
+        };
+        groups.push(currentGroup);
+      }
+      currentGroup.blocks.push(block);
+    }
+    return groups;
+  };
+
+  // 渲染 Agent 分组
+  const renderAgentGroups = (
+    groups: AgentGroup[],
+    isStreaming: boolean = false
+  ): React.ReactNode => {
+    return groups.map((group, groupIdx) => {
+      const isMainAgent = group.agent_level === 0;
+      const borderColor = getSubagentColor(group.agent_level);
+      const blocks = group.blocks.map((block, idx) =>
+        renderDataBlock(block, idx, '', isStreaming)
+      );
+
+      if (isMainAgent) {
+        return <React.Fragment key={groupIdx}>{blocks}</React.Fragment>;
+      }
+
+      return (
+        <div key={groupIdx} style={{
+          marginLeft: 14 * group.agent_level,
+          marginTop: 8,
+          borderLeft: `3px solid ${borderColor}`,
+          paddingLeft: 12,
+          background: 'rgba(63, 81, 181, 0.05)',
+          borderRadius: 6,
+          paddingBottom: 8,
+        }}>
+          <div style={{ marginBottom: 4 }}>
+            <Text style={{ fontSize: 13, color: borderColor, fontWeight: 500 }}>
+              {group.agent_name}
+            </Text>
+          </div>
+          {blocks}
+        </div>
+      );
+    });
+  };
+
+  const renderSubagentMessages = (parentAgentId: string, depth: number): React.ReactNode => {
+    const childMessages = messages.filter(msg => msg.parent_agent_id === parentAgentId);
+    
+    return childMessages.map(msg => {
+      const borderColor = getSubagentColor(depth);
+      
+      return (
+        <div key={msg.id} style={{
+          marginLeft: 14,
+          marginTop: 8,
+          borderLeft: `3px solid ${borderColor}`,
+          paddingLeft: 12,
+          background: 'rgba(63, 81, 181, 0.05)',
+          borderRadius: 6,
+          paddingBottom: 8,
+        }}>
+          <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 13, color: borderColor, fontWeight: 500 }}>
+              {extractAgentName(msg) || 'SubAgent'}
+            </Text>
+            <Text style={{ fontSize: 12, color: 'var(--text-300)' }}>
+              {formatSmartTime(msg.timestamp)}
+            </Text>
+          </div>
+          {msg.data?.map((block, idx) => renderDataBlock(block, idx, msg.id))}
+          {renderSubagentMessages(msg.agent_id, depth + 1)}
+        </div>
+      );
+    });
+  };
+
   return (
     <>
       {messages.length === 0 && streamingData.length === 0 && !isWaitingReply ? (
@@ -300,8 +487,9 @@ const MessageList: React.FC<MessageListProps> = ({
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {messages.map(msg => (
-            msg.role === 'user' ? (
+          {messages.map(msg => {
+            // Set 3 重构：后端已处理层级关系，前端直接渲染
+            return msg.role === 'user' ? (
               <div 
                 key={msg.id}
                 onMouseEnter={() => setHoveredMessageId(msg.id)}
@@ -358,7 +546,14 @@ const MessageList: React.FC<MessageListProps> = ({
                 </div>
               </div>
             ) : (
-              <div key={msg.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div 
+                key={msg.id} 
+                style={{ 
+                  display: 'flex', 
+                  gap: 8, 
+                  alignItems: 'flex-start',
+                }}
+              >
                 <div style={{
                   width: 28,
                   height: 28,
@@ -373,14 +568,19 @@ const MessageList: React.FC<MessageListProps> = ({
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Text style={{ fontSize: 13, color: 'var(--text-100)', fontWeight: 500 }}>AI助手</Text>
-                    <Text style={{ fontSize: 12, color: 'var(--text-300)' }}>{formatSmartTime(msg.timestamp)}</Text>
+                    <Text style={{ fontSize: 13, color: 'var(--text-100)', fontWeight: 500 }}>
+                      {extractAgentName(msg) || 'AI助手'}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: 'var(--text-300)' }}>
+                      {formatSmartTime(msg.timestamp)}
+                    </Text>
                   </div>
-                  {msg.data && msg.data.map((block, idx) => renderDataBlock(block, idx, msg.id))}
+                  {/* Set 3 重构：后端已处理层级关系，直接使用 groupDataBlocksByAgent 渲染 */}
+                  {msg.data && renderAgentGroups(groupDataBlocksByAgent(msg.data), false)}
                 </div>
               </div>
-            )
-          ))}
+            );
+          })}
           
           {(isWaitingReply || streamingData.length > 0) && (
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -416,7 +616,7 @@ const MessageList: React.FC<MessageListProps> = ({
                   </div>
                 )}
                 
-                {streamingData.map((block, idx) => renderDataBlock(block, idx, '', true))}
+                {renderAgentGroups(groupDataBlocksByAgent(streamingData), true)}
               </div>
             </div>
           )}

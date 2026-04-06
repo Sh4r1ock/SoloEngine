@@ -18,9 +18,25 @@ export interface ToolInfo {
   tool_type: string;
 }
 
+export interface AgentPreset {
+  id: string;
+  name: string;
+  name_en: string;
+  description: string;
+  icon: string;
+  color: string;
+  tools: string[];
+  skills: string[];
+  mcp_tools: string[];
+  system_prompt: string;
+}
+
 export const toolsApi = {
   async getTools(): Promise<{ code: number; message: string; data: ToolInfo[] }> {
     const response = await api.get('/tools');
+    if (response.data.data && Array.isArray(response.data.data.tools)) {
+      return { code: response.data.code, message: response.data.message, data: response.data.data.tools };
+    }
     return response.data;
   },
 

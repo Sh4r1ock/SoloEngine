@@ -19,7 +19,7 @@ export const useSessionManager = (agenticFlowId?: string) => {
     setCallRecords,
     clearStreamingData,
     currentProject,
-  } } = useRunPanelStore();
+  } = useRunPanelStore();
 
   const createNewSession = useCallback(() => {
     if (!agenticFlowId || !currentProject?.id) {
@@ -34,22 +34,76 @@ export const useSessionManager = (agenticFlowId?: string) => {
     return newSessionId;
   }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setCallRecords, clearStreamingData]);
   const handleSwitchSession = useCallback(async (sessionId: string) => {
-    if (currentSessionId === sessionId) return;
+    // 获取当前消息状态
+    const currentMessages = useRunPanelStore.getState().messages;
+    
+    if (currentSessionId === sessionId) {
+      // 即使是当前会话，如果没有消息也需要加载
+      if (currentMessages.length === 0) {
+        try {
+          const msgs = await runApi.getSessionMessages(sessionId);
+          const restoredMessages: LLMMessage[] = msgs.map((msg: any) => {
+            const data = msg.data || [];
+            let content = '';
+            let reasoningContent: string | undefined;
+            
+            for (const block of data) {
+              if (block.type === 'content') {
+                content = block.content || '';
+              } else if (block.type === 'reasoning_content') {
+                reasoningContent = block.reasoning_content;
+              }
+            }
+            
+            return {
+              id: msg.id,
+              role: msg.role as 'user' | 'assistant' | 'system',
+              content: content || msg.content || '',
+              reasoning_content: reasoningContent,
+              data,
+              timestamp: msg.created_at || new Date().toISOString(),
+              tokens: msg.total_tokens,
+              agent_id: msg.agent_id,
+            };
+          });
+          setMessages(restoredMessages);
+        } catch (error) {
+          console.warn('Failed to load session messages:', error);
+        }
+      }
+      return;
+    }
+    
     setCurrentSessionId(sessionId);
     setMessages([]);
     setCallRecords([]);
     clearStreamingData();
     try {
       const msgs = await runApi.getSessionMessages(sessionId);
-      const restoredMessages: LLMMessage[] = msgs.map((msg: any) => ({
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: msg.content || '',
-        reasoning_content: msg.reasoning_content,
-        data: msg.data || [],
-        timestamp: msg.created_at || new Date().toISOString(),
-        tokens: msg.total_tokens,
-      }));
+      const restoredMessages: LLMMessage[] = msgs.map((msg: any) => {
+        const data = msg.data || [];
+        let content = '';
+        let reasoningContent: string | undefined;
+        
+        for (const block of data) {
+          if (block.type === 'content') {
+            content = block.content || '';
+          } else if (block.type === 'reasoning_content') {
+            reasoningContent = block.reasoning_content;
+          }
+        }
+        
+        return {
+          id: msg.id,
+          role: msg.role as 'user' | 'assistant' | 'system',
+          content: content || msg.content || '',
+          reasoning_content: reasoningContent,
+          data,
+          timestamp: msg.created_at || new Date().toISOString(),
+          tokens: msg.total_tokens,
+          agent_id: msg.agent_id,
+        };
+      });
       setMessages(restoredMessages);
     } catch (error) {
       console.warn('Failed to load session messages:', error);

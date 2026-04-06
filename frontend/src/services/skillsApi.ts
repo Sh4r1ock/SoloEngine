@@ -34,7 +34,7 @@ export interface SkillsPackage {
   folder_path?: string;
   is_active: boolean;
   is_public?: boolean;
-  is_default?: boolean;
+  is_system?: boolean;
   source?: string;
   lock_version?: number;
   icon?: string;

@@ -44,6 +44,7 @@ import {
   DeleteOutlined,
   CopyOutlined,
   SelectOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
 import { NodeData, EdgeData } from '../../types/canvas';
@@ -51,6 +52,8 @@ import AgentNode from './AgentNode';
 import Toolbar from '../Toolbar/Toolbar';
 import ScalableBackground from './ScalableBackground';
 import SmartGridLines from './SmartGridLines';
+import { toolsApi, AgentPreset } from '../../services/toolsApi';
+import { getPresets } from '../../stores/presetsStore';
 
 interface ContextMenuPosition {
   x: number;
@@ -74,6 +77,16 @@ interface AnnotationNodeData {
   color: string;
   editable?: boolean;
 }
+
+const getPresetIcon = (iconName: string) => {
+  const iconMap: Record<string, React.ReactNode> = {
+    'TeamOutlined': <TeamOutlined />,
+    'UserOutlined': <UserOutlined />,
+    'ToolOutlined': <ToolOutlined />,
+    'SettingOutlined': <SettingOutlined />,
+  };
+  return iconMap[iconName] || <SettingOutlined />;
+};
 
 const AnnotationNode: React.FC<{ data: AnnotationNodeData; id: string }> = ({ data, id }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -246,27 +259,27 @@ const Canvas: React.FC = () => {
     });
   }, [reactFlowInstance]);
 
-  const addNodeByType = useCallback(async (agentType: "orchestrator" | "planner" | "executor") => {
+  const addNodeByType = useCallback(async (presetId: string) => {
     if (!contextMenu) return;
 
-    const typeNames = {
-      orchestrator: '协调者',
-      planner: '规划者',
-      executor: '执行者',
-    };
+    const preset = getPresets().find(p => p.id === presetId);
+    const presetName = preset?.name || '节点';
 
     const newNode = {
       id: `node_${Date.now()}`,
       type: 'agent' as const,
       position: { x: contextMenu.canvasX, y: contextMenu.canvasY },
       data: {
-        name: `新${typeNames[agentType]}`,
+        name: `新${presetName}`,
         desc: '',
-        agentType,
-        system_prompt: '',
+        agentType: presetId,
+        color: preset?.color || '#3F51B5',
+        system_prompt: preset?.system_prompt || '',
         user_prompt: '',
         assistant_prompt: '',
-        skills: [],
+        skills: preset?.skills || [],
+        tools: preset?.tools || [],
+        mcp_tools: preset?.mcp_tools || [],
       },
     };
 
@@ -341,25 +354,13 @@ const Canvas: React.FC = () => {
           disabled: true,
         },
         { type: 'divider' },
-        {
-          key: 'orchestrator',
-          icon: <TeamOutlined style={{ color: '#3F51B5' }} />,
-          label: <span style={{ color: '#3F51B5', fontWeight: 500 }}>协调者</span>,
-          onClick: () => addNodeByType('orchestrator'),
-        },
-        {
-          key: 'planner',
-          icon: <UserOutlined style={{ color: '#4CAF50' }} />,
-          label: <span style={{ color: '#4CAF50', fontWeight: 500 }}>规划者</span>,
-          onClick: () => addNodeByType('planner'),
-        },
-        {
-          key: 'executor',
-          icon: <ToolOutlined style={{ color: '#FF9800' }} />,
-          label: <span style={{ color: '#FF9800', fontWeight: 500 }}>执行者</span>,
-          onClick: () => addNodeByType('executor'),
-        },
-        { type: 'divider' },
+        ...getPresets().map(preset => ({
+          key: preset.id,
+          icon: getPresetIcon(preset.icon),
+          label: <span style={{ color: preset.color || '#3F51B5', fontWeight: 500 }}>{preset.name}</span>,
+          onClick: () => addNodeByType(preset.id),
+        })),
+        { type: 'divider' as const },
         {
           key: 'annotation',
           icon: <CommentOutlined style={{ color: '#ffc107' }} />,
@@ -392,7 +393,8 @@ const Canvas: React.FC = () => {
       const typeData = event.dataTransfer.getData('application/reactflow');
       if (!typeData) return;
 
-      const agentType = JSON.parse(typeData);
+      const presetId = JSON.parse(typeData);
+      const preset = getPresets().find(p => p.id === presetId);
       const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
       if (!reactFlowBounds) return;
 
@@ -408,13 +410,16 @@ const Canvas: React.FC = () => {
         type: 'agent' as const,
         position,
         data: {
-          name: '新节点',
+          name: `新${preset?.name || '节点'}`,
           desc: '',
-          agentType: agentType as "orchestrator" | "planner" | "executor",
-          system_prompt: '',
+          agentType: presetId,
+          color: preset?.color || '#3F51B5',
+          system_prompt: preset?.system_prompt || '',
           user_prompt: '',
           assistant_prompt: '',
-          skills: [],
+          skills: preset?.skills || [],
+          tools: preset?.tools || [],
+          mcp_tools: preset?.mcp_tools || [],
         },
       };
 

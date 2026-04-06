@@ -33,13 +33,18 @@ import json
 import uuid
 import logging
 import asyncio
+import re
+import shutil
+import zipfile
+import tempfile
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, MCPServerModel, OptimisticLockError
+from app.core.database import get_db, db_manager, mcp_db_manager, MCPServerModel, MCPStdioConfigModel, OptimisticLockError
+from app.core.data_paths import DataPaths
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 
@@ -48,16 +53,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
 
 
-MCP_ROOT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "..", "mcp_servers")
-os.makedirs(MCP_ROOT_DIR, exist_ok=True)
-
-
-def get_user_mcp_dir(user_id: str) -> str:
-    """获取用户的MCP目录。"""
-    user_dir = os.path.join(MCP_ROOT_DIR, user_id)
-    os.makedirs(user_dir, exist_ok=True)
-    return user_dir
-
+def get_mcp_server_dir(user_id: str, name: str) -> str:
+    """获取MCP Server存储目录（用户隔离）。"""
+    base_dir = DataPaths.get_user_mcp_servers_dir(user_id)
+    DataPaths.ensure_dir(base_dir)
+    server_dir = os.path.join(base_dir, name)
+    DataPaths.ensure_dir(server_dir)
+    return server_dir
 
 class MCPServerCreate(BaseModel):
     name: str = Field(..., description="服务器名称")
@@ -69,6 +71,7 @@ class MCPServerCreate(BaseModel):
     headers: Optional[Dict[str, str]] = Field(None, description="HTTP 头")
     timeout: int = Field(30, description="超时时间（秒）")
     enabled: bool = Field(True, description="是否启用")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
 
 
 class MCPServerUpdate(BaseModel):
@@ -81,6 +84,8 @@ class MCPServerUpdate(BaseModel):
     headers: Optional[Dict[str, str]] = None
     timeout: Optional[int] = None
     enabled: Optional[bool] = None
+    tags: Optional[List[str]] = None
+    description: Optional[str] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
 
 
@@ -88,6 +93,34 @@ class CreatePythonMCPRequest(BaseModel):
     name: str = Field(..., description="MCP名称")
     description: str = Field("", description="MCP描述")
     tools: List[Dict[str, Any]] = Field(default_factory=list, description="工具列表")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
+
+
+class CreateHttpMCPRequest(BaseModel):
+    name: str = Field(..., description="MCP名称")
+    description: str = Field("", description="MCP描述")
+    url: str = Field(..., description="HTTP服务器URL")
+    headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="HTTP请求头")
+    timeout: int = Field(30, description="超时时间（秒）")
+    session_id: Optional[str] = Field(None, description="会话ID")
+    enabled: Optional[bool] = Field(True, description="是否启用")
+    share: Optional[bool] = Field(False, description="是否共享")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
+
+
+class CreateSseMCPRequest(BaseModel):
+    name: str = Field(..., description="MCP名称")
+    description: str = Field("", description="MCP描述")
+    url: str = Field(..., description="SSE服务器URL")
+    headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="HTTP请求头")
+    timeout: int = Field(30, description="超时时间（秒）")
+    reconnect: Optional[bool] = Field(True, description="是否自动重连")
+    sse_endpoint: Optional[str] = Field("/sse", description="SSE端点路径")
+    retry_interval: Optional[int] = Field(5, description="重试间隔（秒）")
+    max_retries: Optional[int] = Field(3, description="最大重试次数")
+    enabled: Optional[bool] = Field(True, description="是否启用")
+    share: Optional[bool] = Field(False, description="是否共享")
+    tags: Optional[List[str]] = Field(None, description="标签列表")
 
 
 class CallToolRequest(BaseModel):
@@ -187,63 +220,56 @@ async def list_servers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取用户的所有 MCP 服务器（包含系统默认MCP）。"""
-    from app.utils.default_packages import DEFAULT_MCP_SERVERS
-    
+    """获取用户的所有 MCP 服务器（包含系统MCP和用户自己的MCP）。"""
     user_id = current_user.id
-    servers = db_manager.get_mcp_servers(db, user_id)
+
+    servers = mcp_db_manager.get_servers(db, user_id)
     
     user_server_names = {s.name for s in servers}
     
     result = []
     
     for server in servers:
-        result.append({
+        # 根据 transport_type 获取对应的配置
+        server_data = {
             "id": server.id,
             "user_id": server.user_id,
             "name": server.name,
-            "transport": server.transport,
-            "url": server.url,
-            "command": server.command,
-            "args": server.args or [],
-            "env": server.env or {},
-            "headers": server.headers or {},
-            "timeout": server.timeout,
-            "enabled": server.enabled,
+            "transport": server.transport_type,
+            "description": server.description,
+            "url": "",
+            "command": None,
+            "args": [],
+            "env": {},
+            "headers": {},
+            "timeout": 30,
+            "enabled": server.is_enabled,
             "is_public": server.is_public,
             "is_default": False,
             "version": server.version,
-            "status": "connected" if server.enabled else "disconnected",
+            "status": "connected" if server.is_enabled else "disconnected",
             "created_at": server.created_at.isoformat() if server.created_at else None,
             "updated_at": server.updated_at.isoformat() if server.updated_at else None,
-        })
-    
-    for idx, default_mcp in enumerate(DEFAULT_MCP_SERVERS):
-        if default_mcp["name"] not in user_server_names:
-            result.append({
-                "id": f"default_{idx}",
-                "user_id": "system",
-                "name": default_mcp["name"],
-                "transport": default_mcp.get("transport", "stdio"),
-                "url": "",
-                "command": default_mcp.get("command"),
-                "args": default_mcp.get("args", []),
-                "env": default_mcp.get("env", {}),
-                "headers": {},
-                "timeout": default_mcp.get("timeout", 30),
-                "enabled": False,
-                "is_public": True,
-                "is_default": True,
-                "author": default_mcp.get("author", "SoloEngine"),
-                "source": default_mcp.get("source", ""),
-                "description": default_mcp.get("description", ""),
-                "tags": default_mcp.get("tags", []),
-                "version": 0,
-                "status": "disconnected",
-                "created_at": None,
-                "updated_at": None,
-            })
-    
+            "tags": server.tags or [],
+        }
+        
+        # 根据传输类型填充配置
+        if server.transport_type == "stdio" and server.stdio_config:
+            server_data["command"] = server.stdio_config.command
+            server_data["args"] = server.stdio_config.args or []
+            server_data["env"] = server.stdio_config.env or {}
+            server_data["folder_path"] = server.stdio_config.folder_path
+        elif server.transport_type == "http" and server.http_config:
+            server_data["url"] = server.http_config.url
+            server_data["headers"] = server.http_config.headers or {}
+            server_data["timeout"] = server.http_config.timeout or 30
+        elif server.transport_type == "sse" and server.sse_config:
+            server_data["url"] = server.sse_config.url
+            server_data["headers"] = server.sse_config.headers or {}
+            server_data["timeout"] = server.sse_config.timeout or 30
+        
+        result.append(server_data)
+
     return {
         "code": 200,
         "message": "MCP servers retrieved",
@@ -260,18 +286,41 @@ async def add_server(
     """添加 MCP 服务器。"""
     user_id = current_user.id
     
-    new_server = db_manager.create_mcp_server(
+    new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
         name=server.name,
-        transport=server.transport,
-        url=server.url,
-        command=server.command,
-        args=server.args,
-        env=server.env,
-        headers=server.headers,
-        timeout=server.timeout,
+        transport_type=server.transport,
+        description=None,
+        enabled=server.enabled,
+        tags=server.tags,
     )
+    
+    # 根据传输类型创建对应的配置
+    if server.transport == "stdio" and (server.command or server.args):
+        mcp_db_manager.create_stdio_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            command=server.command,
+            args=server.args or [],
+            env=server.env or {},
+        )
+    elif server.transport == "http" and server.url:
+        mcp_db_manager.create_http_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            url=server.url,
+            headers=server.headers or {},
+            timeout=server.timeout or 30,
+        )
+    elif server.transport == "sse" and server.url:
+        mcp_db_manager.create_sse_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            url=server.url,
+            headers=server.headers or {},
+            timeout=server.timeout or 30,
+        )
     
     return {
         "code": 200,
@@ -280,14 +329,14 @@ async def add_server(
             "id": new_server.id,
             "user_id": new_server.user_id,
             "name": new_server.name,
-            "transport": new_server.transport,
-            "url": new_server.url,
-            "command": new_server.command,
-            "args": new_server.args or [],
-            "env": new_server.env or {},
-            "headers": new_server.headers or {},
-            "timeout": new_server.timeout,
-            "enabled": new_server.enabled,
+            "transport": new_server.transport_type,
+            "url": server.url or "",
+            "command": server.command,
+            "args": server.args or [],
+            "env": server.env or {},
+            "headers": server.headers or {},
+            "timeout": server.timeout or 30,
+            "enabled": new_server.is_enabled,
             "status": "disconnected",
         },
     }
@@ -301,29 +350,46 @@ async def get_server(
 ):
     """获取指定的 MCP 服务器。"""
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
+    server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
+    # 根据 transport_type 获取对应的配置
+    server_data = {
+        "id": server.id,
+        "user_id": server.user_id,
+        "name": server.name,
+        "transport": server.transport_type,
+        "url": "",
+        "command": None,
+        "args": [],
+        "env": {},
+        "headers": {},
+        "timeout": 30,
+        "enabled": server.is_enabled,
+        "is_public": server.is_public,
+        "status": "disconnected",
+    }
+    
+    # 根据传输类型填充配置
+    if server.transport_type == "stdio" and server.stdio_config:
+        server_data["command"] = server.stdio_config.command
+        server_data["args"] = server.stdio_config.args or []
+        server_data["env"] = server.stdio_config.env or {}
+    elif server.transport_type == "http" and server.http_config:
+        server_data["url"] = server.http_config.url
+        server_data["headers"] = server.http_config.headers or {}
+        server_data["timeout"] = server.http_config.timeout or 30
+    elif server.transport_type == "sse" and server.sse_config:
+        server_data["url"] = server.sse_config.url
+        server_data["headers"] = server.sse_config.headers or {}
+        server_data["timeout"] = server.sse_config.timeout or 30
+    
     return {
         "code": 200,
         "message": "Server retrieved",
-        "data": {
-            "id": server.id,
-            "user_id": server.user_id,
-            "name": server.name,
-            "transport": server.transport,
-            "url": server.url,
-            "command": server.command,
-            "args": server.args or [],
-            "env": server.env or {},
-            "headers": server.headers or {},
-            "timeout": server.timeout,
-            "enabled": server.enabled,
-            "is_public": server.is_public,
-            "status": "disconnected",
-        },
+        "data": server_data,
     }
 
 
@@ -337,35 +403,55 @@ async def update_server(
     """更新 MCP 服务器配置（带乐观锁）。"""
     user_id = current_user.id
     
+    # 首先获取服务器以检查类型
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    
+    # 更新主服务器配置
     update_data = {}
     if update.name is not None:
         update_data["name"] = update.name
     if update.transport is not None:
-        update_data["transport"] = update.transport
-    if update.url is not None:
-        update_data["url"] = update.url
-    if update.command is not None:
-        update_data["command"] = update.command
-    if update.args is not None:
-        update_data["args"] = update.args
-    if update.env is not None:
-        update_data["env"] = update.env
-    if update.headers is not None:
-        update_data["headers"] = update.headers
-    if update.timeout is not None:
-        update_data["timeout"] = update.timeout
+        update_data["transport_type"] = update.transport
     if update.enabled is not None:
-        update_data["enabled"] = update.enabled
+        update_data["is_enabled"] = update.enabled
+    if update.tags is not None:
+        update_data["tags"] = update.tags
+    if update.description is not None:
+        update_data["description"] = update.description
     
     try:
-        server = db_manager.update_mcp_server(
+        server = mcp_db_manager.update_server(
             db, server_id, user_id, version=update.version, **update_data
         )
     except OptimisticLockError as e:
         raise HTTPException(status_code=409, detail=str(e))
     
-    if not server:
-        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+    # 更新传输类型特定的配置
+    if server.transport_type == "stdio" and server.stdio_config:
+        if update.command is not None:
+            server.stdio_config.command = update.command
+        if update.args is not None:
+            server.stdio_config.args = update.args
+        if update.env is not None:
+            server.stdio_config.env = update.env
+    elif server.transport_type == "http" and server.http_config:
+        if update.url is not None:
+            server.http_config.url = update.url
+        if update.headers is not None:
+            server.http_config.headers = update.headers
+        if update.timeout is not None:
+            server.http_config.timeout = update.timeout
+    elif server.transport_type == "sse" and server.sse_config:
+        if update.url is not None:
+            server.sse_config.url = update.url
+        if update.headers is not None:
+            server.sse_config.headers = update.headers
+        if update.timeout is not None:
+            server.sse_config.timeout = update.timeout
+    
+    db.commit()
     
     return {
         "code": 200,
@@ -373,9 +459,9 @@ async def update_server(
         "data": {
             "id": server.id,
             "name": server.name,
-            "transport": server.transport,
-            "url": server.url,
-            "enabled": server.enabled,
+            "transport": server.transport_type,
+            "url": server.http_config.url if server.http_config else (server.sse_config.url if server.sse_config else ""),
+            "enabled": server.is_enabled,
             "version": server.version,
         },
     }
@@ -389,7 +475,7 @@ async def delete_server(
 ):
     """删除 MCP 服务器。"""
     user_id = current_user.id
-    success = db_manager.delete_mcp_server(db, server_id, user_id)
+    success = mcp_db_manager.delete_server(db, server_id, user_id)
     
     if not success:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
@@ -409,9 +495,7 @@ async def create_python_mcp(
 ):
     """创建Python编写的MCP。"""
     user_id = current_user.id
-    user_mcp_dir = get_user_mcp_dir(user_id)
-    
-    mcp_dir = os.path.join(user_mcp_dir, request.name)
+    mcp_dir = get_mcp_server_dir(user_id, request.name)
     os.makedirs(mcp_dir, exist_ok=True)
     
     tools_code = ""
@@ -497,13 +581,25 @@ python main.py
     with open(readme_path, "w", encoding="utf-8") as f:
         f.write(readme_content)
     
-    new_server = db_manager.create_mcp_server(
+    # 创建服务器记录
+    new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
         name=request.name,
-        transport="stdio",
+        transport_type="stdio",
+        description=f"Python MCP: {request.name}",
+        enabled=True,
+        tags=request.tags,
+    )
+    
+    # 创建stdio配置
+    mcp_db_manager.create_stdio_config(
+        db=db,
+        mcp_server_id=new_server.id,
         command="python",
         args=[main_py_path],
+        env={},
+        folder_path=mcp_dir,
     )
     
     return {
@@ -526,15 +622,15 @@ async def get_mcp_code(
 ):
     """获取MCP的Python代码。"""
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
+    server = mcp_db_manager.get_server(db, server_id, user_id)
     
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
     
-    if server.transport != "stdio" or not server.args:
+    if server.transport_type != "stdio" or not server.stdio_config:
         raise HTTPException(status_code=400, detail="Server is not a Python MCP")
     
-    main_py_path = server.args[0] if server.args else None
+    main_py_path = server.stdio_config.args[0] if server.stdio_config.args else None
     if not main_py_path or not os.path.exists(main_py_path):
         raise HTTPException(status_code=404, detail="MCP code file not found")
     
@@ -566,21 +662,21 @@ async def update_mcp_code(
 ):
     """更新MCP的Python代码。"""
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
-    
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
-    if server.transport != "stdio" or not server.args:
+
+    if server.transport_type != "stdio" or not server.stdio_config:
         raise HTTPException(status_code=400, detail="Server is not a Python MCP")
-    
-    main_py_path = server.args[0] if server.args else None
+
+    main_py_path = server.stdio_config.args[0] if server.stdio_config.args else None
     if not main_py_path:
         raise HTTPException(status_code=404, detail="MCP code file not found")
-    
+
     with open(main_py_path, "w", encoding="utf-8") as f:
         f.write(request.code)
-    
+
     return {
         "code": 200,
         "message": "MCP code updated",
@@ -606,32 +702,55 @@ async def import_open_mcp(
 ):
     """导入开源 MCP 配置。"""
     mcp_config = next((m for m in OPEN_SOURCE_MCPS if m["id"] == mcp_id), None)
-    
+
     if not mcp_config:
         raise HTTPException(status_code=404, detail=f"MCP '{mcp_id}' not found")
-    
+
     user_id = current_user.id
-    
-    new_server = db_manager.create_mcp_server(
+
+    # 创建服务器记录
+    new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
         name=mcp_config["name"],
-        transport=mcp_config["transport"],
-        url="",
-        command=mcp_config.get("command"),
-        args=mcp_config.get("args", []),
-        env=mcp_config.get("env", {}),
-        headers={},
-        timeout=30,
+        transport_type=mcp_config["transport"],
+        description=None,
+        enabled=True,
     )
-    
+
+    # 根据传输类型创建对应的配置
+    if mcp_config["transport"] == "stdio":
+        mcp_db_manager.create_stdio_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            command=mcp_config.get("command"),
+            args=mcp_config.get("args", []),
+            env=mcp_config.get("env", {}),
+        )
+    elif mcp_config["transport"] == "http":
+        mcp_db_manager.create_http_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            url=mcp_config.get("url", ""),
+            headers={},
+            timeout=30,
+        )
+    elif mcp_config["transport"] == "sse":
+        mcp_db_manager.create_sse_config(
+            db=db,
+            mcp_server_id=new_server.id,
+            url=mcp_config.get("url", ""),
+            headers={},
+            timeout=30,
+        )
+
     return {
         "code": 200,
         "message": "MCP imported successfully",
         "data": {
             "id": new_server.id,
             "name": new_server.name,
-            "transport": new_server.transport,
+            "transport": new_server.transport_type,
             "status": "disconnected",
         },
     }
@@ -645,14 +764,14 @@ async def connect_server(
 ):
     """连接到 MCP 服务器。"""
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
-    
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
-    server.enabled = True
+
+    server.is_enabled = True
     db.commit()
-    
+
     return {
         "code": 200,
         "message": "Connected successfully",
@@ -668,14 +787,14 @@ async def disconnect_server(
 ):
     """断开 MCP 服务器连接。"""
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
-    
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
-    server.enabled = False
+
+    server.is_enabled = False
     db.commit()
-    
+
     return {
         "code": 200,
         "message": "Disconnected successfully",
@@ -740,28 +859,44 @@ async def get_server_tools(
 ):
     """获取MCP服务器的工具列表。"""
     from SoloAgent.plugins.mcp.mcp_client import MCPClient
-    
+
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
-    
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
+
+    # 根据传输类型获取配置
+    config = {}
+    if server.transport_type == "stdio" and server.stdio_config:
+        config = {
+            "transport": server.transport_type,
+            "command": server.stdio_config.command,
+            "args": server.stdio_config.args,
+            "env": server.stdio_config.env,
+        }
+    elif server.transport_type == "http" and server.http_config:
+        config = {
+            "transport": server.transport_type,
+            "url": server.http_config.url,
+            "headers": server.http_config.headers,
+            "timeout": server.http_config.timeout,
+        }
+    elif server.transport_type == "sse" and server.sse_config:
+        config = {
+            "transport": server.transport_type,
+            "url": server.sse_config.url,
+            "headers": server.sse_config.headers,
+            "timeout": server.sse_config.timeout,
+        }
+
     client = None
     try:
-        client = MCPClient({
-            "transport": server.transport,
-            "url": server.url,
-            "command": server.command,
-            "args": server.args,
-            "env": server.env,
-            "headers": server.headers,
-            "timeout": server.timeout,
-        })
-        
+        client = MCPClient(config)
+
         await client.connect()
         tools = await client.get_tools()
-        
+
         return {
             "code": 200,
             "message": "Tools retrieved",
@@ -804,36 +939,52 @@ async def call_server_tool(
     """调用MCP服务器的工具。"""
     from SoloAgent.plugins.mcp.mcp_client import MCPClient
     import re
-    
+
     if not re.match(r'^[\w\-\.]+$', tool_name):
         raise HTTPException(status_code=400, detail="Invalid tool name format")
-    
+
     if request.arguments:
         serialized_size = len(str(request.arguments))
         if serialized_size > 1024 * 1024:
             raise HTTPException(status_code=413, detail="Arguments size exceeds 1MB limit")
-    
+
     user_id = current_user.id
-    server = db_manager.get_mcp_server(db, server_id, user_id)
-    
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
-    
+
+    # 根据传输类型获取配置
+    config = {}
+    if server.transport_type == "stdio" and server.stdio_config:
+        config = {
+            "transport": server.transport_type,
+            "command": server.stdio_config.command,
+            "args": server.stdio_config.args,
+            "env": server.stdio_config.env,
+        }
+    elif server.transport_type == "http" and server.http_config:
+        config = {
+            "transport": server.transport_type,
+            "url": server.http_config.url,
+            "headers": server.http_config.headers,
+            "timeout": server.http_config.timeout,
+        }
+    elif server.transport_type == "sse" and server.sse_config:
+        config = {
+            "transport": server.transport_type,
+            "url": server.sse_config.url,
+            "headers": server.sse_config.headers,
+            "timeout": server.sse_config.timeout,
+        }
+
     client = None
     try:
-        client = MCPClient({
-            "transport": server.transport,
-            "url": server.url,
-            "command": server.command,
-            "args": server.args,
-            "env": server.env,
-            "headers": server.headers,
-            "timeout": server.timeout,
-        })
-        
+        client = MCPClient(config)
+
         await client.connect()
         result = await client.call_tool(tool_name, request.arguments)
-        
+
         return {
             "code": 200,
             "message": "Tool called successfully",
@@ -863,27 +1014,43 @@ async def get_all_tools(
 ):
     """获取所有已启用MCP服务器的工具。"""
     from SoloAgent.plugins.mcp.mcp_client import MCPClient
-    
+
     user_id = current_user.id
-    servers = db_manager.get_mcp_servers(db, user_id)
-    
+    servers = mcp_db_manager.get_servers(db, user_id)
+
     async def get_server_tools(server):
         tools = []
         client = None
         try:
-            client = MCPClient({
-                "transport": server.transport,
-                "url": server.url,
-                "command": server.command,
-                "args": server.args,
-                "env": server.env,
-                "headers": server.headers,
-                "timeout": server.timeout,
-            })
-            
+            # 根据传输类型获取配置
+            config = {}
+            if server.transport_type == "stdio" and server.stdio_config:
+                config = {
+                    "transport": server.transport_type,
+                    "command": server.stdio_config.command,
+                    "args": server.stdio_config.args,
+                    "env": server.stdio_config.env,
+                }
+            elif server.transport_type == "http" and server.http_config:
+                config = {
+                    "transport": server.transport_type,
+                    "url": server.http_config.url,
+                    "headers": server.http_config.headers,
+                    "timeout": server.http_config.timeout,
+                }
+            elif server.transport_type == "sse" and server.sse_config:
+                config = {
+                    "transport": server.transport_type,
+                    "url": server.sse_config.url,
+                    "headers": server.sse_config.headers,
+                    "timeout": server.sse_config.timeout,
+                }
+
+            client = MCPClient(config)
+
             await client.connect()
             server_tools = await client.get_tools()
-            
+
             for t in server_tools:
                 tools.append({
                     "name": t.get("name"),
@@ -901,15 +1068,15 @@ async def get_all_tools(
                 except Exception:
                     pass
         return tools
-    
-    enabled_servers = [s for s in servers if s.enabled]
+
+    enabled_servers = [s for s in servers if s.is_enabled]
     results = await asyncio.gather(*[get_server_tools(s) for s in enabled_servers], return_exceptions=True)
-    
+
     all_tools = []
     for result in results:
         if isinstance(result, list):
             all_tools.extend(result)
-    
+
     return {
         "code": 200,
         "message": "All tools retrieved",
@@ -1078,3 +1245,382 @@ async def init_default_mcps(
         "message": f"Initialized {added_count} default MCP servers",
         "data": {"added_count": added_count},
     }
+
+
+@router.post("/servers/create/stdio")
+async def create_stdio_mcp(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form("", description="MCP Server 描述"),
+    tags: Optional[str] = Form(None, description="标签列表 (JSON字符串)"),
+    package: Optional[UploadFile] = File(None, description="MCP Server 包 (.zip)"),
+    files: Optional[List[UploadFile]] = File(None, description="文件夹中的所有文件"),
+    file_paths: Optional[List[str]] = Form(None, description="文件相对路径列表"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建Stdio MCP（上传ZIP包或文件夹）。
+    
+    上传的 ZIP 包将被解压到 mcp_server 目录，或文件夹中的文件将被存储。
+    ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
+    """
+    user_id = current_user.id
+    
+    if not package and not files:
+        raise HTTPException(status_code=400, detail="Either package or files must be provided")
+    
+    safe_name = re.sub(r'[^\w\-]', '_', name)
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid server name")
+    
+    server_dir = get_mcp_server_dir(user_id, safe_name)
+    
+    main_py_path = None
+    entry_file = None
+    
+    if package:
+        if not package.filename.endswith('.zip') and not package.filename.endswith('.mcpb'):
+            raise HTTPException(status_code=400, detail="Only ZIP or MCPB packages are allowed")
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            temp_zip_path = os.path.join(temp_dir, "package.zip")
+            with open(temp_zip_path, "wb") as f:
+                content = await package.read()
+                f.write(content)
+            
+            with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(server_dir)
+            
+            # 处理嵌套目录（GitHub下载的ZIP常见）
+            extracted_items = [item for item in os.listdir(server_dir) if not item.startswith('.')]
+            if len(extracted_items) == 1:
+                potential_root = os.path.join(server_dir, extracted_items[0])
+                if os.path.isdir(potential_root):
+                    logger.info(f"[STDIO] Flattening nested directory: {extracted_items[0]}")
+                    for item in os.listdir(potential_root):
+                        shutil.move(os.path.join(potential_root, item), os.path.join(server_dir, item))
+                    os.rmdir(potential_root)
+            
+            # 查找入口文件 - 支持 Python 和 Node.js
+            entry_candidates = [
+                # Python 入口文件
+                'main.py', '__main__.py', 'server.py', 'app.py',
+                # Node.js 入口文件
+                'index.js', 'cli.js', 'server.js', 'app.js',
+                # 其他可能的入口
+                'package.json'
+            ]
+            
+            for entry in entry_candidates:
+                candidate = os.path.join(server_dir, entry)
+                if os.path.exists(candidate):
+                    main_py_path = candidate
+                    entry_file = entry
+                    break
+            
+            if not main_py_path:
+                for root, dirs, filenames in os.walk(server_dir):
+                    for filename in filenames:
+                        if filename in entry_candidates:
+                            main_py_path = os.path.join(root, filename)
+                            entry_file = filename
+                            break
+                    if main_py_path:
+                        break
+            
+            if not main_py_path:
+                raise HTTPException(status_code=400, detail="No valid entry file found (main.py, __main__.py, server.py, app.py for Python; index.js, cli.js, server.js, app.js for Node.js)")
+        
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file")
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+    
+    elif files:
+        if os.path.exists(server_dir):
+            shutil.rmtree(server_dir)
+        os.makedirs(server_dir, exist_ok=True)
+        
+        for idx, file in enumerate(files):
+            # 使用前端传递的 file_paths 作为相对路径，保持文件夹结构
+            if file_paths and idx < len(file_paths) and file_paths[idx]:
+                relative_path = file_paths[idx]
+            else:
+                relative_path = file.filename
+            
+            if not relative_path:
+                continue
+            
+            file_path = os.path.join(server_dir, relative_path)
+            file_dir = os.path.dirname(file_path)
+            os.makedirs(file_dir, exist_ok=True)
+            
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+        
+        # 查找入口文件 - 支持多种语言和格式
+        entry_candidates = [
+            # Python
+            'main.py', '__main__.py', 'server.py', 'app.py',
+            # Node.js / TypeScript
+            'index.js', 'cli.js', 'server.js', 'app.js',
+            'index.ts', 'server.ts', 'app.ts',
+            # Go
+            'main.go',
+            # Rust
+            'main.rs', 'lib.rs',
+            # Java
+            'Main.java',
+            # PHP
+            'index.php',
+            # Shell
+            'run.sh', 'start.sh',
+            # Binary
+            'mcp-server', 'server'
+        ]
+        
+        for entry in entry_candidates:
+            candidate = os.path.join(server_dir, entry)
+            if os.path.exists(candidate):
+                main_py_path = candidate
+                entry_file = entry
+                break
+        
+        if not main_py_path:
+            for root, dirs, filenames in os.walk(server_dir):
+                for filename in filenames:
+                    if filename in entry_candidates:
+                        main_py_path = os.path.join(root, filename)
+                        entry_file = filename
+                        break
+                if main_py_path:
+                    break
+        
+        if not main_py_path:
+            raise HTTPException(status_code=400, detail="No valid entry file found. Supported: Python (.py), Node.js (.js/.ts), Go (.go), Rust (.rs), Java (.java), PHP (.php), Shell (.sh), or binary")
+    
+    # 根据入口文件类型确定运行命令
+    if entry_file:
+        ext = os.path.splitext(entry_file)[1].lower()
+        basename = os.path.basename(entry_file).lower()
+        
+        if ext == '.py' or basename == '__main__.py':
+            run_command = "python"
+            run_args = [main_py_path]
+        elif ext in ['.js', '.mjs']:
+            run_command = "node"
+            run_args = [main_py_path]
+        elif ext == '.ts':
+            run_command = "npx"
+            run_args = ["tsx", main_py_path]
+        elif ext == '.go':
+            run_command = "go"
+            run_args = ["run", main_py_path]
+        elif ext in ['.rs', '.lib.rs']:
+            run_command = "cargo"
+            run_args = ["run", "--manifest-path", os.path.join(server_dir, "Cargo.toml")] if os.path.exists(os.path.join(server_dir, "Cargo.toml")) else ["run", "--bin", entry_file.replace('.rs', '')]
+        elif ext == '.java':
+            run_command = "java"
+            run_args = [main_py_path]
+        elif ext == '.php':
+            run_command = "php"
+            run_args = [main_py_path]
+        elif ext in ['.sh']:
+            run_command = "bash"
+            run_args = [main_py_path]
+        elif basename in ['run.sh', 'start.sh']:
+            run_command = "bash"
+            run_args = [main_py_path]
+        elif basename == 'package.json':
+            # Node.js 项目，使用 npx 运行
+            run_command = "npx"
+            run_args = ["-y", server_dir]
+        elif basename in ['mcp-server', 'server']:
+            run_command = os.path.join(server_dir, entry_file)
+            run_args = []
+        else:
+            run_command = "python"
+            run_args = [main_py_path]
+    else:
+        run_command = "python"
+        run_args = []
+    
+    # 解析标签
+    import json
+    parsed_tags = []
+    if tags:
+        try:
+            parsed_tags = json.loads(tags)
+            if not isinstance(parsed_tags, list):
+                parsed_tags = []
+        except json.JSONDecodeError:
+            parsed_tags = []
+    
+    # 创建数据库记录
+    try:
+        new_server = MCPServerModel(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            name=name,
+            transport_type="stdio",
+            description=description,
+            is_enabled=True,
+            author="user",
+            tags=parsed_tags,
+        )
+        db.add(new_server)
+        db.flush()
+        
+        stdio_config = MCPStdioConfigModel(
+            mcp_server_id=new_server.id,
+            command=run_command,
+            args=run_args,
+            folder_path=server_dir,
+        )
+        db.add(stdio_config)
+        db.commit()
+        db.refresh(new_server)
+
+        return {
+            "code": 200,
+            "message": "Stdio MCP Server created successfully",
+            "data": {
+                "id": new_server.id,
+                "name": new_server.name,
+                "transport_type": "stdio",
+                "folder_path": server_dir,
+                "entry_file": entry_file,
+                "main_file": main_py_path,
+            },
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[STDIO] Failed to create server: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create server: {str(e)}")
+
+
+@router.post("/servers/create/http")
+async def create_http_mcp(
+    request: CreateHttpMCPRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建HTTP MCP服务器。
+
+    通过URL连接到远程HTTP MCP服务器。
+    """
+    user_id = current_user.id
+
+    # 验证URL格式
+    if not request.url or not request.url.startswith(('http://', 'https://')):
+        raise HTTPException(status_code=400, detail="Invalid URL format. URL must start with http:// or https://")
+
+    try:
+        # 创建服务器记录
+        new_server = MCPServerModel(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            name=request.name,
+            transport_type="http",
+            description=request.description,
+            is_enabled=request.enabled if request.enabled is not None else True,
+            is_public=request.share if request.share is not None else False,
+            author="user",
+            tags=request.tags or [],
+        )
+        db.add(new_server)
+        db.flush()
+
+        # 创建HTTP配置
+        from app.core.database import MCPHttpConfigModel
+        http_config = MCPHttpConfigModel(
+            mcp_server_id=new_server.id,
+            url=request.url,
+            headers=request.headers or {},
+            timeout=request.timeout or 30,
+            session_id=request.session_id,
+        )
+        db.add(http_config)
+        db.commit()
+        db.refresh(new_server)
+
+        return {
+            "code": 200,
+            "message": "HTTP MCP Server created successfully",
+            "data": {
+                "id": new_server.id,
+                "name": new_server.name,
+                "transport_type": "http",
+                "url": request.url,
+            },
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[HTTP] Failed to create server: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create server: {str(e)}")
+
+
+@router.post("/servers/create/sse")
+async def create_sse_mcp(
+    request: CreateSseMCPRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建SSE MCP服务器。
+
+    通过URL连接到远程SSE MCP服务器。
+    """
+    user_id = current_user.id
+
+    # 验证URL格式
+    if not request.url or not request.url.startswith(('http://', 'https://')):
+        raise HTTPException(status_code=400, detail="Invalid URL format. URL must start with http:// or https://")
+
+    try:
+        # 创建服务器记录
+        new_server = MCPServerModel(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            name=request.name,
+            transport_type="sse",
+            description=request.description,
+            is_enabled=request.enabled if request.enabled is not None else True,
+            is_public=request.share if request.share is not None else False,
+            author="user",
+            tags=request.tags or [],
+        )
+        db.add(new_server)
+        db.flush()
+
+        # 创建SSE配置
+        from app.core.database import MCPSseConfigModel
+        sse_config = MCPSseConfigModel(
+            mcp_server_id=new_server.id,
+            url=request.url,
+            headers=request.headers or {},
+            timeout=request.timeout or 30,
+            reconnect=request.reconnect if request.reconnect is not None else True,
+            sse_endpoint=request.sse_endpoint if request.sse_endpoint else "/sse",
+            retry_interval=request.retry_interval if request.retry_interval is not None else 5,
+            max_retries=request.max_retries if request.max_retries is not None else 3,
+        )
+        db.add(sse_config)
+        db.commit()
+        db.refresh(new_server)
+
+        return {
+            "code": 200,
+            "message": "SSE MCP Server created successfully",
+            "data": {
+                "id": new_server.id,
+                "name": new_server.name,
+                "transport_type": "sse",
+                "url": request.url,
+            },
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[SSE] Failed to create server: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create server: {str(e)}")

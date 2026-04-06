@@ -25,7 +25,7 @@ import asyncio
 import json
 import os
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timezone
 import uuid
 
@@ -43,7 +43,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.core.database import get_db, db_manager, AgenticFlowSessionModel, SessionMessageModel, get_db_context
+from app.core.database import get_db, db_manager, AgenticFlowSessionModel, SessionMessageModel, get_db_context, get_db_context_async
 from SoloAgent.solo_agent.compiler import AgenticFlowCompiler, FlowRunner, CompiledFlowFactory
 from app.api.v1.auth import get_current_user
 from app.core.auth import User, auth_service
@@ -56,7 +56,7 @@ router = APIRouter(prefix="/api/v1/run", tags=["run"])
 
 
 class ChunkCollector:
-    """收集流式chunk并合并，支持多agent"""
+    """收集流式chunk并合并，支持多agent和堆栈作用域"""
     
     def __init__(self):
         self._chunks = []
@@ -64,20 +64,19 @@ class ChunkCollector:
         self._current_agent_id = None
         self._current_agent_name = None
         self._current_block = {}
+        self._pending_tool_calls = {}
+        self._state_stack = []
+        self._root_agent_id = None
     
     def add_chunk(self, delta: dict, agent_id: str = None, agent_name: str = None):
-        """添加chunk，支持agent_id分组"""
-        if agent_id and agent_id != self._current_agent_id:
-            if self._current_block and self._current_agent_id:
-                if self._current_agent_id not in self._agent_data:
-                    self._agent_data[self._current_agent_id] = {
-                        'agent_name': self._current_agent_name,
-                        'data': []
-                    }
-                self._agent_data[self._current_agent_id]['data'].append(self._current_block)
-                self._current_block = {}
-            self._current_agent_id = agent_id
-            self._current_agent_name = agent_name
+        """添加chunk，支持agent_id分组和堆栈作用域"""
+        if agent_id:
+            if self._current_agent_id is None:
+                self._root_agent_id = agent_id
+                self._current_agent_id = agent_id
+                self._current_agent_name = agent_name
+            elif agent_id != self._current_agent_id:
+                self._handle_agent_switch(agent_id, agent_name)
         
         if self._current_agent_id and self._current_agent_id not in self._agent_data:
             self._agent_data[self._current_agent_id] = {
@@ -88,63 +87,93 @@ class ChunkCollector:
         chunk_type = self._normalize_type(delta)
         content = self._extract_content(delta, chunk_type)
         
+        if chunk_type != 'tool_calls' and not content:
+            return
+        if chunk_type == 'tool_calls' and not content:
+            return
+        
         if chunk_type == 'tool_calls':
-            # tool_calls 类型：按 id 拼接合并
-            if self._current_block and self._current_block.get('type') == 'tool_calls':
-                existing_tool_calls = self._current_block.get('tool_calls', [])
-                for new_tool_call in content:
-                    tool_id = new_tool_call.get('id')
-                    if tool_id:
-                        # 按 id 查找已存在的 tool_call
-                        found = False
-                        for existing_call in existing_tool_calls:
-                            if existing_call.get('id') == tool_id:
-                                found = True
-                                # 拼接合并：浅合并所有字段
-                                for key, value in new_tool_call.items():
-                                    if key == 'function' and isinstance(value, dict):
-                                        # function 字段需要深度合并
-                                        if 'function' not in existing_call:
-                                            existing_call['function'] = {}
-                                        existing_func = existing_call['function']
-                                        for func_key, func_value in value.items():
-                                            if func_key == 'arguments':
-                                                # arguments 字段：追加拼接
-                                                existing_func['arguments'] = existing_func.get('arguments', '') + func_value
-                                            else:
-                                                # 其他字段：覆盖
-                                                if func_key not in existing_func:
-                                                    existing_func[func_key] = func_value
-                                    elif key not in existing_call or existing_call.get(key) is None:
-                                        # 其他字段：首次出现时设置
-                                        existing_call[key] = value
-                                    elif key in ['status', 'result', 'error']:
-                                        # status/result/error：直接覆盖
-                                        existing_call[key] = value
-                                break
-                        if not found:
-                            # 新的 tool_call，追加
-                            existing_tool_calls.append(new_tool_call)
-                self._current_block['tool_calls'] = existing_tool_calls
-            else:
-                # 当前块不是 tool_calls 类型，保存旧块，创建新块
-                if self._current_block and self._current_agent_id:
-                    if self._current_agent_id not in self._agent_data:
-                        self._agent_data[self._current_agent_id] = {
-                            'agent_name': self._current_agent_name,
-                            'data': []
-                        }
-                    self._agent_data[self._current_agent_id]['data'].append(self._current_block)
-                self._current_block = {'type': 'tool_calls', 'tool_calls': content}
+            self._process_tool_calls(content)
         else:
             if self._current_block and self._current_block.get('type') == chunk_type:
                 self._current_block[chunk_type] = (self._current_block.get(chunk_type, "") or "") + content
             else:
                 if self._current_block:
                     self._agent_data[self._current_agent_id]['data'].append(self._current_block)
+                    self._current_block['_added_to_agent_data'] = True
                 self._current_block = {chunk_type: content, 'type': chunk_type}
         
         self._chunks.append({'delta': delta, 'agent_id': agent_id})
+    
+    def _process_tool_calls(self, tool_calls: list):
+        """处理tool_calls，合并调用和result"""
+        agent_id = self._current_agent_id
+        if agent_id not in self._pending_tool_calls:
+            self._pending_tool_calls[agent_id] = {}
+        
+        if 'index_to_id' not in self._pending_tool_calls[agent_id]:
+            self._pending_tool_calls[agent_id]['index_to_id'] = {}
+        
+        for new_tc in tool_calls:
+            tool_id = new_tc.get('id')
+            tool_index = new_tc.get('index')
+            has_result = 'result' in new_tc or 'error' in new_tc
+            
+            if tool_id and tool_index is not None:
+                self._pending_tool_calls[agent_id]['index_to_id'][tool_index] = tool_id
+            
+            if not tool_id and tool_index is not None:
+                tool_id = self._pending_tool_calls[agent_id]['index_to_id'].get(tool_index)
+            
+            if tool_id and tool_id in self._pending_tool_calls[agent_id]:
+                import copy
+                existing_tc = self._pending_tool_calls[agent_id][tool_id]
+                for key, value in new_tc.items():
+                    if key == 'function' and isinstance(value, dict):
+                        if 'function' not in existing_tc:
+                            existing_tc['function'] = {}
+                        for func_key, func_value in value.items():
+                            if func_key == 'arguments':
+                                existing_tc['function']['arguments'] = existing_tc['function'].get('arguments', '') + func_value
+                            else:
+                                if func_key not in existing_tc['function']:
+                                    existing_tc['function'][func_key] = func_value
+                    elif key in ['result', 'error', 'status']:
+                        existing_tc[key] = copy.deepcopy(value)
+                    elif key not in existing_tc or existing_tc.get(key) is None:
+                        existing_tc[key] = copy.deepcopy(value) if isinstance(value, (dict, list)) else value
+                
+                if has_result:
+                    if self._current_block and self._current_block.get('type') == 'tool_calls':
+                        self._current_block['tool_calls'].append(existing_tc)
+                    else:
+                        if self._current_block:
+                            self._agent_data[agent_id]['data'].append(self._current_block)
+                        self._current_block = {'type': 'tool_calls', 'tool_calls': [existing_tc]}
+                    del self._pending_tool_calls[agent_id][tool_id]
+            elif tool_id and not has_result:
+                import copy
+                self._pending_tool_calls[agent_id][tool_id] = copy.deepcopy(new_tc)
+            elif tool_id:
+                import copy
+                self._pending_tool_calls[agent_id][tool_id] = copy.deepcopy(new_tc)
+                if has_result:
+                    if self._current_block and self._current_block.get('type') == 'tool_calls':
+                        self._current_block['tool_calls'].append(self._pending_tool_calls[agent_id][tool_id])
+                    else:
+                        if self._current_block:
+                            self._agent_data[agent_id]['data'].append(self._current_block)
+                        self._current_block = {'type': 'tool_calls', 'tool_calls': [self._pending_tool_calls[agent_id][tool_id]]}
+                    del self._pending_tool_calls[agent_id][tool_id]
+            else:
+                import copy
+                copied_tc = copy.deepcopy(new_tc)
+                if self._current_block and self._current_block.get('type') == 'tool_calls':
+                    self._current_block['tool_calls'].append(copied_tc)
+                else:
+                    if self._current_block:
+                        self._agent_data[agent_id]['data'].append(self._current_block)
+                    self._current_block = {'type': 'tool_calls', 'tool_calls': [copied_tc]}
     
     def _normalize_type(self, delta: dict) -> str:
         if isinstance(delta, str):
@@ -170,8 +199,53 @@ class ChunkCollector:
         else:
             return delta.get('content', '') or delta.get('text', '')
     
+    def _handle_agent_switch(self, new_agent_id: str, new_agent_name: str):
+        """处理 agent 切换，使用堆栈保存/恢复状态"""
+        if new_agent_id == self._root_agent_id:
+            while self._state_stack:
+                self._pop_state()
+        else:
+            self._push_state()
+            self._current_agent_id = new_agent_id
+            self._current_agent_name = new_agent_name
+    
+    def _push_state(self):
+        """保存当前状态到堆栈（SubAgent 进入）"""
+        self._state_stack.append({
+            'agent_id': self._current_agent_id,
+            'agent_name': self._current_agent_name,
+            'current_block': self._current_block,
+            'pending_tool_calls': self._pending_tool_calls.get(self._current_agent_id, {})
+        })
+        self._current_block = {}
+        logger.debug(f"[ChunkCollector] Push state: {self._current_agent_id}")
+    
+    def _pop_state(self):
+        """从堆栈恢复状态（SubAgent 退出）"""
+        if self._current_block and self._current_agent_id and not self._current_block.get('_added_to_agent_data'):
+            if self._current_agent_id not in self._agent_data:
+                self._agent_data[self._current_agent_id] = {
+                    'agent_name': self._current_agent_name,
+                    'data': []
+                }
+            self._agent_data[self._current_agent_id]['data'].append(self._current_block)
+            self._current_block['_added_to_agent_data'] = True
+        
+        if self._state_stack:
+            state = self._state_stack.pop()
+            self._current_agent_id = state['agent_id']
+            self._current_agent_name = state['agent_name']
+            self._current_block = state['current_block']
+            if self._current_agent_id not in self._pending_tool_calls:
+                self._pending_tool_calls[self._current_agent_id] = {}
+            self._pending_tool_calls[self._current_agent_id].update(state['pending_tool_calls'])
+            logger.debug(f"[ChunkCollector] Pop state: -> {self._current_agent_id}")
+    
     def get_agent_data(self) -> dict:
-        if self._current_block and self._current_agent_id:
+        while self._state_stack:
+            self._pop_state()
+        
+        if self._current_block and self._current_agent_id and not self._current_block.get('_added_to_agent_data'):
             if self._current_agent_id not in self._agent_data:
                 self._agent_data[self._current_agent_id] = {
                     'agent_name': self._current_agent_name,
@@ -179,6 +253,47 @@ class ChunkCollector:
                 }
             self._agent_data[self._current_agent_id]['data'].append(self._current_block)
             self._current_block = {}
+        
+        for agent_id, pending in self._pending_tool_calls.items():
+            if agent_id not in self._agent_data:
+                self._agent_data[agent_id] = {
+                    'agent_name': None,
+                    'data': []
+                }
+            
+            existing_tool_ids = set()
+            for block in self._agent_data[agent_id]['data']:
+                if block.get('type') == 'tool_calls':
+                    for tc in block.get('tool_calls', []):
+                        if tc.get('id'):
+                            existing_tool_ids.add(tc['id'])
+            
+            new_tool_calls = []
+            for tool_id, tc in pending.items():
+                if tool_id == 'index_to_id':
+                    continue
+                if tool_id not in existing_tool_ids:
+                    new_tool_calls.append(tc)
+            
+            if new_tool_calls:
+                self._agent_data[agent_id]['data'].append({
+                    'type': 'tool_calls',
+                    'tool_calls': new_tool_calls
+                })
+        
+        for agent_id in list(self._agent_data.keys()):
+            cleaned_data = []
+            for block in self._agent_data[agent_id]['data']:
+                block_type = block.get('type')
+                if block_type == 'content' and not block.get('content', '').strip():
+                    continue
+                if block_type == 'reasoning_content' and not block.get('reasoning_content', '').strip():
+                    continue
+                if block_type == 'tool_calls' and not block.get('tool_calls', []):
+                    continue
+                cleaned_data.append(block)
+            self._agent_data[agent_id]['data'] = cleaned_data
+        
         return self._agent_data
     
     def get_merged_data(self) -> list:
@@ -200,7 +315,8 @@ async def save_session_message(
     tokens: dict = None,
     agentic_flow_id: str = None,
     run_project_id: str = None,
-    parent_message_id: str = None
+    parent_message_id: str = None,
+    parent_agent_id: str = None
 ):
     """保存session消息到数据库
     
@@ -216,6 +332,7 @@ async def save_session_message(
         agentic_flow_id: AgenticFlow ID（用于创建新session时）
         run_project_id: Run Project ID（用于创建新session时）
         parent_message_id: 父消息ID
+        parent_agent_id: 父Agent ID（用于关联SubAgent与MainAgent）
     """
     from app.core.database import SessionMessageModel, func, AgenticFlowSessionModel
     
@@ -255,6 +372,7 @@ async def save_session_message(
             session_id=session_id,
             user_id=user_id,
             agent_id=agent_id,
+            parent_agent_id=parent_agent_id,
             role=role,
             data=data,
             status=status,
@@ -283,7 +401,13 @@ async def load_and_distribute_memories(
     session_id: str, 
     user_id: str
 ) -> Dict[str, List[Dict]]:
-    """从数据库读取记忆并按 agent_id 分发"""
+    """从数据库读取记忆并按 agent_id 分发
+    
+    应用过滤模式：tool_calls[].result 中的完整 JSON 只提取 content 字段
+    
+    关键修复：对于包含 tool_calls 的 assistant 消息，必须在后面添加对应的 tool 结果消息，
+    以满足 OpenAI API 的要求（tool_calls 后必须有 tool 消息响应）
+    """
     from app.core.database import SessionMessageModel
     
     records = db.query(SessionMessageModel).filter(
@@ -301,9 +425,12 @@ async def load_and_distribute_memories(
                 data = json.loads(data)
             except:
                 data = []
+        
+        filtered_data = _filter_tool_results(data)
+        
         message = {
             "role": record.role,
-            "content": data,
+            "content": filtered_data,
             "agent_id": record.agent_id
         }
         
@@ -313,6 +440,8 @@ async def load_and_distribute_memories(
             agent_memories[record.agent_id].append(message)
         else:
             shared_memories.append(message)
+        
+
     
     for agent_id in agent_memories:
         agent_memories[agent_id] = shared_memories + agent_memories[agent_id]
@@ -321,6 +450,44 @@ async def load_and_distribute_memories(
         agent_memories["default"] = shared_memories
     
     return agent_memories
+
+
+def _filter_tool_results(data: list) -> list:
+    """
+    过滤 tool_calls 中的 result，提取 content 字段。
+    
+    当 tool_calls[].result 是 dict 时，只提取 content 字段传递给模型。
+    这样模型上下文中只包含 content 字段，而数据库中存储完整 JSON。
+    
+    Args:
+        data (list): 消息数据块列表。
+    
+    Returns:
+        list: 过滤后的数据块列表。
+    """
+    if not isinstance(data, list):
+        return data
+    
+    filtered = []
+    for block in data:
+        if not isinstance(block, dict):
+            filtered.append(block)
+            continue
+            
+        if block.get("type") == "tool_calls":
+            filtered_block = {"type": "tool_calls", "tool_calls": []}
+            for tc in block.get("tool_calls", []):
+                filtered_tc = tc.copy()
+                if "result" in tc and isinstance(tc["result"], dict):
+                    if "content" in tc["result"]:
+                        filtered_tc["result"] = tc["result"]["content"]
+                    elif "result" in tc["result"]:
+                        filtered_tc["result"] = tc["result"]["result"]
+                filtered_block["tool_calls"].append(filtered_tc)
+            filtered.append(filtered_block)
+        else:
+            filtered.append(block)
+    return filtered
 
 
 def _extract_content_from_data(data: list) -> str:
@@ -743,9 +910,14 @@ async def get_session_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """获取会话消息列表。
+    """获取会话消息列表（统一格式）。
     
-    根据 session_id 和 user_id 获取消息，确保用户隔离。
+    所有消息的 data 都包含 agent_level 字段：
+    - user 消息：agent_level = 0
+    - assistant 消息：根据层级计算 agent_level
+    
+    注意：在扁平化拼接过程中被使用的 SubAgent 消息不会单独返回，
+    而是作为其父消息的一部分返回。
     """
     session = db.query(AgenticFlowSessionModel).filter(
         AgenticFlowSessionModel.id == session_id,
@@ -755,29 +927,82 @@ async def get_session_messages(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    # 查询所有消息
     messages = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
         SessionMessageModel.user_id == current_user.id
     ).order_by(SessionMessageModel.message_index).offset(offset).limit(limit).all()
     
-    return {
-        "code": 200,
-        "message": "Messages retrieved",
-        "data": [
-            {
+    # 构建 parent_children_map 和 agent_levels（用于 assistant 消息处理）
+    parent_children_map = build_parent_children_map(messages)
+    agent_levels = calculate_agent_levels(messages)
+    
+    # 创建全局可用的 children 映射表（会被 process_agent 修改）
+    available_children = {
+        parent_id: children.copy()
+        for parent_id, children in parent_children_map.items()
+    }
+    
+    # 辅助函数：检查消息是否还在 available_children 中（未被使用）
+    def is_message_available(msg_id: str) -> bool:
+        for children in available_children.values():
+            for child in children:
+                if child.id == msg_id:
+                    return True
+        return False
+    
+    # 处理每条消息
+    result = []
+    for m in messages:
+        if m.role == 'user':
+            # user 消息：统一格式，添加 agent_level = 0
+            unified_data = []
+            for block in m.data or []:
+                unified_data.append({
+                    **block,
+                    'agent_id': None,
+                    'agent_name': '用户',
+                    'agent_level': 0
+                })
+            result.append({
                 "id": m.id,
                 "role": m.role,
                 "agent_id": m.agent_id,
-                "data": m.data,
+                "data": unified_data,
                 "status": m.status,
                 "message_index": m.message_index,
                 "prompt_tokens": m.prompt_tokens,
                 "completion_tokens": m.completion_tokens,
                 "total_tokens": m.total_tokens,
                 "created_at": format_datetime(m.created_at)
-            }
-            for m in messages
-        ]
+            })
+        else:
+            # assistant 消息：检查是否还在 available_children 中
+            # 如果不在，说明已被作为 SubAgent 拼接到父消息中，跳过
+            if m.agent_id and not is_message_available(m.id):
+                continue
+            
+            # assistant 消息：使用扁平化 blocks
+            flattened_blocks = build_flattened_blocks_for_message(
+                m, available_children, agent_levels
+            )
+            result.append({
+                "id": m.id,
+                "role": m.role,
+                "agent_id": m.agent_id,
+                "data": flattened_blocks,
+                "status": m.status,
+                "message_index": m.message_index,
+                "prompt_tokens": m.prompt_tokens,
+                "completion_tokens": m.completion_tokens,
+                "total_tokens": m.total_tokens,
+                "created_at": format_datetime(m.created_at)
+            })
+    
+    return {
+        "code": 200,
+        "message": "Messages retrieved",
+        "data": result
     }
 
 
@@ -834,73 +1059,6 @@ async def get_session_messages_by_agent(
     }
 
 
-@router.get("/sessions/{session_id}/steps")
-async def get_session_steps(
-    session_id: str, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """获取会话执行步骤。"""
-    session = db.query(AgenticFlowSessionModel).filter(
-        AgenticFlowSessionModel.id == session_id,
-        AgenticFlowSessionModel.user_id == current_user.id
-    ).first()
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    return {
-        "code": 200,
-        "message": "Steps retrieved",
-        "data": [
-            {
-                "id": s.id,
-                "step_type": s.step_type,
-                "node_id": s.node_id,
-                "node_name": s.node_name,
-                "thought": s.thought,
-                "action": s.action,
-                "observation": s.observation,
-                "error": s.error,
-                "created_at": s.created_at.isoformat() if s.created_at else None
-            }
-            for s in session.steps
-        ]
-    }
-
-
-@router.get("/sessions/{session_id}/tools")
-async def get_session_tool_calls(
-    session_id: str, 
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """获取会话工具调用记录。"""
-    session = db.query(AgenticFlowSessionModel).filter(
-        AgenticFlowSessionModel.id == session_id,
-        AgenticFlowSessionModel.user_id == current_user.id
-    ).first()
-    
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    return {
-        "code": 200,
-        "message": "Tool calls retrieved",
-        "data": [
-            {
-                "id": t.id,
-                "tool_name": t.tool_name,
-                "arguments": t.arguments,
-                "result": t.result,
-                "error": t.error,
-                "created_at": t.created_at.isoformat() if t.created_at else None
-            }
-            for t in session.tool_calls
-        ]
-    }
-
-
 @router.get("/sessions/{session_id}/export")
 async def export_session(
     session_id: str, 
@@ -937,24 +1095,6 @@ async def export_session(
                     "timestamp": m.timestamp.isoformat() if m.timestamp else None
                 }
                 for m in messages
-            ],
-            "steps": [
-                {
-                    "step_type": s.step_type,
-                    "node_name": s.node_name,
-                    "thought": s.thought,
-                    "action": s.action,
-                    "observation": s.observation
-                }
-                for s in session.steps
-            ],
-            "tool_calls": [
-                {
-                    "tool_name": t.tool_name,
-                    "arguments": t.arguments,
-                    "result": t.result
-                }
-                for t in session.tool_calls
             ]
         }
         return {
@@ -1041,6 +1181,12 @@ async def run_websocket(
     """WebSocket端点用于实时运行消息。
     
     URL 格式: /ws/{agentic_flow_id}/{session_id}/{run_project_id}?token=xxx
+    
+    修复说明：
+    - 修复了 asyncio.wait 任务分发缺陷导致的1-2轮对话后断连问题
+    - 将数据库会话从长期持有改为按需创建的短期会话
+    - 增强了异常处理和错误通知机制
+    - 增加了消息接收器容错能力
     """
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
@@ -1085,101 +1231,318 @@ async def run_websocket(
         except Exception as e:
             logger.error(f"Event callback error: {e}")
 
-    with get_db_context() as db:
-        session = db.query(AgenticFlowSessionModel).filter(
+    # 使用短期会话初始化数据（不再长期持有）
+    session = None
+    agent_memories = {}
+    
+    async with get_db_context_async() as init_db:
+        session = init_db.query(AgenticFlowSessionModel).filter(
             AgenticFlowSessionModel.id == session_id
         ).first()
         
-        agent_memories = await load_and_distribute_memories(db, session_id, user_id) if session else {}
+        if session:
+            agent_memories = await load_and_distribute_memories(init_db, session_id, user_id)
+    
+    websocket_open = True
+    current_execution_task: Optional[asyncio.Task] = None
+    current_cancel_event: Optional[asyncio.Event] = None
+    current_collector: Optional[ChunkCollector] = None
+    status = "completed"
+    error_msg = None
+    last_user_message_id = None
+    
+    message_queue = asyncio.Queue()
+    
+    async def message_receiver():
+        """增强的消息接收器 - 支持容错和连续错误检测"""
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 5
         
-        websocket_open = True
+        while websocket_open:
+            try:
+                data = await websocket.receive_json()
+                _websocket_timestamps[ws_key] = _get_timestamp()
+                await message_queue.put(data)
+                consecutive_errors = 0  # 重置错误计数
+                
+            except WebSocketDisconnect:
+                logger.info(f"[WebSocket] Client disconnected (receiver)")
+                await message_queue.put({"type": "__disconnect__"})
+                break
+                
+            except json.JSONDecodeError as e:
+                consecutive_errors += 1
+                logger.warning(f"[WebSocket] JSON decode error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    logger.error(f"[WebSocket] Too many consecutive JSON errors, closing connection")
+                    await message_queue.put({"type": "__disconnect__"})
+                    break
+                # JSON错误不终止接收器，继续等待下一条消息
+                
+            except Exception as e:
+                consecutive_errors += 1
+                logger.error(f"[WebSocket] Receiver error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    logger.error(f"[WebSocket] Too many consecutive errors, closing connection")
+                    await message_queue.put({"type": "__disconnect__"})
+                    break
+                # 短暂等待后重试
+                await asyncio.sleep(0.1 * min(consecutive_errors, 3))
+    
+    async def handle_execution_completion():
+        """处理执行任务完成后的所有逻辑"""
+        nonlocal status, error_msg, current_execution_task, current_cancel_event, current_collector
         
+        execution_context_manager.unregister(
+            user_id=user_id,
+            agentic_flow_id=agentic_flow_id,
+            session_id=session_id,
+            run_project_id=run_project_id
+        )
+        
+        tokens = None
         try:
-            current_execution_task: Optional[asyncio.Task] = None
-            current_cancel_event: Optional[asyncio.Event] = None
-            current_collector: Optional[ChunkCollector] = None
-            status = "completed"
-            error_msg = None
+            if current_execution_task.cancelled():
+                status = "stop"
+                logger.info(f"[WebSocket] Execution stopped for session: {session_id}")
+                
+                await websocket.send_json({
+                    "type": "execution_stopped",
+                    "session_id": session_id,
+                    "timestamp": _get_timestamp()
+                })
+            else:
+                result = current_execution_task.result()
+                tokens = result.get("tokens")
+                
+                openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None})
+                
+                await websocket.send_json({
+                    "type": "execution_complete",
+                    "message": openai_message,
+                    "data": result,
+                    "session_id": session_id,
+                    "timestamp": _get_timestamp()
+                })
+        except asyncio.CancelledError:
+            status = "stop"
+            logger.info(f"[WebSocket] Execution stopped (CancelledError) for session: {session_id}")
             
-            message_queue = asyncio.Queue()
+            await websocket.send_json({
+                "type": "execution_stopped",
+                "session_id": session_id,
+                "timestamp": _get_timestamp()
+            })
+        except Exception as exec_error:
+            status = "error"
+            error_msg = str(exec_error)
+            logger.error(f"Execution error: {exec_error}", exc_info=True)
             
-            async def message_receiver():
-                while websocket_open:
+            try:
+                await websocket.send_json({
+                    "type": "execution_event",
+                    "data": {
+                        "event_type": "execution_error",
+                        "error": error_msg,
+                        "timestamp": datetime.now().isoformat()
+                    },
+                    "session_id": session_id,
+                    "timestamp": _get_timestamp()
+                })
+                
+                await websocket.send_json({
+                    "type": "execution_result",
+                    "data": {
+                        "status": "error",
+                        "error": error_msg
+                    },
+                    "session_id": session_id,
+                    "timestamp": _get_timestamp()
+                })
+            except Exception as send_error:
+                logger.error(f"Failed to send error to client: {send_error}")
+        
+        logger.info(f"[WebSocket] Task completed - status: {status}, collector has data: {current_collector.get_chunk_count() > 0 if current_collector else False}, tokens: {tokens}")
+        
+        # 使用独立的短期数据库会话保存结果
+        if current_collector:
+            agent_data = current_collector.get_agent_data()
+            logger.info(f"[WebSocket] Agent data: {agent_data}")
+            
+            if agent_data:
+                main_agent_id = None
+                
+                for agent_id_key, agent_info in agent_data.items():
+                    data_to_save = agent_info['data']
+                    if not data_to_save:
+                        data_to_save = []
+                    
+                    if main_agent_id is None:
+                        main_agent_id = agent_id_key
+                        current_parent_agent_id = None
+                    else:
+                        current_parent_agent_id = main_agent_id
+                    
+                    logger.info(f"[WebSocket] Saving message for agent {agent_id_key}, data: {data_to_save}, tokens: {tokens}, parent_message_id: {last_user_message_id}, parent_agent_id: {current_parent_agent_id}")
+                    
                     try:
-                        data = await websocket.receive_json()
-                        _websocket_timestamps[ws_key] = _get_timestamp()
-                        await message_queue.put(data)
-                    except WebSocketDisconnect:
-                        await message_queue.put({"type": "__disconnect__"})
-                        break
-                    except Exception as e:
-                        logger.error(f"[WebSocket] Message receiver error: {e}")
-                        break
-            
-            receiver_task = asyncio.create_task(message_receiver())
-            last_user_message_id = None
-            
-            while websocket_open:
-                pending_tasks = []
+                        with get_db_context() as save_db:
+                            await save_session_message(
+                                db=save_db, session_id=session_id, user_id=user_id,
+                                role="assistant", data=data_to_save, status=status, agent_id=agent_id_key,
+                                tokens=tokens,
+                                agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
+                                parent_message_id=last_user_message_id,
+                                parent_agent_id=current_parent_agent_id
+                            )
+                    except Exception as save_error:
+                        logger.error(f"[WebSocket] Failed to save message: {save_error}")
+            else:
+                logger.info(f"[WebSocket] No agent data, saving empty message, tokens: {tokens}, parent_message_id: {last_user_message_id}")
+                try:
+                    with get_db_context() as save_db:
+                        await save_session_message(
+                            db=save_db, session_id=session_id, user_id=user_id,
+                            role="assistant",
+                            data=[],
+                            status=status, agent_id="default",
+                            tokens=tokens,
+                            agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
+                            parent_message_id=last_user_message_id
+                        )
+                except Exception as save_error:
+                    logger.error(f"[WebSocket] Failed to save empty message: {save_error}")
+        else:
+            logger.warning(f"[WebSocket] No collector available")
+        
+        # 更新会话状态
+        try:
+            with get_db_context() as update_db:
+                if status == "stop":
+                    db_manager.update_session(
+                        update_db, session_id,
+                        status="stop",
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                elif status == "error":
+                    db_manager.update_session(
+                        update_db, session_id,
+                        status="failed",
+                        error=error_msg,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+        except Exception as update_error:
+            logger.error(f"[WebSocket] Failed to update session: {update_error}")
+        
+        # 重置状态
+        current_execution_task = None
+        current_cancel_event = None
+        current_collector = None
+    
+    try:
+        receiver_task = asyncio.create_task(message_receiver())
+        
+        while websocket_open:
+            try:
+                # 等待消息或执行任务完成
+                wait_coroutines = []
                 
-                message_task = asyncio.create_task(message_queue.get())
-                pending_tasks.append(message_task)
+                # 消息等待任务
+                message_wait_task = asyncio.create_task(message_queue.get())
+                wait_coroutines.append(message_wait_task)
                 
+                # 如果有正在执行的任务，也加入等待
+                execution_wait_task = None
                 if current_execution_task and not current_execution_task.done():
-                    pending_tasks.append(asyncio.ensure_future(current_execution_task))
+                    execution_wait_task = asyncio.ensure_future(current_execution_task)
+                    wait_coroutines.append(execution_wait_task)
                 
+                # 等待任意一个完成
                 done, pending = await asyncio.wait(
-                    pending_tasks,
+                    wait_coroutines,
                     return_when=asyncio.FIRST_COMPLETED
                 )
                 
-                for task in done:
-                    if task is message_task:
-                        result = task.result()
-                        if isinstance(result, dict) and result.get("type") == "__disconnect__":
-                            websocket_open = False
-                            break
+                # ====== 优先处理执行任务完成（避免状态泄漏）======
+                if execution_wait_task and execution_wait_task in done:
+                    logger.info(f"[WebSocket] Execution task completed, processing results")
+                    
+                    # 取消未完成的消息等待任务
+                    if message_wait_task not in done:
+                        message_wait_task.cancel()
+                        try:
+                            await message_wait_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                    
+                    # 处理执行结果
+                    await handle_execution_completion()
+                    
+                    continue  # 重新开始循环，等待下一个消息
+                
+                # ====== 处理新消息 ======
+                if message_wait_task in done:
+                    result = None
+                    try:
+                        result = message_wait_task.result()
+                    except Exception as e:
+                        logger.error(f"[WebSocket] Error getting message result: {e}")
+                        continue
+                    
+                    # 断连检测
+                    if isinstance(result, dict) and result.get("type") == "__disconnect__":
+                        logger.info(f"[WebSocket] Client disconnected")
+                        websocket_open = False
+                        break
+                    
+                    # 消息处理
+                    if isinstance(result, dict) and "type" in result:
+                        data = result
                         
-                        elif isinstance(result, dict) and "type" in result:
-                            data = result
+                        if data.get("type") == "ping":
+                            await websocket.send_json({"type": "pong", "timestamp": _get_timestamp()})
                             
-                            if data.get("type") == "ping":
-                                await websocket.send_json({"type": "pong", "timestamp": _get_timestamp()})
-                            elif data.get("type") == "stop":
-                                if current_execution_task and not current_execution_task.done():
-                                    logger.info(f"[WebSocket] Stop requested for session: {session_id}")
-                                    
-                                    if current_cancel_event:
-                                        current_cancel_event.set()
-                                    
-                                    current_execution_task.cancel()
-                                    
-                                    try:
-                                        await asyncio.wait_for(current_execution_task, timeout=5.0)
-                                    except asyncio.CancelledError:
-                                        pass
-                                    except asyncio.TimeoutError:
-                                        logger.warning(f"[WebSocket] Task cancellation timeout for session: {session_id}")
-                                    
-                                    status = "stop"
-                                    
-                                    logger.info(f"[WebSocket] Stop requested, task cancelled, will save in main loop")
-                                else:
-                                    await websocket.send_json({
-                                        "type": "execution_stopped",
-                                        "session_id": session_id,
-                                        "timestamp": _get_timestamp(),
-                                        "message": "No running task to stop"
-                                    })
+                        elif data.get("type") == "stop":
+                            if current_execution_task and not current_execution_task.done():
+                                logger.info(f"[WebSocket] Stop requested for session: {session_id}")
                                 
-                            elif data.get("type") == "execute" and (not current_execution_task or current_execution_task.done()):
-                                canvas_data = data.get("canvas_data", {}) or stored_canvas_data
-                                input_message = data.get("input_message", "")
+                                if current_cancel_event:
+                                    current_cancel_event.set()
                                 
-                                stored_canvas_data = canvas_data
+                                current_execution_task.cancel()
                                 
-                                if not session:
-                                    session = AgenticFlowSessionModel(
+                                try:
+                                    await asyncio.wait_for(current_execution_task, timeout=5.0)
+                                except asyncio.CancelledError:
+                                    pass
+                                except asyncio.TimeoutError:
+                                    logger.warning(f"[WebSocket] Task cancellation timeout for session: {session_id}")
+                                
+                                status = "stop"
+                                
+                                logger.info(f"[WebSocket] Stop requested, task cancelled, will save in main loop")
+                            else:
+                                await websocket.send_json({
+                                    "type": "execution_stopped",
+                                    "session_id": session_id,
+                                    "timestamp": _get_timestamp(),
+                                    "message": "No running task to stop"
+                                })
+                        
+                        elif data.get("type") == "execute" and (not current_execution_task or current_execution_task.done()):
+                            canvas_data = data.get("canvas_data", {}) or stored_canvas_data
+                            input_message = data.get("input_message", "")
+                            
+                            stored_canvas_data = canvas_data
+                            
+                            # 使用独立会话创建/更新session和保存用户消息
+                            with get_db_context() as op_db:
+                                op_session = op_db.query(AgenticFlowSessionModel).filter(
+                                    AgenticFlowSessionModel.id == session_id
+                                ).first()
+                                
+                                if not op_session:
+                                    op_session = AgenticFlowSessionModel(
                                         id=session_id,
                                         user_id=user_id,
                                         agentic_flow_id=agentic_flow_id,
@@ -1189,263 +1552,440 @@ async def run_websocket(
                                         created_at=datetime.now(timezone.utc),
                                         updated_at=datetime.now(timezone.utc),
                                     )
-                                    db.add(session)
-                                    db.commit()
+                                    op_db.add(op_session)
+                                    op_db.commit()
                                     logger.info(f"Created new session on execute: {session_id}")
-                                
-                                user_data = [{"type": "content", "content": input_message}]
+                            
+                            user_data = [{"type": "content", "content": input_message}]
+                            
+                            with get_db_context() as msg_db:
                                 user_message = await save_session_message(
-                                    db=db, session_id=session_id, user_id=user_id,
+                                    db=msg_db, session_id=session_id, user_id=user_id,
                                     role="user", data=user_data, agent_id="default",
                                     agentic_flow_id=agentic_flow_id, run_project_id=run_project_id
                                 )
                                 last_user_message_id = user_message.id
-                                
-                                status = "completed"
-                                current_collector = ChunkCollector()
-                                
-                                def stream_callback_with_collector(delta: dict, agent_id: str = None, agent_name: str = None):
-                                    try:
-                                        current_collector.add_chunk(delta, agent_id, agent_name)
-                                        if websocket_open:
-                                            import asyncio
-                                            loop = asyncio.get_event_loop()
-                                            if loop.is_running():
-                                                async def safe_send():
-                                                    try:
-                                                        await websocket.send_json({
-                                                            "type": "stream",
-                                                            "delta": delta,
-                                                            "agent_id": agent_id,
-                                                            "agent_name": agent_name,
-                                                            "timestamp": datetime.now().isoformat()
-                                                        })
-                                                    except Exception:
-                                                        pass
-                                                asyncio.create_task(safe_send())
-                                    except Exception as e:
-                                        logger.error(f"Stream callback error: {e}")
-                                
-                                current_cancel_event = asyncio.Event()
-                                
-                                async def run_execution():
-                                    nonlocal status
-                                    result = await FlowRunner.run_from_json(
-                                        canvas_data,
-                                        input_message,
-                                        user_id=user_id,
-                                        agentic_flow_id=agentic_flow_id,
-                                        session_id=session_id,
-                                        run_project_id=run_project_id,
-                                        event_callback=event_callback,
-                                        stream_callback=stream_callback_with_collector,
-                                        agent_memories=agent_memories,
-                                        cancel_event=current_cancel_event
-                                    )
-                                    return result
-                                
-                                current_execution_task = asyncio.create_task(run_execution())
-                                
-                                await _send_event(websocket, session_id, {
-                                    "event_type": "execution_start",
-                                    "timestamp": datetime.now().isoformat()
-                                })
-                                
-                                execution_context_manager.register(
-                                    task=current_execution_task,
+                            
+                            status = "completed"
+                            current_collector = ChunkCollector()
+                            
+                            def stream_callback_with_collector(delta: dict, agent_id: str = None, agent_name: str = None):
+                                try:
+                                    current_collector.add_chunk(delta, agent_id, agent_name)
+                                    if websocket_open:
+                                        import asyncio
+                                        loop = asyncio.get_event_loop()
+                                        if loop.is_running():
+                                            async def safe_send():
+                                                try:
+                                                    await websocket.send_json({
+                                                        "type": "stream",
+                                                        "delta": delta,
+                                                        "agent_id": agent_id,
+                                                        "agent_name": agent_name,
+                                                        "timestamp": datetime.now().isoformat()
+                                                    })
+                                                except Exception:
+                                                    pass
+                                            asyncio.create_task(safe_send())
+                                except Exception as e:
+                                    logger.error(f"Stream callback error: {e}")
+                            
+                            current_cancel_event = asyncio.Event()
+                            
+                            async def run_execution():
+                                nonlocal status
+                                result = await FlowRunner.run_from_json(
+                                    canvas_data,
+                                    input_message,
                                     user_id=user_id,
                                     agentic_flow_id=agentic_flow_id,
                                     session_id=session_id,
                                     run_project_id=run_project_id,
+                                    event_callback=event_callback,
+                                    stream_callback=stream_callback_with_collector,
+                                    agent_memories=agent_memories,
                                     cancel_event=current_cancel_event
                                 )
-                    
-                    else:
-                        execution_result = result
-                        
-                        execution_context_manager.unregister(
-                            user_id=user_id,
-                            agentic_flow_id=agentic_flow_id,
-                            session_id=session_id,
-                            run_project_id=run_project_id
-                        )
-                        
-                        tokens = None
-                        try:
-                            if current_execution_task.cancelled():
-                                status = "stop"
-                                logger.info(f"[WebSocket] Execution stopped for session: {session_id}")
-                                
-                                await websocket.send_json({
-                                    "type": "execution_stopped",
-                                    "session_id": session_id,
-                                    "timestamp": _get_timestamp()
-                                })
-                            else:
-                                result = current_execution_task.result()
-                                tokens = result.get("tokens")
-                                
-                                openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None})
-                                
-                                await websocket.send_json({
-                                    "type": "execution_complete",
-                                    "message": openai_message,
-                                    "data": result,
-                                    "session_id": session_id,
-                                    "timestamp": _get_timestamp()
-                                })
-                        except asyncio.CancelledError:
-                            status = "stop"
-                            logger.info(f"[WebSocket] Execution stopped (CancelledError) for session: {session_id}")
+                                return result
                             
-                            await websocket.send_json({
-                                "type": "execution_stopped",
-                                "session_id": session_id,
-                                "timestamp": _get_timestamp()
-                            })
-                        except Exception as exec_error:
-                            status = "error"
-                            error_msg = str(exec_error)
-                            logger.error(f"Execution error: {exec_error}")
+                            current_execution_task = asyncio.create_task(run_execution())
                             
-                            await websocket.send_json({
-                                "type": "execution_event",
-                                "data": {
-                                    "event_type": "execution_error",
-                                    "error": error_msg,
-                                    "timestamp": datetime.now().isoformat()
-                                },
-                                "session_id": session_id,
-                                "timestamp": _get_timestamp()
+                            await _send_event(websocket, session_id, {
+                                "event_type": "execution_start",
+                                "timestamp": datetime.now().isoformat()
                             })
                             
-                            await websocket.send_json({
-                                "type": "execution_result",
-                                "data": {
-                                    "status": "error",
-                                    "error": error_msg
-                                },
-                                "session_id": session_id,
-                                "timestamp": _get_timestamp()
-                            })
-                        
-                        logger.info(f"[WebSocket] Task completed - status: {status}, collector has data: {current_collector.get_chunk_count() > 0 if current_collector else False}, tokens: {tokens}")
-                        
-                        if current_collector:
-                            agent_data = current_collector.get_agent_data()
-                            logger.info(f"[WebSocket] Agent data: {agent_data}")
-                            
-                            if agent_data:
-                                for agent_id_key, agent_info in agent_data.items():
-                                    data_to_save = agent_info['data']
-                                    if not data_to_save:
-                                        data_to_save = []
-                                    logger.info(f"[WebSocket] Saving message for agent {agent_id_key}, data: {data_to_save}, tokens: {tokens}, parent_message_id: {last_user_message_id}")
-                                    await save_session_message(
-                                        db=db, session_id=session_id, user_id=user_id,
-                                        role="assistant", data=data_to_save, status=status, agent_id=agent_id_key,
-                                        tokens=tokens,
-                                        agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                        parent_message_id=last_user_message_id
-                                    )
-                            else:
-                                logger.info(f"[WebSocket] No agent data, saving empty message, tokens: {tokens}, parent_message_id: {last_user_message_id}")
-                                await save_session_message(
-                                    db=db, session_id=session_id, user_id=user_id,
-                                    role="assistant", 
-                                    data=[],
-                                    status=status, agent_id="default",
-                                    tokens=tokens,
-                                    agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                    parent_message_id=last_user_message_id
-                                )
-                        else:
-                            logger.warning(f"[WebSocket] No collector available")
-                        
-                        if status == "stop":
-                            db_manager.update_session(
-                                db, session_id,
-                                status="stop",
-                                completed_at=datetime.now(timezone.utc)
+                            execution_context_manager.register(
+                                task=current_execution_task,
+                                user_id=user_id,
+                                agentic_flow_id=agentic_flow_id,
+                                session_id=session_id,
+                                run_project_id=run_project_id,
+                                cancel_event=current_cancel_event
                             )
-                        elif status == "error":
-                            db_manager.update_session(
-                                db, session_id,
-                                status="failed",
-                                error=error_msg,
-                                completed_at=datetime.now(timezone.utc)
-                            )
-                        current_execution_task = None
-                        current_cancel_event = None
-        except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected: {ws_key}")
-            websocket_open = False
-        except Exception as e:
-            logger.error(f"WebSocket error: {e}")
-            websocket_open = False
-        finally:
-            websocket_open = False
-            
-            if current_execution_task and not current_execution_task.done():
-                logger.info(f"[WebSocket] Cancelling execution in finally: {session_id}")
-                
-                if current_cancel_event:
-                    current_cancel_event.set()
-                
-                current_execution_task.cancel()
-                
+                        
+                        elif data.get("type") == "execute":
+                            # 有正在执行的任务，拒绝新请求
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Another execution is in progress",
+                                "session_id": session_id,
+                                "timestamp": _get_timestamp()
+                            })
+                            
+            except asyncio.CancelledError:
+                logger.info(f"[WebSocket] Main loop cancelled")
+                break
+            except Exception as e:
+                logger.error(f"[WebSocket] Main loop error: {e}", exc_info=True)
+                # 尝试通知前端
                 try:
-                    await asyncio.wait_for(current_execution_task, timeout=5.0)
-                except asyncio.CancelledError:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": f"Internal error: {str(e)}",
+                        "timestamp": _get_timestamp()
+                    })
+                except Exception:
                     pass
-                except asyncio.TimeoutError:
-                    logger.warning(f"[WebSocket] Task cancellation timeout in finally: {session_id}")
+                # 根据错误类型决定是否继续
+                error_str = str(e).lower()
+                if "database" in error_str or "connection" in error_str or "websocket" in error_str:
+                    logger.error(f"[WebSocket] Fatal error, closing connection: {e}")
+                    websocket_open = False
+                else:
+                    logger.info(f"[WebSocket] Non-fatal error, continuing...")
+                    continue  # 非致命错误，继续运行
+                    
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected: {ws_key}")
+        websocket_open = False
+    except Exception as e:
+        logger.error(f"WebSocket outer error: {e}", exc_info=True)
+        websocket_open = False
+    finally:
+        websocket_open = False
+        
+        if current_execution_task and not current_execution_task.done():
+            logger.info(f"[WebSocket] Cancelling execution in finally: {session_id}")
+            
+            if current_cancel_event:
+                current_cancel_event.set()
+            
+            current_execution_task.cancel()
+            
+            try:
+                await asyncio.wait_for(current_execution_task, timeout=5.0)
+            except asyncio.CancelledError:
+                pass
+            except asyncio.TimeoutError:
+                logger.warning(f"[WebSocket] Task cancellation timeout in finally: {session_id}")
+            
+            if current_collector:
+                status = "stop"
+                logger.info(f"[WebSocket] Finally block - saving data, collector has data: {current_collector.get_chunk_count() > 0}, parent_message_id: {last_user_message_id}")
                 
-                if current_collector:
-                    status = "stop"
-                    logger.info(f"[WebSocket] Finally block - saving data, collector has data: {current_collector.get_chunk_count() > 0}, parent_message_id: {last_user_message_id}")
+                agent_data = current_collector.get_agent_data()
+                logger.info(f"[WebSocket] Agent data (finally): {agent_data}")
+                
+                if agent_data:
+                    main_agent_id = None
                     
-                    agent_data = current_collector.get_agent_data()
-                    logger.info(f"[WebSocket] Agent data (finally): {agent_data}")
-                    
-                    if agent_data:
-                        for agent_id_key, agent_info in agent_data.items():
-                            data_to_save = agent_info['data']
-                            if not data_to_save:
-                                data_to_save = []
-                            logger.info(f"[WebSocket] Saving message (finally) for agent {agent_id_key}, data: {data_to_save}, parent_message_id: {last_user_message_id}")
-                            try:
+                    for agent_id_key, agent_info in agent_data.items():
+                        data_to_save = agent_info['data']
+                        if not data_to_save:
+                            data_to_save = []
+                        
+                        if main_agent_id is None:
+                            main_agent_id = agent_id_key
+                            current_parent_agent_id = None
+                        else:
+                            current_parent_agent_id = main_agent_id
+                        
+                        logger.info(f"[WebSocket] Saving message (finally) for agent {agent_id_key}, data: {data_to_save}, parent_message_id: {last_user_message_id}, parent_agent_id: {current_parent_agent_id}")
+                        try:
+                            with get_db_context() as finally_db:
                                 await save_session_message(
-                                    db=db, session_id=session_id, user_id=user_id,
+                                    db=finally_db, session_id=session_id, user_id=user_id,
                                     role="assistant", data=data_to_save, status=status, agent_id=agent_id_key,
                                     agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                    parent_message_id=last_user_message_id
+                                    parent_message_id=last_user_message_id,
+                                    parent_agent_id=current_parent_agent_id
                                 )
-                            except Exception as save_error:
-                                logger.error(f"[WebSocket] Failed to save message in finally: {save_error}")
-                    else:
-                        logger.info(f"[WebSocket] No agent data (finally), saving empty message, parent_message_id: {last_user_message_id}")
-                        try:
+                        except Exception as save_error:
+                            logger.error(f"[WebSocket] Failed to save message in finally: {save_error}")
+                else:
+                    logger.info(f"[WebSocket] No agent data (finally), saving empty message, parent_message_id: {last_user_message_id}")
+                    try:
+                        with get_db_context() as finally_db:
                             await save_session_message(
-                                db=db, session_id=session_id, user_id=user_id,
-                                role="assistant", 
+                                db=finally_db, session_id=session_id, user_id=user_id,
+                                role="assistant",
                                 data=[],
                                 status=status, agent_id="default",
                                 agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
                                 parent_message_id=last_user_message_id
                             )
-                        except Exception as save_error:
-                            logger.error(f"[WebSocket] Failed to save empty message in finally: {save_error}")
-                    
-                    try:
+                    except Exception as save_error:
+                        logger.error(f"[WebSocket] Failed to save empty message in finally: {save_error}")
+                
+                try:
+                    with get_db_context() as finally_update_db:
                         db_manager.update_session(
-                            db, session_id,
+                            finally_update_db, session_id,
                             status="stop",
                             completed_at=datetime.now(timezone.utc)
                         )
-                    except Exception as update_error:
-                        logger.error(f"[WebSocket] Failed to update session in finally: {update_error}")
-            
-            _active_websockets.pop(ws_key, None)
-            _websocket_timestamps.pop(ws_key, None)
-            _websocket_keys.pop(ws_key, None)
+                except Exception as update_error:
+                    logger.error(f"[WebSocket] Failed to update session in finally: {update_error}")
+        
+        _active_websockets.pop(ws_key, None)
+        _websocket_timestamps.pop(ws_key, None)
+        _websocket_keys.pop(ws_key, None)
+
+
+# =============================================================================
+# Set 3 统一重构：后端数据构建函数
+# =============================================================================
+
+def build_parent_children_map(
+    messages: List[SessionMessageModel]
+) -> Dict[str, List[SessionMessageModel]]:
+    """
+    构建 parent_agent_id -> children 映射表
+    
+    同一 agent_id 可能有多个 message（被多处调用）
+    """
+    parent_children_map: Dict[str, List[SessionMessageModel]] = {}
+    
+    for msg in messages:
+        if msg.role == 'assistant' and msg.agent_id:
+            parent_id = msg.parent_agent_id or 'root'
+            if parent_id not in parent_children_map:
+                parent_children_map[parent_id] = []
+            parent_children_map[parent_id].append(msg)
+    
+    # 对每个 parent 的 children 按 message_index 排序
+    for parent_id in parent_children_map:
+        parent_children_map[parent_id].sort(key=lambda m: m.message_index or 0)
+    
+    return parent_children_map
+
+
+def calculate_agent_levels(messages: List[SessionMessageModel]) -> Dict[str, int]:
+    """
+    计算每个 agent 的层级
+    
+    MainAgent: level = 0
+    SubAgent: level = parent.level + 1
+    """
+    # 构建 agent_id -> parent_agent_id 映射
+    parent_map = {}
+    for msg in messages:
+        if msg.agent_id:
+            parent_map[msg.agent_id] = msg.parent_agent_id
+    
+    # 递归计算层级
+    level_cache = {}
+    
+    def get_level(agent_id: str, visited: Set[str] = None) -> int:
+        if visited is None:
+            visited = set()
+        
+        if agent_id in level_cache:
+            return level_cache[agent_id]
+        
+        if agent_id in visited:  # 防止循环
+            return 0
+        
+        visited.add(agent_id)
+        parent_id = parent_map.get(agent_id)
+        
+        if not parent_id:
+            level = 0
+        else:
+            level = get_level(parent_id, visited) + 1
+        
+        level_cache[agent_id] = level
+        return level
+    
+    for agent_id in parent_map.keys():
+        get_level(agent_id)
+    
+    return level_cache
+
+
+def get_agent_name(msg: SessionMessageModel) -> str:
+    """从消息数据中提取 agent 名称"""
+    # 优先使用 agent_name 字段
+    if hasattr(msg, 'agent_name') and msg.agent_name:
+        return msg.agent_name
+    
+    # 从 data 中的 tool_calls 提取
+    if msg.data:
+        for block in msg.data:
+            if block.get('type') == 'tool_calls':
+                for tc in block.get('tool_calls', []):
+                    if tc.get('function', {}).get('name') == 'Task':
+                        result = tc.get('result', {})
+                        if isinstance(result, str):
+                            try:
+                                result = json.loads(result)
+                            except:
+                                continue
+                        subagent_name = result.get('subagent_name')
+                        if subagent_name:
+                            return subagent_name
+    
+    return 'AI助手'
+
+
+def process_agent(
+    agent_id: str,
+    parent_id: str,
+    available_children: Dict[str, List[SessionMessageModel]],
+    agent_levels: Dict[str, int],
+    result_blocks: List[Dict[str, Any]],
+    agent_name: str = None
+) -> None:
+    """
+    处理指定 parent 下的 agent（DFS 深度优先搜索）
+    
+    从 available_children[parent_id] 中取出一个匹配的 agent，然后删除（不再可用）
+    支持同一 agent_id 被多个 parent 调用
+    
+    Args:
+        agent_name: 可选，指定 agent 名称（用于 SubAgent，从父消息的 Task result 中获取）
+    """
+    # 检查该 parent 下是否有可用的 children
+    if parent_id not in available_children:
+        return
+    
+    # 找到并"拿出一个"（从可用列表中删除）
+    children = available_children[parent_id]
+    msg = None
+    for i, child in enumerate(children):
+        if child.agent_id == agent_id:
+            msg = children.pop(i)  # 删除，之后不再可用
+            break
+    
+    if not msg:
+        return
+    
+    # 处理当前 agent 的 blocks
+    agent_level = agent_levels.get(agent_id, 0)
+    # 使用传入的 agent_name 或从消息中提取
+    current_agent_name = agent_name or get_agent_name(msg)
+    
+    for block in msg.data or []:
+        result_blocks.append({
+            **block,
+            'agent_id': msg.agent_id,
+            'agent_name': current_agent_name,
+            'agent_level': agent_level,
+            'message_index': msg.message_index
+        })
+        
+        # 处理 Task tool_call 中的 subagent
+        if block.get('type') == 'tool_calls':
+            for tc in block.get('tool_calls', []):
+                if tc.get('function', {}).get('name') == 'Task':
+                    result_str = tc.get('result', {})
+                    if isinstance(result_str, str):
+                        try:
+                            result_str = json.loads(result_str)
+                        except:
+                            continue
+                    
+                    subagent_id = result_str.get('subagent_id')
+                    subagent_name = result_str.get('subagent_name')
+                    
+                    # 递归处理 subagent，使用当前 agent_id 作为 parent_id
+                    if subagent_id:
+                        process_agent(
+                            subagent_id,
+                            agent_id,  # 当前 agent 作为 parent
+                            available_children,
+                            agent_levels,
+                            result_blocks,
+                            subagent_name  # 传递 SubAgent 名称
+                        )
+
+
+def build_flattened_blocks_for_message(
+    msg: SessionMessageModel,
+    available_children: Dict[str, List[SessionMessageModel]],
+    agent_levels: Dict[str, int]
+) -> List[Dict[str, Any]]:
+    """
+    为单条 assistant 消息构建扁平化的 blocks
+    
+    包含当前消息的 blocks + 所有子 SubAgent 的 blocks（按正确顺序插入）
+    
+    Args:
+        available_children: 全局可用的 children 映射表（会被修改）
+        agent_levels: agent 层级映射
+    """
+    if not msg.agent_id:
+        # 如果没有 agent_id，返回原始 data 并添加 agent_level = 0
+        return [
+            {**block, 'agent_id': None, 'agent_name': 'AI助手', 'agent_level': 0}
+            for block in msg.data or []
+        ]
+    
+    result_blocks = []
+    
+    # 处理当前消息
+    process_agent(
+        msg.agent_id,
+        msg.parent_agent_id or 'root',
+        available_children,
+        agent_levels,
+        result_blocks
+    )
+    
+    return result_blocks
+
+
+async def build_unified_blocks(
+    session_id: str,
+    user_id: str,
+    db: Session
+) -> List[Dict[str, Any]]:
+    """
+    构建统一格式的 blocks，不构建树，直接扁平化（DFS 遍历）
+    
+    支持同一 agent 被多处调用（多个 session_message 记录）
+    内存占用最低，性能最好
+    """
+    # 1. 查询所有消息，按 message_index 排序
+    messages = db.query(SessionMessageModel).filter(
+        SessionMessageModel.session_id == session_id,
+        SessionMessageModel.user_id == user_id
+    ).order_by(SessionMessageModel.message_index).all()
+    
+    # 2. 构建 parent_agent_id -> children 映射表
+    parent_children_map = build_parent_children_map(messages)
+    
+    # 3. 计算每个 agent 的层级
+    agent_levels = calculate_agent_levels(messages)
+    
+    # 4. 关键：创建可用 children 列表的副本，支持"拿出一个，删除一个"
+    available_children = {
+        parent_id: children.copy()
+        for parent_id, children in parent_children_map.items()
+    }
+    
+    # 5. 从根节点开始处理（DFS）
+    result_blocks = []
+    
+    for root_msg in parent_children_map.get('root', []):
+        process_agent(
+            root_msg.agent_id,
+            'root',  # parent_id
+            available_children,
+            agent_levels,
+            result_blocks
+        )
+    
+    return result_blocks

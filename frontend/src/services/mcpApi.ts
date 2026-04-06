@@ -126,7 +126,7 @@ export interface MCPServer {
   inputSchema?: Record<string, any>;
   outputSchema?: Record<string, any>;
   python_code?: string;
-  storage_path?: string;
+  folder_path?: string;
 }
 
 export interface MCPTool {
@@ -184,6 +184,7 @@ export interface CreateHttpServerRequest {
   session_id?: string;
   enabled?: boolean;
   share?: boolean;
+  tags?: string[];
 }
 
 export interface CreateSseServerRequest {
@@ -198,6 +199,7 @@ export interface CreateSseServerRequest {
   max_retries?: number;
   enabled?: boolean;
   share?: boolean;
+  tags?: string[];
 }
 
 class MCPApi {
@@ -281,37 +283,52 @@ class MCPApi {
     return mcpApiRequest.get('/mcp/tools/all');
   }
 
-  async createPythonMCP(name: string, description: string, code: string, tools: any[]) {
+  async createPythonMCP(name: string, description: string, code: string, tools: any[], tags?: string[]) {
     const formData = new FormData();
     formData.append('name', name);
     formData.append('description', description);
     formData.append('tools', JSON.stringify(tools));
     
+    if (tags && tags.length > 0) {
+      formData.append('tags', JSON.stringify(tags));
+    }
+    
     const blob = new Blob([code], { type: 'text/x-python' });
     formData.append('file', blob, 'original.py');
     
     return mcpApiRequest.post('/mcp/servers/create/python', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     });
   }
 
-  async createStdioMCP(name: string, description: string, packageFile?: File, files?: File[]) {
+  async createStdioMCP(name: string, description: string, packageFile?: File | null, files?: File[] | null, filePaths?: string[] | null, tags?: string[] | null) {
     const formData = new FormData();
     formData.append('name', name);
-    formData.append('description', description);
-    
+    formData.append('description', description || '');
+
+    if (tags && tags.length > 0) {
+      formData.append('tags', JSON.stringify(tags));
+    }
+
     if (packageFile) {
       formData.append('package', packageFile);
     }
-    
+
     if (files && files.length > 0) {
       files.forEach(file => {
         formData.append('files', file);
       });
     }
-    
+
+    if (filePaths && filePaths.length > 0) {
+      filePaths.forEach(path => {
+        formData.append('file_paths', path);
+      });
+    }
+
     return mcpApiRequest.post('/mcp/servers/create/stdio', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+      headers: { 'Content-Type': undefined },
     });
   }
 
@@ -346,7 +363,7 @@ class MCPApi {
     const formData = new FormData();
     formData.append('tools', JSON.stringify(tools));
     return mcpApiRequest.put(`/mcp/servers/${serverId}/tools`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     });
   }
 

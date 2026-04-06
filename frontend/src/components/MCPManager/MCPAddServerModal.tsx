@@ -68,6 +68,8 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     const [pythonCode, setPythonCode] = useState(defaultPythonTemplate);
     const [stdioUploadType, setStdioUploadType] = useState<'zip' | 'folder'>('zip');
     const [fileList, setFileList] = useState<any[]>([]);
+    const [tags, setTags] = useState<string[]>([]);
+    const [inputTagValue, setInputTagValue] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -80,6 +82,9 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     enabled: server.enabled !== false,
                     share: server.share || false,
                 });
+                
+                // 加载标签
+                setTags(server.tags || []);
                 
                 // 使用source_type来确定创建类型，如果没有则使用transport
                 const sourceType = server.source || server.transport || server.transport_type || 'stdio';
@@ -131,6 +136,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 setInputParams([]);
                 setPythonCode(defaultPythonTemplate);
                 setFileList([]);
+                setTags([]);
             }
         }
     }, [visible, server, form]);
@@ -172,9 +178,81 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         }
     };
 
+    // 根据文件列表分析类型标签
+    const analyzeFileTags = (files: any[]): string[] => {
+        const tags = new Set<string>(['stdio']); // 基础标签
+        
+        for (const file of files) {
+            const fileName = file.name || '';
+            const lowerName = fileName.toLowerCase();
+            
+            // 根据文件名判断类型
+            if (lowerName.endsWith('.py') || lowerName === '__main__.py') {
+                tags.add('python');
+            } else if (lowerName.endsWith('.js') || lowerName.endsWith('.mjs')) {
+                tags.add('nodejs');
+            } else if (lowerName.endsWith('.ts')) {
+                tags.add('nodejs');
+                tags.add('typescript');
+            } else if (lowerName.endsWith('.go')) {
+                tags.add('go');
+            } else if (lowerName.endsWith('.rs')) {
+                tags.add('rust');
+            } else if (lowerName.endsWith('.java')) {
+                tags.add('java');
+            } else if (lowerName.endsWith('.php')) {
+                tags.add('php');
+            } else if (lowerName.endsWith('.sh')) {
+                tags.add('shell');
+            } else if (lowerName === 'package.json') {
+                tags.add('nodejs');
+            }
+        }
+        
+        return Array.from(tags);
+    };
+
     const handleCreateTypeChange = (e: any) => {
-        setCreateType(e.target.value);
+        const newType = e.target.value;
+        setCreateType(newType);
         setFileList([]);
+        
+        // 根据创建类型设置默认标签（仅在新创建时，不是编辑模式）
+        if (!server) {
+            const defaultTags: string[] = [];
+            if (newType === 'python') {
+                defaultTags.push('python');
+            } else if (newType === 'stdio') {
+                defaultTags.push('stdio');
+            } else if (newType === 'http') {
+                defaultTags.push('http');
+            } else if (newType === 'sse') {
+                defaultTags.push('sse');
+            }
+            setTags(defaultTags);
+        }
+    };
+
+    const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setInputTagValue(e.target.value);
+    };
+
+    const handleTagInputConfirm = () => {
+        if (inputTagValue && !tags.includes(inputTagValue)) {
+            setTags([...tags, inputTagValue]);
+        }
+        setInputTagValue('');
+    };
+
+    const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleTagInputConfirm();
+        }
+    };
+
+    const handleTagRemove = (removedTag: string) => {
+        setTags(tags.filter(tag => tag !== removedTag));
     };
 
     const addInputParam = () => {
@@ -217,11 +295,17 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     const updateResponse = await mcpApi.updateMCPOriginalCode(server.id, pythonCode);
                     const toolsResponse = await mcpApi.updateMCPTools(server.id, tools);
                     
-                    if (updateResponse.code === 200 && toolsResponse.code === 200) {
+                    // 更新基本信息（描述和标签）
+                    const baseInfoResponse = await mcpApi.updateServer(server.id, {
+                        description: values.description,
+                        tags: tags,
+                    });
+                    
+                    if (updateResponse.code === 200 && toolsResponse.code === 200 && baseInfoResponse.code === 200) {
                         message.success('Python MCP 更新成功！');
                         onSave();
                     } else {
-                        message.error('更新失败：' + (updateResponse.message || toolsResponse.message));
+                        message.error('更新失败：' + (updateResponse.message || toolsResponse.message || baseInfoResponse.message));
                     }
                 } else {
                     // 创建新的Python MCP
@@ -229,7 +313,8 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                         values.name,
                         values.description || '',
                         pythonCode,
-                        tools
+                        tools,
+                        tags
                     );
                     
                     if (response.code === 200) {
@@ -240,87 +325,180 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     }
                 }
             } else if (createType === 'stdio') {
-                if (fileList.length === 0) {
-                    message.error('请上传 ZIP 包或文件夹');
-                    return;
-                }
-                
-                const packageFile = stdioUploadType === 'zip' ? fileList[0].originFileObj : null;
-                const files = stdioUploadType === 'folder' ? fileList.map(f => f.originFileObj).filter((f): f is File => f !== null) : undefined;
-                
-                const response = await mcpApi.createStdioMCP(
-                    values.name,
-                    values.description || '',
-                    packageFile || undefined,
-                    files
-                );
-                
-                if (response.code === 200) {
-                    message.success('Stdio MCP 创建成功！');
-                    onSave();
+                // 判断是更新还是创建
+                if (server) {
+                    // 更新现有 Stdio MCP 的基本信息
+                    const response = await mcpApi.updateServer(server.id, {
+                        description: values.description,
+                        tags: tags,
+                    });
+                    
+                    if (response.code === 200) {
+                        message.success('Stdio MCP 更新成功！');
+                        onSave();
+                    } else {
+                        message.error('更新失败：' + response.message);
+                    }
                 } else {
-                    message.error('创建失败：' + response.message);
+                    // 创建新的 Stdio MCP
+                    if (stdioUploadType === 'zip') {
+                        if (!fileList.length || !fileList[0]?.originFileObj) {
+                            message.error('请先选择ZIP包文件');
+                            return;
+                        }
+                    } else if (stdioUploadType === 'folder') {
+                        if (!fileList.length) {
+                            message.error('请先选择文件夹');
+                            return;
+                        }
+
+                        const validFiles = fileList.filter(f => f.originFileObj);
+                        if (!validFiles.length) {
+                            message.error('文件夹中没有有效文件');
+                            return;
+                        }
+                    }
+
+                    const packageFile = stdioUploadType === 'zip' ?
+                        (fileList[0]?.originFileObj || undefined) :
+                        null;
+
+                    const files = stdioUploadType === 'folder' ?
+                        fileList
+                            .map(f => f.originFileObj)
+                            .filter((f): f is File => f !== null && f !== undefined) :
+                        undefined;
+
+                    const filePaths = stdioUploadType === 'folder' ?
+                        fileList.map(f => f.name).filter(Boolean) :
+                        undefined;
+
+                    const response = await mcpApi.createStdioMCP(
+                        values.name,
+                        values.description || '',
+                        packageFile,
+                        files,
+                        filePaths,
+                        tags
+                    );
+                    
+                    if (response.code === 200) {
+                        message.success('Stdio MCP 创建成功！');
+                        onSave();
+                    } else {
+                        message.error('创建失败：' + response.message);
+                    }
                 }
             } else if (createType === 'http') {
-                const headers: Record<string, string> = {};
-                if (values.headers) {
-                    values.headers.split('\n').forEach((line: string) => {
-                        const [key, ...valueParts] = line.split('=');
-                        if (key && valueParts.length > 0) {
-                            headers[key.trim()] = valueParts.join('=').trim();
-                        }
+                if (server) {
+                    // 更新现有 HTTP MCP
+                    const response = await mcpApi.updateServer(server.id, {
+                        name: values.name,
+                        description: values.description,
+                        tags: tags,
+                        url: values.url,
+                        headers: values.headers ? Object.fromEntries(values.headers.split('\n').map((line: string) => {
+                            const [key, ...valueParts] = line.split('=');
+                            return [key.trim(), valueParts.join('=').trim()];
+                        })) : {},
+                        timeout: values.timeout,
+                        enabled: values.enabled,
                     });
-                }
-                
-                const request: CreateHttpServerRequest = {
-                    name: values.name,
-                    description: values.description,
-                    url: values.url,
-                    headers,
-                    timeout: values.timeout,
-                    session_id: values.session_id,
-                    enabled: values.enabled,
-                    share: values.share,
-                };
-                
-                const response = await mcpApi.createHttpMCP(request);
-                if (response.code === 200) {
-                    message.success('HTTP MCP 创建成功！');
-                    onSave();
+                    
+                    if (response.code === 200) {
+                        message.success('HTTP MCP 更新成功！');
+                        onSave();
+                    } else {
+                        message.error('更新失败：' + response.message);
+                    }
                 } else {
-                    message.error('创建失败：' + response.message);
+                    // 创建新的 HTTP MCP
+                    const headers: Record<string, string> = {};
+                    if (values.headers) {
+                        values.headers.split('\n').forEach((line: string) => {
+                            const [key, ...valueParts] = line.split('=');
+                            if (key && valueParts.length > 0) {
+                                headers[key.trim()] = valueParts.join('=').trim();
+                            }
+                        });
+                    }
+                    
+                    const request: CreateHttpServerRequest = {
+                        name: values.name,
+                        description: values.description,
+                        url: values.url,
+                        headers,
+                        timeout: values.timeout,
+                        session_id: values.session_id,
+                        enabled: values.enabled,
+                        share: values.share,
+                        tags: tags,
+                    };
+                    
+                    const response = await mcpApi.createHttpMCP(request);
+                    if (response.code === 200) {
+                        message.success('HTTP MCP 创建成功！');
+                        onSave();
+                    } else {
+                        message.error('创建失败：' + response.message);
+                    }
                 }
             } else if (createType === 'sse') {
-                const headers: Record<string, string> = {};
-                if (values.headers) {
-                    values.headers.split('\n').forEach((line: string) => {
-                        const [key, ...valueParts] = line.split('=');
-                        if (key && valueParts.length > 0) {
-                            headers[key.trim()] = valueParts.join('=').trim();
-                        }
+                if (server) {
+                    // 更新现有 SSE MCP
+                    const response = await mcpApi.updateServer(server.id, {
+                        name: values.name,
+                        description: values.description,
+                        tags: tags,
+                        url: values.url,
+                        headers: values.headers ? Object.fromEntries(values.headers.split('\n').map((line: string) => {
+                            const [key, ...valueParts] = line.split('=');
+                            return [key.trim(), valueParts.join('=').trim()];
+                        })) : {},
+                        timeout: values.timeout,
+                        enabled: values.enabled,
                     });
-                }
-                
-                const request: CreateSseServerRequest = {
-                    name: values.name,
-                    description: values.description,
-                    url: values.url,
-                    headers,
-                    timeout: values.timeout,
-                    reconnect: values.reconnect,
-                    sse_endpoint: values.sse_endpoint,
-                    retry_interval: values.retry_interval,
-                    max_retries: values.max_retries,
-                    enabled: values.enabled,
-                    share: values.share,
-                };
-                
-                const response = await mcpApi.createSseMCP(request);
-                if (response.code === 200) {
-                    message.success('SSE MCP 创建成功！');
-                    onSave();
+                    
+                    if (response.code === 200) {
+                        message.success('SSE MCP 更新成功！');
+                        onSave();
+                    } else {
+                        message.error('更新失败：' + response.message);
+                    }
                 } else {
-                    message.error('创建失败：' + response.message);
+                    // 创建新的 SSE MCP
+                    const headers: Record<string, string> = {};
+                    if (values.headers) {
+                        values.headers.split('\n').forEach((line: string) => {
+                            const [key, ...valueParts] = line.split('=');
+                            if (key && valueParts.length > 0) {
+                                headers[key.trim()] = valueParts.join('=').trim();
+                            }
+                        });
+                    }
+                    
+                    const request: CreateSseServerRequest = {
+                        name: values.name,
+                        description: values.description,
+                        url: values.url,
+                        headers,
+                        timeout: values.timeout,
+                        reconnect: values.reconnect,
+                        sse_endpoint: values.sse_endpoint,
+                        retry_interval: values.retry_interval,
+                        max_retries: values.max_retries,
+                        enabled: values.enabled,
+                        share: values.share,
+                        tags: tags,
+                    };
+                    
+                    const response = await mcpApi.createSseMCP(request);
+                    if (response.code === 200) {
+                        message.success('SSE MCP 创建成功！');
+                        onSave();
+                    } else {
+                        message.error('创建失败：' + response.message);
+                    }
                 }
             }
         } catch (error) {
@@ -364,6 +542,80 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 <Col span={12}>
                     <Form.Item label="服务描述" name="description">
                         <Input placeholder="例如: 查询数据库工具" />
+                    </Form.Item>
+                </Col>
+            </Row>
+            <Row>
+                <Col span={24}>
+                    <Form.Item label="标签">
+                        <div 
+                            style={{ 
+                                display: 'flex', 
+                                flexWrap: 'wrap', 
+                                gap: 4, 
+                                alignItems: 'center',
+                                padding: '1px 11px',
+                                border: '1px solid #d9d9d9',
+                                borderRadius: 6,
+                                minHeight: 30,
+                                backgroundColor: '#fff',
+                                fontSize: 14,
+                                transition: 'all 0.2s',
+                                cursor: 'text',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.borderColor = '#4096ff';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.borderColor = '#d9d9d9';
+                            }}
+                            onClick={(e) => {
+                                // 点击容器时聚焦到输入框
+                                const input = e.currentTarget.querySelector('input');
+                                if (input) {
+                                    input.focus();
+                                }
+                            }}
+                        >
+                            {tags.map((tag, index) => (
+                                <Tag
+                                    key={tag}
+                                    closable
+                                    onClose={(e) => {
+                                        e.stopPropagation();
+                                        handleTagRemove(tag);
+                                    }}
+                                    color={index < 2 ? 'blue' : 'default'}
+                                    style={{ 
+                                        margin: 0,
+                                        padding: '0 7px',
+                                        fontSize: 14,
+                                        lineHeight: '20px',
+                                        borderRadius: 4,
+                                    }}
+                                >
+                                    {tag}
+                                </Tag>
+                            ))}
+                            <Input
+                                type="text"
+                                style={{ 
+                                    width: tags.length === 0 ? 120 : 80,
+                                    border: 'none',
+                                    backgroundColor: 'transparent',
+                                    boxShadow: 'none',
+                                    padding: 0,
+                                    fontSize: 14,
+                                    lineHeight: '20px',
+                                }}
+                                placeholder={tags.length === 0 ? "按回车添加标签" : ""}
+                                value={inputTagValue}
+                                onChange={handleTagInputChange}
+                                onBlur={handleTagInputConfirm}
+                                onKeyDown={handleTagInputKeyDown}
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
                     </Form.Item>
                 </Col>
             </Row>
@@ -487,7 +739,14 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         <Card title="Stdio 配置（上传 ZIP 包或文件夹）" size="small" style={{ marginBottom: 16 }}>
             <Alert
                 message="上传 MCP Server"
-                description="上传 ZIP 包或文件夹，ZIP 包应包含 main.py 或 __main__.py 作为入口文件。"
+                description={
+                    <span>
+                        上传 ZIP 包或文件夹，ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
+                        <br />
+                        <strong>注意：</strong>文件夹选择功能需要使用 Chrome 或 Edge 浏览器，
+                        且建议在 localhost 环境下运行以获得最佳体验。
+                    </span>
+                }
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
@@ -504,13 +763,35 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
             
             {stdioUploadType === 'zip' ? (
                 <Upload
-                    accept=".zip"
+                    accept=".zip,.mcpb"
                     fileList={fileList}
                     beforeUpload={(file) => {
-                        setFileList([file]);
+                        const nativeFile = file.originFileObj || file;
+
+                        setFileList([{
+                            uid: file.uid || nativeFile.name,
+                            name: nativeFile.name,
+                            status: 'done' as const,
+                            originFileObj: nativeFile,
+                        }]);
+
+                        const fileName = nativeFile.name.replace(/\.(zip|mcpb)$/i, '');
+                        form.setFieldsValue({ name: fileName });
+
+                        // 分析文件类型并设置标签（仅在新创建时）
+                        if (!server) {
+                            const fileTags = analyzeFileTags([{ name: nativeFile.name }]);
+                            setTags(fileTags);
+                        }
+
                         return false;
                     }}
-                    onRemove={() => setFileList([])}
+                    onRemove={() => {
+                        setFileList([]);
+                        if (!server) {
+                            setTags(['stdio']);
+                        }
+                    }}
                     maxCount={1}
                 >
                     <Button icon={<UploadOutlined />}>选择 ZIP 包</Button>
@@ -521,15 +802,33 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                         type="file"
                         ref={fileInputRef}
                         multiple
+                        webkitdirectory=""
+                        directory=""
                         style={{ display: 'none' }}
                         onChange={(e) => {
-                            const files = Array.from(e.target.files || []);
-                            setFileList(files.map(f => ({
-                                uid: f.name,
-                                name: f.name,
-                                status: 'done',
+                            const nativeFiles = Array.from(e.target.files || []);
+
+                            if (nativeFiles.length > 0) {
+                                const firstRelativePath = nativeFiles[0].webkitRelativePath || '';
+                                const folderName = firstRelativePath.split(/[/\\]/)[0] || 'mcp_server';
+
+                                form.setFieldsValue({ name: folderName });
+                            }
+
+                            const mappedFiles = nativeFiles.map(f => ({
+                                uid: `${f.name}-${Date.now()}`,
+                                name: f.webkitRelativePath || f.name,
+                                status: 'done' as const,
                                 originFileObj: f,
-                            })));
+                            }));
+                            
+                            setFileList(mappedFiles);
+
+                            // 分析文件类型并设置标签（仅在新创建时）
+                            if (!server) {
+                                const fileTags = analyzeFileTags(mappedFiles);
+                                setTags(fileTags);
+                            }
                         }}
                     />
                     <Button icon={<FolderOpenOutlined />} onClick={() => fileInputRef.current?.click()}>

@@ -40,7 +40,7 @@ export interface SavedNode {
   node_id: string;
   node_name: string;
   node_intro?: string;
-  agent_type: 'orchestrator' | 'planner' | 'executor';
+  agent_type: 'orchestrator' | 'planner' | 'executor' | 'custom';
   position: { x: number; y: number };
   system_prompt: string;
   user_prompt: string;
