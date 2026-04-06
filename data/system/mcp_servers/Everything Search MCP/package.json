@@ -1,0 +1,77 @@
+{
+  "name": "everything-search-mcp",
+  "version": "1.1.0",
+  "description": "MCP server for fast file search using Everything (Windows) with cross-platform fallbacks for macOS (Spotlight) and Linux (ripgrep/locate)",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "everything-search-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "bin",
+    "scripts/download-es.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build && npm test",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "test:coverage": "vitest run --coverage",
+    "postinstall": "node scripts/download-es.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "everything",
+    "file-search",
+    "search",
+    "windows",
+    "macos",
+    "linux",
+    "spotlight",
+    "ripgrep",
+    "cross-platform",
+    "cli",
+    "anthropic"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kanishka-namdeo/everything-search-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/kanishka-namdeo/everything-search-mcp/issues"
+  },
+  "homepage": "https://github.com/kanishka-namdeo/everything-search-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "adm-zip": "^0.5.16",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ]
+}

@@ -251,12 +251,28 @@ export const runApi = {
   async getSessionMessages(sessionId: string, params?: {
     limit?: number;
     offset?: number;
-  }): Promise<SessionMessage[]> {
-    const response = await api.get(`/run/sessions/${sessionId}/messages`, { params });
-    if (response.data && response.data.data) {
-      return response.data.data;
+  }): Promise<any[]> {
+    // 使用 fetch 替代 axios，避免某些情况下的问题
+    const token = localStorage.getItem('access_token');
+    const queryParams = params ? new URLSearchParams(params as any).toString() : '';
+    const url = `/api/v1/run/sessions/${sessionId}/messages${queryParams ? '?' + queryParams : ''}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-    return response.data;
+    
+    const data = await response.json();
+    if (data && data.data) {
+      return data.data;
+    }
+    return [];
   },
 
   async getSessionSteps(sessionId: string): Promise<ExecutionStep[]> {

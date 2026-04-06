@@ -86,7 +86,7 @@ SoloEngine implements complete session persistence using SQLite:
 
 **Session Management**:
 - `AgenticFlowSessionModel`: Session metadata (status, token usage, execution duration)
-- `SessionMessageModel`: Message records (grouped by agent_id, supports parent message association)
+- `SessionMessageModel`: Message records (grouped by agent_id, supports parent_agent_id for SubAgent hierarchy)
 
 **Memory Distribution Mechanism**:
 ```python

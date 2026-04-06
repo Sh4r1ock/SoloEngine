@@ -48,10 +48,6 @@ interface RunPanelState {
   panelRatios: number[];
   isDragging: number | null;
 
-  expandedReasoning: Set<string>;
-  expandedToolCalls: Set<string>;
-  streamingExpandedKeys: Set<string>;
-
   currentProject: CurrentProject | null;
   recentProjects: RecentProjectInfo[];
   projectLoading: boolean;
@@ -101,12 +97,6 @@ interface RunPanelState {
   setPanelRatios: (ratios: number[]) => void;
   setIsDragging: (index: number | null) => void;
 
-  toggleReasoningExpand: (key: string) => void;
-  toggleToolCallsExpand: (key: string) => void;
-  setStreamingExpandedKeys: (keys: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
-  setExpandedReasoning: (keys: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
-  setExpandedToolCalls: (keys: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
-
   setCurrentProject: (project: CurrentProject | null) => void;
   setRecentProjects: (projects: RecentProjectInfo[]) => void;
   setProjectLoading: (loading: boolean) => void;
@@ -155,10 +145,6 @@ export const useRunPanelStore = create<RunPanelState>()(
       activeAgenticTab: null,
       panelRatios: [1, 4, 4, 1],
       isDragging: null,
-
-      expandedReasoning: new Set<string>(),
-      expandedToolCalls: new Set<string>(),
-      streamingExpandedKeys: new Set<string>(),
 
       currentProject: null,
       recentProjects: [],
@@ -290,46 +276,6 @@ export const useRunPanelStore = create<RunPanelState>()(
       setActiveAgenticTab: (tab) => set({ activeAgenticTab: tab }),
       setPanelRatios: (ratios) => set({ panelRatios: ratios }),
       setIsDragging: (index) => set({ isDragging: index }),
-
-      toggleReasoningExpand: (key) => set((state) => {
-        const newSet = new Set(state.expandedReasoning);
-        if (newSet.has(key)) {
-          newSet.delete(key);
-        } else {
-          newSet.add(key);
-        }
-        return { expandedReasoning: newSet };
-      }),
-      toggleToolCallsExpand: (key) => set((state) => {
-        const newSet = new Set(state.expandedToolCalls);
-        if (newSet.has(key)) {
-          newSet.delete(key);
-        } else {
-          newSet.add(key);
-        }
-        return { expandedToolCalls: newSet };
-      }),
-      setStreamingExpandedKeys: (keysOrUpdater) => {
-        if (typeof keysOrUpdater === 'function') {
-          set((state) => ({ streamingExpandedKeys: keysOrUpdater(state.streamingExpandedKeys) }));
-        } else {
-          set({ streamingExpandedKeys: keysOrUpdater });
-        }
-      },
-      setExpandedReasoning: (keysOrUpdater) => {
-        if (typeof keysOrUpdater === 'function') {
-          set((state) => ({ expandedReasoning: keysOrUpdater(state.expandedReasoning) }));
-        } else {
-          set({ expandedReasoning: keysOrUpdater });
-        }
-      },
-      setExpandedToolCalls: (keysOrUpdater) => {
-        if (typeof keysOrUpdater === 'function') {
-          set((state) => ({ expandedToolCalls: keysOrUpdater(state.expandedToolCalls) }));
-        } else {
-          set({ expandedToolCalls: keysOrUpdater });
-        }
-      },
 
       setCurrentProject: (project) => set({ currentProject: project }),
       setRecentProjects: (projects) => set({ recentProjects: projects }),

@@ -5,7 +5,7 @@ export interface NodeData {
   data: {
     name?: string;
     desc?: string;
-    agentType?: 'orchestrator' | 'planner' | 'executor';
+    agentType?: 'orchestrator' | 'planner' | 'executor' | 'custom';
     system_prompt?: string;
     user_prompt?: string;
     assistant_prompt?: string;
@@ -15,6 +15,10 @@ export interface NodeData {
       config_name?: string;
       provider: string;
       model: string;
+      temperature?: number;
+      max_tokens?: number;
+      frequency_penalty?: number;
+      presence_penalty?: number;
     };
     skills?: string[];
     mcp_tools?: string[];

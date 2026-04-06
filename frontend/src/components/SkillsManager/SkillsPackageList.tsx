@@ -62,7 +62,7 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
           icon={pkg.icon || getDefaultIcon('skills')}
           tags={pkg.tags || pkg.metadata?.tags || []}
           isActive={pkg.is_active}
-          isDefault={pkg.is_default}
+          isSystem={pkg.is_system}
           showSwitch={true}
           onSwitchChange={(checked: boolean) => handleToggleActive(pkg, checked)}
           onIconChange={(icon: string) => handleIconChange(pkg, icon)}

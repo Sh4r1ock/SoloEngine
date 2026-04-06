@@ -50,7 +50,7 @@ const LLMConfigSelector: React.FC<LLMConfigSelectorProps> = ({
     setError(null);
     try {
       const [configsData, providersData] = await Promise.all([
-        llmApi.getConfigs(),
+        llmApi.getActiveConfigs(),
         llmApi.getProviders(),
       ]);
       

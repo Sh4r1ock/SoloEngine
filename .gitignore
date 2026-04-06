@@ -213,22 +213,21 @@ npm_cache/
 *.log
 
 # 自定义忽略文件夹
-备份文件/
 参考/
-代码审查/
-开发计划/
-开发文档/
+待执行文档/
+技术文档/
+流程图与架构图/
 软件著作权/
+软著与专利/
 提示词模板/
-执行要求/
-专利/
 .idea/
 .vscode/
 .trae/
-.vscode
-official_mcp_servers/
-test_plans/
-test_sessions/
-tests/
-test_screenshots/
+.vscode/
+bat/
 SoloEngine.zip
+node_modules/
+bat/
+
+# 数据目录
+data/packages/

@@ -46,7 +46,9 @@ async def get_tools(current_user: User = Depends(get_current_user)):
     return {
         "code": 200,
         "message": "success",
-        "data": tools_info,
+        "data": {
+            "tools": tools_info,
+        },
     }
 
 

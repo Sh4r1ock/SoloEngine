@@ -78,7 +78,13 @@ class SoloAgent:
             self.config.subagents = subagents_info
         elif agents:
             self.config.subagents = [
-                {"subagent_name": name, "subagent_id": agent.agent_id, "description": agent.config.system_prompt[:100] if agent.config.system_prompt else ""}
+                {
+                    "subagent_name": name, 
+                    "subagent_id": agent.agent_id, 
+                    "description": agent.config.desc if agent.config.desc else (
+                        agent.config.system_prompt[:100] if agent.config.system_prompt else ""
+                    )
+                }
                 for name, agent in agents.items()
             ]
     
@@ -91,10 +97,20 @@ class SoloAgent:
         if self._core:
             self._core.stream_callback = callback
             self._core.agent_id = self.agent_id
+            if hasattr(self._core, '_tool_call_event_manager') and self._core._tool_call_event_manager:
+                self._core._tool_call_event_manager.stream_callback = callback
+                self._core._tool_call_event_manager.agent_id = self.agent_id
+                self._core._tool_call_event_manager.agent_name = self.name
         
         for subagent in self._subagents.values():
-            if subagent._initialized and hasattr(subagent, 'set_stream_callback'):
-                subagent.set_stream_callback(callback)
+            subagent._stream_callback = callback
+            if subagent._core:
+                subagent._core.stream_callback = callback
+                subagent._core.agent_id = subagent.agent_id
+                if hasattr(subagent._core, '_tool_call_event_manager') and subagent._core._tool_call_event_manager:
+                    subagent._core._tool_call_event_manager.stream_callback = callback
+                    subagent._core._tool_call_event_manager.agent_id = subagent.agent_id
+                    subagent._core._tool_call_event_manager.agent_name = subagent.name
     
     def set_message_history(self, history: List[Dict[str, Any]]) -> None:
         """设置消息历史（由 CompiledFlow 层调用）"""
@@ -119,6 +135,8 @@ class SoloAgent:
             base_url=self.config.base_url,
             max_tokens=self.config.max_tokens,
             temperature=self.config.temperature,
+            frequency_penalty=self.config.frequency_penalty,
+            presence_penalty=self.config.presence_penalty,
         )
         
         provider = llm_config.get("provider", self.config.provider).lower()
@@ -158,9 +176,17 @@ class SoloAgent:
                 tool_configs.extend(mcp_tool_configs)
         
         if self.config.subagents:
-            from .tools import create_task_tool_config
-            task_config = create_task_tool_config(self)
-            tool_configs.append(task_config)
+            from ..plugins.tools.agent.task import TaskTool
+            task_tool = TaskTool(
+                parent_agent=self,
+                subagents_info=self.config.subagents
+            )
+            tool_configs.append({
+                "name": "Task",
+                "function": task_tool.execute,
+                "description": task_tool.get_tool_spec()["description"],
+                "parameters": task_tool.get_tool_spec()["parameters"],
+            })
             logger.info(f"[SubAgents] Added Task tool for subagents: {[s.get('subagent_name') for s in self.config.subagents]}")
         
         toolkit_executor = ToolkitExecutor(tool_configs) if tool_configs else None
@@ -189,10 +215,12 @@ class SoloAgent:
             history_msgs = []
             for msg in self._message_history:
                 content = msg["content"]
+                role = msg["role"]
+                
                 if isinstance(content, list):
-                    history_msgs.append(Msg(name=msg["role"], content=content, role=msg["role"]))
+                    history_msgs.append(Msg(name=role, content=content, role=role))
                 else:
-                    history_msgs.append(Msg(name=msg["role"], content=content, role=msg["role"]))
+                    history_msgs.append(Msg(name=role, content=content, role=role))
             self._core.load_history(history_msgs)
         
         self._initialized = True
@@ -358,6 +386,10 @@ class SoloAgent:
             generate_kwargs["max_tokens"] = llm_config["max_tokens"]
         if "temperature" in llm_config:
             generate_kwargs["temperature"] = llm_config["temperature"]
+        if "frequency_penalty" in llm_config:
+            generate_kwargs["frequency_penalty"] = llm_config["frequency_penalty"]
+        if "presence_penalty" in llm_config:
+            generate_kwargs["presence_penalty"] = llm_config["presence_penalty"]
         
         return OpenAIChatModel(
             model_name=llm_config.get("model", self.config.model),
@@ -428,6 +460,10 @@ class SoloAgent:
             user_id=self.config.user_id,
             api_key=self.config.api_key,
             base_url=self.config.base_url,
+            max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature,
+            frequency_penalty=self.config.frequency_penalty,
+            presence_penalty=self.config.presence_penalty,
         )
         
         stream_model = self._create_openai_compatible_model(llm_config, stream=True)

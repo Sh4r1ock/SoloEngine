@@ -16,25 +16,30 @@
  * - 作为ReactFlow的自定义节点类型使用
  * 
  * 注意事项：
- * - 支持三种智能体类型：orchestrator、planner、executor
+ * - 支持四种智能体类型：orchestrator、planner、executor、custom
  * - 不同类型使用不同颜色区分
  * - 显示用户配置的模型名称
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Typography, Tag, Tooltip } from 'antd';
 import { StarFilled } from '@ant-design/icons';
+import { llmApi, LLMConfig } from '../../services/llmApi';
 
 const { Text } = Typography;
 
 const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
-  const agentTypeColors = {
-    orchestrator: '#3F51B5',
-    planner: '#4CAF50',
-    executor: '#FF9800',
-  };
+  const color = data.color || '#3F51B5';
+  const [configName, setConfigName] = useState<string | null>(null);
 
-  const color = agentTypeColors[data.agentType as keyof typeof agentTypeColors] || '#3F51B5';
+  useEffect(() => {
+    const configId = data.llm_config_id || data.model_config?.config_id;
+    if (configId) {
+      llmApi.getConfig(configId)
+        .then((config: LLMConfig) => setConfigName(config.name))
+        .catch(() => setConfigName(null));
+    }
+  }, [data.llm_config_id, data.model_config?.config_id]);
 
   const getProviderColor = (provider: string) => {
     const colors: Record<string, string> = {
@@ -47,19 +52,23 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
   };
 
   const renderModelInfo = () => {
-    if (data.model_config?.config_id && data.model_config?.config_name) {
+    const displayName = configName || data.model_config?.config_name;
+    const modelName = data.model_config?.model;
+    const provider = data.model_config?.provider;
+
+    if (displayName || modelName) {
       return (
-        <Tooltip title={`${data.model_config.provider} - ${data.model_config.model}`}>
-          <Tag 
+        <Tooltip title={provider ? `${provider} - ${modelName}` : modelName}>
+          <Tag
             color="blue"
-            style={{ 
+            style={{
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
               marginTop: 4,
             }}
           >
-            {data.model_config.config_name}
+            {displayName || modelName || '未配置模型'}
           </Tag>
         </Tooltip>
       );
