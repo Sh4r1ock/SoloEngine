@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Modal, Form, Input, Select, InputNumber, Switch, message, Button, Divider, Alert, Card, Row, Col, Tag, Tabs, Upload, Radio } from 'antd';
-import { PlusOutlined, DeleteOutlined, UploadOutlined, FolderOpenOutlined, FileZipOutlined, ApiOutlined, CloudServerOutlined, CodeOutlined } from '@ant-design/icons';
-import { MCPServer } from '../../services/mcpApi';
+import { Modal, Form, Input, Select, InputNumber, Switch, message, Button, Divider, Alert, Card, Row, Col, Tag, Tabs, Upload, Radio, List, Tooltip } from 'antd';
+import { PlusOutlined, DeleteOutlined, UploadOutlined, FolderOpenOutlined, FileZipOutlined, ApiOutlined, CloudServerOutlined, CodeOutlined, ToolOutlined } from '@ant-design/icons';
+import { MCPServer, MCPTool } from '../../services/mcpApi';
 import { mcpApi, CreateHttpServerRequest, CreateSseServerRequest } from '../../services/mcpApi';
 
 const { Option } = Select;
@@ -70,6 +70,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     const [fileList, setFileList] = useState<any[]>([]);
     const [tags, setTags] = useState<string[]>([]);
     const [inputTagValue, setInputTagValue] = useState('');
+    const [tools, setTools] = useState<MCPTool[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -79,13 +80,16 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     name: server.name,
                     description: server.description || '',
                     timeout: server.timeout || 30,
-                    enabled: server.enabled !== false,
+                    is_active: server.is_active !== false,
                     share: server.share || false,
                 });
                 
                 // 加载标签
                 setTags(server.tags || []);
-                
+
+                // 加载工具列表
+                setTools(server.tools || []);
+
                 // 使用source_type来确定创建类型，如果没有则使用transport
                 const sourceType = server.source || server.transport || server.transport_type || 'stdio';
                 
@@ -125,7 +129,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 form.resetFields();
                 form.setFieldsValue({
                     timeout: 30,
-                    enabled: true,
+                    is_active: true,
                     share: false,
                     reconnect: true,
                     sse_endpoint: '/sse',
@@ -137,6 +141,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 setPythonCode(defaultPythonTemplate);
                 setFileList([]);
                 setTags([]);
+                setTools([]);
             }
         }
     }, [visible, server, form]);
@@ -255,6 +260,184 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         setTags(tags.filter(tag => tag !== removedTag));
     };
 
+    const handleToolEnabledChange = async (toolName: string, isEnabled: boolean) => {
+        // 更新本地状态
+        setTools(prev => prev.map(tool =>
+            tool.name === toolName ? { ...tool, is_enabled: isEnabled } : tool
+        ));
+    };
+
+    const handleConnectAndLoadTools = async () => {
+        try {
+            const values = form.getFieldsValue();
+
+            // 根据当前创建类型构建连接配置
+            let config: any = {
+                name: values.name || server?.name || 'test',
+                transport: createType,
+                timeout: values.timeout || 30,
+            };
+
+            if (createType === 'stdio') {
+                // 优先使用服务器已有的配置
+                let command = values.command;
+                let args = values.args ? values.args.split('\n').filter(Boolean) : [];
+                let env: Record<string, string> = {};
+
+                // 如果是编辑模式且表单中没有配置，使用服务器配置
+                if (server) {
+                    // 优先使用服务器已有的command和args
+                    if (!command) {
+                        command = server.command || '';
+                    }
+                    if (args.length === 0) {
+                        args = server.args && server.args.length > 0 ? server.args : [];
+                    }
+                    env = server.env || env;
+                    
+                    // 如果没有command和args，但有folder_path，自动构建
+                    if (!command && args.length === 0 && server.folder_path) {
+                        // 自动检测入口文件
+                        const folderPath = server.folder_path;
+                        // 检查常见的入口文件
+                        const possibleEntries = [
+                            'bin/index.js',
+                            'bin/index.mjs',
+                            'dist/index.js',
+                            'dist/index.mjs',
+                            'index.js',
+                            'index.mjs',
+                            'main.py',
+                            '__main__.py',
+                            'server.py',
+                            'app.py',
+                        ];
+                        
+                        // 根据文件扩展名判断命令
+                        for (const entry of possibleEntries) {
+                            if (entry.endsWith('.js') || entry.endsWith('.mjs')) {
+                                command = 'node';
+                                args = [`${folderPath}\\${entry.replace('/', '\\')}`];
+                                break;
+                            } else if (entry.endsWith('.py')) {
+                                command = 'python';
+                                args = [`${folderPath}\\${entry.replace('/', '\\')}`];
+                                break;
+                            }
+                        }
+                        
+                        // 如果没有找到特定入口文件，使用folder_path作为参数
+                        if (!command) {
+                            command = 'node';
+                            args = [folderPath];
+                        }
+                    }
+                }
+
+                if (!command) {
+                    message.error('请先配置命令');
+                    return;
+                }
+
+                config.command = command;
+                config.args = args;
+                config.env = env;
+
+                // 解析表单中的 env
+                if (values.env) {
+                    values.env.split('\n').forEach((line: string) => {
+                        const [key, ...valueParts] = line.split('=');
+                        if (key && valueParts.length > 0) {
+                            config.env[key.trim()] = valueParts.join('=').trim();
+                        }
+                    });
+                }
+            } else if (createType === 'http' || createType === 'sse') {
+                // 优先使用服务器已有的 URL
+                let url = values.url;
+                let headers: Record<string, string> = {};
+
+                // 如果是编辑模式且表单中没有 URL，使用服务器配置
+                if (server && !url) {
+                    url = server.url;
+                    headers = server.headers || headers;
+                }
+
+                if (!url) {
+                    message.error('请先配置 URL');
+                    return;
+                }
+
+                config.url = url;
+                config.headers = headers;
+
+                // 解析表单中的 headers
+                if (values.headers) {
+                    values.headers.split('\n').forEach((line: string) => {
+                        const [key, ...valueParts] = line.split('=');
+                        if (key && valueParts.length > 0) {
+                            config.headers[key.trim()] = valueParts.join('=').trim();
+                        }
+                    });
+                }
+            } else if (createType === 'python') {
+                // Python 类型直接从代码中解析工具定义
+                const extractedTools = extractToolsFromPythonCode(pythonCode, inputParams);
+                setTools(extractedTools);
+                message.success(`已加载 ${extractedTools.length} 个工具`);
+                return;
+            }
+
+            // 调用后端连接接口获取工具
+            const response = await mcpApi.connectAndGetTools(config);
+            if (response.code === 200 && response.data?.tools) {
+                const loadedTools = response.data.tools.map((tool: any) => ({
+                    name: tool.name,
+                    description: tool.description || '',
+                    input_schema: tool.input_schema || tool.inputSchema || {},
+                    is_enabled: true,
+                }));
+                setTools(loadedTools);
+                message.success(`成功加载 ${loadedTools.length} 个工具`);
+            } else {
+                message.warning('未获取到工具列表');
+                setTools([]);
+            }
+        } catch (error: any) {
+            // 处理 401 错误
+            if (error.response?.status === 401) {
+                message.error('连接失败：未授权（401）。请检查 API Key 或认证信息是否正确。');
+            } else {
+                message.error('连接失败：' + String(error.message || error));
+            }
+            setTools([]);
+        }
+    };
+
+    // 从 Python 代码中提取工具定义
+    const extractToolsFromPythonCode = (code: string, params: ParameterConfig[]): MCPTool[] => {
+        // 简单解析：查找 main 函数定义
+        const mainMatch = code.match(/def\s+main\s*\(([^)]*)\)/);
+        if (!mainMatch) return [];
+
+        return [{
+            name: 'main',
+            description: form.getFieldValue('description') || 'Python Function',
+            input_schema: {
+                type: 'object',
+                properties: params.reduce((acc, param) => {
+                    acc[param.name] = {
+                        type: param.type,
+                        description: param.description,
+                    };
+                    return acc;
+                }, {} as Record<string, any>),
+                required: params.filter(p => p.required).map(p => p.name),
+            },
+            is_enabled: true,
+        }];
+    };
+
     const addInputParam = () => {
         setInputParams([...inputParams, { name: '', type: 'string', description: '', required: false }]);
     };
@@ -294,13 +477,26 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     // 更新现有的Python MCP
                     const updateResponse = await mcpApi.updateMCPOriginalCode(server.id, pythonCode);
                     const toolsResponse = await mcpApi.updateMCPTools(server.id, tools);
-                    
-                    // 更新基本信息（描述和标签）
+
+                    // 更新基本信息（描述、标签和工具列表）
                     const baseInfoResponse = await mcpApi.updateServer(server.id, {
                         description: values.description,
                         tags: tags,
+                        tools: tools.map(t => ({
+                            name: t.function_name,
+                            description: values.description || 'MCP工具',
+                            input_schema: {
+                                type: 'object',
+                                properties: t.parameters.reduce((acc: any, p: any) => {
+                                    acc[p.name] = { type: p.type, description: p.description };
+                                    return acc;
+                                }, {}),
+                                required: t.parameters.filter((p: any) => p.required).map((p: any) => p.name),
+                            },
+                            is_enabled: true,
+                        })),
                     });
-                    
+
                     if (updateResponse.code === 200 && toolsResponse.code === 200 && baseInfoResponse.code === 200) {
                         message.success('Python MCP 更新成功！');
                         onSave();
@@ -331,8 +527,9 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     const response = await mcpApi.updateServer(server.id, {
                         description: values.description,
                         tags: tags,
+                        tools: tools,
                     });
-                    
+
                     if (response.code === 200) {
                         message.success('Stdio MCP 更新成功！');
                         onSave();
@@ -402,9 +599,10 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                             return [key.trim(), valueParts.join('=').trim()];
                         })) : {},
                         timeout: values.timeout,
-                        enabled: values.enabled,
+                        is_active: values.is_active,
+                        tools: tools,
                     });
-                    
+
                     if (response.code === 200) {
                         message.success('HTTP MCP 更新成功！');
                         onSave();
@@ -430,7 +628,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                         headers,
                         timeout: values.timeout,
                         session_id: values.session_id,
-                        enabled: values.enabled,
+                        is_active: values.is_active,
                         share: values.share,
                         tags: tags,
                     };
@@ -456,9 +654,10 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                             return [key.trim(), valueParts.join('=').trim()];
                         })) : {},
                         timeout: values.timeout,
-                        enabled: values.enabled,
+                        is_active: values.is_active,
+                        tools: tools,
                     });
-                    
+
                     if (response.code === 200) {
                         message.success('SSE MCP 更新成功！');
                         onSave();
@@ -487,7 +686,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                         sse_endpoint: values.sse_endpoint,
                         retry_interval: values.retry_interval,
                         max_retries: values.max_retries,
-                        enabled: values.enabled,
+                        is_active: values.is_active,
                         share: values.share,
                         tags: tags,
                     };
@@ -585,13 +784,15 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                                         e.stopPropagation();
                                         handleTagRemove(tag);
                                     }}
-                                    color={index < 2 ? 'blue' : 'default'}
-                                    style={{ 
+                                    style={{
                                         margin: 0,
                                         padding: '0 7px',
                                         fontSize: 14,
                                         lineHeight: '20px',
                                         borderRadius: 4,
+                                        backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
+                                        border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
+                                        color: tag === 'system' ? 'var(--primary-100)' : undefined,
                                     }}
                                 >
                                     {tag}
@@ -735,114 +936,159 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         </Card>
     );
 
-    const renderStdioConfig = () => (
-        <Card title="Stdio 配置（上传 ZIP 包或文件夹）" size="small" style={{ marginBottom: 16 }}>
-            <Alert
-                message="上传 MCP Server"
-                description={
-                    <span>
-                        上传 ZIP 包或文件夹，ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
-                        <br />
-                        <strong>注意：</strong>文件夹选择功能需要使用 Chrome 或 Edge 浏览器，
-                        且建议在 localhost 环境下运行以获得最佳体验。
-                    </span>
-                }
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-            />
-            
-            <Radio.Group value={stdioUploadType} onChange={(e) => { setStdioUploadType(e.target.value); setFileList([]); }} style={{ marginBottom: 16 }}>
-                <Radio.Button value="zip">
-                    <FileZipOutlined /> ZIP 包
-                </Radio.Button>
-                <Radio.Button value="folder">
-                    <FolderOpenOutlined /> 文件夹
-                </Radio.Button>
-            </Radio.Group>
-            
-            {stdioUploadType === 'zip' ? (
-                <Upload
-                    accept=".zip,.mcpb"
-                    fileList={fileList}
-                    beforeUpload={(file) => {
-                        const nativeFile = file.originFileObj || file;
+    const renderStdioConfig = () => {
+        // 如果是编辑已有服务器，显示命令配置
+        if (server) {
+            return (
+                <Card title="Stdio 命令配置" size="small" style={{ marginBottom: 16 }}>
+                    <Alert
+                        message="配置启动命令"
+                        description="配置启动此 MCP Server 的命令和参数"
+                        type="info"
+                        showIcon
+                        style={{ marginBottom: 16 }}
+                    />
+                    <Form.Item
+                        label="命令"
+                        name="command"
+                        rules={[{ required: true, message: '请输入启动命令' }]}
+                    >
+                        <Input placeholder="例如: node, python, npx" />
+                    </Form.Item>
+                    <Form.Item
+                        label="参数"
+                        name="args"
+                        extra="每行一个参数"
+                    >
+                        <TextArea
+                            rows={3}
+                            placeholder="例如:&#10;./bin/index.js&#10;--port=3000"
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        label="环境变量"
+                        name="env"
+                        extra="每行一个，格式: key=value"
+                    >
+                        <TextArea
+                            rows={3}
+                            placeholder="PATH=/usr/local/bin&#10;NODE_ENV=production"
+                        />
+                    </Form.Item>
+                </Card>
+            );
+        }
 
-                        setFileList([{
-                            uid: file.uid || nativeFile.name,
-                            name: nativeFile.name,
-                            status: 'done' as const,
-                            originFileObj: nativeFile,
-                        }]);
+        // 新建服务器时显示上传界面
+        return (
+            <Card title="Stdio 配置（上传 ZIP 包或文件夹）" size="small" style={{ marginBottom: 16 }}>
+                <Alert
+                    message="上传 MCP Server"
+                    description={
+                        <span>
+                            上传 ZIP 包或文件夹，ZIP 包应包含 main.py 或 __main__.py 作为入口文件。
+                            <br />
+                            <strong>注意：</strong>文件夹选择功能需要使用 Chrome 或 Edge 浏览器，
+                            且建议在 localhost 环境下运行以获得最佳体验。
+                        </span>
+                    }
+                    type="info"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                />
+                
+                <Radio.Group value={stdioUploadType} onChange={(e) => { setStdioUploadType(e.target.value); setFileList([]); }} style={{ marginBottom: 16 }}>
+                    <Radio.Button value="zip">
+                        <FileZipOutlined /> ZIP 包
+                    </Radio.Button>
+                    <Radio.Button value="folder">
+                        <FolderOpenOutlined /> 文件夹
+                    </Radio.Button>
+                </Radio.Group>
+                
+                {stdioUploadType === 'zip' ? (
+                    <Upload
+                        accept=".zip,.mcpb"
+                        fileList={fileList}
+                        beforeUpload={(file) => {
+                            const nativeFile = file.originFileObj || file;
 
-                        const fileName = nativeFile.name.replace(/\.(zip|mcpb)$/i, '');
-                        form.setFieldsValue({ name: fileName });
-
-                        // 分析文件类型并设置标签（仅在新创建时）
-                        if (!server) {
-                            const fileTags = analyzeFileTags([{ name: nativeFile.name }]);
-                            setTags(fileTags);
-                        }
-
-                        return false;
-                    }}
-                    onRemove={() => {
-                        setFileList([]);
-                        if (!server) {
-                            setTags(['stdio']);
-                        }
-                    }}
-                    maxCount={1}
-                >
-                    <Button icon={<UploadOutlined />}>选择 ZIP 包</Button>
-                </Upload>
-            ) : (
-                <div>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        multiple
-                        webkitdirectory=""
-                        directory=""
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                            const nativeFiles = Array.from(e.target.files || []);
-
-                            if (nativeFiles.length > 0) {
-                                const firstRelativePath = nativeFiles[0].webkitRelativePath || '';
-                                const folderName = firstRelativePath.split(/[/\\]/)[0] || 'mcp_server';
-
-                                form.setFieldsValue({ name: folderName });
-                            }
-
-                            const mappedFiles = nativeFiles.map(f => ({
-                                uid: `${f.name}-${Date.now()}`,
-                                name: f.webkitRelativePath || f.name,
+                            setFileList([{
+                                uid: file.uid || nativeFile.name,
+                                name: nativeFile.name,
                                 status: 'done' as const,
-                                originFileObj: f,
-                            }));
-                            
-                            setFileList(mappedFiles);
+                                originFileObj: nativeFile,
+                            }]);
+
+                            const fileName = nativeFile.name.replace(/\.(zip|mcpb)$/i, '');
+                            form.setFieldsValue({ name: fileName });
 
                             // 分析文件类型并设置标签（仅在新创建时）
                             if (!server) {
-                                const fileTags = analyzeFileTags(mappedFiles);
+                                const fileTags = analyzeFileTags([{ name: nativeFile.name }]);
                                 setTags(fileTags);
                             }
+
+                            return false;
                         }}
-                    />
-                    <Button icon={<FolderOpenOutlined />} onClick={() => fileInputRef.current?.click()}>
-                        选择文件夹
-                    </Button>
-                    {fileList.length > 0 && (
-                        <div style={{ marginTop: 8 }}>
-                            <span>已选择 {fileList.length} 个文件</span>
-                        </div>
-                    )}
-                </div>
-            )}
-        </Card>
-    );
+                        onRemove={() => {
+                            setFileList([]);
+                            if (!server) {
+                                setTags(['stdio']);
+                            }
+                        }}
+                        maxCount={1}
+                    >
+                        <Button icon={<UploadOutlined />}>选择 ZIP 包</Button>
+                    </Upload>
+                ) : (
+                    <div>
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            multiple
+                            webkitdirectory=""
+                            directory=""
+                            style={{ display: 'none' }}
+                            onChange={(e) => {
+                                const nativeFiles = Array.from(e.target.files || []);
+
+                                if (nativeFiles.length > 0) {
+                                    const firstRelativePath = nativeFiles[0].webkitRelativePath || '';
+                                    const folderName = firstRelativePath.split(/[/\\]/)[0] || 'mcp_server';
+
+                                    form.setFieldsValue({ name: folderName });
+                                }
+
+                                const mappedFiles = nativeFiles.map(f => ({
+                                    uid: `${f.name}-${Date.now()}`,
+                                    name: f.webkitRelativePath || f.name,
+                                    status: 'done' as const,
+                                    originFileObj: f,
+                                }));
+                                
+                                setFileList(mappedFiles);
+
+                                // 分析文件类型并设置标签（仅在新创建时）
+                                if (!server) {
+                                    const fileTags = analyzeFileTags(mappedFiles);
+                                    setTags(fileTags);
+                                }
+                            }}
+                        />
+                        <Button icon={<FolderOpenOutlined />} onClick={() => fileInputRef.current?.click()}>
+                            选择文件夹
+                        </Button>
+                        {fileList.length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                                <span>已选择 {fileList.length} 个文件</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </Card>
+        );
+    };
 
     const renderHttpConfig = () => (
         <Card title="HTTP 连接配置" size="small" style={{ marginBottom: 16 }}>
@@ -920,6 +1166,83 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         </Card>
     );
 
+    const renderToolsList = () => {
+        const enabledCount = tools.filter(t => t.is_enabled !== false).length;
+
+        return (
+            <Card
+                title={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ToolOutlined />
+                            <span>工具列表</span>
+                            {tools.length > 0 && (
+                                <Tag color="blue">{enabledCount}/{tools.length} 启用</Tag>
+                            )}
+                        </div>
+                        <Button
+                            type="primary"
+                            size="small"
+                            onClick={handleConnectAndLoadTools}
+                        >
+                            连接
+                        </Button>
+                    </div>
+                }
+                size="small"
+                style={{ marginBottom: 16 }}
+            >
+                {tools.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '20px 0', color: '#999' }}>
+                        暂无工具，点击"连接"按钮获取工具列表
+                    </div>
+                ) : (
+                    <List
+                        size="small"
+                        dataSource={tools}
+                        renderItem={(tool) => (
+                            <List.Item
+                                actions={[
+                                    <Switch
+                                        size="small"
+                                        checked={tool.is_enabled !== false}
+                                        onChange={(checked) => handleToolEnabledChange(tool.name, checked)}
+                                    />
+                                ]}
+                            >
+                                <List.Item.Meta
+                                    title={
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span>{tool.name}</span>
+                                            {tool.is_enabled === false && (
+                                                <Tag color="default" size="small">已禁用</Tag>
+                                            )}
+                                        </div>
+                                    }
+                                    description={
+                                        <Tooltip title={tool.description}>
+                                            <span style={{
+                                                color: 'var(--text-secondary)',
+                                                fontSize: 12,
+                                                display: 'block',
+                                                maxWidth: 400,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap'
+                                            }}>
+                                                {tool.description || '无描述'}
+                                            </span>
+                                        </Tooltip>
+                                    }
+                                />
+                            </List.Item>
+                        )}
+                    />
+                )}
+            </Card>
+        );
+    };
+
     const renderOtherConfig = () => (
         <Card title="其他配置" size="small" style={{ marginBottom: 16 }}>
             <Row gutter={16}>
@@ -965,7 +1288,10 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 {createType === 'stdio' && renderStdioConfig()}
                 {createType === 'http' && renderHttpConfig()}
                 {createType === 'sse' && renderSseConfig()}
-                
+
+                {/* 显示工具列表（编辑模式下） */}
+                {renderToolsList()}
+
                 {renderOtherConfig()}
             </Form>
         </Modal>

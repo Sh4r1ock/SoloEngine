@@ -324,21 +324,43 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                         typ,
                     )
 
-            msg_openai = {
-                "role": msg.role,
-                "name": msg.name,
-                "content": content_blocks or None,
-            }
+            # 处理 tool 消息的 content：必须是字符串
+            if msg.role == "tool":
+                # 将 content_blocks 转换为字符串
+                if content_blocks:
+                    text_parts = []
+                    for block in content_blocks:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                    content_str = "\n".join(text_parts) if text_parts else ""
+                else:
+                    content_str = ""
+                
+                msg_openai = {
+                    "role": "tool",
+                    "content": content_str,  # 必须是字符串，即使是空字符串
+                }
+                
+                # 添加 tool_call_id
+                if msg.tool_call_id:
+                    msg_openai["tool_call_id"] = msg.tool_call_id
+            else:
+                # 统一处理其他消息类型
+                msg_openai = {
+                    "role": msg.role,
+                    "name": msg.name,
+                    "content": content_blocks or None,
+                }
 
-            if tool_calls:
-                msg_openai["tool_calls"] = tool_calls
+                if tool_calls:
+                    msg_openai["tool_calls"] = tool_calls
 
-            has_content = msg_openai["content"] is not None and (
-                not isinstance(msg_openai["content"], list) or len(msg_openai["content"]) > 0
+            has_content = msg_openai.get("content") is not None and (
+                not isinstance(msg_openai.get("content"), list) or len(msg_openai.get("content")) > 0
             )
             has_valid_content = has_content or tool_calls
             
-            if has_valid_content:
+            if has_valid_content or msg.role == "tool":
                 # 即使没有original_model_message，也从content中提取thinking内容
                 if reasoning_content is not None and msg.role == "assistant":
                     msg_openai["reasoning_content"] = reasoning_content

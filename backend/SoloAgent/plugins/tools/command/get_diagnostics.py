@@ -157,15 +157,28 @@ class GetDiagnostics:
         warning_count = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.WARNING)
         information_count = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.INFORMATION)
         hint_count = sum(1 for d in diagnostics if d.severity == DiagnosticSeverity.HINT)
-        
+
+        if diagnostics:
+            content_lines = [
+                f"{d.severity.value}: {d.message} ({d.uri}:{d.range_start_line+1})"
+                for d in diagnostics[:10]
+            ]
+            if len(diagnostics) > 10:
+                content_lines.append(f"... and {len(diagnostics) - 10} more")
+            content = "\n".join(content_lines)
+        else:
+            content = "No diagnostics found"
+
         return {
-            "diagnostics": [d.to_dict() for d in diagnostics],
+            "content": content,
+            "success": error_count == 0,
             "count": len(diagnostics),
             "error_count": error_count,
             "warning_count": warning_count,
             "information_count": information_count,
             "hint_count": hint_count,
             "metadata": {
+                "diagnostics": [d.to_dict() for d in diagnostics],
                 "resources_used": [uri] if uri else []
             }
         }

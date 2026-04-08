@@ -66,7 +66,17 @@ const SkillsPackageDetail: React.FC<SkillsPackageDetailProps> = ({
         <div style={{ marginTop: 8 }}>
           {(pkg.metadata?.tags || pkg.tags || []).length > 0 ? (
             (pkg.metadata?.tags || pkg.tags || []).map((tag: string, index: number) => (
-              <Tag key={index} color="blue" style={{ marginBottom: 4 }}>{tag}</Tag>
+              <Tag 
+                key={index} 
+                style={{ 
+                  marginBottom: 4,
+                  backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
+                  border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
+                  color: tag === 'system' ? 'var(--primary-100)' : undefined,
+                }}
+              >
+                {tag}
+              </Tag>
             ))
           ) : (
             <Text type="secondary">无标签</Text>

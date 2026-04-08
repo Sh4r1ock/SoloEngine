@@ -94,7 +94,7 @@ const LLMConfigSelector: React.FC<LLMConfigSelectorProps> = ({
   };
 
   const handleOpenSettings = () => {
-    window.open('/mainmenu/llm', '_blank');
+    window.open('/main/llm', '_blank');
   };
 
   const groupedConfigs = configs.reduce((acc, config) => {
