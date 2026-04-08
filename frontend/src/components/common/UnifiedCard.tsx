@@ -69,6 +69,42 @@ const UnifiedCard: React.FC<CardItemProps> = ({
   const nameRef = useRef<HTMLSpanElement>(null);
   const descRef = useRef<HTMLParagraphElement>(null);
 
+  const allTags = [...(systemTag ? ['system'] : []), ...tags.filter(t => t !== 'system')];
+
+  // 预估每个标签的宽度（字符数 * 预估字符宽度 + padding）
+  const estimateTagWidth = (tag: string): number => {
+    // 字体大小 11px，平均字符宽度约 6px，padding 左右共 18px
+    return tag.length * 6 + 18;
+  };
+
+  // 计算能显示的标签数量
+  const calculateVisibleCount = (containerWidth: number): number => {
+    const ellipsisWidth = 35; // "..." 的宽度
+    const gap = 6;
+    let totalWidth = 0;
+    let count = 0;
+
+    for (let i = 0; i < allTags.length; i++) {
+      const tagWidth = estimateTagWidth(allTags[i]);
+      const needEllipsis = i < allTags.length - 1;
+      const extraWidth = needEllipsis ? ellipsisWidth : 0;
+
+      if (totalWidth + tagWidth + (count > 0 ? gap : 0) + extraWidth <= containerWidth) {
+        totalWidth += tagWidth + (count > 0 ? gap : 0);
+        count++;
+      } else {
+        break;
+      }
+    }
+
+    return count;
+  };
+
+  // 卡片内容区域宽度 = 卡片宽度 - 左右padding (24px)
+  // 从CSS变量或固定值获取，这里使用固定值
+  const containerWidth = 280; // 预估卡片标签区域宽度
+  const visibleCount = calculateVisibleCount(containerWidth);
+
   useEffect(() => {
     const checkTruncation = () => {
       if (nameRef.current) {
@@ -231,15 +267,19 @@ const UnifiedCard: React.FC<CardItemProps> = ({
           </p>
         )}
 
-        <div className="card-tags" style={{
-          marginTop: '8px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '6px',
-          minHeight: '18px',
-          flexShrink: 0,
-        }}>
-          {[...(systemTag ? ['system'] : []), ...tags.filter(t => t !== 'system')].slice(0, 2).map((tag, index) => (
+        <div
+          className="card-tags"
+          style={{
+            marginTop: '8px',
+            display: 'flex',
+            flexWrap: 'nowrap',
+            gap: '6px',
+            height: '24px',
+            flexShrink: 0,
+            overflow: 'hidden',
+          }}
+        >
+          {allTags.slice(0, visibleCount).map((tag, index) => (
             <span
               key={index}
               className={`card-tag ${tag === 'system' ? 'system-tag' : ''}`}
@@ -251,11 +291,31 @@ const UnifiedCard: React.FC<CardItemProps> = ({
                 border: `1px solid ${tag === 'system' ? 'var(--primary-100)' : 'var(--border-color-lighter)'}`,
                 color: tag === 'system' ? 'var(--primary-100)' : 'var(--text-200)',
                 fontWeight: 500,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {tag}
             </span>
           ))}
+          {visibleCount < allTags.length && (
+            <span
+              className="card-tag-more"
+              style={{
+                fontSize: '11px',
+                padding: '3px 9px',
+                borderRadius: 'var(--radius-sm)',
+                backgroundColor: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color-lighter)',
+                color: 'var(--text-200)',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              ...
+            </span>
+          )}
         </div>
 
         <div className="card-meta" style={{

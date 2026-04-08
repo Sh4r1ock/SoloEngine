@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 from pathlib import Path
 
-env_path = Path(__file__).parent.parent / ".env"
+# 从项目根目录加载.env文件
+env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(env_path)
 
 import sys

@@ -57,7 +57,7 @@ const MCPManager: React.FC = () => {
 
   const handleToggleEnable = async (server: MCPServer, checked: boolean) => {
     try {
-      await mcpApi.updateServer(server.id, { enabled: checked });
+      await mcpApi.updateServer(server.id, { is_active: checked });
       message.success(checked ? 'MCP 工具已启用' : 'MCP 工具已停用');
       loadServerList();
     } catch (error) {
@@ -104,10 +104,7 @@ const MCPManager: React.FC = () => {
   };
 
   const allTags = Array.from(new Set(
-    servers.flatMap(server => [
-      ...(server.is_default ? ['system'] : []),
-      getTransportType(server).toUpperCase(),
-    ])
+    servers.flatMap(server => server.tags || [])
   )).sort();
 
   useEffect(() => {
@@ -119,10 +116,7 @@ const MCPManager: React.FC = () => {
 
     if (selectedTags.length > 0) {
       result = result.filter(server => {
-        const serverTags = [
-          ...(server.is_default ? ['system'] : []),
-          getTransportType(server).toUpperCase(),
-        ];
+        const serverTags = server.tags || [];
         return selectedTags.some(tag => serverTags.includes(tag));
       });
     }
@@ -207,7 +201,7 @@ const MCPManager: React.FC = () => {
                 description={server.description || ''}
                 icon={server.icon || getDefaultIcon('mcp')}
                 tags={allTags}
-                isActive={server.is_enabled ?? server.enabled}
+                isActive={server.is_active}
                 showSwitch={true}
                 meta1={{ 
                   label: '超时', 

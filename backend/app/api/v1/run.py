@@ -397,27 +397,29 @@ async def save_session_message(
 
 
 async def load_and_distribute_memories(
-    db: Session, 
-    session_id: str, 
+    db: Session,
+    session_id: str,
     user_id: str
 ) -> Dict[str, List[Dict]]:
     """从数据库读取记忆并按 agent_id 分发
-    
+
     应用过滤模式：tool_calls[].result 中的完整 JSON 只提取 content 字段
-    
+
     关键修复：对于包含 tool_calls 的 assistant 消息，必须在后面添加对应的 tool 结果消息，
     以满足 OpenAI API 的要求（tool_calls 后必须有 tool 消息响应）
+
+    修复：保持消息的时间顺序，将 shared_memories 和 agent_memories 按 message_index 排序合并
     """
     from app.core.database import SessionMessageModel
-    
+
     records = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
         SessionMessageModel.user_id == user_id
     ).order_by(SessionMessageModel.message_index).all()
-    
-    agent_memories = {}
-    shared_memories = []
-    
+
+    # 所有消息按时间顺序存储，每个agent维护自己的完整对话历史
+    all_messages = []
+
     for record in records:
         data = record.data or []
         if isinstance(data, str):
@@ -425,30 +427,66 @@ async def load_and_distribute_memories(
                 data = json.loads(data)
             except:
                 data = []
-        
+
         filtered_data = _filter_tool_results(data)
-        
+
         message = {
             "role": record.role,
-            "content": filtered_data,
-            "agent_id": record.agent_id
+            "data": filtered_data,
+            "agent_id": record.agent_id,
+            "message_index": record.message_index  # 保留索引用于排序
         }
-        
-        if record.agent_id and record.agent_id != "default":
-            if record.agent_id not in agent_memories:
-                agent_memories[record.agent_id] = []
-            agent_memories[record.agent_id].append(message)
-        else:
-            shared_memories.append(message)
-        
 
-    
-    for agent_id in agent_memories:
-        agent_memories[agent_id] = shared_memories + agent_memories[agent_id]
-    
-    if not agent_memories and shared_memories:
-        agent_memories["default"] = shared_memories
-    
+        all_messages.append(message)
+
+        # 关键修复：如果消息包含 tool_calls，在其后添加对应的 tool 结果消息
+        if record.role == "assistant":
+            for block in filtered_data:
+                if block.get("type") == "tool_calls":
+                    for tc in block.get("tool_calls", []):
+                        tool_call_id = tc.get("id")
+                        result = tc.get("result")
+                        tool_name = tc.get("function", {}).get("name", "")
+
+                        # result 已经被 _filter_tool_results 处理，直接取 content 或转为字符串
+                        if tool_call_id and result is not None:
+                            tool_content = result if isinstance(result, str) else str(result)
+
+                            tool_msg = {
+                                "role": "tool",
+                                "tool_call_id": tool_call_id,
+                                "content": tool_content,
+                                "name": tool_name,
+                                "message_index": record.message_index + 0.5  # 确保在assistant消息之后
+                            }
+                            all_messages.append(tool_msg)
+
+    # 按 message_index 排序，保持时间顺序
+    all_messages.sort(key=lambda x: x.get("message_index", 0))
+
+    # 构建 agent_memories：每个agent获得完整的对话历史
+    agent_memories = {}
+    default_agent_id = "default"
+
+    # 找到所有agent_id
+    agent_ids = set()
+    for msg in all_messages:
+        agent_id = msg.get("agent_id")
+        if agent_id and agent_id != "default":
+            agent_ids.add(agent_id)
+
+    # 如果没有特定agent，使用default
+    if not agent_ids:
+        agent_ids = {default_agent_id}
+
+    # 每个agent获得完整的对话历史（移除内部字段）
+    for agent_id in agent_ids:
+        agent_memories[agent_id] = []
+        for msg in all_messages:
+            # 移除内部字段
+            clean_msg = {k: v for k, v in msg.items() if k != "message_index"}
+            agent_memories[agent_id].append(clean_msg)
+
     return agent_memories
 
 
@@ -1511,16 +1549,10 @@ async def run_websocket(
                                 
                                 current_execution_task.cancel()
                                 
-                                try:
-                                    await asyncio.wait_for(current_execution_task, timeout=5.0)
-                                except asyncio.CancelledError:
-                                    pass
-                                except asyncio.TimeoutError:
-                                    logger.warning(f"[WebSocket] Task cancellation timeout for session: {session_id}")
+                                # 不在这里等待任务完成，让主循环的 execution_wait_task 分支处理
+                                # 这样可以避免重复调用 handle_execution_completion
                                 
-                                status = "stop"
-                                
-                                logger.info(f"[WebSocket] Stop requested, task cancelled, will save in main loop")
+                                logger.info(f"[WebSocket] Stop requested, task cancelled, waiting for completion in main loop")
                             else:
                                 await websocket.send_json({
                                     "type": "execution_stopped",
@@ -1592,9 +1624,11 @@ async def run_websocket(
                                     logger.error(f"Stream callback error: {e}")
                             
                             current_cancel_event = asyncio.Event()
-                            
+
                             async def run_execution():
                                 nonlocal status
+                                # 使用 WebSocket 连接时已经加载的 agent_memories
+                                # 不再每次执行都重新加载，依赖 ReActCore 的 _conversation_history 缓存
                                 result = await FlowRunner.run_from_json(
                                     canvas_data,
                                     input_message,
@@ -1682,8 +1716,10 @@ async def run_websocket(
                 logger.warning(f"[WebSocket] Task cancellation timeout in finally: {session_id}")
             
             if current_collector:
-                status = "stop"
-                logger.info(f"[WebSocket] Finally block - saving data, collector has data: {current_collector.get_chunk_count() > 0}, parent_message_id: {last_user_message_id}")
+                # 使用之前确定的status，如果没有则默认为stop
+                if not status:
+                    status = "stop"
+                logger.info(f"[WebSocket] Finally block - saving data, status: {status}, collector has data: {current_collector.get_chunk_count() > 0}, parent_message_id: {last_user_message_id}")
                 
                 agent_data = current_collector.get_agent_data()
                 logger.info(f"[WebSocket] Agent data (finally): {agent_data}")
@@ -1731,11 +1767,20 @@ async def run_websocket(
                 
                 try:
                     with get_db_context() as finally_update_db:
-                        db_manager.update_session(
-                            finally_update_db, session_id,
-                            status="stop",
-                            completed_at=datetime.now(timezone.utc)
-                        )
+                        # 根据status确定session的最终状态
+                        if status == "error":
+                            db_manager.update_session(
+                                finally_update_db, session_id,
+                                status="failed",
+                                error=error_msg,
+                                completed_at=datetime.now(timezone.utc)
+                            )
+                        else:
+                            db_manager.update_session(
+                                finally_update_db, session_id,
+                                status=status,
+                                completed_at=datetime.now(timezone.utc)
+                            )
                 except Exception as update_error:
                     logger.error(f"[WebSocket] Failed to update session in finally: {update_error}")
         

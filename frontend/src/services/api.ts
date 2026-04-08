@@ -105,33 +105,6 @@ export const api = {
   },
 };
 
-export const projectApi = {
-  getProjects: async (): Promise<ProjectData[]> => {
-    const response = await api.get('/projects');
-    return response.data;
-  },
-
-  createProject: async (name: string): Promise<ProjectData> => {
-    const response = await api.post('/projects', null, { params: { name } });
-    return response.data;
-  },
-
-  getCanvas: async (projectId: string): Promise<CanvasData> => {
-    const response = await api.get(`/projects/${projectId}/canvas`);
-    return response.data.canvas;
-  },
-
-  updateCanvas: async (projectId: string, canvasData: CanvasData): Promise<CanvasData> => {
-    const response = await api.put(`/projects/${projectId}/canvas`, canvasData);
-    return response.data.canvas;
-  },
-
-  runProject: async (projectId: string, input: string): Promise<{ session_id: string }> => {
-    const response = await api.post(`/projects/${projectId}/run`, { input });
-    return response.data;
-  },
-};
-
 export const toolApi = {
   getTools: async (): Promise<ToolData[]> => {
     const response = await api.get('/tools');

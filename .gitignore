@@ -230,6 +230,7 @@ bat/
 SoloEngine.zip
 node_modules/
 bat/
+.tokeignore
 
 # 数据目录
 data/packages/

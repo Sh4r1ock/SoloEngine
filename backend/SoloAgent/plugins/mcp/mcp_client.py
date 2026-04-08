@@ -92,15 +92,15 @@ class MCPClient(IMCPClient):
 
     async def _connect_stdio(self) -> None:
         """通过 stdio 连接 MCP 服务器。"""
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
+        from mcp import ClientSession
+        from mcp.client.stdio import stdio_client, StdioServerParameters
 
         command = self.config.get("command")
         if not command:
             raise ValueError("stdio transport requires 'command' config")
 
-        args = self.config.get("args", [])
-        env = self.config.get("env", {})
+        args = self.config.get("args") or []
+        env = self.config.get("env") or {}
         
         process_env = os.environ.copy()
         process_env.update(env)
@@ -143,7 +143,8 @@ class MCPClient(IMCPClient):
     async def _connect_http(self) -> None:
         """通过 Streamable HTTP 连接 MCP 服务器。"""
         from mcp import ClientSession
-        from mcp.client.streamable_http import streamable_http_client
+        from mcp.client.streamable_http import streamablehttp_client
+        import httpx
 
         url = self.config.get("url")
         if not url:
@@ -151,14 +152,21 @@ class MCPClient(IMCPClient):
 
         headers = self.config.get("headers", {})
 
-        self._client_context = streamable_http_client(url, headers=headers)
-        read_stream, write_stream, _ = await self._client_context.__aenter__()
-        
-        self._session = ClientSession(read_stream, write_stream)
-        await self._session.__aenter__()
-        await self._session.initialize()
+        try:
+            self._client_context = streamablehttp_client(url, headers=headers)
+            read_stream, write_stream, _ = await self._client_context.__aenter__()
+            
+            self._session = ClientSession(read_stream, write_stream)
+            await self._session.__aenter__()
+            await self._session.initialize()
 
-        await self._load_capabilities()
+            await self._load_capabilities()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error connecting to MCP server: {e}")
+            raise ConnectionError(f"Failed to connect to MCP server: HTTP {e.response.status_code}")
+        except Exception as e:
+            logger.error(f"Error connecting to MCP server: {e}")
+            raise ConnectionError(f"Failed to connect to MCP server: {str(e)}")
 
     async def _load_capabilities(self) -> None:
         """加载服务器的工具、资源和提示词。"""

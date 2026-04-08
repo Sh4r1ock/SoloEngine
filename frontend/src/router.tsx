@@ -21,7 +21,7 @@ const LoadingFallback = () => (
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <Navigate to="/mainmenu" replace />,
+    element: <Navigate to="/main" replace />,
   },
   {
     path: '/login',
@@ -40,7 +40,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/mainmenu',
+    path: '/main',
     element: (
       <ProtectedRoute>
         <Suspense fallback={<LoadingFallback />}>
@@ -50,7 +50,7 @@ const router = createBrowserRouter([
     ),
   },
   {
-    path: '/mainmenu/:tab',
+    path: '/main/:tab',
     element: (
       <ProtectedRoute>
         <Suspense fallback={<LoadingFallback />}>

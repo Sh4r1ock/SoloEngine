@@ -24,7 +24,7 @@ MCP工具模块 - MCP服务器工具调用实现。
 状态: ✅ 完整实现
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from dataclasses import dataclass, field
 import asyncio
 import json
@@ -138,31 +138,48 @@ class MCPTool(BaseAgentTool):
         self._connection_config = connection_config or MCPConnectionConfig()
     
     def get_tool_spec(self) -> Dict[str, Any]:
-        """获取工具规范 - 包含 available_mcp_tools XML
-        
+        """获取工具规范 - 包含 available_mcp_servers XML 和渐进发现说明
+
         Returns:
             Dict[str, Any]: 工具规范，兼容OpenAI Function Calling格式
         """
-        available_mcp_xml = self._format_available_mcp_tools_xml()
-        
-        description = f"""Call a tool from an MCP server.
+        available_mcp_xml = self._format_available_mcp_servers_xml()
 
-Available MCP tools:
+        description = f"""Call a tool from an MCP server with progressive discovery.
+
+Available MCP servers:
 {available_mcp_xml}
 
-When to use the MCP tool:
-  - When you need to access external tools or services
-  - When you need to perform operations on files, APIs, or databases
-  - When the user requests functionality provided by an MCP server
+This tool supports multiple modes based on the parameters you provide:
 
-Usage:
-  - server_name: The MCP server name (e.g., "github", "filesystem")
-  - tool_name: The tool name to call
-  - arguments: The arguments to pass to the tool (JSON object)
+1. DISCOVERY MODE - List all tools from a specific server:
+   MCP(server_name="github")
+   → Returns: List of all available tools from mcp_servers_info with brief descriptions
 
-IMPORTANT: When an MCP tool is relevant, you must invoke this tool IMMEDIATELY as your first action.
-NEVER just announce or mention an MCP server in your text response without actually calling this tool."""
-        
+2. SEARCH MODE - Find tools by keyword:
+   MCP(server_name="github", tool_name="issue")
+   → Returns: Tools matching the keyword (searches in name and description)
+
+3. SCHEMA MODE - Get tool details:
+   MCP(server_name="github", tool_name="create_issue")
+   → Returns: Full schema of the specified tool
+
+4. BATCH SCHEMA MODE - Get multiple tool details:
+   MCP(server_name="github", tool_name=["create_issue", "list_issues"])
+   → Returns: Schemas for all specified tools
+
+5. EXECUTION MODE - Run a tool:
+   MCP(server_name="github", tool_name="create_issue",
+       arguments={"{"}"title": "...", "body": "..."{"}"})
+   → Returns: Tool execution result
+
+IMPORTANT:
+- Use exact tool_name for schema lookup and execution
+- Use partial/keyword tool_name for search
+- ALWAYS provide 'arguments' when you want to EXECUTE
+- When an MCP tool is relevant, you must invoke this tool IMMEDIATELY as your first action.
+- NEVER just announce or mention an MCP server in your text response without actually calling this tool."""
+
         return {
             "name": "MCP",
             "description": description,
@@ -171,76 +188,99 @@ NEVER just announce or mention an MCP server in your text response without actua
                 "properties": {
                     "server_name": {
                         "type": "string",
-                        "description": "The MCP server name."
+                        "description": "The MCP server name (e.g., 'github', 'filesystem')"
                     },
                     "tool_name": {
-                        "type": "string",
-                        "description": "The tool name to call."
+                        "oneOf": [
+                            {"type": "string", "description": "Tool name (exact match or search keyword)"},
+                            {"type": "array", "items": {"type": "string"}, "description": "List of tool names for batch schema lookup"}
+                        ],
+                        "description": "Optional. Tool name(s) for schema lookup, search, or execution"
                     },
                     "arguments": {
                         "type": "object",
-                        "description": "The arguments to pass to the tool."
+                        "description": "Optional. Tool arguments for execution. Required when executing a tool."
                     }
                 },
-                "required": ["server_name", "tool_name"]
+                "required": ["server_name"]
             }
         }
     
     def _format_available_mcp_tools_xml(self) -> str:
-        """生成 available_mcp_tools XML
-        
+        """生成 available_mcp_tools XML (保留用于兼容性)
+
         Returns:
             str: available_mcp_tools XML 字符串
         """
         if not self._mcp_servers_info:
             return "<available_mcp_tools>\nNo MCP tools available.\n</available_mcp_tools>"
-        
+
         lines = ["<available_mcp_tools>"]
         for server_name, server_info in self._mcp_servers_info.items():
             for tool in server_info.tools:
                 tool_name = tool.get("name", "")
                 tool_desc = tool.get("description", "")
-                if tool_name:
+                is_enabled = tool.get("is_enabled", True)  # 默认启用
+
+                # 只显示启用的工具
+                if tool_name and is_enabled:
                     if tool_desc:
                         lines.append(f"[{server_name}] {tool_name}: {tool_desc}")
                     else:
                         lines.append(f"[{server_name}] {tool_name}")
         lines.append("</available_mcp_tools>")
         return "\n".join(lines)
+
+    def _format_available_mcp_servers_xml(self) -> str:
+        """生成 available_mcp_servers XML - 只包含服务器信息
+
+        Returns:
+            str: available_mcp_servers XML 字符串
+        """
+        if not self._mcp_servers_info:
+            return "<available_mcp_servers>\nNo MCP servers available.\n</available_mcp_servers>"
+
+        lines = ["<available_mcp_servers>"]
+        for server_name, server_info in self._mcp_servers_info.items():
+            # 只注入服务器名称和描述，不注入具体工具
+            server_desc = server_info.server_description or f"MCP server: {server_name}"
+            lines.append(f"[{server_name}]: {server_desc}")
+        lines.append("</available_mcp_servers>")
+        return "\n".join(lines)
     
     async def execute(
         self,
         server_name: str,
-        tool_name: str,
-        arguments: Dict[str, Any] = None,
+        tool_name: Optional[Union[str, List[str]]] = None,
+        arguments: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Dict[str, Any]:
-        """执行MCP工具调用 - 直接调用MCPClient
-        
+        """执行MCP工具调用 - 支持三层递进模式
+
         Args:
             server_name (str): MCP服务器名称
-            tool_name (str): 工具名称
-            arguments (Dict[str, Any], optional): 工具参数
+            tool_name (Optional[Union[str, List[str]]]): 工具名称（可选）
+            arguments (Optional[Dict[str, Any]]): 工具参数（可选）
             **kwargs: 额外参数（忽略）
-        
+
         Returns:
-            Dict[str, Any]: 执行结果，包含：
-                - success (bool): 是否成功
-                - server_name (str): 服务器名称
-                - tool_name (str): 工具名称
-                - content (str): 返回内容（JSON字符串格式）
-                - metadata (dict): 元数据
+            Dict[str, Any]: 执行结果，根据模式不同返回不同内容
+
+        三层递进模式：
+            - Tier 1: Discovery (server_name only) → 返回工具列表
+            - Tier 2: Schema (server_name + tool_name) → 返回工具详情
+            - Tier 3: Execution (server_name + tool_name + arguments) → 执行工具
         """
         start_time = time.time()
         execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        
+
         if not server_name:
             return self._create_error_result(
                 error_code="INVALID_SERVER_NAME",
                 message="MCP server name is required",
                 execution_time=execution_time
             )
-        
+
         server_info = self._mcp_servers_info.get(server_name)
         if not server_info:
             return self._create_error_result(
@@ -249,41 +289,296 @@ NEVER just announce or mention an MCP server in your text response without actua
                 details={"available_servers": list(self._mcp_servers_info.keys())},
                 execution_time=execution_time
             )
-        
-        if not tool_name:
+
+        # Tier 1: Discovery - 只传 server_name
+        if tool_name is None:
+            return await self._tier1_discover(server_info, execution_time)
+
+        # Tier 3: Execution - 传了 arguments
+        if arguments is not None:
+            if isinstance(tool_name, str):
+                return await self._tier3_execute(server_info, tool_name, arguments, start_time, execution_time)
+            else:
+                return self._create_error_result(
+                    error_code="INVALID_TOOL_NAME",
+                    message="Cannot execute with multiple tools. Provide a single tool_name as string.",
+                    execution_time=execution_time,
+                    server_name=server_name
+                )
+
+        # Tier 2: Schema/Search - 没传 arguments，传了 tool_name
+        if isinstance(tool_name, list):
+            # 批量获取多个工具的 schema
+            return await self._tier2_batch_schema(server_info, tool_name, execution_time)
+
+        if isinstance(tool_name, str):
+            # 先尝试精确匹配 - 返回单个 schema
+            exact_match = self._find_tool_exact(server_info, tool_name)
+            if exact_match:
+                return await self._tier2_single_schema(server_info, tool_name, execution_time)
+            # 精确匹配失败，进行模糊搜索 - 返回匹配工具的 schema 列表
+            return await self._search_tools_with_schema(server_info, tool_name, execution_time)
+
+        return self._create_error_result(
+            error_code="INVALID_TOOL_NAME",
+            message="Invalid tool_name type",
+            execution_time=execution_time,
+            server_name=server_name
+        )
+    
+    def _find_tool_exact(self, server_info: MCPServerInfo, tool_name: str) -> Optional[Dict]:
+        """精确匹配工具
+
+        Args:
+            server_info: 服务器信息
+            tool_name: 工具名称
+
+        Returns:
+            Optional[Dict]: 匹配到的工具信息，未找到返回 None
+        """
+        for tool in server_info.tools:
+            if tool.get("name") == tool_name:
+                return tool
+        return None
+
+    async def _tier1_discover(self, server_info: MCPServerInfo, execution_time: str) -> Dict[str, Any]:
+        """Tier 1: 发现所有工具
+
+        Args:
+            server_info: 服务器信息
+            execution_time: 执行时间
+
+        Returns:
+            Dict[str, Any]: 工具列表
+        """
+        tools_summary = []
+        for tool in server_info.tools:
+            tool_desc = tool.get("description", "")[:100]
+            tools_summary.append({
+                "name": tool.get("name"),
+                "description": tool_desc
+            })
+
+        return {
+            "success": True,
+            "mode": "discovery",
+            "server_name": server_info.server_name,
+            "available_tools": tools_summary,
+            "total_count": len(tools_summary),
+            "hint": "Use tool_name='keyword' to search, or exact tool_name to get schema",
+            "metadata": {"execution_time": execution_time}
+        }
+
+    async def _search_tools(self, server_info: MCPServerInfo, query: str, execution_time: str) -> Dict[str, Any]:
+        """模糊搜索工具 - 返回名称+简介（保留用于兼容性）
+
+        Args:
+            server_info: 服务器信息
+            query: 搜索关键词
+            execution_time: 执行时间
+
+        Returns:
+            Dict[str, Any]: 搜索结果
+        """
+        query_lower = query.lower()
+        matches = []
+
+        for tool in server_info.tools:
+            name = tool.get("name", "").lower()
+            description = tool.get("description", "").lower()
+
+            # 匹配规则：名称包含 或 描述包含
+            if query_lower in name or query_lower in description:
+                matches.append({
+                    "name": tool.get("name"),
+                    "description": tool.get("description", "")[:100]
+                })
+
+        return {
+            "success": True,
+            "mode": "search",
+            "server_name": server_info.server_name,
+            "search_query": query,
+            "match_count": len(matches),
+            "matched_tools": matches,
+            "hint": "Use exact tool_name from results to get full schema",
+            "metadata": {"execution_time": execution_time}
+        }
+
+    async def _search_tools_with_schema(self, server_info: MCPServerInfo, query: str, execution_time: str) -> Dict[str, Any]:
+        """模糊搜索工具 - 返回匹配工具的 schema 列表
+
+        相当于批量查询匹配工具的详情
+
+        Args:
+            server_info: 服务器信息
+            query: 搜索关键词
+            execution_time: 执行时间
+
+        Returns:
+            Dict[str, Any]: 搜索结果，包含匹配工具的完整 schema
+        """
+        query_lower = query.lower()
+        matches = []
+
+        for tool in server_info.tools:
+            name = tool.get("name", "").lower()
+            description = tool.get("description", "").lower()
+
+            # 匹配规则：名称包含 或 描述包含
+            if query_lower in name or query_lower in description:
+                matches.append({
+                    "name": tool.get("name"),
+                    "description": tool.get("description"),
+                    "input_schema": tool.get("input_schema", {})
+                })
+
+        return {
+            "success": True,
+            "mode": "schema_search",
+            "server_name": server_info.server_name,
+            "search_query": query,
+            "match_count": len(matches),
+            "matched_tools": matches,
+            "hint": "Use exact tool_name to execute the tool",
+            "metadata": {"execution_time": execution_time}
+        }
+
+    async def _tier2_single_schema(self, server_info: MCPServerInfo, tool_name: str, execution_time: str) -> Dict[str, Any]:
+        """Tier 2: 获取单个工具 schema
+
+        Args:
+            server_info: 服务器信息
+            tool_name: 工具名称
+            execution_time: 执行时间
+
+        Returns:
+            Dict[str, Any]: 工具 schema
+        """
+        for tool in server_info.tools:
+            if tool.get("name") == tool_name:
+                return {
+                    "success": True,
+                    "mode": "schema",
+                    "server_name": server_info.server_name,
+                    "tool_name": tool_name,
+                    "description": tool.get("description"),
+                    "input_schema": tool.get("input_schema", {}),
+                    "hint": "Provide 'arguments' to execute this tool",
+                    "metadata": {"execution_time": execution_time}
+                }
+
+        return self._create_error_result(
+            error_code="TOOL_NOT_FOUND",
+            message=f"Tool '{tool_name}' not found",
+            execution_time=execution_time,
+            server_name=server_info.server_name
+        )
+
+    async def _tier2_batch_schema(self, server_info: MCPServerInfo, tool_names: List[str], execution_time: str) -> Dict[str, Any]:
+        """Tier 2+: 批量获取工具 schema
+
+        Args:
+            server_info: 服务器信息
+            tool_names: 工具名称列表
+            execution_time: 执行时间
+
+        Returns:
+            Dict[str, Any]: 批量 schema 结果
+        """
+        found_tools = []
+        not_found = []
+
+        for name in tool_names:
+            tool = self._find_tool_exact(server_info, name)
+            if tool:
+                found_tools.append({
+                    "name": tool.get("name"),
+                    "description": tool.get("description"),
+                    "input_schema": tool.get("input_schema", {})
+                })
+            else:
+                not_found.append(name)
+
+        result = {
+            "success": True,
+            "mode": "batch_schema",
+            "server_name": server_info.server_name,
+            "requested_count": len(tool_names),
+            "found_count": len(found_tools),
+            "tools": found_tools,
+            "metadata": {"execution_time": execution_time}
+        }
+
+        if not_found:
+            result["not_found"] = not_found
+
+        return result
+
+    async def _tier3_execute(
+        self,
+        server_info: MCPServerInfo,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        start_time: float,
+        execution_time: str
+    ) -> Dict[str, Any]:
+        """Tier 3: 执行工具
+
+        Args:
+            server_info: 服务器信息
+            tool_name: 工具名称
+            arguments: 工具参数
+            start_time: 开始时间
+            execution_time: 执行时间字符串
+
+        Returns:
+            Dict[str, Any]: 执行结果
+        """
+        # 验证工具存在
+        tool = self._find_tool_exact(server_info, tool_name)
+        if not tool:
             return self._create_error_result(
-                error_code="INVALID_TOOL_NAME",
-                message="Tool name is required",
+                error_code="TOOL_NOT_FOUND",
+                message=f"Tool '{tool_name}' not found in server '{server_info.server_name}'",
                 execution_time=execution_time,
-                server_name=server_name
+                server_name=server_info.server_name,
+                tool_name=tool_name
             )
-        
+
         client = server_info.client
         if not client:
             return self._create_error_result(
                 error_code="MCP_NOT_CONNECTED",
-                message=f"MCP server '{server_name}' is not connected",
+                message=f"MCP server '{server_info.server_name}' is not connected",
                 execution_time=execution_time,
-                server_name=server_name,
+                server_name=server_info.server_name,
                 tool_name=tool_name
             )
-        
+
+        # 执行工具
         try:
             result = await self._call_with_retry(
-                client.call_tool, 
-                tool_name, 
+                client.call_tool,
+                tool_name,
                 arguments or {}
             )
             call_duration_ms = int((time.time() - start_time) * 1000)
-            
+
+            # 提取content中的文本内容
+            texts = []
+            if result.get("content"):
+                for item in result["content"]:
+                    if item.get("type") == "text":
+                        texts.append(item.get("text", ""))
+
             return {
                 "success": True,
-                "server_name": server_name,
-                "tool_name": tool_name,
-                "content": json.dumps({
-                    "result": result
-                }, ensure_ascii=False),
+                "content": "\n".join(texts),  # 只返回content文本
                 "metadata": {
+                    "mode": "execution",
+                    "server_name": server_info.server_name,
+                    "tool_name": tool_name,
                     "execution_time": execution_time,
                     "server_id": server_info.server_id,
                     "connection_status": "connected",
@@ -295,28 +590,27 @@ NEVER just announce or mention an MCP server in your text response without actua
             return self._create_error_result(
                 error_code="TOOL_EXECUTION_ERROR",
                 message=f"Tool execution failed: {str(e)}",
-                details={"server_name": server_name, "tool_name": tool_name},
                 execution_time=execution_time,
-                server_name=server_name,
+                server_name=server_info.server_name,
                 tool_name=tool_name
             )
-    
+
     async def _call_with_retry(
-        self, 
-        func, 
-        *args, 
+        self,
+        func,
+        *args,
         **kwargs
     ) -> Any:
         """带重试的调用
-        
+
         Args:
             func: 要调用的函数
             *args: 位置参数
             **kwargs: 关键字参数
-        
+
         Returns:
             Any: 调用结果
-        
+
         Raises:
             Exception: 重试次数用尽后抛出最后一次异常
         """

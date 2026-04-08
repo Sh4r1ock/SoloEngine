@@ -43,7 +43,7 @@ const MainMenu: React.FC = () => {
   ];
 
   const handleMenuClick = (key: string) => {
-    navigate(`/mainmenu/${key}`);
+    navigate(`/main/${key}`);
   };
 
   const handleLogout = () => {
@@ -107,26 +107,24 @@ const MainMenu: React.FC = () => {
           zIndex: 100,
         }}
       >
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
           gap: 12,
           minWidth: 180,
         }}>
-          <div style={{
-            width: 32,
-            height: 32,
-            background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontSize: 14,
-            fontWeight: 'bold',
-          }}>
-            SE
-          </div>
+          <img
+            src="/logo.png"
+            alt="SoloEngine"
+            style={{
+              width: 32,
+              height: 32,
+              backgroundColor: 'white',
+              borderRadius: 8,
+              padding: 2,
+              objectFit: 'contain',
+            }}
+          />
           <Text style={{ color: '#fff', fontSize: 16, fontWeight: 600 }}>
             SoloEngine
           </Text>

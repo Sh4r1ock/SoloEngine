@@ -87,8 +87,9 @@ class ConfigLoader:
             llm_config = query.first()
             
             if llm_config:
-                if not config.get("api_key"):
-                    config["api_key"] = llm_config.api_key
+                if not config.get("api_key") and llm_config.api_key:
+                    from app.core.database import encryption_service
+                    config["api_key"] = encryption_service.decrypt(llm_config.api_key)
                 if not config.get("base_url"):
                     config["base_url"] = llm_config.base_url
 

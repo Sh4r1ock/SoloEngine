@@ -1,9 +1,0 @@
-{
-  "nodes": [],
-  "edges": [],
-  "globalSettings": {
-    "maxContextLength": 4096,
-    "maxIterations": 100,
-    "timeout": 30000
-  }
-}
