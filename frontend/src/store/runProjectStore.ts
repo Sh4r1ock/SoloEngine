@@ -143,11 +143,14 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
       const response = await runProjectApi.getRecentProjects(agenticFlowId, 10);
       if (response.code === 200) {
         set({ recentProjects: response.data });
+        return response.data;
       }
+      return [];
     } catch (error: any) {
       const errorMsg = error.response?.data?.detail || error.message || '获取最近项目失败';
       set({ error: errorMsg });
       console.error('Failed to load recent projects:', error);
+      return [];
     }
   },
 

@@ -19,7 +19,7 @@
  */
 import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../types/canvas';
-import { projectApi } from '../services/api';
+
 import { localStorageService } from '../services/localStorage';
 import { agenticFlowApi } from '../services/agenticFlowApi';
 import { llmApi } from '../services/llmApi';
@@ -286,11 +286,11 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     if (!currentProject) return;
 
     const canvasData: CanvasData = { nodes, edges };
-    await projectApi.updateCanvas(currentProject.id, { ...canvasData, globalSettings });
+    await agenticFlowApi.saveCanvas(currentProject.id, { ...canvasData, globalSettings });
   },
 
   loadCanvas: async (projectId: string) => {
-    const canvasData = await projectApi.getCanvas(projectId);
+    const canvasData = await agenticFlowApi.getCanvas(projectId);
     set({
       nodes: canvasData.nodes,
       edges: canvasData.edges,

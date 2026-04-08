@@ -88,7 +88,7 @@ class MCPServerConfig:
     env: Dict[str, str] = field(default_factory=dict)
     headers: Dict[str, str] = field(default_factory=dict)
     timeout: int = 30
-    enabled: bool = True
+    is_active: bool = True
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     
@@ -103,7 +103,7 @@ class MCPServerConfig:
             "env": self.env,
             "headers": self.headers,
             "timeout": self.timeout,
-            "enabled": self.enabled,
+            "is_active": self.is_active,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -120,7 +120,7 @@ class MCPServerConfig:
             env=data.get("env", {}),
             headers=data.get("headers", {}),
             timeout=data.get("timeout", 30),
-            enabled=data.get("enabled", True),
+            is_active=data.get("is_active", True),
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
         )

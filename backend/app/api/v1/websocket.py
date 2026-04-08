@@ -52,6 +52,7 @@ from SoloAgent.solo_agent.compiler import (
 )
 from app.core.auth import auth_service
 from app.core.database import db_manager, get_db_context_async
+from app.core.agenticflow_storage import AgenticFlowStorage
 
 logger = logging.getLogger(__name__)
 
@@ -187,25 +188,24 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str, user_
     """
     执行工作流。
     """
-    async with get_db_context_async() as db:
-        project = db_manager.get_project(db, project_id, user_id)
-        if not project:
-            await manager.send_event(task_id, {
-                "type": "error",
-                "message": "Project not found"
-            })
-            return
-        
-        canvas_data = project.canvas_data
-        
-        if not canvas_data or not canvas_data.get("nodes"):
-            await manager.send_event(task_id, {
-                "type": "error",
-                "message": "Canvas data is empty"
-            })
-            return
-        
-        await execute_canvas(task_id, canvas_data, user_input, user_id, project_id)
+    storage = AgenticFlowStorage(user_id)
+    canvas_data = storage.load_canvas(project_id)
+    
+    if not canvas_data:
+        await manager.send_event(task_id, {
+            "type": "error",
+            "message": "Project not found"
+        })
+        return
+    
+    if not canvas_data.get("nodes"):
+        await manager.send_event(task_id, {
+            "type": "error",
+            "message": "Canvas data is empty"
+        })
+        return
+    
+    await execute_canvas(task_id, canvas_data, user_input, user_id, project_id)
 
 
 async def execute_canvas(

@@ -22,6 +22,7 @@ export interface NodeData {
     };
     skills?: string[];
     mcp_tools?: string[];
+    mcp_servers?: string[];
     tools?: string[];
     memory?: boolean;
     text?: string;

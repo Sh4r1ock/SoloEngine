@@ -34,7 +34,7 @@ class SoloAgentConfig:
     
     skills: List[Dict[str, Any]] = field(default_factory=list)
     tools: List[str] = field(default_factory=list)
-    mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
+    mcp_servers: Any = field(default_factory=dict)
     
     subagents: List[Dict[str, Any]] = field(default_factory=list)
     

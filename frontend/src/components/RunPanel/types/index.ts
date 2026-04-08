@@ -40,6 +40,7 @@ export interface LLMMessage {
   agent_id?: string;
   agent_name?: string;
   parent_agent_id?: string;
+  status?: 'completed' | 'error' | 'stopped' | 'running';
 }
 
 export type CallType = 'tool' | 'skill' | 'mcp' | 'subagent';

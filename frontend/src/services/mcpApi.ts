@@ -53,8 +53,12 @@ const mcpClient = axios.create({
 mcpClient.interceptors.request.use(
   (config) => {
     const token = getCookie('access_token') || localStorage.getItem('access_token');
+    console.log('MCP API Request Interceptor - Token exists:', !!token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('MCP API Request Interceptor - Authorization header set');
+    } else {
+      console.warn('MCP API Request Interceptor - No token found!');
     }
     return config;
   },
@@ -103,7 +107,7 @@ export interface MCPServer {
   env?: Record<string, string>;
   headers?: Record<string, string>;
   timeout?: number;
-  enabled?: boolean;
+  is_active?: boolean;
   is_public?: boolean;
   share?: boolean;
   is_default?: boolean;
@@ -135,6 +139,7 @@ export interface MCPTool {
   input_schema: Record<string, any>;
   server_id?: string;
   server_name?: string;
+  is_enabled?: boolean;
 }
 
 export interface MCPResource {
@@ -182,7 +187,7 @@ export interface CreateHttpServerRequest {
   headers?: Record<string, string>;
   timeout?: number;
   session_id?: string;
-  enabled?: boolean;
+  is_active?: boolean;
   share?: boolean;
   tags?: string[];
 }
@@ -197,7 +202,7 @@ export interface CreateSseServerRequest {
   sse_endpoint?: string;
   retry_interval?: number;
   max_retries?: number;
-  enabled?: boolean;
+  is_active?: boolean;
   share?: boolean;
   tags?: string[];
 }
@@ -221,7 +226,7 @@ class MCPApi {
     env?: Record<string, string>;
     headers?: Record<string, string>;
     timeout?: number;
-    enabled?: boolean;
+    is_active?: boolean;
     share?: boolean;
   }) {
     return mcpApiRequest.post('/mcp/servers', config);
@@ -243,7 +248,7 @@ class MCPApi {
     return mcpApiRequest.post(`/mcp/servers/${serverId}/test`);
   }
 
-  async testServer(config: {
+  async connectAndGetTools(config: {
     name: string;
     transport: string;
     description?: string;
@@ -254,7 +259,7 @@ class MCPApi {
     headers?: Record<string, string>;
     timeout?: number;
   }) {
-    return mcpApiRequest.post('/mcp/servers/test', config);
+    return mcpApiRequest.post('/mcp/servers/connect', config);
   }
 
   async callTool(serverId: string, toolName: string, args: Record<string, any>) {
@@ -385,6 +390,12 @@ class MCPApi {
 
   async importOpenMCP(mcpId: string) {
     return mcpApiRequest.post(`/mcp/open/import/${mcpId}`);
+  }
+
+  async updateToolEnabled(serverId: string, toolName: string, isEnabled: boolean) {
+    return mcpApiRequest.put(`/mcp/servers/${serverId}/tools/${toolName}/enabled`, {
+      is_active: isEnabled,
+    });
   }
 }
 

@@ -20,7 +20,7 @@ const RegisterPage: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/mainmenu', { replace: true });
+      navigate('/main', { replace: true });
     }
   }, [isAuthenticated, navigate]);
 
@@ -67,22 +67,22 @@ const RegisterPage: React.FC = () => {
           background: 'var(--bg-100)',
         }}>
           <Space direction="vertical" style={{ width: '100%' }} align="center">
-            <div style={{
-              width: 56,
-              height: 56,
-              background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
-              borderRadius: 12,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 20,
-            }}>
-              <UserAddOutlined style={{ fontSize: 26, color: '#fff' }} />
-            </div>
+            <img
+              src="/SoloEngine-clear.png"
+              alt="SoloEngine"
+              style={{
+                width: 200,
+                height: 80,
+                backgroundColor: 'white',
+                borderRadius: 12,
+                padding: 8,
+                objectFit: 'contain',
+                marginBottom: 4,
+              }}
+            />
             <Title level={3} style={{ margin: 0, marginBottom: 4, color: 'var(--text-primary)' }}>
               创建账号
             </Title>
-            <Text type="secondary" style={{ fontSize: 14 }}>加入 SoloEngine</Text>
           </Space>
 
           <Form

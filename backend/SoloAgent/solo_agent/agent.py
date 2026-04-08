@@ -115,7 +115,129 @@ class SoloAgent:
     def set_message_history(self, history: List[Dict[str, Any]]) -> None:
         """设置消息历史（由 CompiledFlow 层调用）"""
         self._message_history = history
-    
+
+    def _convert_history_to_msgs(self, history: List[Dict[str, Any]]) -> List["Msg"]:
+        """
+        将原始历史数据转换为 Msg 对象列表。
+
+        职责：在 SoloAgent 层完成原始格式到 Msg 对象的转换。
+        处理所有类型的 role：user, assistant, system, tool
+        处理所有类型的内容：thought, content, tool_calls, tool_result
+
+        Args:
+            history: 原始历史数据列表，每个元素包含 role, data 等字段
+
+        Returns:
+            List[Msg]: 转换后的 Msg 对象列表
+        """
+        from ..message import Msg
+
+        msgs = []
+        for record in history:
+            role = record.get("role", "user")
+            data = record.get("data", [])
+
+            if role == "tool":
+                # tool 消息：查找 tool_result 类型的块
+                tool_call_id = None
+                content = ""
+
+                for block in data:
+                    if block.get("type") == "tool_result":
+                        tool_call_id = block.get("id")
+                        output = block.get("output", "")
+                        content = output if isinstance(output, str) else str(output)
+                        break
+
+                # 特殊情况处理：如果没有找到 tool_call_id，尝试从 metadata 中获取
+                if not tool_call_id and record.get("metadata"):
+                    tool_call_id = record["metadata"].get("tool_call_id")
+                
+                # 如果仍然没有 tool_call_id，跳过这条消息
+                # 因为 OpenAI API 要求 tool 消息必须有 tool_call_id
+                if not tool_call_id:
+                    logger.warning(f"[_convert_history_to_msgs] Skipping tool message without tool_call_id. Data: {data}")
+                    continue
+
+                msgs.append(Msg(
+                    name="tool",
+                    content=content,
+                    role="tool",
+                    tool_call_id=tool_call_id,
+                    metadata={"original_data": data}
+                ))
+
+            elif role == "assistant":
+                # assistant 消息：处理 thinking, tool_calls, content
+                content_blocks = []
+                tool_calls = []
+                thinking_content = []
+
+                for block in data:
+                    block_type = block.get("type")
+
+                    if block_type == "text":
+                        content_blocks.append(block)
+                    elif block_type == "thinking":
+                        thinking_content.append(block.get("thinking", ""))
+                    elif block_type == "tool_calls":
+                        tool_calls.extend(block.get("tool_calls", []))
+                    elif block_type == "content":
+                        content_blocks.append({"type": "text", "text": block.get("content", "")})
+
+                # 构建 content：优先使用 content_blocks，否则使用原始 data
+                if content_blocks:
+                    content = content_blocks
+                else:
+                    content = data
+
+                metadata = {}
+                if thinking_content:
+                    metadata["thinking"] = "\n".join(thinking_content)
+                if tool_calls:
+                    metadata["tool_calls"] = tool_calls
+
+                msgs.append(Msg(
+                    name="assistant",
+                    content=content,
+                    role="assistant",
+                    metadata=metadata if metadata else None
+                ))
+
+            elif role == "user":
+                # user 消息：提取文本内容
+                content_parts = []
+                for block in data:
+                    if block.get("type") == "text":
+                        content_parts.append(block.get("text", ""))
+                    elif block.get("type") == "content":
+                        content_parts.append(block.get("content", ""))
+
+                content = "\n".join(content_parts) if content_parts else ""
+
+                msgs.append(Msg(
+                    name="user",
+                    content=content,
+                    role="user"
+                ))
+
+            elif role == "system":
+                # system 消息：提取文本内容
+                content_parts = []
+                for block in data:
+                    if block.get("type") == "text":
+                        content_parts.append(block.get("text", ""))
+
+                content = "\n".join(content_parts) if content_parts else ""
+
+                msgs.append(Msg(
+                    name="system",
+                    content=content,
+                    role="system"
+                ))
+
+        return msgs
+
     async def initialize(self) -> None:
         if self._initialized:
             return
@@ -164,7 +286,9 @@ class SoloAgent:
             skill_tool_configs = await self._load_skills(self.config.skills)
             tool_configs.extend(skill_tool_configs)
         
+        logger.info(f"[Agent Initialize] Checking MCP servers info: hasattr={hasattr(self, '_mcp_servers_info')}, value={getattr(self, '_mcp_servers_info', None)}")
         if hasattr(self, '_mcp_servers_info') and self._mcp_servers_info:
+            logger.info(f"[Agent Initialize] Loading MCP tools with {len(self._mcp_servers_info)} servers")
             mcp_tool_configs = await self._load_mcp_tools(self._mcp_servers_info)
             tool_configs.extend(mcp_tool_configs)
         elif self.config.mcp_servers:
@@ -211,16 +335,8 @@ class SoloAgent:
             self._core.tool_executor = toolkit_executor
         
         if self._message_history:
-            from ..message import Msg
-            history_msgs = []
-            for msg in self._message_history:
-                content = msg["content"]
-                role = msg["role"]
-                
-                if isinstance(content, list):
-                    history_msgs.append(Msg(name=role, content=content, role=role))
-                else:
-                    history_msgs.append(Msg(name=role, content=content, role=role))
+            # SoloAgent 层负责将原始格式转换为 Msg 对象
+            history_msgs = self._convert_history_to_msgs(self._message_history)
             self._core.load_history(history_msgs)
         
         self._initialized = True
@@ -267,16 +383,12 @@ class SoloAgent:
         self, 
         mcp_servers_info: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """加载MCP工具配置 - 使用编译阶段注入的mcp_servers_info
+        """加载MCP工具配置 - 只注册MCPTool，不管理Client
         
-        参考SkillTool的设计模式：
-        - 编译时注入mcp_servers_info（包含MCPClient实例）
-        - 统一入口调用方式
-        - XML标签展示可用工具
-        - 直接调用MCPClient，不通过HTTP
+        Client由Host(CompiledFlow)统一管理，Agent只负责使用。
         
         Args:
-            mcp_servers_info: MCP服务器信息字典
+            mcp_servers_info: MCP服务器信息字典(包含Host层Client的引用)
                 {"server_name": MCPServerInfo(...), ...}
         
         Returns:
@@ -286,6 +398,7 @@ class SoloAgent:
         
         from ..plugins.tools.agent.mcp import MCPTool, MCPServerInfo
         
+        # 只创建MCPTool，Client由Host(CompiledFlow)统一管理
         mcp_tool = MCPTool(mcp_servers_info=mcp_servers_info)
         
         tool_configs.append({
@@ -295,81 +408,16 @@ class SoloAgent:
             "parameters": mcp_tool.get_tool_spec()["parameters"],
         })
         
+        # 记录日志，Client由Host管理，Agent不再管理
         for server_name, server_info in mcp_servers_info.items():
             if isinstance(server_info, MCPServerInfo):
-                if server_info.client:
-                    self._mcp_clients.append(server_info.client)
                 logger.info(
-                    f"[MCP] Loaded MCP server '{server_name}' "
+                    f"[MCP] Agent '{self.name}' using MCP server '{server_name}' "
                     f"with {len(server_info.tools)} tools, "
                     f"connected={server_info.is_connected}"
                 )
         
         return tool_configs
-    
-    async def _load_mcp_servers(self, server_names: List[str]) -> List[Dict[str, Any]]:
-        """加载MCP服务器工具配置"""
-        tool_configs = []
-        from ..plugins.mcp.mcp_client import MCPClient
-        
-        for server_name in server_names:
-            try:
-                mcp_config = await ConfigLoader.load_mcp_config(server_name)
-                if not mcp_config.get("command"):
-                    logger.warning(f"MCP server '{server_name}' has no command configured")
-                    continue
-                
-                client = MCPClient({
-                    "transport": "stdio",
-                    "command": mcp_config.get("command"),
-                    "args": mcp_config.get("args", []),
-                    "env": mcp_config.get("env", {}),
-                })
-                
-                await client.connect()
-                self._mcp_clients.append(client)
-                
-                tools = await client.get_tools()
-                for tool in tools:
-                    tool_config = self._create_mcp_tool_config(client, tool)
-                    tool_configs.append(tool_config)
-                
-                logger.info(f"Loaded MCP server '{server_name}' with {len(tools)} tools")
-            except Exception as e:
-                logger.warning(f"Failed to load MCP server '{server_name}': {e}")
-        
-        return tool_configs
-    
-    def _create_mcp_tool_config(self, client: "MCPClient", tool: Dict[str, Any]) -> Dict[str, Any]:
-        """创建MCP工具配置"""
-        async def mcp_tool_executor(**kwargs):
-            result = await client.call_tool(tool["name"], kwargs)
-            if result.get("success") and result.get("content"):
-                texts = []
-                for item in result["content"]:
-                    if item.get("type") == "text":
-                        texts.append(item.get("text", ""))
-                return {"content": "\n".join(texts), "success": True}
-            return {"content": result.get("error_message", "Unknown error"), "success": False}
-        
-        input_schema = tool.get("inputSchema", {})
-        properties = input_schema.get("properties", {})
-        required = input_schema.get("required", [])
-        
-        parameters = {}
-        for param_name, param_def in properties.items():
-            parameters[param_name] = {
-                "type": param_def.get("type", "string"),
-                "description": param_def.get("description", ""),
-                "required": param_name in required,
-            }
-        
-        return {
-            "name": tool["name"],
-            "function": mcp_tool_executor,
-            "description": tool.get("description", ""),
-            "parameters": parameters,
-        }
     
     def _create_openai_compatible_model(self, llm_config: Dict[str, Any], stream: bool = False):
         """创建 OpenAI 兼容模型（DeepSeek, Zhipu, Qwen 等）

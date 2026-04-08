@@ -26,7 +26,7 @@ import Canvas from '../../components/Canvas/Canvas';
 import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
 import Preview from '../../components/Preview/Preview';
 import { useCanvasStore } from '../../store/canvasStore';
-import { projectApi } from '../../services/api';
+
 import { localStorageService } from '../../services/localStorage';
 import { agenticFlowApi } from '../../services/agenticFlowApi';
 
@@ -102,12 +102,19 @@ const EditorPage: React.FC = () => {
     }
 
     try {
-      const project = await projectApi.createProject(projectName);
-      setCurrentProject(project);
+      const project = await agenticFlowApi.createFlow({
+        name: projectName,
+        canvas_data: { nodes: [], edges: [] }
+      });
+      setCurrentProject({
+        id: project.id,
+        name: project.name,
+        canvas: project.canvas_data
+      });
       setIsModalVisible(false);
       setProjectName('');
       message.success('项目创建成功');
-      navigate(`/editor/${project.id || projectName}`);
+      navigate(`/editor/${project.id}`);
     } catch (error) {
       message.error('项目创建失败');
     }
@@ -187,7 +194,7 @@ const EditorPage: React.FC = () => {
    * @description 导航到主菜单页面
    */
   const handleGoHome = () => {
-    navigate('/mainmenu');
+    navigate('/main');
   };
 
   /**

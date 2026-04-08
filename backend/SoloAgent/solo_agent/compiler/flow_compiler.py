@@ -55,7 +55,14 @@ class ExecutionEvent:
 
 
 class CompiledFlow:
-    """编译后的 AgenticFlow"""
+    """编译后的 AgenticFlow - 作为MCP Host
+    
+    职责：
+    1. 管理多个Agent的执行
+    2. 协调会话生命周期
+    3. Host层统一管理MCP Client
+    4. 事件管理和流式输出
+    """
     
     def __init__(
         self,
@@ -66,7 +73,20 @@ class CompiledFlow:
         session_id: str = None,
         user_id: str = None,
         run_project_id: str = None,
+        mcp_client_manager: Optional["MCPHostClientManager"] = None,
     ):
+        """初始化CompiledFlow
+        
+        Args:
+            agents: Agent字典
+            edges: 边连接关系
+            orchestrator_id: 编排器Agent ID
+            agentic_flow_id: AgenticFlow ID
+            session_id: 会话ID
+            user_id: 用户ID
+            run_project_id: 运行项目ID
+            mcp_client_manager: MCP Client管理器(Host层)
+        """
         self.agents = agents
         self.edges = edges
         self.orchestrator_id = orchestrator_id
@@ -74,12 +94,21 @@ class CompiledFlow:
         self.session_id = session_id
         self.user_id = user_id
         self.run_project_id = run_project_id
+        
+        # Host层MCP Client管理
+        self._mcp_client_manager = mcp_client_manager
+        
         self._start_time: Optional[datetime] = None
         self._token_usage: Dict[str, int] = {}
         self._event_callback: Optional[Callable[[ExecutionEvent], None]] = None
         self._stream_callback: Optional[Callable[[str], None]] = None
         self._agent_memories: Dict[str, List[Dict]] = {}
         self._created_time: float = time.time()
+        
+        logger.info(
+            f"[CompiledFlow] Initialized with {len(agents)} agents, "
+            f"mcp_clients={len(mcp_client_manager.get_all_clients()) if mcp_client_manager else 0}"
+        )
     
     def set_event_callback(self, callback: Callable[[ExecutionEvent], None]):
         """设置事件回调函数"""
@@ -128,7 +157,16 @@ class CompiledFlow:
         return [node_id for node_id in self.agents.keys() if node_id not in target_nodes]
     
     async def run(self, input_message: str, context: Dict[str, Any] = None, cancel_event: asyncio.Event = None) -> Dict[str, Any]:
-        """运行 AgenticFlow，返回完整执行结果"""
+        """运行 AgenticFlow，返回完整执行结果
+        
+        Args:
+            input_message: 用户输入消息
+            context: 上下文信息
+            cancel_event: 取消事件
+        
+        Returns:
+            Dict[str, Any]: 运行结果
+        """
         context = context or {}
         self._start_time = datetime.now()
         
@@ -142,69 +180,92 @@ class CompiledFlow:
             metadata={"agentic_flow_id": self.agentic_flow_id, "user_id": self.user_id, "session_id": self.session_id, "run_project_id": self.run_project_id}
         ))
         
-        with get_db_context() as db:
-            orchestrator = self.get_orchestrator()
-            
-            if orchestrator is None:
-                if len(self.agents) == 1:
-                    agent = list(self.agents.values())[0]
-                    result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
-                    
-                    if self.session_id and result:
-                        end_time = datetime.now()
-                        duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
-                        db_manager.update_session(
-                            db, self.session_id,
-                            status="completed",
-                            duration_ms=duration_ms,
-                            token_usage=self._token_usage if self._token_usage else None,
-                            completed_at=datetime.now(timezone.utc)
-                        )
-                    
-                    return result
-                else:
-                    entry_nodes = self.get_entry_nodes()
-                    if not entry_nodes:
-                        entry_nodes = list(self.agents.keys())
-                    
-                    results = {}
-                    for entry_id in entry_nodes:
-                        agent = self.agents.get(entry_id)
-                        if agent:
-                            result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
-                            results[entry_id] = result
-                    
-                    output = self._aggregate_results(results)
-                    
+        try:
+            with get_db_context() as db:
+                result = await self._run_internal(input_message, db, context, cancel_event)
+                return result
+        except Exception as e:
+            logger.error(f"[CompiledFlow.run] Execution failed: {e}", exc_info=True)
+            # 返回错误结果而不是None
+            return {
+                "session_id": self.session_id,
+                "agentic_flow_id": self.agentic_flow_id,
+                "run_project_id": self.run_project_id,
+                "status": "failed",
+                "error": str(e),
+                "output": f"执行失败: {str(e)}"
+            }
+        finally:
+            # 确保关闭所有MCP Client连接
+            if self._mcp_client_manager:
+                await self._mcp_client_manager.close_all()
+    
+    async def _run_internal(self, input_message: str, db, context: Dict[str, Any], cancel_event: asyncio.Event = None) -> Dict[str, Any]:
+        """内部运行逻辑"""
+        from app.core.database import db_manager
+        
+        orchestrator = self.get_orchestrator()
+        
+        if orchestrator is None:
+            if len(self.agents) == 1:
+                agent = list(self.agents.values())[0]
+                result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
+                
+                if self.session_id and result:
                     end_time = datetime.now()
-                    duration_ms = int((end_time - self._start_time).total_seconds() * 1000)
-                    
-                    if self.session_id:
-                        db_manager.update_session(
-                            db, self.session_id,
-                            status="completed",
-                            duration_ms=duration_ms,
-                            token_usage=self._token_usage if self._token_usage else None,
-                            completed_at=datetime.now(timezone.utc)
-                        )
-                    
-                    self._emit_event(ExecutionEvent(
-                        event_type="execution_complete",
-                        content=output,
-                        metadata={"duration_ms": duration_ms}
-                    ))
-                    
-                    return {
-                        "session_id": self.session_id,
-                        "agentic_flow_id": self.agentic_flow_id,
-                        "run_project_id": self.run_project_id,
+                    duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
+                    db_manager.update_session(
+                        db, self.session_id,
+                        status="completed",
+                        duration_ms=duration_ms,
+                        token_usage=self._token_usage if self._token_usage else None,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                
+                return result
+            else:
+                entry_nodes = self.get_entry_nodes()
+                if not entry_nodes:
+                    entry_nodes = list(self.agents.keys())
+                
+                results = {}
+                for entry_id in entry_nodes:
+                    agent = self.agents.get(entry_id)
+                    if agent:
+                        result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
+                        results[entry_id] = result
+                
+                output = self._aggregate_results(results)
+                
+                end_time = datetime.now()
+                duration_ms = int((end_time - self._start_time).total_seconds() * 1000)
+                
+                if self.session_id:
+                    db_manager.update_session(
+                        db, self.session_id,
+                        status="completed",
+                        duration_ms=duration_ms,
+                        token_usage=self._token_usage if self._token_usage else None,
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                
+                self._emit_event(ExecutionEvent(
+                    event_type="execution_complete",
+                    content=output,
+                    metadata={"duration_ms": duration_ms}
+                ))
+                
+                return {
+                    "session_id": self.session_id,
+                    "agentic_flow_id": self.agentic_flow_id,
+                    "run_project_id": self.run_project_id,
                         "status": "completed",
                         "output": output,
                         "node_results": results,
                         "duration_ms": duration_ms,
                         "token_usage": self._token_usage
                     }
-            
+        else:
             result = await self._execute_agent(orchestrator, input_message, db, context, cancel_event=cancel_event)
             return result
     
@@ -233,11 +294,11 @@ class CompiledFlow:
         if self._stream_callback and hasattr(agent, 'set_stream_callback'):
             agent.set_stream_callback(self._stream_callback)
         
-        agent_memory = self._agent_memories.get(agent_id, [])
-        if agent_memory and hasattr(agent, 'set_message_history'):
-            agent.set_message_history(agent_memory)
-        
+        # 只在 agent 未初始化时设置记忆，避免覆盖 ReActCore 的 _conversation_history
         if not agent._initialized:
+            agent_memory = self._agent_memories.get(agent_id, [])
+            if agent_memory and hasattr(agent, 'set_message_history'):
+                agent.set_message_history(agent_memory)
             await agent.initialize()
         
         try:
@@ -286,6 +347,11 @@ class CompiledFlow:
                 return response
             
             response = await wrapped_reply(input_message)
+
+            # 保存对话历史到记忆 - 使用与 load_and_distribute_memories 一致的格式
+            agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
+            agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
+            self._agent_memories[agent_id] = agent_memory
             
             end_time = datetime.now()
             duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
@@ -666,17 +732,28 @@ class AgenticFlowCompiler:
         node_map = {n["id"]: n for n in nodes}
         for node in nodes:
             node_data = node.get("data", {})
-            mcp_tools = node_data.get("mcp_tools", [])
-            for mcp in mcp_tools:
+            mcp_servers = node_data.get("mcp_servers", [])
+            for mcp in mcp_servers:
                 if isinstance(mcp, str):
                     all_mcp_server_ids.add(mcp)
                 elif isinstance(mcp, dict) and mcp.get("id"):
                     all_mcp_server_ids.add(mcp["id"])
         
-        mcp_servers_info = {}
-        if all_mcp_server_ids:
-            mcp_servers_info = await self._build_mcp_servers_info(
-                list(all_mcp_server_ids), mcp_configs
+        # 收集所有Agent配置的mcp_servers
+        all_mcp_servers = self._collect_all_mcp_servers(nodes)
+        
+        # 创建Host层的Client管理器
+        from SoloAgent.solo_agent.compiler.mcp_host_client_manager import MCPHostClientManager
+        mcp_client_manager = MCPHostClientManager()
+        
+        if all_mcp_servers:
+            register_result = await mcp_client_manager.register_servers(
+                all_mcp_servers, 
+                user_id=user_id
+            )
+            logger.info(
+                f"[Compiler] MCP servers registered: "
+                f"{register_result['connected']}/{register_result['total']} connected"
             )
         
         compilation_order = self._calculate_compilation_order(nodes, edges)
@@ -691,6 +768,21 @@ class AgenticFlowCompiler:
             if not node:
                 continue
             
+            # 为每个Agent创建其专属的mcp_servers_info（引用Host的Client）
+            node_data = node.get("data", {})
+            agent_mcp_server_ids = node_data.get("mcp_servers", [])
+            agent_mcp_servers_info = {}
+            
+            if agent_mcp_server_ids and mcp_client_manager:
+                agent_mcp_servers_info = self._create_agent_server_info(
+                    agent_mcp_server_ids,
+                    mcp_client_manager
+                )
+                logger.info(
+                    f"[Compiler] Agent '{node_id}' configured with "
+                    f"{len(agent_mcp_servers_info)} MCP servers"
+                )
+            
             agent = await self._compile_node(
                 node=node,
                 user_id=user_id,
@@ -701,7 +793,7 @@ class AgenticFlowCompiler:
                 mcp_configs=mcp_configs,
                 skills_configs=skills_configs,
                 canvas_data=canvas_data,
-                mcp_servers_info=mcp_servers_info,
+                mcp_servers_info=agent_mcp_servers_info,
             )
             agents[agent.agent_id] = agent
 
@@ -736,6 +828,7 @@ class AgenticFlowCompiler:
             session_id=session_id,
             user_id=user_id,
             run_project_id=run_project_id,
+            mcp_client_manager=mcp_client_manager,
         )
         
         if use_cache:
@@ -752,6 +845,88 @@ class AgenticFlowCompiler:
         
         return compiled_flow
     
+    def _collect_all_mcp_servers(self, nodes: List[Dict]) -> Dict[str, Dict]:
+        """收集所有Agent配置的mcp_servers的并集
+        
+        Args:
+            nodes: 节点列表
+        
+        Returns:
+            Dict[str, Dict]: 所有mcp_servers的并集
+                {"server_name": {"id": "..."}, ...}
+        """
+        all_servers = {}
+        
+        from app.core.database import get_db_context, MCPServerModel
+        
+        for node in nodes:
+            node_data = node.get("data", {})
+            mcp_servers = node_data.get("mcp_servers", [])
+            
+            for server_id in mcp_servers:
+                # 从数据库获取服务器信息
+                with get_db_context() as db:
+                    server = db.query(MCPServerModel).filter(
+                        MCPServerModel.id == server_id
+                    ).first()
+                    if server:
+                        all_servers[server.name] = {"id": server_id}
+        
+        return all_servers
+    
+    def _create_agent_server_info(
+        self,
+        agent_mcp_servers: List[str],
+        client_manager: "MCPHostClientManager"
+    ) -> Dict[str, "MCPServerInfo"]:
+        """为Agent创建MCPServerInfo(引用Host的Client)
+        
+        Args:
+            agent_mcp_servers: Agent配置的mcp_server ID列表
+            client_manager: Host层Client管理器
+        
+        Returns:
+            Dict[str, MCPServerInfo]: Agent的server_info字典
+        """
+        from SoloAgent.plugins.tools.agent.mcp import MCPServerInfo
+        
+        server_info = {}
+        all_configs = client_manager.get_all_server_configs()
+        
+        for server_id in agent_mcp_servers:
+            # 查找对应的server_name
+            server_name = None
+            for name, config in all_configs.items():
+                if config.get("id") == server_id:
+                    server_name = name
+                    break
+            
+            if not server_name:
+                logger.warning(f"[Compiler] Server '{server_id}' not found in Host manager")
+                continue
+            
+            # 获取Host层的Client
+            client = client_manager.get_client(server_name)
+            config = client_manager.get_server_config(server_name)
+            
+            if not client or not config:
+                logger.warning(f"[Compiler] Client for '{server_name}' not available")
+                continue
+            
+            # 创建MCPServerInfo，引用Host的Client
+            server_info[server_name] = MCPServerInfo(
+                server_id=config["id"],
+                server_name=server_name,
+                server_description=config.get("description", ""),
+                tools=config.get("tools", []),
+                resources=config.get("resources", []),
+                prompts=config.get("prompts", []),
+                client=client,
+                is_connected=True,
+            )
+        
+        return server_info
+    
     def _load_llm_configs(self, user_id: str) -> Dict[str, Any]:
         """从数据库加载用户的 LLM 配置"""
         try:
@@ -764,96 +939,39 @@ class AgenticFlowCompiler:
             return {}
     
     def _load_mcp_configs(self, user_id: str) -> Dict[str, Any]:
-        """从数据库加载用户的 MCP 配置"""
+        """从数据库加载用户的 MCP 配置
+        
+        注意：需要在会话关闭前预加载所有关联数据（sse_config, stdio_config），
+        否则在会话关闭后访问这些属性会导致懒加载失败。
+        """
         try:
-            from app.core.database import mcp_db_manager, get_db_context
+            from app.core.database import mcp_db_manager, get_db_context, MCPServerModel
+            from sqlalchemy.orm import joinedload
             with get_db_context() as db:
-                servers = mcp_db_manager.get_servers(db, user_id)
-                return {server.id: server for server in servers}  # ✅ 修复：新规范使用 id 作为主键
+                # 使用 joinedload 预加载关联数据，避免懒加载问题
+                from sqlalchemy import or_
+                servers = db.query(MCPServerModel).options(
+                    joinedload(MCPServerModel.sse_config),
+                    joinedload(MCPServerModel.stdio_config),
+                    joinedload(MCPServerModel.http_config)
+                ).filter(
+                    or_(
+                        MCPServerModel.is_public == True,
+                        MCPServerModel.user_id == user_id
+                    )
+                ).order_by(MCPServerModel.created_at.desc()).all()
+                
+                # 在会话内访问所有需要的属性，确保数据被加载
+                for server in servers:
+                    _ = server.sse_config
+                    _ = server.stdio_config
+                    _ = server.http_config
+                    _ = server.tools
+                
+                return {server.id: server for server in servers}
         except Exception as e:
             logger.warning(f"Failed to load MCP configs: {e}")
             return {}
-    
-    async def _build_mcp_servers_info(
-        self,
-        mcp_server_ids: List[str],
-        mcp_configs: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """编译阶段建立MCP连接并组装mcp_servers_info
-        
-        Args:
-            mcp_server_ids: MCP服务器ID列表
-            mcp_configs: MCP配置字典
-        
-        Returns:
-            Dict[str, MCPServerInfo]: mcp_servers_info字典
-        """
-        from ..plugins.tools.agent.mcp import MCPServerInfo
-        from ..plugins.mcp.mcp_client import MCPClient
-        
-        mcp_servers_info: Dict[str, MCPServerInfo] = {}
-        
-        for server_id in mcp_server_ids:
-            if server_id not in mcp_configs:
-                logger.warning(f"MCP server '{server_id}' not found in configs")
-                continue
-            
-            config = mcp_configs[server_id]
-            server_name = config.name
-            
-            try:
-                transport = getattr(config, "transport", "stdio")
-                
-                client_config = {
-                    "transport": transport,
-                    "timeout": getattr(config, "timeout", 30),
-                }
-                
-                if transport == "stdio":
-                    client_config["command"] = getattr(config, "command", None)
-                    client_config["args"] = getattr(config, "args", []) or []
-                    client_config["env"] = getattr(config, "env", {}) or {}
-                elif transport in ("sse", "http"):
-                    client_config["url"] = getattr(config, "url", "")
-                    client_config["headers"] = getattr(config, "headers", {}) or {}
-                
-                client = MCPClient(client_config)
-                await client.connect()
-                
-                tools = await client.get_tools()
-                resources = await client.get_resources()
-                prompts = await client.get_prompts()
-                
-                server_info = MCPServerInfo(
-                    server_id=server_id,
-                    server_name=server_name,
-                    server_description=getattr(config, "description", ""),
-                    tools=tools,
-                    resources=resources,
-                    prompts=prompts,
-                    client=client,
-                    is_connected=True,
-                )
-                
-                mcp_servers_info[server_name] = server_info
-                logger.info(f"[MCP] Connected to '{server_name}' with {len(tools)} tools")
-                
-            except Exception as e:
-                logger.warning(f"[MCP] Failed to connect to '{server_name}': {e}")
-                
-                server_info = MCPServerInfo(
-                    server_id=server_id,
-                    server_name=server_name,
-                    server_description=getattr(config, "description", ""),
-                    tools=[],
-                    resources=[],
-                    prompts=[],
-                    client=None,
-                    is_connected=False,
-                )
-                mcp_servers_info[server_name] = server_info
-        
-        return mcp_servers_info
     
     def _load_skills_configs(self, user_id: str) -> Dict[str, Any]:
         """从数据库加载用户的 Skills 配置"""
@@ -877,6 +995,38 @@ class AgenticFlowCompiler:
         except Exception as e:
             logger.warning(f"Failed to get work_dir: {e}")
         return None
+    
+    def _build_system_prompt_with_project_path(
+        self,
+        base_prompt: str,
+        user_id: str,
+        agentic_flow_id: str = None,
+    ) -> str:
+        """构建包含项目路径信息的 system prompt
+        
+        在原始 system_prompt 基础上追加项目路径信息（XML格式），
+        与 skill、MCP 工具的 XML 格式保持统一，使 LLM 能够感知
+        当前工作目录并提供更精准的文件操作。
+        
+        Args:
+            base_prompt: 原始 system_prompt（来自节点配置）
+            user_id: 用户ID
+            agentic_flow_id: 流程ID
+            
+        Returns:
+            str: 拼接后的完整 system_prompt
+        """
+        work_dir = self._get_work_dir(user_id, agentic_flow_id)
+        
+        if not work_dir:
+            return base_prompt
+        
+        # XML格式，与 skill、MCP 工具格式统一
+        project_path_section = f"""\n<env>
+Working Directory: {work_dir}
+</env>"""
+        
+        return base_prompt + project_path_section
     
     def _register_to_gateway(self, agentic_flow_id: str, compiled_flow: CompiledFlow) -> None:
         """注册编译后的 Flow 到网关"""
@@ -982,13 +1132,19 @@ class AgenticFlowCompiler:
             elif isinstance(skill, dict):
                 enriched_skills.append(skill)
         
-        mcp_tools = node_data.get("mcp_tools", [])
+        mcp_servers = node_data.get("mcp_servers", [])
+        logger.info(f"[MCP NODE DEBUG] node_id={node.get('id')}, mcp_servers={mcp_servers}")
+        logger.info(f"[MCP NODE DEBUG] mcp_configs keys={list(mcp_configs.keys()) if mcp_configs else []}")
+        logger.info(f"[MCP NODE DEBUG] mcp_servers_info keys={list(mcp_servers_info.keys()) if mcp_servers_info else []}")
         node_mcp_servers_info = {}
-        for mcp in mcp_tools:
+        for mcp in mcp_servers:
             if isinstance(mcp, str):
                 server_name = mcp
                 if mcp_configs and mcp in mcp_configs:
                     server_name = mcp_configs[mcp].name
+                    logger.info(f"[MCP NODE DEBUG] Found server_name={server_name} for mcp_id={mcp}")
+                else:
+                    logger.warning(f"[MCP NODE DEBUG] mcp_id={mcp} not in mcp_configs")
             elif isinstance(mcp, dict):
                 server_name = mcp.get("name", mcp.get("id"))
             else:
@@ -996,6 +1152,11 @@ class AgenticFlowCompiler:
             
             if mcp_servers_info and server_name in mcp_servers_info:
                 node_mcp_servers_info[server_name] = mcp_servers_info[server_name]
+                logger.info(f"[MCP NODE DEBUG] Added {server_name} to node_mcp_servers_info")
+            else:
+                logger.warning(f"[MCP NODE DEBUG] server_name={server_name} not in mcp_servers_info")
+        
+        logger.info(f"[MCP NODE DEBUG] Final node_mcp_servers_info keys={list(node_mcp_servers_info.keys())}")
         
         raw_tools = node_data.get("tools", [])
         tool_name_map = {
@@ -1003,6 +1164,7 @@ class AgenticFlowCompiler:
             "write_file": "Write",
             "delete_file": "DeleteFile",
             "ls": "LS",
+            "search_replace": "SearchReplace",
             "grep": "Grep",
             "glob": "Glob",
             "search_codebase": "SearchCodebase",
@@ -1014,9 +1176,11 @@ class AgenticFlowCompiler:
             "web_search": "WebSearch",
             "skill": "Skill",
             "task": "Task",
+            "mcp": "MCP",
             "todo_write": "TodoWrite",
             "ask_user_question": "AskUserQuestion",
             "open_preview": "OpenPreview",
+            "exit_plan_mode": "ExitPlanMode",
         }
         mapped_tools = set(tool_name_map.values())
         tools = []
@@ -1033,7 +1197,11 @@ class AgenticFlowCompiler:
             model=model,
             api_key=api_key,
             base_url=base_url,
-            system_prompt=node_data.get("system_prompt", ""),
+            system_prompt=self._build_system_prompt_with_project_path(
+                base_prompt=node_data.get("system_prompt", ""),
+                user_id=user_id,
+                agentic_flow_id=agentic_flow_id,
+            ),
             desc=node_data.get("desc", ""),
             skills=enriched_skills,
             tools=tools,
@@ -1064,6 +1232,7 @@ class AgenticFlowCompiler:
         
         agent = SoloAgent(config)
         agent._mcp_servers_info = node_mcp_servers_info
+        logger.info(f"[MCP NODE DEBUG] Assigned node_mcp_servers_info to agent: {list(node_mcp_servers_info.keys()) if node_mcp_servers_info else 'EMPTY'}")
         return agent
     
     def _compile_edges(self, edges: List[Dict[str, Any]]) -> Dict[str, List[str]]:
@@ -1127,6 +1296,7 @@ class FlowRunner:
             agentic_flow_id=agentic_flow_id,
             session_id=session_id,
             run_project_id=run_project_id,
+            use_cache=False,  # 强制重新编译以加载MCP工具
         )
         
         if event_callback:

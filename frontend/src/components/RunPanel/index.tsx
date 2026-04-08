@@ -71,6 +71,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         agent_id: msg.agent_id,
         agent_name: msg.agent_name,
         parent_agent_id: msg.parent_agent_id,
+        status: msg.status,
       };
     });
   };
@@ -162,13 +163,14 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     currentMsgIdRef.current = currentMsgId;
   }, [currentMsgId]);
 
-  const loadSessionsFromBackend = useCallback(async () => {
-    if (!agenticFlowId || !currentProject?.id) return;
+  // 加载指定项目的sessions
+  const loadSessionsForProject = useCallback(async (projectId: string) => {
+    if (!agenticFlowId || !projectId) return;
     
     try {
       const sessionsData = await runApi.getSessions({
         agentic_flow_id: agenticFlowId,
-        run_project_id: currentProject.id,
+        run_project_id: projectId,
         limit: 50,
       });
 
@@ -187,7 +189,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     } catch (error) {
       console.warn('Failed to load sessions:', error);
     }
-  }, [agenticFlowId, currentProject?.id, setSessions]);
+  }, [agenticFlowId, setSessions]);
+
+  // 根据currentProject加载sessions（用于初始化）
+  const loadSessionsFromBackend = useCallback(async () => {
+    if (!agenticFlowId || !currentProject?.id) return;
+    await loadSessionsForProject(currentProject.id);
+  }, [agenticFlowId, currentProject?.id, loadSessionsForProject]);
 
   useEffect(() => {
     loadCurrentProject(agenticFlowId);
@@ -516,6 +524,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             content: '',
             data: finalData,
             timestamp: new Date().toISOString(),
+            status: 'completed',
           };
           setMessages(prev => {
             const updatedMessages = [...prev, assistantMessage];
@@ -525,6 +534,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
                 s.id === currentSessionId 
                   ? { 
                       ...s, 
+                      status: 'completed',
                       messages: updatedMessages.map((m, i): any => ({
                         id: m.id,
                         role: m.role,
@@ -544,6 +554,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             return updatedMessages;
           });
           messageAddedRef.current = true;
+        } else if (currentSessionId) {
+          // 即使没有消息数据，也要更新session状态
+          setSessions(sessionsState => sessionsState.map(s => 
+            s.id === currentSessionId 
+              ? { ...s, status: 'completed' }
+              : s
+          ));
         }
         stopRunning();
         setIsWaitingReply(false);
@@ -555,6 +572,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'execution_error': {
         const finalData = streamingDataHook.finalizeStream();
         const isCancelled = event.event_type === 'execution_cancelled' || event.status === 'stopped';
+        const messageStatus = isCancelled ? 'stopped' : 'error';
+        const sessionStatus = isCancelled ? 'cancelled' : 'error';
+        
         if (finalData.length > 0) {
           const stoppedMessage: LLMMessage = {
             id: currentMsgIdRef.current || `msg_${Date.now()}`,
@@ -562,6 +582,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             content: '',
             data: finalData,
             timestamp: new Date().toISOString(),
+            status: messageStatus,
           };
           setMessages(prev => [...prev, stoppedMessage]);
           
@@ -570,6 +591,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               s.id === currentSessionId 
                 ? { 
                     ...s, 
+                    status: sessionStatus,
                     messages: [...(s.messages || []), {
                       id: stoppedMessage.id,
                       role: stoppedMessage.role,
@@ -585,6 +607,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
                 : s
             ));
           }
+        } else if (currentSessionId) {
+          // 即使没有消息数据，也要更新session状态
+          setSessions(sessionsState => sessionsState.map(s => 
+            s.id === currentSessionId 
+              ? { ...s, status: sessionStatus }
+              : s
+          ));
         }
         stopRunning();
         setIsWaitingReply(false);
@@ -599,8 +628,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const handleWebSocketMessage = useCallback((msg: any) => {
     if (msg.type === 'execution_result') {
       stopRunning();
+      setIsWaitingReply(false);
     }
-  }, [stopRunning]);
+  }, [stopRunning, setIsWaitingReply]);
 
   const { isConnected, executeFlow, stopFlow } = useRunWebSocket({
     agenticFlowId: agenticFlowId || null,
@@ -696,7 +726,46 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   };
 
-  const handleGoHome = () => navigate('/mainmenu');
+  const handleGoHome = () => navigate('/main');
+
+  /**
+   * 切换项目时重置会话状态
+   *
+   * 功能：
+   * 1. 清空当前 session_id
+   * 2. 清空消息列表
+   * 3. 清空调用记录
+   * 4. 重置流式数据
+   * 5. 触发 WebSocket 重新连接（通过依赖项变化自动触发）
+   */
+  const resetSessionForNewProject = useCallback(async () => {
+    console.log('[RunPanel] Resetting session for new project...');
+
+    // 1. 重置 session ID（这会触发 useRunWebSocket 断开旧连接）
+    setCurrentSessionId(null);
+
+    // 2. 清空消息列表
+    setMessages([]);
+
+    // 3. 清空 sessions 列表
+    setSessions([]);
+
+    // 4. 清空调用记录
+    setCallRecords([]);
+    clearSubagentOutputs();
+
+    // 5. 重置流式数据
+    streamingDataHook.resetStream();
+
+    console.log('[RunPanel] Session reset completed');
+  }, [
+    setCurrentSessionId,
+    setMessages,
+    setSessions,
+    setCallRecords,
+    clearSubagentOutputs,
+    streamingDataHook
+  ]);
 
   const handleSelectFolder = async () => {
     if (!agenticFlowId) {
@@ -706,20 +775,44 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     const result = await openNativeFolderDialog(agenticFlowId);
     if (result?.project_id) {
       message.success(`已选择项目: ${result.project_name}`);
-      await loadSessionsFromBackend();
+
+      // ✅ 先更新currentProject，确保后续操作使用正确的项目
+      setCurrentProject({
+        id: result.project_id,
+        name: result.project_name,
+        folder_path: result.folder_path,
+      });
+
+      // ✅ 重置会话状态
+      await resetSessionForNewProject();
+
+      // ✅ 使用项目ID直接加载sessions（避免React状态异步更新问题）
+      await loadSessionsForProject(result.project_id);
     }
   };
 
   const handleSelectFromRecent = async (project: RecentProjectInfo) => {
     if (!agenticFlowId) return;
-    
+
     setSwitchingProjectId(project.project_id);
     try {
       const result = await selectOrCreateProject(agenticFlowId, project.folder_path);
       if (result) {
         message.success(`已切换到工作区: ${project.project_name}`);
         setRecentModalVisible(false);
-        await loadSessionsFromBackend();
+
+        // ✅ 先更新currentProject，确保后续操作使用正确的项目
+        setCurrentProject({
+          id: result.project_id,
+          name: result.project_name,
+          folder_path: result.folder_path,
+        });
+
+        // ✅ 重置会话状态
+        await resetSessionForNewProject();
+
+        // ✅ 使用项目ID直接加载sessions（避免React状态异步更新问题）
+        await loadSessionsForProject(result.project_id);
       }
     } finally {
       setSwitchingProjectId(null);
@@ -825,9 +918,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     } catch (error: any) {
       message.error('发送消息失败: ' + (error.response?.data?.detail || error.message));
       setMessages(prev => prev.filter(m => m.id !== userMessage.id));
-      setIsWaitingReply(false);
     } finally {
       stopRunning();
+      setIsWaitingReply(false);
     }
   };
 

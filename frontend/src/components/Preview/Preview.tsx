@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Modal, Input, Button, Space, Alert, Spin, Typography } from 'antd';
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
-import { projectApi } from '../../services/api';
+import { agenticFlowApi } from '../../services/agenticFlowApi';
 import { wsService } from '../../services/websocket';
 import { WebSocketEvent } from '../../types/canvas';
 
@@ -31,7 +31,7 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
     setShowLogs(true);
 
     try {
-      const result = await projectApi.runProject(currentProject.id, input);
+      const result = await agenticFlowApi.runFlow(currentProject.id, input);
       const newSessionId = result.session_id;
 
       await wsService.connect(newSessionId);

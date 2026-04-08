@@ -33,6 +33,7 @@ export default defineConfig({
   define: {
     '__AGENT_TYPE_PRESETS__': agentTypePresets
   },
+  publicDir: '../icon',
   server: {
     port: 8991,
     proxy: {

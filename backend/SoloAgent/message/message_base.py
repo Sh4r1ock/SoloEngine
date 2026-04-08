@@ -113,6 +113,7 @@ class Msg:
         metadata: dict[str, JSONSerializableObject] | None = None,
         timestamp: str | None = None,
         invocation_id: str | None = None,
+        tool_call_id: str | None = None,
     ) -> None:
         """
         初始化消息对象。
@@ -134,6 +135,8 @@ class Msg:
                 如果未指定，自动使用当前时间。默认为 None。
             invocation_id (str | None, optional): 关联的 API 调用 ID。
                 用于追踪消息对应的 API 请求。默认为 None。
+            tool_call_id (str | None, optional): 工具调用 ID。
+                仅用于 "tool" 角色的消息。默认为 None。
         
         Raises:
             AssertionError: 当 content 不是字符串或列表时抛出。
@@ -161,6 +164,7 @@ class Msg:
         self.role = role
 
         self.metadata = metadata
+        self.tool_call_id = tool_call_id
 
         self.id = shortuuid.uuid()
         self.timestamp = (

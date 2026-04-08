@@ -111,10 +111,12 @@ class ToolRegistry:
             
             "Skill": ("plugins.tools.agent.skill", "SkillTool"),
             "Task": ("plugins.tools.agent.task", "TaskTool"),
+            "MCP": ("plugins.tools.agent.mcp", "MCPTool"),
             
             "TodoWrite": ("plugins.tools.task.todo_write", "TodoWrite"),
             "AskUserQuestion": ("plugins.tools.task.ask_user_question", "AskUserQuestion"),
             "OpenPreview": ("plugins.tools.other.open_preview", "OpenPreviewTool"),
+            "ExitPlanMode": ("plugins.tools.other.exit_plan_mode", "ExitPlanModeTool"),
         }
         
         if name not in tool_map:

@@ -973,17 +973,16 @@ class ReActCore:
                         result=result
                     )
                     
-                    tool_result_block = {
-                        "type": "tool_result",
-                        "id": tool_call.get("id"),
-                        "name": tool_call.get("name"),
-                        "output": result_content if isinstance(result_content, str) else str(result_content)
-                    }
-                    
+                    result_content_str = result_content if isinstance(result_content, str) else str(result_content)
+
                     result_msg = Msg(
                         name="tool",
-                        content=[tool_result_block],
-                        role="tool"
+                        content=result_content_str,
+                        role="tool",
+                        tool_call_id=tool_call.get("id"),
+                        metadata={
+                            "tool_name": tool_call.get("name")
+                        }
                     )
                     tool_results.append(result_msg)
                     
@@ -1001,17 +1000,15 @@ class ReActCore:
                         error=str(e)
                     )
                     
-                    error_result_block = {
-                        "type": "tool_result",
-                        "id": tool_call.get("id"),
-                        "name": tool_call.get("name"),
-                        "output": str(e)
-                    }
-                    
                     error_msg = Msg(
                         name="tool_error",
-                        content=[error_result_block],
-                        role="tool"
+                        content=str(e),
+                        role="tool",
+                        tool_call_id=tool_call.get("id"),
+                        metadata={
+                            "tool_name": tool_call.get("name"),
+                            "error": True
+                        }
                     )
                     tool_results.append(error_msg)
                     

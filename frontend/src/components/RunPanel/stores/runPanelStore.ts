@@ -56,6 +56,10 @@ interface RunPanelState {
 
   hoveredMessageId: string | null;
 
+  expandedReasoning: string[];
+  expandedToolCalls: string[];
+  streamingExpandedKeys: string[];
+
   setCurrentSessionId: (sessionId: string | null) => void;
   setSessions: (sessions: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
   setSearchQuery: (query: string) => void;
@@ -105,6 +109,10 @@ interface RunPanelState {
 
   setHoveredMessageId: (id: string | null) => void;
 
+  setExpandedReasoning: (keys: string[]) => void;
+  setExpandedToolCalls: (keys: string[]) => void;
+  setStreamingExpandedKeys: (keys: string[]) => void;
+
   loadSessions: (agenticFlowId: string, runProjectId: string) => Promise<void>;
   loadSessionMessages: (sessionId: string) => Promise<void>;
   createNewSession: (agenticFlowId: string, projectId: string) => string | null;
@@ -153,6 +161,10 @@ export const useRunPanelStore = create<RunPanelState>()(
       canvasData: null,
 
       hoveredMessageId: null,
+
+      expandedReasoning: [],
+      expandedToolCalls: [],
+      streamingExpandedKeys: [],
 
       setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
       setSessions: (sessionsOrUpdater) => {
@@ -284,6 +296,10 @@ export const useRunPanelStore = create<RunPanelState>()(
       setCanvasData: (data) => set({ canvasData: data }),
 
       setHoveredMessageId: (id) => set({ hoveredMessageId: id }),
+
+      setExpandedReasoning: (keys) => set({ expandedReasoning: keys }),
+      setExpandedToolCalls: (keys) => set({ expandedToolCalls: keys }),
+      setStreamingExpandedKeys: (keys) => set({ streamingExpandedKeys: keys }),
 
       loadSessions: async (agenticFlowId, runProjectId) => {
         set({ loading: true, error: null });

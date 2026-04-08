@@ -20,7 +20,7 @@
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import projects, tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers
+from app.api.v1 import tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,6 @@ async def health():
 app.include_router(config.router)
 app.include_router(run.router)
 app.include_router(skills.router)
-app.include_router(projects.router)
 app.include_router(tools.router)
 app.include_router(websocket.router)
 app.include_router(auth.router)

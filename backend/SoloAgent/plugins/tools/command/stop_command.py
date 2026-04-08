@@ -101,10 +101,11 @@ class StopCommand(BaseCommandTool):
         
         if cmd_info.state != CommandState.RUNNING:
             return {
+                "content": f"Not running (status: {cmd_info.state.value})",
                 "success": False,
-                "message": f"命令不在运行状态（当前状态：{cmd_info.state.value}）",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
+                "metadata": {}
             }
         
         process = cmd_info.process
@@ -112,10 +113,11 @@ class StopCommand(BaseCommandTool):
             cmd_info.state = CommandState.STOPPED
             cmd_info.finished_at = datetime.now()
             return {
+                "content": "Stopped (no process)",
                 "success": True,
-                "message": "命令已停止（无进程）",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
+                "metadata": {}
             }
         
         try:
@@ -133,29 +135,25 @@ class StopCommand(BaseCommandTool):
             cmd_info.state = CommandState.STOPPED
             cmd_info.finished_at = datetime.now()
             cmd_info.exit_code = process.returncode
-            
+
             return {
+                "content": "Stopped",
                 "success": True,
-                "message": "命令已成功停止",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "exit_code": cmd_info.exit_code,
-                "metadata": {
-                    "command_id": command_id
-                }
+                "metadata": {}
             }
             
         except ProcessLookupError:
             cmd_info.state = CommandState.STOPPED
             cmd_info.finished_at = datetime.now()
             return {
+                "content": "Stopped (process already ended)",
                 "success": True,
-                "message": "命令已停止（进程已结束）",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
-                "metadata": {
-                    "command_id": command_id
-                }
+                "metadata": {}
             }
         except Exception as e:
             cmd_info.state = CommandState.ERROR
