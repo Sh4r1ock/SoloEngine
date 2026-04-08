@@ -18,14 +18,13 @@
 
 - [什么是 SoloEngine？](#什么是-soloengine)
 - [设计理念](#设计理念)
-- [系统架构](#系统架构)
-- [核心特性](#核心特性)
-- [更新计划](#更新计划)
-- [技术栈](#技术栈)
+- [核心功能](#核心功能)
 - [快速开始](#快速开始)
+- [系统架构](#系统架构)
 - [核心概念](#核心概念)
 - [项目结构](#项目结构)
-- [API 参考](#api-参考)
+- [技术栈](#技术栈)
+- [路线图](#路线图)
 - [贡献指南](#贡献指南)
 - [许可证](#许可证)
 
@@ -33,7 +32,7 @@
 
 ## 什么是 SoloEngine？
 
-SoloEngine 是一个**开源的低代码Agentic AI开发框架**，旨在让开发者能够轻松构建、部署和管理复杂的 AI Agent 工作流。它采用可视化画布设计，原始支持多 Agent 协作、工具调用、MCP 协议集成，以及渐进式Skill披露机制。
+SoloEngine 是一个**开源的低代码Agentic AI开发框架**，旨在让开发者能够轻松构建、部署和管理复杂的 AI Agent 工作流。它采用可视化画布设计，原生支持多 Agent 协作、工具调用、MCP 协议集成，以及渐进式Skill披露机制。
 
 SoloEngine 的核心是一个基于 **ReAct（Reasoning + Acting）** 范式的智能体执行引擎，通过插件化架构实现高度可扩展性，支持多种 LLM 提供商和工具集成。
 
@@ -49,8 +48,291 @@ SoloEngine 的核心是一个基于 **ReAct（Reasoning + Acting）** 范式的�
 | **插件化架构**    | 通过抽象接口定义（IMemory、IToolExecutor、IMCPClient 等）实现模块化扩展 |
 | **ReAct 范式** | 采用 Reasoning + Acting 循环，让 Agent 能够思考、行动、观察并迭代      |
 | **多模型统一**    | 统一的模型适配层，屏蔽不同 LLM 提供商的 API 差异                       |
-| **渐进式披露**    | 技能和工具采用轻量元数据展示，详情按需加载，优化 Token 消耗                   |
+| **渐进式披露**    | Skill 和工具采用轻量元数据展示，详情按需加载，优化 Token 消耗                   |
 | **安全沙箱**     | 项目隔离、工具权限控制、命令安全检查，确保执行安全                           |
+
+***
+
+## 核心功能
+
+### 🤖 多智能体编排
+
+- **可视化画布**：基于 React Flow 的拖拽式工作流设计
+- **灵活的 Agent 配置**：通过设置不同的提示词、工具、Skill，实现不同的 Agent 角色
+  - **四种预设 Agent 类型**：
+    - **Custom（自定义）**：用户自由配置的 Agent，作为空白模板使用
+    - **Orchestrator（协调者）**：协调多个 SubAgent，分配任务，汇总结果
+    - **Planner（规划者）**：分析问题，制定执行计划
+    - **Executor（执行者）**：执行具体任务，调用工具和 Skill
+- **拓扑排序编译**：从下向上编译，自动解析 Agent 依赖关系
+- **并发执行**：支持多 Agent 并行执行和结果聚合
+- **SubAgent 委托**：通过 Task 工具将子任务委托给专门的 SubAgent 执行
+
+### 🔧 丰富的工具生态
+
+SoloEngine 内置完整的工具集，覆盖文件操作、命令执行、网络访问等场景：
+
+| 工具类别      | 工具名称               | 功能描述                   |
+| --------- | ------------------ | ---------------------- |
+| **文件操作**  | Read               | 读取文件内容，支持行号范围          |
+| <br />    | Write              | 写入文件                   |
+| <br />    | DeleteFile         | 删除文件                   |
+| <br />    | LS                 | 列出目录内容                 |
+| <br />    | SearchReplace      | 搜索并替换文件内容              |
+| **搜索**    | Grep               | 正则搜索文件内容               |
+| <br />    | Glob               | 模式匹配搜索文件               |
+| <br />    | SearchCodebase     | 语义化代码搜索                |
+| **命令**    | RunCommand         | 执行 Shell 命令，支持阻塞/非阻塞模式 |
+| <br />    | CheckCommandStatus | 检查命令执行状态               |
+| <br />    | StopCommand        | 停止运行中的命令               |
+| <br />    | GetDiagnostics     | 获取代码诊断信息               |
+| **网络**    | WebSearch          | 网络搜索                   |
+| <br />    | WebFetch           | 抓取网页内容                 |
+| **Agent** | Skill              | 调用 Skill                 |
+| <br />    | Task               | 启动 SubAgent            |
+| <br />    | MCP                | 调用 MCP 工具              |
+| **Ask**   | AskUserQuestion    | 向用户提问                  |
+| <br />    | TodoWrite          | 创建待办事项                 |
+
+**工具调用流式输出四事件机制**：
+
+SoloEngine 实现了完整的工具调用四事件生命周期管理，确保前端实时展示工具调用状态：
+
+| 事件                 | 触发时机         | 数据内容                          |
+| ------------------ | ------------ | ----------------------------- |
+| `TOOL_CALL_START`  | 检测到新的工具调用 ID | `{id, name, status: "start"}` |
+| `TOOL_CALL_ARGS`   | 增量传输参数（可能多次） | `{id, arguments: "..."}`      |
+| `TOOL_CALL_END`    | 参数传输完成       | `{id, status: "end"}`         |
+| `TOOL_CALL_RESULT` | 工具执行结果返回     | `{id, result, error?}`        |
+
+**前端格式统一**：所有事件转换为 `{type: "tool_calls", tool_calls: [...]}` 格式，通过 WebSocket 实时推送。
+
+### 🎯 Skill 系统（Skills）
+
+Skill 是可复用的 AI 能力模块，采用**渐进式披露**设计：
+
+```
+skill-name/
+├── SKILL.md          # 必需：Skill 定义和指令
+├── references/       # 可选：参考文档
+├── scripts/          # 可选：辅助脚本
+├── templates/        # 可选：模板文件
+└── assets/           # 可选：资源文件
+```
+
+**渐进式披露机制**：
+
+| 级别  | 时机        | 内容                           | Token 消耗     |
+| --- | --------- | ---------------------------- | ------------ |
+| 第一级 | Tool Spec | name + description           | \~100 tokens |
+| 第二级 | Skill 调用  | SKILL.md 完整内容 + folder\_path | 按需           |
+| 第三级 | 模型自主      | 嵌套资源（references/、templates/） | 按需           |
+
+**Skill 编辑与创建系统**：
+
+SoloEngine 提供完整的 Skill 管理功能：
+
+- **创建 Skill**：通过 API 或界面创建新的 Skill 包
+- **编辑 SKILL.md**：在线编辑 Skill 定义和指令
+- **文件管理**：管理 references/、scripts/、templates/、assets/ 目录
+- **导入导出**：支持 ZIP 格式导入导出 Skill 包
+- **系统 Skill**：预置系统级 Skill，用户可参考学习
+
+### 🔌 MCP 协议支持
+
+完整支持 **Model Context Protocol**（Anthropic 提出的模型上下文协议），采用 **Host-Client 分层架构** 和 **渐进发现模式**：
+
+**架构设计**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     CompiledFlow (Host层)                    │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │           MCPHostClientManager (统一管理)            │   │
+│  │  - 编译时收集所有Agent配置的mcp_servers并集            │   │
+│  │  - 统一创建和注册MCPClient                           │   │
+│  │  - 管理Client生命周期(连接、断开)                     │   │
+│  │  - 多个Agent共享同一个Client                         │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                        MCPTool (工具层)                      │
+│  - 统一入口调用MCP服务器工具                                 │
+│  - 渐进发现模式: Discovery → Schema → Execution            │
+│  - 只注入服务器列表到System Prompt，不注入具体工具            │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                       MCPClient (Client层)                   │
+│  - stdio：通过标准输入输出与本地 MCP 服务器通信               │
+│  - SSE：通过 Server-Sent Events 与远程服务器通信             │
+│  - HTTP：通过 Streamable HTTP 进行双向通信                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**渐进发现模式（三层递进）**：
+
+| 层级                     | 调用方式                                                                   | 返回内容                 | Token节省  |
+| ---------------------- | ---------------------------------------------------------------------- | -------------------- | -------- |
+| **Tier 1 - Discovery** | `MCP(server_name="github")`                                            | 该服务器所有工具列表（名称+简介）    | 避免注入全部工具 |
+| **Tier 2 - Schema**    | `MCP(server_name="github", tool_name="create_issue")`                  | 单个/批量工具详情（含参数schema） | 按需加载     |
+| **Tier 3 - Execution** | `MCP(server_name="github", tool_name="create_issue", arguments={...})` | 工具执行结果               | 精确执行     |
+
+**Python 编写 MCP 服务**：
+
+SoloEngine 支持用户使用 Python 编写自定义 MCP 服务器：
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("my-custom-server")
+
+@mcp.tool()
+def my_tool(param: str) -> str:
+    """自定义工具描述"""
+    return f"处理结果: {param}"
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")
+```
+
+**MCP 服务管理**：
+
+- 支持 HTTP/SSE/Stdio 传输协议
+- 导入开源 MCP Server 配置（GitHub、Filesystem、PostgreSQL 等）
+- 创建和管理自定义 MCP Server
+- 在线编辑 Python Function 代码，自动编译为 MCP Server
+- 测试 MCP Server 连接
+- 获取 MCP Server 列表和资源
+
+### 💬 运行面板
+
+- **实时流式输出**：WebSocket 实时推送执行状态和 LLM 响应
+- **会话管理**：支持多会话切换和历史记录
+- **文件浏览器**：集成项目文件管理
+- **代码编辑器**：基于 Monaco Editor 的代码编辑体验
+- **调用记录**：实时展示工具调用、Skill 调用、MCP 调用状态
+
+### 🔌 插件化架构
+
+通过抽象接口实现高度可扩展性：
+
+```python
+class IToolExecutor(ABC):
+    """工具执行器接口"""
+    async def execute(self, tool_call: dict) -> dict: ...
+    def get_available_tools(self) -> List[dict]: ...
+
+class IMCPClient(ABC):
+    """MCP 客户端接口"""
+    async def connect(self) -> None: ...
+    async def call_tool(self, tool_name: str, arguments: dict) -> dict: ...
+```
+
+***
+
+## 快速开始
+
+### 环境要求
+
+- Python 3.11+
+- Node.js 18+
+- npm 或 yarn
+
+### 安装步骤
+
+1. **克隆仓库**
+
+```bash
+git clone https://github.com/Sh4r1ock/SoloEngine.git
+cd SoloEngine
+```
+
+2. **安装后端依赖**
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+3. **安装前端依赖**
+
+```bash
+cd frontend
+npm install
+```
+
+4. **启动服务**
+
+```bash
+# 启动后端 (端口 8990)
+cd backend
+python main.py
+
+# 启动前端 (端口 8991)
+cd frontend
+npm run dev
+```
+
+5. **访问应用**
+
+打开浏览器访问 `http://localhost:8991`
+
+### 端口配置
+
+| 服务   | 端口   | 说明          |
+| ---- | ---- | ----------- |
+| 主后端  | 8990 | FastAPI 服务  |
+| 前端页面 | 8991 | React 开发服务器 |
+
+***
+
+## 核心概念
+
+### AgenticFlow
+
+AgenticFlow 是 SoloEngine 的核心概念，代表一个完整的 AI 工作流。它由画布 JSON 定义，包含节点（Agent）和边（调用关系）。
+
+```json
+{
+  "nodes": [
+    {
+      "id": "agent_1",
+      "type": "agent",
+      "data": {
+        "name": "代码助手",
+        "agentType": "executor",
+        "system_prompt": "你是一个专业的编程助手...",
+        "tools": ["Read", "Write", "RunCommand", "Skill", "MCP"],
+        "skills": ["algorithmic-art"],
+        "mcp_tools": ["github"]
+      }
+    }
+  ],
+  "edges": [
+    { "source": "agent_1", "target": "agent_2" }
+  ]
+}
+```
+
+### Agent 配置
+
+SoloEngine 中的各 Agent 没有本质区别，**所有 Agent 都是相同的执行单元**。所谓的"类型"只是预设的不同配置：
+
+| 配置项                | 说明                      |
+| ------------------ | ----------------------- |
+| **system\_prompt** | 系统提示词，定义 Agent 的角色和行为   |
+| **tools**          | 可用工具列表，决定 Agent 能执行什么操作 |
+| **skills**         | Skill 列表，提供专业领域能力           |
+| **mcp\_servers**   | MCP 服务器列表，扩展外部工具能力      |
+| **subagents**      | 子 Agent 列表，实现任务委托       |
+
+通过组合不同的配置，可以实现：
+
+- **协调者角色**：配置 Task 工具和协调性提示词
+- **规划者角色**：配置规划相关提示词
+- **执行者角色**：配置丰富的工具和 Skill
 
 ***
 
@@ -127,7 +409,7 @@ compiled_flow.set_agent_memories(agent_memories)
 | **MCPHostClientManager** | `solo_agent/compiler/mcp_host_client_manager.py` | MCP Host层管理器，统一管理所有MCP Client连接            |
 | **MCPClient**            | `plugins/mcp/mcp_client.py`                      | MCP 客户端，与 MCP 服务器通信                        |
 | **MCPTool**              | `plugins/tools/agent/mcp.py`                     | MCP工具，实现渐进发现模式（Discovery→Schema→Execution） |
-| **SkillTool**            | `plugins/tools/agent/skill.py`                   | 技能工具，实现渐进式技能披露                             |
+| **SkillTool**            | `plugins/tools/agent/skill.py`                   | Skill 工具，实现渐进式 Skill 披露                             |
 
 ### 模型适配层
 
@@ -146,7 +428,7 @@ SoloEngine 通过统一的模型适配层支持多种 LLM 提供商：
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                     LLM API                                 │
-│  OpenAI GPT-4 | Claude | Ollama Llama | 通义千问            │
+│  OpenAI | Claude | Ollama Llama | 通义千问                   │
 │  DeepSeek | 智谱GLM                                         │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -157,420 +439,6 @@ SoloEngine 通过统一的模型适配层支持多种 LLM 提供商：
 - 流式/非流式响应处理
 - 工具调用（Function Calling）适配
 - 特殊功能支持（如 Claude Extended Thinking）
-
-***
-
-## 核心特性
-
-### 🤖 多智能体编排
-
-- **可视化画布**：基于 React Flow 的拖拽式工作流设计
-- **灵活的 Agent 配置**：通过设置不同的提示词、工具、技能，实现不同的 Agent 角色
-  - **四种预设 Agent 类型**：
-    - **Custom（自定义）**：用户自由配置的 Agent，作为空白模板使用
-    - **Orchestrator（协调者）**：协调多个 SubAgent，分配任务，汇总结果
-    - **Planner（规划者）**：分析问题，制定执行计划
-    - **Executor（执行者）**：执行具体任务，调用工具和技能
-- **拓扑排序编译**：从下向上编译，自动解析 Agent 依赖关系
-- **并发执行**：支持多 Agent 并行执行和结果聚合
-- **SubAgent 委托**：通过 Task 工具将子任务委托给专门的 SubAgent 执行
-
-### 🔧 丰富的工具生态
-
-SoloEngine 内置完整的工具集，覆盖文件操作、命令执行、网络访问等场景：
-
-| 工具类别      | 工具名称               | 功能描述                   |
-| --------- | ------------------ | ---------------------- |
-| **文件操作**  | Read               | 读取文件内容，支持行号范围          |
-| <br />    | Write              | 写入文件                   |
-| <br />    | DeleteFile         | 删除文件                   |
-| <br />    | LS                 | 列出目录内容                 |
-| <br />    | SearchReplace      | 搜索并替换文件内容              |
-| **搜索**    | Grep               | 正则搜索文件内容               |
-| <br />    | Glob               | 模式匹配搜索文件               |
-| <br />    | SearchCodebase     | 语义化代码搜索                |
-| **命令**    | RunCommand         | 执行 Shell 命令，支持阻塞/非阻塞模式 |
-| <br />    | CheckCommandStatus | 检查命令执行状态               |
-| <br />    | StopCommand        | 停止运行中的命令               |
-| <br />    | GetDiagnostics     | 获取代码诊断信息               |
-| **网络**    | WebSearch          | 网络搜索                   |
-| <br />    | WebFetch           | 抓取网页内容                 |
-| **Agent** | Skill              | 调用技能                   |
-| <br />    | Task               | 启动 SubAgent            |
-| <br />    | MCP                | 调用 MCP 工具              |
-| **Ask**   | AskUserQuestion    | 向用户提问                  |
-| <br />    | TodoWrite          | 创建待办事项                 |
-
-**工具调用流式输出四事件机制**：
-
-SoloEngine 实现了完整的工具调用四事件生命周期管理，确保前端实时展示工具调用状态：
-
-| 事件                 | 触发时机         | 数据内容                          |
-| ------------------ | ------------ | ----------------------------- |
-| `TOOL_CALL_START`  | 检测到新的工具调用 ID | `{id, name, status: "start"}` |
-| `TOOL_CALL_ARGS`   | 增量传输参数（可能多次） | `{id, arguments: "..."}`      |
-| `TOOL_CALL_END`    | 参数传输完成       | `{id, status: "end"}`         |
-| `TOOL_CALL_RESULT` | 工具执行结果返回     | `{id, result, error?}`        |
-
-**前端格式统一**：所有事件转换为 `{type: "tool_calls", tool_calls: [...]}` 格式，通过 WebSocket 实时推送。
-
-### 🎯 技能系统（Skills）
-
-Skill 是可复用的 AI 能力模块，采用**渐进式披露**设计：
-
-```
-skill-name/
-├── SKILL.md          # 必需：技能定义和指令
-├── references/       # 可选：参考文档
-├── scripts/          # 可选：辅助脚本
-├── templates/        # 可选：模板文件
-└── assets/           # 可选：资源文件
-```
-
-**渐进式披露机制**：
-
-| 级别  | 时机        | 内容                           | Token 消耗     |
-| --- | --------- | ---------------------------- | ------------ |
-| 第一级 | Tool Spec | name + description           | \~100 tokens |
-| 第二级 | Skill 调用  | SKILL.md 完整内容 + folder\_path | 按需           |
-| 第三级 | 模型自主      | 嵌套资源（references/、templates/） | 按需           |
-
-**Skill 编辑与创建系统**：
-
-SoloEngine 提供完整的 Skill 管理功能：
-
-- **创建 Skill**：通过 API 或界面创建新的 Skill 包
-- **编辑 SKILL.md**：在线编辑技能定义和指令
-- **文件管理**：管理 references/、scripts/、templates/、assets/ 目录
-- **导入导出**：支持 ZIP 格式导入导出 Skill 包
-- **系统 Skill**：预置系统级 Skill，用户可参考学习
-
-### 🔌 MCP 协议支持
-
-完整支持 **Model Context Protocol**（Anthropic 提出的模型上下文协议），采用 **Host-Client 分层架构** 和 **渐进发现模式**：
-
-**架构设计**：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     CompiledFlow (Host层)                    │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │           MCPHostClientManager (统一管理)            │   │
-│  │  - 编译时收集所有Agent配置的mcp_servers并集            │   │
-│  │  - 统一创建和注册MCPClient                           │   │
-│  │  - 管理Client生命周期(连接、断开)                     │   │
-│  │  - 多个Agent共享同一个Client                         │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                        MCPTool (工具层)                      │
-│  - 统一入口调用MCP服务器工具                                 │
-│  - 渐进发现模式: Discovery → Schema → Execution            │
-│  - 只注入服务器列表到System Prompt，不注入具体工具            │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                       MCPClient (Client层)                   │
-│  - stdio：通过标准输入输出与本地 MCP 服务器通信               │
-│  - SSE：通过 Server-Sent Events 与远程服务器通信             │
-│  - HTTP：通过 Streamable HTTP 进行双向通信                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**渐进发现模式（三层递进）**：
-
-| 层级                     | 调用方式                                                                   | 返回内容                 | Token节省  |
-| ---------------------- | ---------------------------------------------------------------------- | -------------------- | -------- |
-| **Tier 1 - Discovery** | `MCP(server_name="github")`                                            | 该服务器所有工具列表（名称+简介）    | 避免注入全部工具 |
-| **Tier 2 - Schema**    | `MCP(server_name="github", tool_name="create_issue")`                  | 单个/批量工具详情（含参数schema） | 按需加载     |
-| **Tier 3 - Execution** | `MCP(server_name="github", tool_name="create_issue", arguments={...})` | 工具执行结果               | 精确执行     |
-
-**Token节省效果**：相比传统方式注入所有工具schema，渐进发现模式可节省 **85%+** Token消耗。
-
-**Python 编写 MCP 服务**：
-
-SoloEngine 支持用户使用 Python 编写自定义 MCP 服务器：
-
-```python
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("my-custom-server")
-
-@mcp.tool()
-def my_tool(param: str) -> str:
-    """自定义工具描述"""
-    return f"处理结果: {param}"
-
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
-```
-
-**MCP 服务管理**：
-
-- 支持 HTTP/SSE/Stdio 传输协议
-- 导入开源 MCP Server 配置（GitHub、Filesystem、PostgreSQL 等）
-- 创建和管理自定义 MCP Server
-- 在线编辑 Python Function 代码，自动编译为 MCP Server
-- 测试 MCP Server 连接
-- 获取 MCP Server 列表和资源
-
-### 💬 运行面板
-
-- **实时流式输出**：WebSocket 实时推送执行状态和 LLM 响应
-- **会话管理**：支持多会话切换和历史记录
-- **文件浏览器**：集成项目文件管理
-- **代码编辑器**：基于 Monaco Editor 的代码编辑体验
-- **调用记录**：实时展示工具调用、技能调用、MCP 调用状态
-
-### 🔌 插件化架构
-
-通过抽象接口实现高度可扩展性：
-
-```python
-class IMemory(ABC):
-    """记忆插件接口"""
-    async def add(self, msg: Msg) -> None: ...
-    async def retrieve(self, query: str, limit: int = 5) -> List[Msg]: ...
-
-class IToolExecutor(ABC):
-    """工具执行器接口"""
-    async def execute(self, tool_call: dict) -> dict: ...
-    def get_available_tools(self) -> List[dict]: ...
-
-class IMCPClient(ABC):
-    """MCP 客户端接口"""
-    async def connect(self) -> None: ...
-    async def call_tool(self, tool_name: str, arguments: dict) -> dict: ...
-```
-
-***
-
-## 更新计划
-
-- 导出机制与一键打包
-- 接入飞书、Telegram等外部API
-- 平等Agent机制
-- i18n多语言适配
-- 夜间模式
-- Agentic AI操作跟随
-
-***
-
-## 技术栈
-
-### 后端
-
-| 技术                                                 | 版本     | 用途                     |
-| -------------------------------------------------- | ------ | ---------------------- |
-| [Python](https://www.python.org/)                  | 3.11+  | 核心运行时                  |
-| [FastAPI](https://fastapi.tiangolo.com/)           | 0.115+ | Web 框架，REST API        |
-| [SQLAlchemy](https://www.sqlalchemy.org/)          | 2.0+   | ORM 数据库操作              |
-| [SQLite](https://www.sqlite.org/)                  | 3.x    | 嵌入式数据库                 |
-| [Pydantic](https://pydantic-docs.helpmanual.io/)   | 2.0+   | 数据验证                   |
-| [WebSockets](https://websockets.readthedocs.io/)   | 12.0+  | 实时通信                   |
-| [MCP Python SDK](https://modelcontextprotocol.io/) | latest | Model Context Protocol |
-
-### 前端
-
-| 技术                                                          | 版本    | 用途     |
-| ----------------------------------------------------------- | ----- | ------ |
-| [React](https://reactjs.org/)                               | 18.2  | UI 框架  |
-| [TypeScript](https://www.typescriptlang.org/)               | 5.3   | 类型安全   |
-| [Vite](https://vitejs.dev/)                                 | 5.0+  | 构建工具   |
-| [React Flow](https://reactflow.dev/)                        | 11.x  | 画布可视化  |
-| [Zustand](https://zustand-demo.pmnd.rs/)                    | 4.x   | 状态管理   |
-| [Ant Design](https://ant.design/)                           | 5.x   | UI 组件库 |
-| [Tailwind CSS](https://tailwindcss.com/)                    | 3.x   | 样式框架   |
-| [Monaco Editor](https://microsoft.github.io/monaco-editor/) | 0.45+ | 代码编辑器  |
-
-### 支持的 LLM 提供商范式
-
-SoloEngine 采用统一的模型适配层，支持以下提供商：
-
-| 提供商                                        | 适配模式          | 特性支持                    |
-| ------------------------------------------ | ------------- | ----------------------- |
-| [OpenAI](https://openai.com/)              | 原生 SDK        | Function Calling, 流式输出  |
-| [Anthropic](https://www.anthropic.com/)    | 原生 SDK        | Extended Thinking, 工具使用 |
-| [Ollama](https://ollama.ai/)               | OpenAI 兼容 API | 本地部署, 无需 API Key        |
-| [Alibaba Qwen](https://tongyi.aliyun.com/) | OpenAI 兼容 API | 中文优化, 长上下文              |
-| [DeepSeek](https://www.deepseek.com/)      | OpenAI 兼容 API | 推理增强, 代码生成              |
-| [智谱 GLM](https://open.bigmodel.cn/)        | OpenAI 兼容 API | 中文优化, 多模态               |
-
-***
-
-## 快速开始
-
-### 环境要求
-
-- Python 3.11+
-- Node.js 18+
-- npm 或 yarn
-
-### 安装步骤
-
-1. **克隆仓库**
-
-```bash
-git clone https://github.com/Sh4r1ock/SoloEngine.git
-cd SoloEngine
-```
-
-1. **安装后端依赖**
-
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-1. **安装前端依赖**
-
-```bash
-cd frontend
-npm install
-```
-
-1. **启动服务**
-
-```bash
-# 启动后端 (端口 8990)
-cd backend
-python main.py
-
-# 启动前端 (端口 8991)
-cd frontend
-npm run dev
-```
-
-1. **访问应用**
-
-打开浏览器访问 `http://localhost:8991`
-
-### 端口配置
-
-| 服务   | 端口   | 说明          |
-| ---- | ---- | ----------- |
-| 主后端  | 8990 | FastAPI 服务  |
-| 前端页面 | 8991 | React 开发服务器 |
-
-***
-
-## 核心概念
-
-### AgenticFlow（智能体流程）
-
-AgenticFlow 是 SoloEngine 的核心概念，代表一个完整的 AI 工作流。它由画布 JSON 定义，包含节点（Agent）和边（调用关系）。
-
-```json
-{
-  "nodes": [
-    {
-      "id": "agent_1",
-      "type": "agent",
-      "data": {
-        "name": "代码助手",
-        "agentType": "executor",
-        "system_prompt": "你是一个专业的编程助手...",
-        "tools": ["Read", "Write", "RunCommand"],
-        "skills": ["algorithmic-art"],
-        "mcp_tools": ["github"]
-      }
-    }
-  ],
-  "edges": [
-    { "source": "agent_1", "target": "agent_2" }
-  ]
-}
-```
-
-### Agent 配置
-
-SoloEngine 中的各 Agent 没有本质区别，**所有 Agent 都是相同的执行单元**。所谓的"类型"只是预设的不同配置：
-
-| 配置项                | 说明                      |
-| ------------------ | ----------------------- |
-| **system\_prompt** | 系统提示词，定义 Agent 的角色和行为   |
-| **tools**          | 可用工具列表，决定 Agent 能执行什么操作 |
-| **skills**         | 技能列表，提供专业领域能力           |
-| **mcp\_servers**   | MCP 服务器列表，扩展外部工具能力      |
-| **subagents**      | 子 Agent 列表，实现任务委托       |
-
-通过组合不同的配置，可以实现：
-
-- **协调者角色**：配置 Task 工具和协调性提示词
-- **规划者角色**：配置规划相关提示词
-- **执行者角色**：配置丰富的工具和技能
-
-### ReAct 循环
-
-SoloEngine 采用 ReAct（Reasoning + Acting）范式：
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      ReAct 循环                              │
-│                                                              │
-│   ┌──────────┐    ┌──────────┐    ┌──────────┐             │
-│   │ Reasoning │ →  │ Acting   │ →  │ Observing │             │
-│   │  (思考)   │    │  (行动)  │    │  (观察)   │             │
-│   └──────────┘    └──────────┘    └──────────┘             │
-│        ↑                                    │               │
-│        └────────────────────────────────────┘               │
-│                    迭代直到完成                               │
-└─────────────────────────────────────────────────────────────┘
-```
-
-1. **Reasoning**：模型分析当前状态，决定下一步行动
-2. **Acting**：执行工具调用、技能调用或 MCP 调用
-3. **Observing**：获取执行结果，更新上下文
-4. **迭代**：重复以上步骤直到任务完成
-
-### Skill（技能）
-
-Skill 是可复用的 AI 能力模块，采用渐进式披露设计。当模型需要使用某个技能时：
-
-1. **Tool Spec 展示**：模型看到技能名称和简短描述
-2. **技能调用**：模型调用 Skill 工具，获取完整 SKILL.md 内容
-3. **资源读取**：模型根据 folder\_path 自主读取嵌套资源
-
-### MCP（Model Context Protocol）
-
-MCP 是 Anthropic 提出的模型上下文协议，SoloEngine 采用 **Host-Client 分层架构** 和 **渐进发现模式** 完整支持：
-
-**架构特点**：
-
-- **Host层**：`CompiledFlow` 通过 `MCPHostClientManager` 统一管理所有 MCP Client 连接
-- **Client层**：每个 MCP Server 对应一个 `MCPClient` 实例
-- **Agent层**：每个 Agent 独立配置自己的 MCP 服务器列表，通过引用使用 Host 层的 Client
-- **工具层**：`MCPTool` 提供统一入口，实现渐进发现模式
-
-**渐进发现模式**：
-
-```python
-# Tier 1: Discovery - 获取服务器所有工具列表
-result = await mcp_tool.execute(server_name="github")
-# 返回: [{"name": "create_issue", "description": "..."}, ...]
-
-# Tier 2: Schema - 获取单个/批量工具详情
-result = await mcp_tool.execute(
-    server_name="github",
-    tool_name="create_issue"  # 或 tool_name=["create_issue", "list_issues"]
-)
-# 返回: 完整工具schema（参数、类型、描述）
-
-# Tier 3: Execution - 执行工具
-result = await mcp_tool.execute(
-    server_name="github",
-    tool_name="create_issue",
-    arguments={"owner": "xxx", "repo": "xxx", "title": "Bug report"}
-)
-# 返回: 工具执行结果
-```
-
-**XML注入优化**：
-
-- **传统方式**：System Prompt 注入所有工具的完整 schema（50个工具约15,000 tokens）
-- **新方式**：System Prompt 只注入服务器列表（约200 tokens），工具详情按需获取
-- **节省效果**：Token消耗减少 **85%+**
 
 ***
 
@@ -616,7 +484,7 @@ SoloEngine/
 │   │   │   ├── Canvas/         # 画布组件
 │   │   │   ├── RunPanel/       # 运行面板
 │   │   │   ├── Settings/       # 设置组件
-│   │   │   ├── SkillsManager/  # 技能管理
+│   │   │   ├── SkillsManager/  # Skill 管理
 │   │   │   └── MCPManager/     # MCP 管理
 │   │   ├── pages/              # 页面组件
 │   │   ├── services/           # API 服务
@@ -626,129 +494,64 @@ SoloEngine/
 ├── data/                       # 数据目录
 │   ├── database/               # SQLite 数据库
 │   └── system/                 # 系统资源
-│       └── skills/             # 系统技能
-└── docs/                       # 文档
-    └── i18n/                   # 国际化文档
+│       ├── mcp_servers/        # 系统 MCP
+│       └── skills/             # 系统 Skill
+└── i18n/                       # 国际化文档
+    └── docs/                   # 文档
 ```
 
 ***
 
-## API 参考
+## 技术栈
 
-### REST API
+### 后端
 
-#### 用户认证
+| 技术                                                 | 版本     | 用途                     |
+| -------------------------------------------------- | ------ | ---------------------- |
+| [Python](https://www.python.org/)                  | 3.11+  | 核心运行时                  |
+| [FastAPI](https://fastapi.tiangolo.com/)           | 0.115+ | Web 框架，REST API        |
+| [SQLAlchemy](https://www.sqlalchemy.org/)          | 2.0+   | ORM 数据库操作              |
+| [SQLite](https://www.sqlite.org/)                  | 3.x    | 嵌入式数据库                 |
+| [Pydantic](https://pydantic-docs.helpmanual.io/)   | 2.0+   | 数据验证                   |
+| [WebSockets](https://websockets.readthedocs.io/)   | 12.0+  | 实时通信                   |
+| [MCP Python SDK](https://modelcontextprotocol.io/) | latest | Model Context Protocol |
 
-```http
-POST /api/v1/auth/login
-POST /api/v1/auth/register
-GET  /api/v1/auth/me
-```
+### 前端
 
-#### AgenticFlow 管理
+| 技术                                                          | 版本    | 用途     |
+| ----------------------------------------------------------- | ----- | ------ |
+| [React](https://reactjs.org/)                               | 18.2  | UI 框架  |
+| [TypeScript](https://www.typescriptlang.org/)               | 5.3   | 类型安全   |
+| [Vite](https://vitejs.dev/)                                 | 5.0+  | 构建工具   |
+| [React Flow](https://reactflow.dev/)                        | 11.x  | 画布可视化  |
+| [Zustand](https://zustand-demo.pmnd.rs/)                    | 4.x   | 状态管理   |
+| [Ant Design](https://ant.design/)                           | 5.x   | UI 组件库 |
+| [Tailwind CSS](https://tailwindcss.com/)                    | 3.x   | 样式框架   |
+| [Monaco Editor](https://microsoft.github.io/monaco-editor/) | 0.45+ | 代码编辑器  |
 
-```http
-GET    /api/v1/agentic-flows
-POST   /api/v1/agentic-flows
-GET    /api/v1/agentic-flows/{flow_id}
-PUT    /api/v1/agentic-flows/{flow_id}
-DELETE /api/v1/agentic-flows/{flow_id}
-```
+### 支持的 LLM 提供商范式
 
-#### 运行时 API
+SoloEngine 采用统一的模型适配层，支持以下提供商：
 
-```http
-POST /api/v1/run/execute              # 执行工作流
-POST /api/v1/run/execute-node         # 执行单个节点
-GET  /api/v1/run/sessions             # 获取会话列表
-GET  /api/v1/run/sessions/{id}        # 获取会话详情
-DELETE /api/v1/run/sessions/{id}      # 删除会话
-GET  /api/v1/run/sessions/{id}/messages           # 获取会话消息
-GET  /api/v1/run/sessions/{id}/messages/by-agent  # 按Agent分组获取消息
-```
+| 提供商                                        | 适配模式          | 特性支持                    |
+| ------------------------------------------ | ------------- | ----------------------- |
+| [OpenAI](https://openai.com/)              | 原生 SDK        | Function Calling, 流式输出  |
+| [Anthropic](https://www.anthropic.com/)    | 原生 SDK        | Extended Thinking, 工具使用 |
+| [Ollama](https://ollama.ai/)               | OpenAI 兼容 API | 本地部署, 无需 API Key        |
+| [Alibaba Qwen](https://tongyi.aliyun.com/) | OpenAI 兼容 API | 中文优化, 长上下文              |
+| [DeepSeek](https://www.deepseek.com/)      | OpenAI 兼容 API | 推理增强, 代码生成              |
+| [智谱 GLM](https://open.bigmodel.cn/)        | OpenAI 兼容 API | 中文优化, 多模态               |
 
-#### 技能管理
+***
 
-```http
-GET  /api/v1/skills
-POST /api/v1/skills
-GET  /api/v1/skills/{skill_id}
-PUT  /api/v1/skills/{skill_id}
-DELETE /api/v1/skills/{skill_id}
-GET  /api/v1/skills/{skill_id}/content
-PUT  /api/v1/skills/{skill_id}/content
-```
+## 路线图
 
-#### MCP 管理
-
-```http
-GET  /api/v1/mcp/servers
-POST /api/v1/mcp/servers
-GET  /api/v1/mcp/servers/{server_id}
-PUT  /api/v1/mcp/servers/{server_id}
-DELETE /api/v1/mcp/servers/{server_id}
-POST /api/v1/mcp/servers/{server_id}/test
-GET  /api/v1/mcp/servers/{server_id}/tools
-POST /api/v1/mcp/servers/{server_id}/tools/call
-```
-
-#### LLM 配置管理
-
-```http
-GET  /api/v1/llm/configs
-POST /api/v1/llm/configs
-GET  /api/v1/llm/configs/{config_id}
-PUT  /api/v1/llm/configs/{config_id}
-DELETE /api/v1/llm/configs/{config_id}
-GET  /api/v1/llm/providers
-GET  /api/v1/llm/providers/{provider}/models
-```
-
-### WebSocket API
-
-```javascript
-// 连接 WebSocket
-const ws = new WebSocket(
-  'ws://localhost:8990/ws/run/{agentic_flow_id}/{session_id}/{run_project_id}'
-);
-
-// 发送执行请求
-ws.send(JSON.stringify({
-  type: 'execute',
-  canvas_data: {...},        // 画布数据
-  input_message: '...',       // 用户输入消息
-  session_id: '...',          // 会话ID
-  run_project_id: '...'       // 运行项目ID
-}));
-
-// 接收事件
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  // 处理执行事件
-};
-```
-
-**事件类型**：
-
-| 事件类型                 | 说明          |
-| -------------------- | ----------- |
-| `execution_start`    | 执行开始        |
-| `execution_complete` | 执行完成        |
-| `execution_error`    | 执行错误        |
-| `agent_start`        | Agent 启动    |
-| `agent_complete`     | Agent 完成    |
-| `subagent_start`     | SubAgent 启动 |
-| `subagent_complete`  | SubAgent 完成 |
-| `tool_call_start`    | 工具调用开始      |
-| `tool_call_args`     | 工具调用参数      |
-| `tool_call_end`      | 工具调用结束      |
-| `tool_call_result`   | 工具调用结果      |
-| `skill_call_start`   | 技能调用开始      |
-| `skill_call_end`     | 技能调用结束      |
-| `mcp_call_start`     | MCP 调用开始    |
-| `mcp_call_end`       | MCP 调用结束    |
-| `stream`             | 流式输出        |
-| `error`              | 错误事件        |
+- 导出机制与一键打包
+- 接入飞书、Telegram等外部API
+- 平等Agent机制
+- i18n多语言适配
+- 夜间模式
+- Agentic AI操作跟随
 
 ***
 
@@ -762,13 +565,13 @@ SoloEngine 正处于快速发展阶段，我们致力于打造一个开源、开
 | ---------- | -------------------------------- |
 | **技术合作伙伴** | 共同开发核心功能，探索 Agent 技术边界           |
 | **产品合作**   | 将 SoloEngine 集成到您的产品中，共同打造行业解决方案 |
-| **生态共建**   | 开发插件、技能、MCP 服务，丰富生态系统            |
+| **生态共建**   | 开发插件、Skill、MCP 服务，丰富生态系统            |
 
 ### 联系我们
 
 如果您对 SoloEngine 感兴趣，欢迎通过以下方式与我们联系：
 
-- 📧 **邮箱**：<sh4rlock@qq.com>
+- 📧 **邮箱**：<sh4r1ock@qq.com>
 - 🐙 **GitHub Issues**：[提交 Issue](https://github.com/Sh4r1ock/SoloEngine/issues)
 
 > **我们期待与您携手，共同推动 SoloEngine 的完善与发展！**
