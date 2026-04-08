@@ -317,10 +317,7 @@ class LLMFactory:
             provider (str): 提供商名称。
         
         Returns:
-            list[str]: 该提供商支持的模型名称列表。
-        
-        Raises:
-            ValueError: 当提供商不支持时抛出。
+            list[str]: 该提供商支持的模型名称列表。对于未知的提供商返回空列表。
         
         Example:
             >>> models = LLMFactory.get_available_models("openai")
@@ -328,16 +325,10 @@ class LLMFactory:
         
         Note:
             返回的列表可能不是完整的，实际可用模型取决于 API 密钥权限。
+            对于未知的提供商，返回空列表而非抛出异常。
         """
         provider_lower = provider.lower()
-
-        if provider_lower not in cls._available_models:
-            raise ValueError(
-                f"Unsupported LLM provider: '{provider}'. "
-                f"Supported providers: {', '.join(cls._provider_models.keys())}"
-            )
-
-        return cls._available_models[provider_lower]
+        return cls._available_models.get(provider_lower, [])
 
     @classmethod
     def get_default_model(cls, provider: str) -> str:
@@ -372,22 +363,24 @@ class LLMFactory:
         """
         验证模型是否在提供商的可用列表中。
         
+        修改后：始终返回 True，允许使用任意模型名称（包括自定义模型、新模型等）
+        实际可用性由 API 调用时决定。
+        
         Args:
             provider (str): 提供商名称。
             model_name (str): 模型名称。
         
         Returns:
-            bool: 如果模型在可用列表中返回 True，否则返回 False。
+            bool: 始终返回 True，允许任意模型名称。
         
         Example:
             >>> LLMFactory.validate_model("openai", "gpt-4")  # True
-            >>> LLMFactory.validate_model("openai", "unknown")  # False
+            >>> LLMFactory.validate_model("openai", "custom-model")  # True
         
         Note:
-            此方法仅检查模型是否在预定义列表中，
-            不验证模型是否实际可用（取决于 API 密钥权限）。
+            此方法不再限制模型名称，允许用户输入任意模型。
+            实际可用性由 API 调用时决定。
         """
-        provider_lower = provider.lower()
-        available_models = cls._available_models.get(provider_lower, [])
-
-        return model_name in available_models
+        # 不再限制模型名称，允许用户输入任意模型
+        # 实际可用性由 API 调用时决定
+        return True

@@ -76,7 +76,7 @@ const MCPServerList: React.FC<MCPServerListProps> = ({
             hoverable
             style={{
               height: '100%',
-              borderLeft: server.enabled ? `4px solid var(--success)` : '4px solid var(--bg-400)',
+              borderLeft: server.is_active ? `4px solid var(--success)` : '4px solid var(--bg-400)',
             }}
           >
             <div style={{

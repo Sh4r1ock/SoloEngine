@@ -1,4 +1,3 @@
-from . import projects
 from . import tools
 from . import websocket
 from . import config

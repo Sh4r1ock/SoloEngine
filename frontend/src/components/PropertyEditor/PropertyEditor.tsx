@@ -32,7 +32,7 @@ import { useMCPStore } from '../../store/mcpStore';
 import { useRunStore } from '../../store/runStore';
 import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
-import { mcpApi, MCPTool } from '../../services/mcpApi';
+import { mcpApi, MCPTool, MCPServer } from '../../services/mcpApi';
 import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
 import { toolsApi, ToolInfo, AgentPreset } from '../../services/toolsApi';
@@ -47,6 +47,7 @@ const SOLOAGENT_TOOLS = [
   { name: 'Write', description: '写入文件内容' },
   { name: 'DeleteFile', description: '删除文件' },
   { name: 'LS', description: '列出目录内容' },
+  { name: 'SearchReplace', description: '搜索替换文件内容' },
   { name: 'Grep', description: '搜索文件内容' },
   { name: 'Glob', description: '模式匹配文件' },
   { name: 'SearchCodebase', description: '搜索代码库' },
@@ -58,9 +59,11 @@ const SOLOAGENT_TOOLS = [
   { name: 'WebSearch', description: '网络搜索' },
   { name: 'Skill', description: '调用技能' },
   { name: 'Task', description: '调用子Agent任务' },
+  { name: 'MCP', description: '调用MCP服务器工具' },
   { name: 'TodoWrite', description: '管理待办事项' },
   { name: 'AskUserQuestion', description: '询问用户问题' },
   { name: 'OpenPreview', description: '打开预览' },
+  { name: 'ExitPlanMode', description: '退出计划模式' },
 ];
 
 interface PromptTemplate {
@@ -190,7 +193,6 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
 
 const PropertyPanel: React.FC = () => {
   const { selectedNode, updateNode, nodes, edges, saveCanvas } = useCanvasStore();
-  const { loadServers, servers } = useMCPStore();
   const [form] = Form.useForm();
   const { projectId } = useParams<{ projectId: string }>();
   const { currentSessionId } = useRunStore();
@@ -200,6 +202,8 @@ const PropertyPanel: React.FC = () => {
   
   const [skillsPackages, setSkillsPackages] = useState<SkillsPackage[]>([]);
   const [allSkillsPackages, setAllSkillsPackages] = useState<SkillsPackage[]>([]);
+  const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
+  const [allMcpServers, setAllMcpServers] = useState<MCPServer[]>([]);
   const [mcpTools, setMcpTools] = useState<MCPTool[]>([]);
   const [allMcpTools, setAllMcpTools] = useState<MCPTool[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
@@ -221,7 +225,7 @@ const PropertyPanel: React.FC = () => {
 
   useEffect(() => {
     if (selectedNode) {
-      const nodeModelConfig = selectedNode.data.model_config || {};
+      const nodeModelConfig: Record<string, any> = selectedNode.data.model_config || {};
       form.setFieldsValue({
         name: selectedNode.data.name || '',
         desc: selectedNode.data.desc || '',
@@ -231,7 +235,7 @@ const PropertyPanel: React.FC = () => {
         user_prompt: selectedNode.data.user_prompt || '',
         assistant_prompt: selectedNode.data.assistant_prompt || '',
         skills: selectedNode.data.skills || [],
-        mcp_tools: selectedNode.data.mcp_tools || [],
+        mcp_servers: selectedNode.data.mcp_servers || [],
         tools: selectedNode.data.tools || [],
         memory: selectedNode.data.memory !== undefined ? selectedNode.data.memory : true,
         temperature: nodeModelConfig.temperature ?? 0.7,
@@ -304,7 +308,7 @@ const PropertyPanel: React.FC = () => {
       if (response.code === 200) {
         const allPackages = response.data || [];
         setAllSkillsPackages(allPackages);
-        setSkillsPackages(allPackages.filter(pkg => pkg.is_active));
+        setSkillsPackages(allPackages.filter((pkg: SkillsPackage) => pkg.is_active));
       }
     } catch (error) {
       console.error('Failed to load skills packages:', error);
@@ -317,24 +321,25 @@ const PropertyPanel: React.FC = () => {
     setLoadingTools(true);
     try {
       const response = await mcpApi.getServers();
-      if (response.code === 200 && response.data) {
+      if (response.code === 200) {
+        const allServers = response.data || [];
+        setAllMcpServers(allServers);
+        // 参照Skills的简洁判断方式
+        setMcpServers(allServers.filter((server: MCPServer) => server.is_active));
+
         const allTools: MCPTool[] = [];
         const enabledTools: MCPTool[] = [];
-        
-        for (const server of response.data) {
-          const isEnabled = server.is_enabled ?? server.enabled;
-          if (server.status === 'connected') {
-            try {
-              const toolsResponse = await mcpApi.getServerTools(server.id);
-              if (toolsResponse.code === 200 && toolsResponse.data) {
-                const serverTools = toolsResponse.data;
-                allTools.push(...serverTools);
-                if (isEnabled) {
-                  enabledTools.push(...serverTools);
-                }
-              }
-            } catch (e) {
-              console.error(`Failed to get tools for server ${server.id}:`, e);
+
+        for (const server of allServers) {
+          if (server.tools && server.tools.length > 0) {
+            const serverTools = server.tools.map((tool: MCPTool) => ({
+              ...tool,
+              server_id: server.id,
+              server_name: server.name,
+            }));
+            allTools.push(...serverTools);
+            if (server.is_active) {
+              enabledTools.push(...serverTools);
             }
           }
         }
@@ -366,7 +371,6 @@ const PropertyPanel: React.FC = () => {
     loadSkillsPackages();
     loadMCPTools();
     loadLocalTools();
-    loadServers();
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -395,7 +399,7 @@ const PropertyPanel: React.FC = () => {
           presence_penalty: values.presence_penalty,
         } : undefined,
         skills: values.skills || [],
-        mcp_tools: values.mcp_tools || [],
+        mcp_servers: values.mcp_servers || [],
         tools: values.tools || [],
         memory: values.memory,
       });
@@ -426,12 +430,12 @@ const PropertyPanel: React.FC = () => {
 
   const handlePresetChange = (presetId: string) => {
     const preset = getPresets().find(p => p.id === presetId);
-    if (preset) {
+    if (preset && selectedNode) {
       form.setFieldsValue({
         agentType: preset.id,
         tools: preset.tools,
         skills: preset.skills,
-        mcp_tools: preset.mcp_tools,
+        mcp_servers: preset.mcp_servers,
         system_prompt: preset.system_prompt,
       });
       updateNode(selectedNode.id, {
@@ -695,7 +699,7 @@ const PropertyPanel: React.FC = () => {
                 type="link" 
                 size="small" 
                 icon={<SettingOutlined />}
-                onClick={() => window.open('/mainmenu/llm', '_blank')}
+                onClick={() => window.open('/main/llm', '_blank')}
                 className="property-panel-link-btn"
               >
                 管理配置
@@ -885,9 +889,16 @@ const PropertyPanel: React.FC = () => {
                   >
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span>{pkg.name}</span>
-                      {pkg.metadata?.description && (
-                        <span style={{ fontSize: 12, color: '#999' }}>
-                          {pkg.metadata.description.substring(0, 50)}...
+                      {pkg.description && (
+                        <span style={{
+                          fontSize: 12,
+                          color: '#999',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          maxWidth: '100%'
+                        }} title={pkg.description}>
+                          {pkg.description}
                         </span>
                       )}
                     </div>
@@ -904,9 +915,16 @@ const PropertyPanel: React.FC = () => {
                     >
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
                         <span>{pkg.name}</span>
-                        {pkg.metadata?.description && (
-                          <span style={{ fontSize: 12, color: '#999' }}>
-                            {pkg.metadata.description.substring(0, 50)}...
+                        {pkg.description && (
+                          <span style={{
+                            fontSize: 12,
+                            color: '#999',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '100%'
+                          }} title={pkg.description}>
+                            {pkg.description}
                           </span>
                         )}
                       </div>
@@ -969,20 +987,20 @@ const PropertyPanel: React.FC = () => {
 
         <Divider className="property-panel-divider">
           <ToolOutlined style={{ marginRight: 8 }} />
-          MCP 工具绑定
+          MCP 服务器绑定
         </Divider>
 
-        <Form.Item 
-          label="绑定的 MCP 工具" 
-          name="mcp_tools"
+        <Form.Item
+          label="绑定的 MCP 服务器"
+          name="mcp_servers"
           className="property-panel-form-item"
           extra={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>从主菜单管理 MCP 服务器</span>
-              <Button 
-                type="link" 
-                size="small" 
-                icon={<ReloadOutlined />} 
+              <Button
+                type="link"
+                size="small"
+                icon={<ReloadOutlined />}
                 onClick={loadMCPTools}
                 loading={loadingTools}
                 className="property-panel-link-btn"
@@ -994,58 +1012,63 @@ const PropertyPanel: React.FC = () => {
         >
           <Select
             mode="multiple"
-            placeholder={loadingTools ? "加载中..." : "请选择 MCP 工具"}
+            placeholder={loadingTools ? "加载中..." : "请选择 MCP 服务器"}
             loading={loadingTools}
             optionLabelProp="label"
           >
             {(() => {
-              const selectedMcpTools = form.getFieldValue('mcp_tools') || [];
-              const enabledToolKeys = new Set(mcpTools.map(tool => `${tool.server_id}:${tool.name}`));
+              const selectedMcpServers = form.getFieldValue('mcp_servers') || [];
+              const enabledServerIds = new Set(mcpServers.map(s => s.id));
 
               return [
-                ...mcpTools.map(tool => (
+                // 显示所有启用的服务器（和 Skill 模式一致）
+                ...mcpServers.map(server => (
                   <Select.Option
-                    key={`${tool.server_id}:${tool.name}`}
-                    value={`${tool.server_id}:${tool.name}`}
-                    label={tool.name}
+                    key={server.id}
+                    value={server.id}
+                    label={server.name}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span>{tool.name}</span>
-                        <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
-                          {servers.find(s => s.id === tool.server_id)?.name || '未知服务器'}
-                        </Tag>
-                      </div>
-                      {tool.description && (
-                        <span style={{ fontSize: 12, color: '#999' }}>
-                          {tool.description.substring(0, 50)}...
+                      <span>{server.name}</span>
+                      {server.description && (
+                        <span style={{
+                          fontSize: 12,
+                          color: '#999',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          maxWidth: '100%'
+                        }} title={server.description}>
+                          {server.description}
                         </span>
                       )}
                     </div>
                   </Select.Option>
                 )),
-                ...allMcpTools
-                  .filter(tool => {
-                    const toolKey = `${tool.server_id}:${tool.name}`;
-                    return !enabledToolKeys.has(toolKey) && selectedMcpTools.includes(toolKey);
+                // 显示用户已选择但已禁用的服务器（和 Skill 模式一致）
+                ...allMcpServers
+                  .filter(server => {
+                    return !enabledServerIds.has(server.id) && selectedMcpServers.includes(server.id);
                   })
-                  .map(tool => (
+                  .map(server => (
                     <Select.Option
-                      key={`${tool.server_id}:${tool.name}`}
-                      value={`${tool.server_id}:${tool.name}`}
-                      label={tool.name}
+                      key={server.id}
+                      value={server.id}
+                      label={server.name}
                       disabled
                     >
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span>{tool.name}</span>
-                          <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
-                            {servers.find(s => s.id === tool.server_id)?.name || '未知服务器'}
-                          </Tag>
-                        </div>
-                        {tool.description && (
-                          <span style={{ fontSize: 12, color: '#999' }}>
-                            {tool.description.substring(0, 50)}...
+                        <span>{server.name}</span>
+                        {server.description && (
+                          <span style={{
+                            fontSize: 12,
+                            color: '#999',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: '100%'
+                          }} title={server.description}>
+                            {server.description}
                           </span>
                         )}
                       </div>

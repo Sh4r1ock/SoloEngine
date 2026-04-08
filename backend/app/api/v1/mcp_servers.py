@@ -70,7 +70,7 @@ class MCPServerCreate(BaseModel):
     env: Optional[Dict[str, str]] = Field(None, description="环境变量")
     headers: Optional[Dict[str, str]] = Field(None, description="HTTP 头")
     timeout: int = Field(30, description="超时时间（秒）")
-    enabled: bool = Field(True, description="是否启用")
+    is_active: bool = Field(True, description="是否启用")
     tags: Optional[List[str]] = Field(None, description="标签列表")
 
 
@@ -83,10 +83,11 @@ class MCPServerUpdate(BaseModel):
     env: Optional[Dict[str, str]] = None
     headers: Optional[Dict[str, str]] = None
     timeout: Optional[int] = None
-    enabled: Optional[bool] = None
+    is_active: Optional[bool] = None
     tags: Optional[List[str]] = None
     description: Optional[str] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
+    tools: Optional[List[Dict[str, Any]]] = Field(None, description="工具列表")
 
 
 class CreatePythonMCPRequest(BaseModel):
@@ -103,7 +104,7 @@ class CreateHttpMCPRequest(BaseModel):
     headers: Optional[Dict[str, str]] = Field(default_factory=dict, description="HTTP请求头")
     timeout: int = Field(30, description="超时时间（秒）")
     session_id: Optional[str] = Field(None, description="会话ID")
-    enabled: Optional[bool] = Field(True, description="是否启用")
+    is_active: Optional[bool] = Field(True, description="是否启用")
     share: Optional[bool] = Field(False, description="是否共享")
     tags: Optional[List[str]] = Field(None, description="标签列表")
 
@@ -118,7 +119,7 @@ class CreateSseMCPRequest(BaseModel):
     sse_endpoint: Optional[str] = Field("/sse", description="SSE端点路径")
     retry_interval: Optional[int] = Field(5, description="重试间隔（秒）")
     max_retries: Optional[int] = Field(3, description="最大重试次数")
-    enabled: Optional[bool] = Field(True, description="是否启用")
+    is_active: Optional[bool] = Field(True, description="是否启用")
     share: Optional[bool] = Field(False, description="是否共享")
     tags: Optional[List[str]] = Field(None, description="标签列表")
 
@@ -243,14 +244,15 @@ async def list_servers(
             "env": {},
             "headers": {},
             "timeout": 30,
-            "enabled": server.is_enabled,
+            "is_active": server.is_active,
             "is_public": server.is_public,
             "is_default": False,
             "version": server.version,
-            "status": "connected" if server.is_enabled else "disconnected",
+            "status": "connected" if server.is_active else "disconnected",
             "created_at": server.created_at.isoformat() if server.created_at else None,
             "updated_at": server.updated_at.isoformat() if server.updated_at else None,
             "tags": server.tags or [],
+            "tools": server.tools or [],  # 返回工具列表
         }
         
         # 根据传输类型填充配置
@@ -292,7 +294,7 @@ async def add_server(
         name=server.name,
         transport_type=server.transport,
         description=None,
-        enabled=server.enabled,
+        is_active=server.is_active,
         tags=server.tags,
     )
     
@@ -336,7 +338,7 @@ async def add_server(
             "env": server.env or {},
             "headers": server.headers or {},
             "timeout": server.timeout or 30,
-            "enabled": new_server.is_enabled,
+            "is_active": new_server.is_active,
             "status": "disconnected",
         },
     }
@@ -367,7 +369,7 @@ async def get_server(
         "env": {},
         "headers": {},
         "timeout": 30,
-        "enabled": server.is_enabled,
+        "is_active": server.is_active,
         "is_public": server.is_public,
         "status": "disconnected",
     }
@@ -414,12 +416,14 @@ async def update_server(
         update_data["name"] = update.name
     if update.transport is not None:
         update_data["transport_type"] = update.transport
-    if update.enabled is not None:
-        update_data["is_enabled"] = update.enabled
+    if update.is_active is not None:
+        update_data["is_active"] = update.is_active
     if update.tags is not None:
         update_data["tags"] = update.tags
     if update.description is not None:
         update_data["description"] = update.description
+    if update.tools is not None:
+        update_data["tools"] = update.tools
     
     try:
         server = mcp_db_manager.update_server(
@@ -461,7 +465,7 @@ async def update_server(
             "name": server.name,
             "transport": server.transport_type,
             "url": server.http_config.url if server.http_config else (server.sse_config.url if server.sse_config else ""),
-            "enabled": server.is_enabled,
+            "is_active": server.is_active,
             "version": server.version,
         },
     }
@@ -708,7 +712,11 @@ async def import_open_mcp(
 
     user_id = current_user.id
 
-    # 创建服务器记录
+    # 创建服务器记录，将category作为tag
+    import_tags = []
+    if mcp_config.get("category"):
+        import_tags.append(mcp_config["category"])
+
     new_server = mcp_db_manager.create_server(
         db=db,
         user_id=user_id,
@@ -716,6 +724,7 @@ async def import_open_mcp(
         transport_type=mcp_config["transport"],
         description=None,
         enabled=True,
+        tags=import_tags,
     )
 
     # 根据传输类型创建对应的配置
@@ -769,7 +778,7 @@ async def connect_server(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
 
-    server.is_enabled = True
+    server.is_active = True
     db.commit()
 
     return {
@@ -792,7 +801,7 @@ async def disconnect_server(
     if not server:
         raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
 
-    server.is_enabled = False
+    server.is_active = False
     db.commit()
 
     return {
@@ -802,53 +811,111 @@ async def disconnect_server(
     }
 
 
-@router.post("/servers/test")
-async def test_server(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
+@router.post("/servers/connect")
+async def connect_server(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
     """测试 MCP 服务器连接。"""
-    from SoloAgent.plugins.mcp.mcp_client import MCPClient
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
     
-    client = None
-    try:
-        client = MCPClient({
-            "transport": server.transport,
-            "url": server.url,
-            "command": server.command,
-            "args": server.args,
-            "env": server.env,
-            "headers": server.headers,
-            "timeout": server.timeout,
-        })
+    def _connect_in_thread():
+        """在单独线程中运行连接测试，避免async上下文管理器问题。"""
+        import asyncio
+        from SoloAgent.plugins.mcp.mcp_client import MCPClient
         
-        await client.connect()
-        tools = await client.get_tools()
-        
-        return {
-            "code": 200,
-            "message": "Connection test successful",
-            "data": {
-                "connected": True,
-                "tools_count": len(tools),
-                "tools": [{"name": t.get("name"), "description": t.get("description", "")} for t in tools[:5]],
-            },
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={
-                "code": 500,
-                "message": f"Connection test failed: {str(e)}",
-                "data": {
-                    "connected": False,
+        async def _test_connection():
+            client = None
+            try:
+                client = MCPClient({
+                    "transport": server.transport,
+                    "url": server.url,
+                    "command": server.command,
+                    "args": server.args,
+                    "env": server.env,
+                    "headers": server.headers,
+                    "timeout": server.timeout,
+                })
+                
+                await client.connect()
+                tools = await client.get_tools()
+                
+                return {
+                    "success": True,
+                    "tools": tools,
+                }
+            except asyncio.CancelledError as e:
+                logger.error(f"MCP connection test cancelled: {e}")
+                return {
+                    "success": False,
+                    "error": "Connection timeout or cancelled",
+                }
+            except Exception as e:
+                logger.error(f"MCP connection test failed in thread: {e}")
+                return {
+                    "success": False,
                     "error": str(e),
+                }
+            finally:
+                if client:
+                    try:
+                        await client.disconnect()
+                    except Exception:
+                        pass
+        
+        # 创建新的事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(_test_connection())
+        except asyncio.CancelledError as e:
+            logger.error(f"MCP connection test cancelled in loop: {e}")
+            return {
+                "success": False,
+                "error": "Connection timeout or cancelled",
+            }
+        except Exception as e:
+            logger.error(f"MCP connection test failed in loop: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }
+        finally:
+            loop.close()
+    
+    try:
+        # 使用线程池执行连接测试
+        with ThreadPoolExecutor() as executor:
+            result = await asyncio.get_event_loop().run_in_executor(executor, _connect_in_thread)
+        
+        if result["success"]:
+            tools = result["tools"]
+            return {
+                "code": 200,
+                "message": "Connection test successful",
+                "data": {
+                    "connected": True,
+                    "tools_count": len(tools),
+                    "tools": [{"name": t.get("name"), "description": t.get("description", ""), "input_schema": t.get("inputSchema", {})} for t in tools],
                 },
             }
-        )
-    finally:
-        if client:
-            try:
-                await client.disconnect()
-            except Exception:
-                pass
+        else:
+            return {
+                "code": 500,
+                "message": f"Connection test failed: {result['error']}",
+                "data": {
+                    "connected": False,
+                    "error": result["error"],
+                },
+            }
+    except Exception as e:
+        logger.error(f"MCP connection test failed: {e}")
+        return {
+            "code": 500,
+            "message": f"Connection test failed: {str(e)}",
+            "data": {
+                "connected": False,
+                "error": str(e),
+            },
+        }
 
 
 @router.get("/servers/{server_id}/tools")
@@ -1069,7 +1136,7 @@ async def get_all_tools(
                     pass
         return tools
 
-    enabled_servers = [s for s in servers if s.is_enabled]
+    enabled_servers = [s for s in servers if s.is_active]
     results = await asyncio.gather(*[get_server_tools(s) for s in enabled_servers], return_exceptions=True)
 
     all_tools = []
@@ -1466,7 +1533,7 @@ async def create_stdio_mcp(
             name=name,
             transport_type="stdio",
             description=description,
-            is_enabled=True,
+            is_active=True,
             author="user",
             tags=parsed_tags,
         )
@@ -1483,6 +1550,34 @@ async def create_stdio_mcp(
         db.commit()
         db.refresh(new_server)
 
+        # 创建成功后，尝试连接并获取工具列表
+        tools = []
+        try:
+            from SoloAgent.plugins.mcp.mcp_client import MCPClient
+
+            client = MCPClient({
+                "transport": "stdio",
+                "command": run_command,
+                "args": run_args,
+                "env": {},
+            })
+
+            await client.connect()
+            tools = await client.get_tools()
+
+            # 更新数据库中的工具列表
+            mcp_db_manager.update_server_tools(
+                db=db,
+                mcp_server_id=new_server.id,
+                tools=tools,
+                user_id=user_id
+            )
+
+            await client.disconnect()
+            logger.info(f"[STDIO] Loaded {len(tools)} tools for server '{name}'")
+        except Exception as e:
+            logger.warning(f"[STDIO] Failed to get tools for new server: {e}")
+
         return {
             "code": 200,
             "message": "Stdio MCP Server created successfully",
@@ -1493,6 +1588,8 @@ async def create_stdio_mcp(
                 "folder_path": server_dir,
                 "entry_file": entry_file,
                 "main_file": main_py_path,
+                "tools_count": len(tools),
+                "tools": tools,
             },
         }
     except Exception as e:
@@ -1525,7 +1622,7 @@ async def create_http_mcp(
             name=request.name,
             transport_type="http",
             description=request.description,
-            is_enabled=request.enabled if request.enabled is not None else True,
+            is_active=request.is_active if request.is_active is not None else True,
             is_public=request.share if request.share is not None else False,
             author="user",
             tags=request.tags or [],
@@ -1546,6 +1643,34 @@ async def create_http_mcp(
         db.commit()
         db.refresh(new_server)
 
+        # 创建成功后，尝试连接并获取工具列表
+        tools = []
+        try:
+            from SoloAgent.plugins.mcp.mcp_client import MCPClient
+
+            client = MCPClient({
+                "transport": "http",
+                "url": request.url,
+                "headers": request.headers or {},
+                "timeout": request.timeout or 30,
+            })
+
+            await client.connect()
+            tools = await client.get_tools()
+
+            # 更新数据库中的工具列表
+            mcp_db_manager.update_server_tools(
+                db=db,
+                mcp_server_id=new_server.id,
+                tools=tools,
+                user_id=user_id
+            )
+
+            await client.disconnect()
+            logger.info(f"[HTTP] Loaded {len(tools)} tools for server '{request.name}'")
+        except Exception as e:
+            logger.warning(f"[HTTP] Failed to get tools for new server: {e}")
+
         return {
             "code": 200,
             "message": "HTTP MCP Server created successfully",
@@ -1554,6 +1679,8 @@ async def create_http_mcp(
                 "name": new_server.name,
                 "transport_type": "http",
                 "url": request.url,
+                "tools_count": len(tools),
+                "tools": tools,
             },
         }
     except Exception as e:
@@ -1586,7 +1713,7 @@ async def create_sse_mcp(
             name=request.name,
             transport_type="sse",
             description=request.description,
-            is_enabled=request.enabled if request.enabled is not None else True,
+            is_active=request.is_active if request.is_active is not None else True,
             is_public=request.share if request.share is not None else False,
             author="user",
             tags=request.tags or [],
@@ -1610,6 +1737,34 @@ async def create_sse_mcp(
         db.commit()
         db.refresh(new_server)
 
+        # 创建成功后，尝试连接并获取工具列表
+        tools = []
+        try:
+            from SoloAgent.plugins.mcp.mcp_client import MCPClient
+
+            client = MCPClient({
+                "transport": "sse",
+                "url": request.url,
+                "headers": request.headers or {},
+                "timeout": request.timeout or 30,
+            })
+
+            await client.connect()
+            tools = await client.get_tools()
+
+            # 更新数据库中的工具列表
+            mcp_db_manager.update_server_tools(
+                db=db,
+                mcp_server_id=new_server.id,
+                tools=tools,
+                user_id=user_id
+            )
+
+            await client.disconnect()
+            logger.info(f"[SSE] Loaded {len(tools)} tools for server '{request.name}'")
+        except Exception as e:
+            logger.warning(f"[SSE] Failed to get tools for new server: {e}")
+
         return {
             "code": 200,
             "message": "SSE MCP Server created successfully",
@@ -1618,9 +1773,45 @@ async def create_sse_mcp(
                 "name": new_server.name,
                 "transport_type": "sse",
                 "url": request.url,
+                "tools_count": len(tools),
+                "tools": tools,
             },
         }
     except Exception as e:
         db.rollback()
         logger.error(f"[SSE] Failed to create server: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create server: {str(e)}")
+
+
+class UpdateToolEnabledRequest(BaseModel):
+    """更新工具启用状态请求。"""
+    is_active: bool = Field(..., description="是否启用")
+
+
+@router.put("/servers/{server_id}/tools/{tool_name}/enabled")
+async def update_tool_enabled(
+    server_id: str,
+    tool_name: str,
+    request: UpdateToolEnabledRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新单个工具的启用状态。"""
+    user_id = current_user.id
+
+    server = mcp_db_manager.update_tool_enabled(
+        db, server_id, tool_name, request.is_active, user_id
+    )
+
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+
+    return {
+        "code": 200,
+        "message": "Tool enabled status updated",
+        "data": {
+            "server_id": server_id,
+            "tool_name": tool_name,
+            "is_active": request.is_active,
+        },
+    }

@@ -393,13 +393,22 @@ const ModelManager: React.FC = () => {
                 label="模型名称"
                 rules={[{ required: true, message: '请输入模型名称' }]}
               >
-                <Select 
-                  placeholder="选择或输入模型名称" 
+                <Select
+                  placeholder="选择或输入模型名称"
                   showSearch
+                  allowClear
                   optionFilterProp="children"
                   filterOption={(input, option) =>
                     (option?.children as unknown as string)?.toLowerCase().includes(input.toLowerCase())
                   }
+                  dropdownRender={(menu) => (
+                    <>
+                      {menu}
+                      <div style={{ padding: '8px', borderTop: '1px solid #e8e8e8', color: '#999', fontSize: 12 }}>
+                        💡 提示：可以直接输入自定义模型名称
+                      </div>
+                    </>
+                  )}
                 >
                   {currentProvider?.models.map(m => (
                     <Option key={m} value={m}>{m}</Option>

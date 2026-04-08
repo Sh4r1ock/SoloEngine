@@ -245,16 +245,27 @@ class RunCommand(BaseCommandTool):
             cmd_info.state = CommandState.DONE
             cmd_info.finished_at = datetime.now()
             
-            return {
-                "stdout": cmd_info.stdout_buffer,
-                "stderr": cmd_info.stderr_buffer,
-                "exit_code": cmd_info.exit_code,
-                "success": cmd_info.exit_code == 0,
-                "command_id": cmd_info.command_id,
-                "metadata": {
-                    "command_id": cmd_info.command_id
+            success = cmd_info.exit_code == 0
+            if success:
+                return {
+                    "content": cmd_info.stdout_buffer,
+                    "success": True,
+                    "exit_code": cmd_info.exit_code,
+                    "command_id": cmd_info.command_id,
+                    "metadata": {
+                        "stderr": cmd_info.stderr_buffer
+                    }
                 }
-            }
+            else:
+                return {
+                    "content": cmd_info.stderr_buffer if cmd_info.stderr_buffer else f"Command failed with exit code {cmd_info.exit_code}",
+                    "success": False,
+                    "exit_code": cmd_info.exit_code,
+                    "command_id": cmd_info.command_id,
+                    "metadata": {
+                        "stdout": cmd_info.stdout_buffer
+                    }
+                }
             
         except CommandToolError:
             raise
@@ -298,12 +309,11 @@ class RunCommand(BaseCommandTool):
                     )
             
             return {
+                "content": f"Started: {cmd_info.command_id}",
+                "success": True,
                 "command_id": cmd_info.command_id,
                 "status": cmd_info.state.value,
-                "message": "命令已启动，使用 CheckCommandStatus 查询状态",
-                "metadata": {
-                    "command_id": cmd_info.command_id
-                }
+                "metadata": {}
             }
             
         except CommandToolError:

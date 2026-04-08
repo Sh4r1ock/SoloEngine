@@ -347,13 +347,15 @@ const SkillsManager: React.FC = () => {
                   e.stopPropagation();
                   handleEditTagRemove(tag);
                 }}
-                color={index < 2 ? 'blue' : 'default'}
                 style={{
                   margin: 0,
                   padding: '0 7px',
                   fontSize: 14,
                   lineHeight: '20px',
                   borderRadius: 4,
+                  backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
+                  border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
+                  color: tag === 'system' ? 'var(--primary-100)' : undefined,
                 }}
               >
                 {tag}

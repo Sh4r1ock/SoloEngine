@@ -178,18 +178,18 @@ class CheckCommandStatus(BaseCommandTool):
         )
         
         result = {
+            "content": stdout_paginated,
+            "success": cmd_info.state.value in ["done", "running"],
             "status": cmd_info.state.value,
             "exit_code": cmd_info.exit_code,
-            "stdout": stdout_paginated,
-            "stderr": stderr_paginated,
-            "command": cmd_info.command,
-            "command_type": cmd_info.command_type.value,
             "command_id": cmd_info.command_id,
             "metadata": {
-                "command_id": command_id
+                "stderr": stderr_paginated,
+                "command": cmd_info.command,
+                "command_type": cmd_info.command_type.value
             }
         }
-        
+
         return result
     
     @classmethod

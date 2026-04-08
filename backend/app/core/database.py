@@ -215,23 +215,6 @@ class SkillsPackageModel(Base):
     user = relationship("UserModel", back_populates="skills_packages")
 
 
-class ProjectModel(Base):
-    """项目数据模型。"""
-    __tablename__ = "projects"
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    name = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    canvas_data = Column(JSON, nullable=True)
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    version = Column(Integer, nullable=False, default=1)
-
-    user = relationship("UserModel", backref="projects")
-
-
 class LLMConfigModel(Base):
     """LLM模型配置表。"""
     __tablename__ = "llm_configs"
@@ -930,63 +913,6 @@ class DatabaseManager:
             return True
         return False
 
-    def create_project(self, db: Session, user_id: str, name: str, 
-                       description: str = None, canvas_data: Dict = None) -> ProjectModel:
-        """创建项目。"""
-        project = ProjectModel(
-            user_id=user_id,
-            name=name,
-            description=description,
-            canvas_data=canvas_data or {"nodes": [], "edges": []},
-        )
-        db.add(project)
-        db.commit()
-        db.refresh(project)
-        return project
-
-    def get_projects(self, db: Session, user_id: str) -> List[ProjectModel]:
-        """获取用户的所有项目。"""
-        return db.query(ProjectModel).filter(
-            ProjectModel.user_id == user_id,
-            ProjectModel.is_active == True
-        ).order_by(ProjectModel.updated_at.desc()).all()
-
-    def get_project(self, db: Session, project_id: str, user_id: str = None) -> Optional[ProjectModel]:
-        """获取项目。"""
-        query = db.query(ProjectModel).filter(ProjectModel.id == project_id)
-        if user_id:
-            query = query.filter(ProjectModel.user_id == user_id)
-        return query.first()
-
-    def update_project(self, db: Session, project_id: str, user_id: str,
-                       version: int = None, **kwargs) -> Optional[ProjectModel]:
-        """更新项目（带乐观锁）。"""
-        project = self.get_project(db, project_id, user_id)
-        if not project:
-            return None
-        
-        if version is not None and project.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {project.version}"
-            )
-        
-        for key, value in kwargs.items():
-            if hasattr(project, key) and key != "version":
-                setattr(project, key, value)
-        project.version = (project.version or 0) + 1
-        db.commit()
-        db.refresh(project)
-        return project
-
-    def delete_project(self, db: Session, project_id: str, user_id: str) -> bool:
-        """删除项目（软删除）。"""
-        project = self.get_project(db, project_id, user_id)
-        if project:
-            project.is_active = False
-            db.commit()
-            return True
-        return False
-
     def create_run_project(self, db: Session, user_id: str, agentic_flow_id: str, name: str,
                            folder_path: str, description: str = None) -> RunProjectModel:
         """创建运行项目。"""
@@ -1145,7 +1071,6 @@ class DatabaseManager:
     def get_all_skills_for_user(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
         """获取用户可见的所有skill（公共skill + 用户skill）。
 
-        注意：is_active只控制skill是否可用，不影响显示。
         按创建时间降序排列。
         """
         packages = db.query(SkillsPackageModel).filter(
@@ -1200,10 +1125,11 @@ class MCPServerModel(Base):
     source_type = Column(String(50))
     description = Column(Text)
     icon = Column(String(100))
-    is_enabled = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True)
     is_public = Column(Boolean, default=False)
     author = Column(String(255))
     tags = Column(JSON)
+    tools = Column(JSON, default=list)  # 工具列表 [{"name": "", "description": "", "input_schema": {}, "is_enabled": true}]
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     version = Column(Integer, nullable=False, default=1)
@@ -1271,7 +1197,7 @@ class MCPDatabaseManager:
         name: str,
         transport_type: str,
         description: str = None,
-        enabled: bool = True,
+        is_active: bool = True,
         is_public: bool = False,
         author: str = None,
         tags: List[str] = None,
@@ -1290,7 +1216,7 @@ class MCPDatabaseManager:
             source_type=source_type or "upload",
             description=description,
             icon=icon,
-            is_enabled=enabled,
+            is_active=is_active,
             is_public=is_public,
             author=author,
             tags=final_tags,
@@ -1535,6 +1461,58 @@ class MCPDatabaseManager:
             db.commit()
             db.refresh(config)
         return config
+
+    def update_server_tools(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        tools: List[Dict[str, Any]],
+        user_id: str
+    ) -> Optional[MCPServerModel]:
+        """更新服务器工具列表。"""
+        server = self.get_server(db, mcp_server_id, user_id)
+        if not server:
+            return None
+
+        # 为每个工具添加 is_enabled 字段（默认启用）
+        tools_with_enabled = []
+        for tool in tools:
+            tool_data = {
+                "name": tool.get("name"),
+                "description": tool.get("description", ""),
+                "input_schema": tool.get("input_schema", tool.get("inputSchema", {})),
+                "is_enabled": True,  # 默认启用
+            }
+            tools_with_enabled.append(tool_data)
+
+        server.tools = tools_with_enabled
+        server.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(server)
+        return server
+
+    def update_tool_enabled(
+        self,
+        db: Session,
+        mcp_server_id: str,
+        tool_name: str,
+        is_enabled: bool,
+        user_id: str
+    ) -> Optional[MCPServerModel]:
+        """更新单个工具的启用状态。"""
+        server = self.get_server(db, mcp_server_id, user_id)
+        if not server or not server.tools:
+            return None
+
+        for tool in server.tools:
+            if tool.get("name") == tool_name:
+                tool["is_enabled"] = is_enabled
+                break
+
+        server.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(server)
+        return server
 
 
 mcp_db_manager = MCPDatabaseManager()

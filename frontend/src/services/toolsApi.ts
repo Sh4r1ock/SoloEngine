@@ -28,6 +28,7 @@ export interface AgentPreset {
   tools: string[];
   skills: string[];
   mcp_tools: string[];
+  mcp_servers?: string[];
   system_prompt: string;
 }
 

@@ -189,7 +189,7 @@ const AgenticFlowList: React.FC = () => {
         >
           {filteredFlows.map(flow => {
             const isSystem = flow.user_id === 'system';
-            const tags = isSystem ? ['system'] : (flow.tags || []);
+            const tags = flow.tags || [];
             return (
               <UnifiedCard
                 key={flow.id}
