@@ -1,8 +1,27 @@
 /**
+ * SoloEngine : LLM配置API服务模块
+ *
  * @file llmApi.ts
  * @description LLM配置API服务 - 模型管理接口封装
- * @author SoloEngine Team
- * @date 2026-02-20
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 获取支持的LLM提供商列表
+ *     - 获取LLM配置列表
+ *     - 创建LLM配置
+ *     - 更新LLM配置
+ *     - 删除LLM配置
+ *     - 设置默认配置
+ *     - 测试配置连接
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { llmApi } from './llmApi'
+ *     - const configs = await llmApi.getConfigs()
  */
 import { api } from './api';
 

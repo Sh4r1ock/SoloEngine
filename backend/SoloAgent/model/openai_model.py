@@ -1,35 +1,44 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=too-many-branches
 """
-OpenAI 聊天模型类。
+SoloEngine : OpenAI聊天模型类，实现OpenAI GPT系列模型的API调用
 
 @file openai_model.py
 @description 实现 OpenAI GPT 系列模型的 API 调用
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 支持 OpenAI GPT 系列模型（GPT-4, GPT-3.5, GPT-4o, o3-mini 等）
-- 支持同步和流式输出
-- 支持工具调用（Function Calling）
-- 支持结构化输出（Structured Output）
-- 支持音频输入输出
-- 支持推理模式（o3, o4 等模型）
-
-支持的模型：
-    - gpt-4: GPT-4 基础模型
-    - gpt-4-turbo: GPT-4 Turbo 版本
-    - gpt-4o: GPT-4 Omni 多模态模型
-    - gpt-3.5-turbo: GPT-3.5 Turbo 版本
-    - o3-mini: 推理增强模型
-
+本模块提供OpenAI GPT系列模型的实现，包括：
+    - OpenAIChatModel: OpenAI聊天模型主类
+    - 支持 GPT-4, GPT-3.5, GPT-4o, o3-mini 等模型
+    - 支持同步和流式输出
+    - 支持工具调用（Function Calling）
+    - 支持结构化输出（Structured Output）
+    - 支持音频输入输出
+    - 支持推理模式（o3, o4 等模型）
+    
 特性：
     - 流式输出：逐步返回生成内容
     - 工具调用：支持 Function Calling
     - 结构化输出：强制输出符合 JSON Schema
     - 推理模式：支持 o3 系列的 reasoning_effort 参数
 
-状态: ✅ 完整实现
+依赖:
+    - asyncio: 异步操作
+    - openai: OpenAI SDK
+    - pydantic: 数据验证
+    - .model_base: 模型基类
+    - .model_usage: 使用统计
+    - ..utils: 工具函数
+    - ..message: 消息类型
+    - ..tracing: 追踪工具
+    - ..types: 类型定义
+
+使用示例:
+    - from SoloAgent.model import OpenAIChatModel
+    - model = OpenAIChatModel(model_name="gpt-4", api_key="your_key")
+    - response = await model(messages)
 """
 
 import asyncio
@@ -102,34 +111,33 @@ def _format_audio_data_for_qwen_omni(messages: list[dict]) -> None:
 
 class OpenAIChatModel(ChatModelBase):
     """
-    OpenAI 聊天模型类。
+    OpenAI 聊天模型类
     
-    实现 OpenAI GPT 系列模型的 API 调用，支持同步和流式输出、
-    工具调用、结构化输出等功能。
+    职责:
+        - 实现 OpenAI GPT 系列模型的 API 调用
+        - 支持同步和流式输出
+        - 支持工具调用（Function Calling）
+        - 支持结构化输出
+        - 支持音频输入输出
     
-    核心功能：
-        1. 模型调用：通过 __call__ 方法调用 OpenAI API
-        2. 流式输出：支持逐步返回生成内容
-        3. 工具调用：支持 Function Calling
-        4. 结构化输出：强制输出符合 Pydantic 模型
-        5. 推理模式：支持 o3 系列模型的推理增强
+    属性:
+        model_name: 模型名称
+        api_key: API密钥
+        base_url: API基础URL
+        stream: 是否使用流式输出
+        temperature: 温度参数
+        max_tokens: 最大Token数
     
-    支持的模型：
-        - GPT-4 系列：gpt-4, gpt-4-turbo, gpt-4o, gpt-4o-mini
-        - GPT-3.5 系列：gpt-3.5-turbo
-        - 推理模型：o3-mini, o3-mini-turbo
-    
-    Example:
+    示例:
         >>> model = OpenAIChatModel(
         ...     model_name="gpt-4",
         ...     api_key="sk-...",
         ...     stream=False
         ... )
-        >>> 
         >>> messages = [{"role": "user", "content": "你好"}]
         >>> response = await model(messages)
         >>> print(response.content[0]["text"])
-    
+
     Note:
         - API 密钥可通过参数或环境变量 OPENAI_API_KEY 提供
         - 流式输出时返回异步生成器

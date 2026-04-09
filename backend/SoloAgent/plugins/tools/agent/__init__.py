@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Agent工具模块。
+SoloEngine : Agent工具模块，提供Agent相关功能
 
 @file __init__.py
 @description 提供Agent相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - Task: 任务执行工具，启动SubAgent处理任务

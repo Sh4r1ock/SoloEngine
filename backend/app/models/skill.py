@@ -1,5 +1,28 @@
 # -*- coding: utf-8 -*-
-"""Skills 数据模型。"""
+"""
+SoloEngine : Skills数据模型模块
+
+@file skill.py
+@description Skills数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义Skills相关的数据模型，包括：
+    - Skills包元数据
+    - Skill文件信息
+    - Skills包
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+
+使用示例:
+    - from app.models.skill import SkillsPackage, SkillMetadata
+    - metadata = SkillMetadata(name="my_skill", version="1.0.0")
+    - package = SkillsPackage(id="1", name="my_package", root_path="/path")
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

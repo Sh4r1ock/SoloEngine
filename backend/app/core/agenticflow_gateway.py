@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-AgenticFlow 网关路由 - 动态路由注册和管理。
+SoloEngine : AgenticFlow网关路由模块，提供动态路由注册和管理功能
 
 @file agenticflow_gateway.py
 @description 为 AgenticFlow 提供自动网关路由注册功能
-@author SoloEngine Team
-@date 2026-03-06
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 当编译 AgenticFlow 后，自动创建 /api/v1/agentic-flows/{agentic_flow_id}/execute 路由
@@ -32,20 +32,34 @@ logger = logging.getLogger(__name__)
 
 class AgenticFlowGateway:
     """
-    AgenticFlow 网关管理器。
+    AgenticFlow 网关管理器
     
-    为编译的 AgenticFlow 自动创建网关路由。
-    例如：编译 agentic_flow_id 为 "abc123" 后，可通过 /api/v1/agentic-flows/abc123/execute 访问。
+    职责:
+        - 为编译的 AgenticFlow 自动创建网关路由
+        - 管理动态路由的注册和注销
+        - 转发请求到实际的 AgenticFlow 执行器
+        - 支持并发控制和用户会话管理
     
-    Attributes:
+    属性:
         _routes (Dict[str, str]): agentic_flow_id 到路由路径的映射
         _app (Optional[FastAPI]): FastAPI 应用实例
         _handlers (Dict[str, Callable]): 路由处理器映射
         _compiled_flows (Dict[str, Any]): 编译后的 Flow 实例缓存
         _execution_locks (Dict[str, asyncio.Lock]): 每个 agentic_flow_id 的执行锁，支持并发控制
+        _user_sessions (Dict[str, Dict[str, Any]]): 用户会话存储
+    
+    示例:
+        >>> gateway = AgenticFlowGateway()
+        >>> gateway.init_app(app)
+        >>> gateway.register_compiled_flow("flow_id", compiled_flow)
     """
     
     def __init__(self):
+        """
+        初始化AgenticFlow网关管理器
+        
+        初始化所有存储字典和锁
+        """
         self._routes: Dict[str, str] = {}
         self._app: Optional[FastAPI] = None
         self._handlers: Dict[str, Callable] = {}
@@ -55,24 +69,30 @@ class AgenticFlowGateway:
     
     def init_app(self, app: FastAPI) -> None:
         """
-        初始化网关。
+        初始化网关
         
         Args:
             app (FastAPI): FastAPI 应用实例
+            
+        Example:
+            >>> gateway.init_app(fastapi_app)
         """
         self._app = app
         logger.info("AgenticFlow Gateway initialized")
     
     def register_compiled_flow(self, agentic_flow_id: str, compiled_flow: Any) -> str:
         """
-        注册编译后的 AgenticFlow。
+        注册编译后的 AgenticFlow
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
+            agentic_flow_id: AgenticFlow ID
             compiled_flow: 编译后的 Flow 实例
         
         Returns:
-            str: 注册的路由路径
+            注册的路由路径
+            
+        Example:
+            >>> path = gateway.register_compiled_flow("flow_id", compiled_flow)
         """
         self._compiled_flows[agentic_flow_id] = compiled_flow
         
@@ -87,18 +107,21 @@ class AgenticFlowGateway:
     
     async def register_route(self, agentic_flow_id: str) -> str:
         """
-        为 AgenticFlow 注册网关路由。
+        为 AgenticFlow 注册网关路由
         
-        注册后可通过 /api/v1/agentic-flows/{agentic_flow_id}/execute 访问执行接口。
+        注册后可通过 /api/v1/agentic-flows/{agentic_flow_id}/execute 访问执行接口
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
+            agentic_flow_id: AgenticFlow ID
         
         Returns:
-            str: 注册的路由路径
+            注册的路由路径
         
         Raises:
             RuntimeError: 如果 FastAPI 应用未初始化
+            
+        Example:
+            >>> path = await gateway.register_route("flow_id")
         """
         if not self._app:
             raise RuntimeError("FastAPI app not initialized. Call init_app() first.")
@@ -139,13 +162,16 @@ class AgenticFlowGateway:
     
     async def unregister_route(self, agentic_flow_id: str) -> bool:
         """
-        注销网关路由。
+        注销网关路由
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
+            agentic_flow_id: AgenticFlow ID
         
         Returns:
-            bool: 是否成功注销
+            是否成功注销
+            
+        Example:
+            >>> success = await gateway.unregister_route("flow_id")
         """
         if agentic_flow_id in self._routes:
             del self._routes[agentic_flow_id]
@@ -165,14 +191,17 @@ class AgenticFlowGateway:
         request: Request
     ) -> Response:
         """
-        处理执行请求。
+        处理执行请求
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            request (Request): FastAPI 请求对象
+            agentic_flow_id: AgenticFlow ID
+            request: FastAPI 请求对象
         
         Returns:
-            Response: 响应对象
+            响应对象
+            
+        Example:
+            >>> response = await gateway._handle_execute_request("flow_id", request)
         """
         from SoloAgent.solo_agent.compiler import CompiledFlowFactory, FlowRunner
         
@@ -243,14 +272,17 @@ class AgenticFlowGateway:
         request: Request
     ) -> Response:
         """
-        处理流式执行请求。
+        处理流式执行请求
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            request (Request): FastAPI 请求对象
+            agentic_flow_id: AgenticFlow ID
+            request: FastAPI 请求对象
         
         Returns:
-            Response: StreamingResponse 对象
+            StreamingResponse 对象
+            
+        Example:
+            >>> response = await gateway._handle_stream_request("flow_id", request)
         """
         from SoloAgent.solo_agent.compiler import CompiledFlowFactory, FlowRunner
         
@@ -309,48 +341,60 @@ class AgenticFlowGateway:
     
     def get_registered_routes(self) -> Dict[str, str]:
         """
-        获取已注册的路由列表。
+        获取已注册的路由列表
         
         Returns:
-            Dict[str, str]: agentic_flow_id 到路由路径的映射
+            agentic_flow_id 到路由路径的映射
+            
+        Example:
+            >>> routes = gateway.get_registered_routes()
         """
         return self._routes.copy()
     
     def get_compiled_flow(self, agentic_flow_id: str) -> Optional[Any]:
         """
-        获取编译后的 AgenticFlow。
+        获取编译后的 AgenticFlow
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
+            agentic_flow_id: AgenticFlow ID
         
         Returns:
             编译后的 Flow 实例，如果不存在则返回 None
+            
+        Example:
+            >>> flow = gateway.get_compiled_flow("flow_id")
         """
         return self._compiled_flows.get(agentic_flow_id)
     
     def get_execution_lock(self, agentic_flow_id: str) -> Optional[asyncio.Lock]:
         """
-        获取指定 AgenticFlow 的执行锁。
+        获取指定 AgenticFlow 的执行锁
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
+            agentic_flow_id: AgenticFlow ID
         
         Returns:
-            asyncio.Lock: 执行锁实例
+            执行锁实例
+            
+        Example:
+            >>> lock = gateway.get_execution_lock("flow_id")
         """
         return self._execution_locks.get(agentic_flow_id)
     
     def create_user_session(self, agentic_flow_id: str, user_id: str, session_id: str) -> str:
         """
-        创建用户会话。
+        创建用户会话
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            user_id (str): 用户 ID
-            session_id (str): 会话 ID
+            agentic_flow_id: AgenticFlow ID
+            user_id: 用户 ID
+            session_id: 会话 ID
         
         Returns:
-            str: 会话 ID
+            会话 ID
+            
+        Example:
+            >>> sid = gateway.create_user_session("flow_id", "user_1", "session_1")
         """
         session_key = f"{agentic_flow_id}:{user_id}:{session_id}"
         self._user_sessions[session_key] = {
@@ -364,15 +408,18 @@ class AgenticFlowGateway:
     
     def get_user_session(self, agentic_flow_id: str, user_id: str, session_id: str) -> Optional[Dict[str, Any]]:
         """
-        获取用户会话。
+        获取用户会话
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            user_id (str): 用户 ID
-            session_id (str): 会话 ID
+            agentic_flow_id: AgenticFlow ID
+            user_id: 用户 ID
+            session_id: 会话 ID
         
         Returns:
             会话数据，如果不存在则返回 None
+            
+        Example:
+            >>> session = gateway.get_user_session("flow_id", "user_1", "session_1")
         """
         session_key = f"{agentic_flow_id}:{user_id}:{session_id}"
         return self._user_sessions.get(session_key)
@@ -380,14 +427,17 @@ class AgenticFlowGateway:
     def add_message_to_session(self, agentic_flow_id: str, user_id: str, session_id: str, 
                                 role: str, content: str) -> None:
         """
-        向会话添加消息。
+        向会话添加消息
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            user_id (str): 用户 ID
-            session_id (str): 会话 ID
-            role (str): 消息角色 (user/assistant/system)
-            content (str): 消息内容
+            agentic_flow_id: AgenticFlow ID
+            user_id: 用户 ID
+            session_id: 会话 ID
+            role: 消息角色 (user/assistant/system)
+            content: 消息内容
+            
+        Example:
+            >>> gateway.add_message_to_session("flow_id", "user_1", "session_1", "user", "Hello")
         """
         session_key = f"{agentic_flow_id}:{user_id}:{session_id}"
         if session_key in self._user_sessions:
@@ -399,15 +449,18 @@ class AgenticFlowGateway:
     
     def get_session_messages(self, agentic_flow_id: str, user_id: str, session_id: str) -> list:
         """
-        获取会话消息历史。
+        获取会话消息历史
         
         Args:
-            agentic_flow_id (str): AgenticFlow ID
-            user_id (str): 用户 ID
-            session_id (str): 会话 ID
+            agentic_flow_id: AgenticFlow ID
+            user_id: 用户 ID
+            session_id: 会话 ID
         
         Returns:
             消息历史列表
+            
+        Example:
+            >>> messages = gateway.get_session_messages("flow_id", "user_1", "session_1")
         """
         session = self.get_user_session(agentic_flow_id, user_id, session_id)
         if session:
@@ -416,10 +469,14 @@ class AgenticFlowGateway:
     
     def get_stats(self) -> Dict[str, Any]:
         """
-        获取网关统计信息。
+        获取网关统计信息
         
         Returns:
-            Dict[str, Any]: 统计信息
+            统计信息字典，包含路由数、编译流数、会话数等
+            
+        Example:
+            >>> stats = gateway.get_stats()
+            >>> print(stats["total_routes"])
         """
         return {
             "total_routes": len(self._routes),

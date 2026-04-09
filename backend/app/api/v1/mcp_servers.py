@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-MCP 服务器管理 API endpoints。
+SoloEngine : MCP服务器管理API模块，提供MCP服务器管理相关API端点
 
 @file mcp_servers.py
 @description MCP服务器接口 - MCP服务器管理相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 获取所有MCP服务器配置列表接口

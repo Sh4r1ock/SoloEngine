@@ -1,5 +1,33 @@
 # -*- coding: utf-8 -*-
-"""认证中间件。"""
+"""
+SoloEngine : 认证中间件模块
+
+@file auth.py
+@description 认证中间件 - JWT认证和权限验证
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - JWT令牌验证
+    - 当前用户获取
+    - 认证中间件
+    - 权限验证装饰器
+    - 公开路径白名单
+
+依赖:
+    - typing: 类型注解支持
+    - fastapi: FastAPI框架
+    - starlette: ASGI工具包
+    - app.core.auth: 认证服务
+
+使用示例:
+    - from app.middleware.auth import require_auth, require_superuser
+    - @app.get("/protected")
+    - async def protected(user: dict = Depends(require_auth))
+    - @app.get("/admin")
+    - async def admin(user: dict = Depends(require_superuser))
+"""
 
 from typing import Optional
 from fastapi import Request, HTTPException, status

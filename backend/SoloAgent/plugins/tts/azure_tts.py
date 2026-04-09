@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Azure TTS Model implementation."""
+"""
+SoloEngine : Azure TTS模型实现
+
+@file azure_tts.py
+@description Azure认知服务文本转语音模型实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供Azure TTS模型实现，包括：
+    - AzureTTSModel: Azure文本转语音模型
+    - 使用Azure认知服务语音API
+    - 支持SSML语音合成标记语言
+    - 支持多种语音和语言
+    - 支持语速和音调调节
+
+依赖:
+    - os: 操作系统接口
+    - aiofiles: 异步文件操作
+    - typing: 类型提示
+    - datetime: 日期时间
+    - logging: 日志记录
+    - httpx: HTTP客户端
+    - ...core.interfaces: 核心接口
+
+使用示例:
+    - from SoloAgent.plugins.tts import AzureTTSModel
+    - tts = AzureTTSModel(subscription_key="your_key", region="eastus")
+    - result = await tts.synthesize("Hello World")
+    - voices = await tts.get_available_voices()
+"""
 
 import os
 import aiofiles
@@ -13,8 +43,30 @@ logger = logging.getLogger(__name__)
 
 
 class AzureTTSModel(ITTSModel):
-    """Azure Cognitive Services Text-to-Speech model implementation."""
-    
+    """
+    Azure文本转语音模型
+
+    职责:
+        - 实现ITTSModel接口
+        - 调用Azure认知服务语音API
+        - 支持SSML语音合成
+        - 支持多种语音和语言
+        - 管理访问令牌
+
+    属性:
+        subscription_key: Azure订阅密钥
+        region: Azure区域
+        voice: 默认语音
+        output_path: 输出路径
+        _token: 访问令牌
+        _token_expires: 令牌过期时间
+
+    示例:
+        >>> tts = AzureTTSModel(subscription_key="your_key", region="eastus")
+        >>> result = await tts.synthesize("Hello World")
+        >>> print(result["output_file"])
+    """
+
     def __init__(
         self,
         subscription_key: Optional[str] = None,
@@ -22,13 +74,25 @@ class AzureTTSModel(ITTSModel):
         voice: str = "en-US-JennyNeural",
         output_path: str = "./tts_output",
     ):
+        """
+        初始化Azure TTS模型
+
+        Args:
+            subscription_key: Azure订阅密钥，默认从环境变量AZURE_SPEECH_KEY读取
+            region: Azure区域，默认为"eastus"
+            voice: 默认语音，默认为"en-US-JennyNeural"
+            output_path: 输出路径，默认为"./tts_output"
+
+        示例:
+            >>> tts = AzureTTSModel(subscription_key="your_key")
+        """
         self.subscription_key = subscription_key or os.getenv("AZURE_SPEECH_KEY")
         self.region = region
         self.voice = voice
         self.output_path = output_path
         self._token = None
         self._token_expires = None
-        
+
         os.makedirs(output_path, exist_ok=True)
     
     async def _get_access_token(self) -> Optional[str]:

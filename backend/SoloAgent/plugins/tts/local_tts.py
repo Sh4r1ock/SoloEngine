@@ -1,5 +1,37 @@
 # -*- coding: utf-8 -*-
-"""Local TTS Model implementation for offline text-to-speech."""
+"""
+SoloEngine : 本地TTS模型实现
+
+@file local_tts.py
+@description 本地文本转语音模型实现，支持离线使用
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供本地TTS模型实现，包括：
+    - LocalTTSModel: 本地文本转语音模型
+    - 支持多种本地TTS引擎（pyttsx3, gtts, coqui）
+    - 支持多种语言和语音
+    - 离线使用，无需网络
+
+依赖:
+    - os: 操作系统接口
+    - aiofiles: 异步文件操作
+    - typing: 类型提示
+    - datetime: 日期时间
+    - logging: 日志记录
+    - asyncio: 异步IO
+    - pyttsx3: 本地TTS引擎
+    - gTTS: Google TTS
+    - TTS: Coqui TTS
+    - ...core.interfaces: 核心接口
+
+使用示例:
+    - from SoloAgent.plugins.tts import LocalTTSModel
+    - tts = LocalTTSModel(engine="pyttsx3")
+    - result = await tts.synthesize("Hello World")
+    - voices = await tts.get_available_voices()
+"""
 
 import os
 import aiofiles
@@ -13,8 +45,28 @@ logger = logging.getLogger(__name__)
 
 
 class LocalTTSModel(ITTSModel):
-    """Local Text-to-Speech model implementation using various local TTS engines."""
-    
+    """
+    本地文本转语音模型
+
+    职责:
+        - 实现ITTSModel接口
+        - 支持多种本地TTS引擎
+        - 离线使用，无需网络
+        - 管理音频输出
+
+    属性:
+        model_path: 模型路径
+        output_path: 输出路径
+        engine_name: TTS引擎名称
+        language: 语言代码
+        _engine: TTS引擎实例
+
+    示例:
+        >>> tts = LocalTTSModel(engine="pyttsx3", language="en")
+        >>> result = await tts.synthesize("Hello World")
+        >>> print(result["output_file"])
+    """
+
     def __init__(
         self,
         model_path: Optional[str] = None,
@@ -22,12 +74,24 @@ class LocalTTSModel(ITTSModel):
         engine: str = "pyttsx3",
         language: str = "en",
     ):
+        """
+        初始化本地TTS模型
+
+        Args:
+            model_path: 模型路径，用于Coqui TTS
+            output_path: 输出路径，默认为"./tts_output"
+            engine: TTS引擎名称，可选"pyttsx3", "gtts", "coqui"
+            language: 语言代码，默认为"en"
+
+        示例:
+            >>> tts = LocalTTSModel(engine="pyttsx3")
+        """
         self.model_path = model_path
         self.output_path = output_path
         self.engine_name = engine
         self.language = language
         self._engine = None
-        
+
         os.makedirs(output_path, exist_ok=True)
     
     def _get_engine(self):

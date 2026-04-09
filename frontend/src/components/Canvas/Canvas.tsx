@@ -1,21 +1,37 @@
 /**
+ * SoloEngine : 画布主组件
+ *
  * @file Canvas.tsx
  * @description 画布主组件 - 工作流画布核心组件
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 基于ReactFlow实现工作流画布
- * - 提供节点拖拽、连线、缩放、平移等画布操作
- * - 渲染工作流节点和处理节点连线
- * - 支持画布交互和网格对齐
- * - 支持右键菜单添加节点
- * - 支持节点多选
- * - 支持画布注释
- * 
+ * 本组件提供以下核心功能：
+ *     - 基于ReactFlow实现工作流画布
+ *     - 提供节点拖拽、连线、缩放、平移等画布操作
+ *     - 渲染工作流节点和处理节点连线
+ *     - 支持画布交互和网格对齐
+ *     - 支持右键菜单添加节点
+ *     - 支持节点多选
+ *     - 支持画布注释
+ *     - 支持复制粘贴节点
+ *     - 支持删除节点
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - reactflow: 流程图库
+ *     - antd: Ant Design组件
+ *     - @ant-design/icons: Ant Design图标
+ *     - ../../store/canvasStore: 画布状态管理
+ *     - ../../types/canvas: 画布类型定义
+ *
+ * 使用示例:
+ *     - <Canvas />
+ *
  * 使用场景：
- * - 在编辑器页面中作为核心画布组件使用
- * - 工作流可视化编辑的主要交互区域
+ *     - 在编辑器页面中作为核心画布组件使用
+ *     - 工作流可视化编辑的主要交互区域
  */
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import ReactFlow, {

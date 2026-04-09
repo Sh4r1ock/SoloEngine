@@ -1,6 +1,30 @@
 """
-配置加载器
-从数据库/文件加载详细配置
+SoloAgent机制-loader.py: 配置加载器，从数据库/文件加载详细配置
+
+@file loader.py
+@description 实现配置加载器，支持从数据库和文件加载各类配置
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块实现SoloAgent机制的配置加载器，提供以下功能：
+- 从数据库或文件加载LLM、Skill、MCP、Tool等详细配置
+- 支持配置优先级：直接传入参数 > 数据库用户配置 > 默认配置
+- 提供异步加载方法
+- 缓存已加载的配置以提高性能
+
+依赖:
+- os: 操作系统接口
+- json: JSON数据处理
+- logging: 日志记录
+- re: 正则表达式
+- sys: 系统路径操作
+- typing: 类型提示
+- app.core.data_paths: 数据路径管理
+
+使用示例:
+- config = await ConfigLoader.load_llm_config("openai", "gpt-4")
+- config = await ConfigLoader.load_skill_config("my_skill")
 """
 import os
 import json
@@ -16,13 +40,24 @@ from app.core.data_paths import DataPaths
 
 
 class ConfigLoader:
-    """配置加载器
+    """
+    配置加载器类
     
-    从数据库/文件加载详细配置：
-    - LLM 配置：从 LLMConfigModel 表加载
-    - Skill 配置：从 SkillsPackageModel 表或 data/system_skills 目录加载
-    - MCP 配置：从配置文件或数据库加载
-    - Tool 配置：从工具定义加载
+    职责:
+    - 从数据库/文件加载详细配置
+    - 管理配置缓存以提高性能
+    - 支持配置优先级处理
+    
+    属性:
+        _llm_configs (Dict): LLM配置缓存
+        _skill_configs (Dict): Skill配置缓存
+        _mcp_configs (Dict): MCP配置缓存
+    
+    配置来源：
+    - LLM配置：从LLMConfigModel表加载
+    - Skill配置：从SkillsPackageModel表或data/system_skills目录加载
+    - MCP配置：从配置文件或数据库加载
+    - Tool配置：从工具定义加载
     """
     
     _llm_configs: Dict[str, Dict[str, Any]] = {}
@@ -42,12 +77,27 @@ class ConfigLoader:
         frequency_penalty: float = 0.5,
         presence_penalty: float = 0.5,
     ) -> Dict[str, Any]:
-        """加载 LLM 配置
+        """
+        加载LLM配置
         
-        优先级：
+        配置优先级（从高到低）：
         1. 直接传入的参数
         2. 数据库中的用户配置
         3. 默认配置
+        
+        Args:
+            provider: LLM提供商名称
+            model: 模型名称
+            user_id: 用户ID，用于加载用户配置
+            api_key: API密钥
+            base_url: API基础URL
+            max_tokens: 最大token数
+            temperature: 温度参数
+            frequency_penalty: 频率惩罚
+            presence_penalty: 存在惩罚
+        
+        Returns:
+            Dict[str, Any]: 完整的LLM配置字典
         """
         config = {
             "provider": provider,

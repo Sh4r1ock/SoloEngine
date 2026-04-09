@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-文件模式匹配工具模块。
+SoloEngine : 文件模式匹配工具模块，使用glob模式进行文件匹配
 
 @file glob.py
 @description 使用 glob 模式进行文件匹配
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 基于 glob 模式的文件匹配

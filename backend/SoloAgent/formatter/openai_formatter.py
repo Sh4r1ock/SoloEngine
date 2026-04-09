@@ -1,6 +1,36 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=too-many-branches, too-many-nested-blocks
-"""The OpenAI formatter for agentscope."""
+# pylint: disable=too-many-branches, too-many-nested_blocks
+"""
+SoloEngine : OpenAI格式化器，将消息转换为OpenAI API格式
+
+@file openai_formatter.py
+@description 实现OpenAI API消息格式化器，支持多模态内容和工具调用
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供OpenAI API的消息格式化功能，包括：
+    - OpenAIChatFormatter: OpenAI聊天格式化器
+    - OpenAIMultiAgentFormatter: OpenAI多Agent格式化器
+    - 支持图像、音频等多模态内容
+    - 支持工具调用格式转换
+
+依赖:
+    - base64: Base64编码
+    - json: JSON处理
+    - os: 文件操作
+    - urllib.parse: URL解析
+    - requests: HTTP请求
+    - .truncated_formatter_base: 截断格式化器基类
+    - ..message: 消息类型
+    - ..model.model_response: 响应类
+    - ..token_counter: Token计数器
+
+使用示例:
+    - from SoloAgent.formatter import OpenAIChatFormatter
+    - formatter = OpenAIChatFormatter()
+    - formatted = await formatter.format(messages)
+"""
 import base64
 import copy
 import json
@@ -30,19 +60,24 @@ from ..token_counter import TokenCounterBase
 def _format_openai_image_block(
     image_block: ImageBlock,
 ) -> dict[str, Any]:
-    """Format an image block for OpenAI API.
+    """
+    格式化图像块为OpenAI API格式
+
+    将ImageBlock转换为OpenAI API所需的图像URL格式
 
     Args:
-        image_block (`ImageBlock`):
-            The image block to format.
+        image_block: 图像内容块
 
     Returns:
-        `dict[str, Any]`:
-            A dictionary with "type" and "image_url" keys in OpenAI format.
+        dict[str, Any]: OpenAI格式的图像字典，包含type和image_url字段
 
     Raises:
-        `ValueError`:
-            If the source type is not supported.
+        ValueError: 当图像源类型不支持时抛出
+
+    示例:
+        >>> block = ImageBlock(type="image", source={"type": "url", "url": "http://..."})
+        >>> result = _format_openai_image_block(block)
+        >>> print(result)  # {"type": "image_url", "image_url": {"url": "..."}}
     """
     source = image_block["source"]
     if source["type"] == "url":
@@ -65,13 +100,28 @@ def _format_openai_image_block(
 
 
 def _to_openai_image_url(url: str) -> str:
-    """Convert an image url to openai format. If the given url is a local
-    file, it will be converted to base64 format. Otherwise, it will be
-    returned directly.
+    """
+    转换图像URL为OpenAI格式
+
+    如果给定URL是本地文件，转换为Base64格式；否则直接返回URL
 
     Args:
-        url (`str`):
-            The local or public url of the image.
+        url: 图像的本地路径或公开URL
+
+    Returns:
+        str: OpenAI格式的图像URL
+
+    Raises:
+        TypeError: 当URL格式不支持时抛出
+
+    示例:
+        >>> # 本地文件
+        >>> url = _to_openai_image_url("/path/to/image.png")
+        >>> # 返回 data:image/png;base64,...
+        >>> 
+        >>> # 公开URL
+        >>> url = _to_openai_image_url("https://example.com/image.jpg")
+        >>> # 返回 https://example.com/image.jpg
     """
     support_image_extensions = (
         ".png",
@@ -103,7 +153,26 @@ def _to_openai_image_url(url: str) -> str:
 
 
 def _to_openai_audio_data(source: URLSource | Base64Source) -> dict:
-    """Covert an audio source to OpenAI format."""
+    """
+    转换音频源为OpenAI格式
+
+    将URLSource或Base64Source转换为OpenAI API所需的音频数据格式
+
+    Args:
+        source: 音频数据源，可以是URL或Base64编码
+
+    Returns:
+        dict: 包含data和format字段的字典
+
+    Raises:
+        TypeError: 当音频格式不支持时抛出
+        ValueError: 当音频源无效时抛出
+
+    示例:
+        >>> source = URLSource(type="url", url="https://example.com/audio.mp3")
+        >>> result = _to_openai_audio_data(source)
+        >>> print(result)  # {"data": "...", "format": "mp3"}
+    """
     if source["type"] == "url":
         extension = source["url"].split(".")[-1].lower()
         if extension not in ["wav", "mp3"]:
@@ -153,9 +222,29 @@ def _to_openai_audio_data(source: URLSource | Base64Source) -> dict:
 
 
 class OpenAIChatFormatter(TruncatedFormatterBase):
-    """The OpenAI formatter class for chatbot scenario, where only a user
-    and an agent are involved. We use the `name` field in OpenAI API to
-    identify different entities in the conversation.
+    """
+    OpenAI聊天格式化器类
+
+    职责:
+        - 将Msg对象转换为OpenAI API格式
+        - 支持多模态内容（图像、音频）
+        - 支持工具调用格式转换
+        - 处理assistant消息的reasoning_content
+
+    属性:
+        support_tools_api: 是否支持工具API
+        support_multiagent: 是否支持多Agent
+        support_vision: 是否支持视觉
+        supported_blocks: 支持的内容块类型列表
+        promote_tool_result_images: 是否提升工具结果图像
+        token_counter: Token计数器
+        max_tokens: 最大Token数
+
+    示例:
+        >>> formatter = OpenAIChatFormatter()
+        >>> messages = [Msg(name="user", content="你好", role="user")]
+        >>> formatted = await formatter.format(messages)
+        >>> print(formatted)  # [{"role": "user", "content": "你好"}]
     """
 
     support_tools_api: bool = True
@@ -376,7 +465,22 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         return messages
 
     async def format(self, msgs: list[Msg]) -> list[dict[str, Any]]:
-        """Format messages to OpenAI format, with debug logging."""
+        """
+        格式化消息为OpenAI格式
+
+        将Msg对象列表转换为OpenAI API所需的消息格式，包含调试日志
+
+        Args:
+            msgs: 消息对象列表
+
+        Returns:
+            list[dict[str, Any]]: OpenAI格式的消息列表
+
+        示例:
+            >>> messages = [Msg(name="user", content="你好", role="user")]
+            >>> formatted = await formatter.format(messages)
+            >>> print(formatted)  # [{"role": "user", "content": "你好"}]
+        """
         logger.info(f"[OpenAIChatFormatter] Input {len(msgs)} Msg objects:")
         for i, msg in enumerate(msgs):
             has_original = msg.metadata and 'original_model_message' in msg.metadata
@@ -419,7 +523,30 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
 
 
 class OpenAIMultiAgentFormatter(TruncatedFormatterBase):
-    """OpenAI formatter for multi-agent conversations."""
+    """
+    OpenAI多Agent格式化器类
+
+    职责:
+        - 将Msg对象转换为OpenAI API格式，支持多Agent对话
+        - 支持多模态内容（图像、音频）
+        - 支持工具调用格式转换
+        - 管理对话历史提示
+
+    属性:
+        support_tools_api: 是否支持工具API
+        support_multiagent: 是否支持多Agent
+        support_vision: 是否支持视觉
+        supported_blocks: 支持的内容块类型列表
+        conversation_history_prompt: 对话历史提示文本
+        promote_tool_result_images: 是否提升工具结果图像
+        token_counter: Token计数器
+        max_tokens: 最大Token数
+
+    示例:
+        >>> formatter = OpenAIMultiAgentFormatter()
+        >>> messages = [Msg(name="agent1", content="你好", role="assistant")]
+        >>> formatted = await formatter.format(messages)
+    """
 
     support_tools_api: bool = True
     support_multiagent: bool = True

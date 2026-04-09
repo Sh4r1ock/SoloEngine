@@ -1,5 +1,30 @@
 # -*- coding: utf-8 -*-
-"""LLM 配置模型。"""
+"""
+SoloEngine : LLM配置模型模块
+
+@file llm_config.py
+@description LLM配置数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义LLM配置相关的数据模型，包括：
+    - LLM提供商枚举
+    - LLM模型定义
+    - LLM配置
+    - LLM使用记录
+    - LLM使用统计
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.schemas.llm_config import LLMConfig, LLMProvider
+    - config = LLMConfig(provider=LLMProvider.OPENAI, model="gpt-4")
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

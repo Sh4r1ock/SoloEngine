@@ -1,27 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-聊天模型基类模块。
+SoloEngine : 聊天模型基类模块，定义所有聊天模型的抽象基类和通用功能
 
 @file model_base.py
 @description 定义所有聊天模型的抽象基类和通用功能
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 定义聊天模型的统一接口
-- 提供工具选择验证等通用功能
-- 支持同步和流式输出
+本模块定义聊天模型的抽象基类，提供以下核心功能：
+    - 定义聊天模型的统一接口
+    - 提供工具选择验证等通用功能
+    - 支持同步和流式输出
 
 设计理念：
-    采用抽象基类模式，为不同 LLM 提供商提供统一的接口。
+    采用抽象基类模式，为不同LLM提供商提供统一的接口。
     所有具体模型实现（OpenAI、Anthropic、Qwen、Ollama）
-    都继承自此类并实现 __call__ 方法。
+    都继承自此类并实现__call__方法。
 
 支持的模型提供商：
-    - OpenAI: GPT-4, GPT-3.5, GPT-4o 等
-    - Anthropic: Claude 3 系列
+    - OpenAI: GPT-4, GPT-3.5, GPT-4o等
+    - Anthropic: Claude 3系列
     - Qwen: 通义千问系列
-    - Ollama: 本地模型（Llama, Mistral 等）
+    - Ollama: 本地模型（Llama, Mistral等）
 
 工具选择模式：
     - auto: 自动决定是否调用工具

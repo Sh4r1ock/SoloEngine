@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""The ollama text embedding model class."""
+"""
+SoloEngine : Ollama文本嵌入模型模块
+
+@file ollama_embedding.py
+@description 提供Ollama文本嵌入模型实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供Ollama文本嵌入模型，包括：
+    - OllamaTextEmbedding: Ollama文本嵌入模型
+    - 支持本地Ollama服务的嵌入生成
+    - 支持缓存功能
+
+依赖:
+    - datetime: 日期时间
+    - typing: 类型提示
+    - ollama: Ollama Python客户端
+    - .embedding_response: 嵌入响应
+    - .embedding_usage: 嵌入使用统计
+    - .cache_base: 缓存基类
+    - .embedding_base: 嵌入模型基类
+    - ..message: 消息类型
+
+使用示例:
+    - from SoloAgent.embedding import OllamaTextEmbedding
+    - model = OllamaTextEmbedding(model_name="nomic-embed-text", dimensions=768)
+    - response = await model(["文本1", "文本2"])
+"""
+
 from datetime import datetime
 from typing import List, Any
 
@@ -11,10 +40,30 @@ from ..message import TextBlock
 
 
 class OllamaTextEmbedding(EmbeddingModelBase):
-    """The Ollama embedding model."""
+    """
+    Ollama文本嵌入模型
+
+    职责:
+        - 实现Ollama本地模型的嵌入生成
+        - 支持文本输入
+        - 支持缓存功能
+
+    属性:
+        supported_modalities: 支持的模态列表，仅支持文本
+        client: Ollama异步客户端
+        embedding_cache: 嵌入缓存
+
+    示例:
+        >>> model = OllamaTextEmbedding(
+        ...     model_name="nomic-embed-text",
+        ...     dimensions=768,
+        ...     host="http://localhost:11434"
+        ... )
+        >>> response = await model(["你好", "世界"])
+    """
 
     supported_modalities: list[str] = ["text"]
-    """This class only supports text input."""
+    """仅支持文本输入"""
 
     def __init__(
         self,
@@ -24,19 +73,21 @@ class OllamaTextEmbedding(EmbeddingModelBase):
         embedding_cache: EmbeddingCacheBase | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize the Ollama text embedding model class.
+        """
+        初始化Ollama文本嵌入模型
 
         Args:
-            model_name (`str`):
-                The name of the embedding model.
-            dimensions (`int`):
-                The dimension of the embedding vector, the parameter should be
-                provided according to the model used.
-            host (`str | None`, defaults to `None`):
-                The host URL for the Ollama API.
-            embedding_cache (`EmbeddingCacheBase | None`, defaults to `None`):
-                The embedding cache class instance, used to cache the
-                embedding results to avoid repeated API calls.
+            model_name: 嵌入模型名称
+            dimensions: 嵌入向量维度
+            host: Ollama API主机URL
+            embedding_cache: 嵌入缓存实例
+            **kwargs: 额外的关键字参数
+
+        示例:
+            >>> model = OllamaTextEmbedding(
+            ...     model_name="nomic-embed-text",
+            ...     dimensions=768
+            ... )
         """
         import ollama
 
@@ -50,11 +101,21 @@ class OllamaTextEmbedding(EmbeddingModelBase):
         text: List[str | TextBlock],
         **kwargs: Any,
     ) -> EmbeddingResponse:
-        """Call the Ollama embedding API.
+        """
+        调用Ollama嵌入API
 
         Args:
-            text (`List[str | TextBlock]`):
-                The input text to be embedded. It can be a list of strings.
+            text: 输入文本列表
+            **kwargs: 额外的关键字参数
+
+        Returns:
+            EmbeddingResponse: 嵌入响应
+
+        Raises:
+            ValueError: 输入格式不支持时抛出
+
+        示例:
+            >>> response = await model(["文本1", "文本2"])
         """
         gather_text = []
         for _ in text:

@@ -1,14 +1,26 @@
 /**
+ * SoloEngine : API基础服务模块
+ *
  * @file api.ts
  * @description API基础服务 - HTTP请求封装模块
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 封装axios实例
- * - 提供统一的HTTP请求处理
- * - 包含请求拦截、响应拦截、错误处理
- * - 支持认证令牌自动附加
+ * 本模块提供以下核心功能：
+ *     - 封装axios实例
+ *     - 提供统一的HTTP请求处理
+ *     - 包含请求拦截、响应拦截、错误处理
+ *     - 支持认证令牌自动附加
+ *     - 错误消息中英文映射
+ *
+ * 依赖:
+ *     - axios: HTTP客户端
+ *     - ../types/canvas: 画布类型定义
+ *
+ * 使用示例:
+ *     - import apiClient from './api'
+ *     - const response = await apiClient.get('/projects')
  */
 import axios, { AxiosResponse, AxiosError } from 'axios';
 import { ProjectData, CanvasData, ToolData } from '../types/canvas';
@@ -21,6 +33,45 @@ export interface ApiResponse<T = any> {
   message: string;
   data: T;
 }
+
+// 错误消息映射函数 - 将英文错误转换为中文
+const getErrorMessage = (error: AxiosError): string => {
+  // 网络连接错误
+  if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
+    return '无法连接到服务器，请检查后端服务是否启动';
+  }
+  // 超时错误
+  if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+    return '请求超时，请稍后重试';
+  }
+  // HTTP状态码错误
+  if (error.response) {
+    const status = error.response.status;
+    switch (status) {
+      case 400:
+        return '请求参数错误';
+      case 401:
+        return '登录已过期，请重新登录';
+      case 403:
+        return '没有权限执行此操作';
+      case 404:
+        return '请求的资源不存在';
+      case 408:
+        return '请求超时，请稍后重试';
+      case 500:
+        return '服务器内部错误，请检查后端服务';
+      case 502:
+        return '网关错误，请刷新页面重试';
+      case 503:
+        return '服务暂时不可用，请稍后重试';
+      case 504:
+        return '网关超时，请稍后重试';
+      default:
+        return `服务器错误 (${status})`;
+    }
+  }
+  return '网络请求失败，请检查网络连接';
+};
 
 function getCookie(name: string): string | null {
   const value = `; ${document.cookie}`;
@@ -56,7 +107,17 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config;
-    if (error.response?.status === 401 && originalRequest) {
+    const url = originalRequest?.url || '';
+
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
+
+    // 转换错误消息为中文
+    const chineseMessage = getErrorMessage(error);
+    if (error.message) {
+      error.message = chineseMessage;
+    }
+
+    if (error.response?.status === 401 && originalRequest && !isAuthEndpoint) {
       const refreshToken = getCookie('refresh_token') || localStorage.getItem('refresh_token');
       if (refreshToken) {
         try {

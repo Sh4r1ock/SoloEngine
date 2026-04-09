@@ -1,6 +1,28 @@
 """
-工具注册表
-注册和管理所有可用工具
+SoloAgent机制-tools.py: 工具注册表，注册和管理所有可用工具
+
+@file tools.py
+@description 实现工具注册表，管理所有可用工具的注册、获取和配置
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块实现SoloAgent机制的工具注册表，提供以下功能：
+- 管理所有可用工具的注册和获取
+- 支持大小写不敏感的工具名称查找
+- 提供工具配置的存储和检索
+- 支持动态工具创建
+- 提供工具列表查询功能
+
+依赖:
+- asyncio: 异步操作支持
+- logging: 日志记录
+- typing: 类型提示支持
+
+使用示例:
+- ToolRegistry.register("read", ReadTool)
+- tool = ToolRegistry.get_tool("read")
+- tools = ToolRegistry.list_tools()
 """
 import asyncio
 import logging
@@ -10,9 +32,21 @@ logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
-    """工具注册表
+    """
+    工具注册表类
     
-    管理所有可用工具的注册和获取
+    职责:
+    - 管理所有可用工具的注册和获取
+    - 支持大小写不敏感的工具名称查找
+    - 提供工具配置的存储和检索
+    - 支持动态工具创建
+    
+    属性:
+        _tools (Dict[str, Any]): 工具实例字典
+        _configs (Dict[str, Dict]): 工具配置字典
+    
+    注意：
+        工具名称查找不区分大小写
     """
     
     _tools: Dict[str, Any] = {}
@@ -20,7 +54,14 @@ class ToolRegistry:
     
     @classmethod
     def register(cls, name: str, tool: Any, config: Dict[str, Any] = None) -> None:
-        """注册工具"""
+        """
+        注册工具
+        
+        Args:
+            name: 工具名称
+            tool: 工具实例或类
+            config: 工具配置（可选）
+        """
         cls._tools[name] = tool
         if config:
             cls._configs[name] = config
@@ -28,9 +69,17 @@ class ToolRegistry:
     
     @classmethod
     def get_tool(cls, name: str) -> Optional[Any]:
-        """获取工具实例
+        """
+        获取工具实例
         
-        支持大小写不敏感的工具名称查找
+        支持大小写不敏感的工具名称查找。
+        如果工具不存在，尝试动态创建。
+        
+        Args:
+            name: 工具名称
+        
+        Returns:
+            Optional[Any]: 工具实例，不存在则返回None
         """
         if name in cls._tools:
             return cls._tools[name]
@@ -47,7 +96,15 @@ class ToolRegistry:
     
     @classmethod
     def get_tool_config(cls, name: str) -> Optional[Dict[str, Any]]:
-        """获取工具配置（用于 ToolkitExecutor）"""
+        """
+        获取工具配置（用于ToolkitExecutor）
+        
+        Args:
+            name: 工具名称
+        
+        Returns:
+            Optional[Dict[str, Any]]: 工具配置字典，不存在则返回None
+        """
         if name in cls._configs:
             return cls._configs[name]
         
@@ -61,7 +118,12 @@ class ToolRegistry:
     
     @classmethod
     def list_tools(cls) -> List[str]:
-        """列出所有已注册的工具名称"""
+        """
+        列出所有已注册的工具名称
+        
+        Returns:
+            List[str]: 工具名称列表
+        """
         return list(cls._tools.keys())
     
     @classmethod
