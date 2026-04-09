@@ -1,26 +1,35 @@
 /**
+ * SoloEngine : MCP API服务模块
+ *
  * @file mcpApi.ts
  * @description MCP API服务 - MCP服务器管理接口封装
- * @author SoloEngine Team
- * @date 2026-02-20
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供MCP服务器管理相关的接口调用
- * - 获取服务器列表、添加/更新/删除服务器、连接/断开服务器
- * - Python MCP 创建和管理
- * - MCP 工具调用
- * 
+ * 本模块提供以下核心功能：
+ *     - 获取MCP服务器列表
+ *     - 添加/更新/删除MCP服务器
+ *     - 连接/断开MCP服务器
+ *     - Python MCP创建和管理
+ *     - MCP工具调用
+ *
+ * 依赖:
+ *     - axios: HTTP客户端
+ *
+ * 使用示例:
+ *     - import { mcpApi } from './mcpApi'
+ *     - const servers = await mcpApi.getServers()
+ *
  * 使用场景：
- * - MCP服务器配置和管理
- * - MCP工具和资源调用
- * - 自定义 Python MCP 开发
- * 
+ *     - MCP服务器配置和管理
+ *     - MCP工具和资源调用
+ *     - 自定义Python MCP开发
+ *
  * 注意事项：
- * - 支持多种传输协议（stdio、sse、http）
- * - 需要正确配置服务器连接参数
- * - MCP服务已集成到主后端端口8990
- * 
- * 状态: ✅ 完整实现
+ *     - 支持多种传输协议（stdio、sse、http）
+ *     - 需要正确配置服务器连接参数
+ *     - MCP服务已集成到主后端端口8990
  */
 import axios, { AxiosResponse, AxiosError } from 'axios';
 
@@ -32,6 +41,45 @@ export interface ApiResponse<T = any> {
   message: string;
   data: T;
 }
+
+// 错误消息映射函数 - 将英文错误转换为中文
+const getErrorMessage = (error: AxiosError): string => {
+  // 网络连接错误
+  if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
+    return '无法连接到MCP服务器，请检查后端服务是否启动';
+  }
+  // 超时错误
+  if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+    return '请求超时，请稍后重试';
+  }
+  // HTTP状态码错误
+  if (error.response) {
+    const status = error.response.status;
+    switch (status) {
+      case 400:
+        return '请求参数错误';
+      case 401:
+        return '登录已过期，请重新登录';
+      case 403:
+        return '没有权限执行此操作';
+      case 404:
+        return '请求的资源不存在';
+      case 408:
+        return '请求超时，请稍后重试';
+      case 500:
+        return '服务器内部错误，请稍后重试';
+      case 502:
+        return '网关错误，请检查后端服务';
+      case 503:
+        return '服务暂时不可用，请稍后重试';
+      case 504:
+        return '网关超时，请稍后重试';
+      default:
+        return `服务器错误 (${status})`;
+    }
+  }
+  return '网络请求失败，请检查网络连接';
+};
 
 function getCookie(name: string): string | null {
   const value = `; ${document.cookie}`;
@@ -70,7 +118,12 @@ mcpClient.interceptors.request.use(
 mcpClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    console.error('MCP Service API Error:', error.response?.data || error.message);
+    // 转换错误消息为中文
+    const chineseMessage = getErrorMessage(error);
+    if (error.message) {
+      error.message = chineseMessage;
+    }
+    console.error('MCP Service API Error:', error.response?.data || chineseMessage);
     return Promise.reject(error);
   }
 );

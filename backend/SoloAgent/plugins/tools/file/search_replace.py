@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-搜索替换工具模块。
+SoloEngine : 搜索替换工具模块，提供文件内容搜索替换功能
 
 @file search_replace.py
 @description 提供文件内容搜索替换功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 在文件中查找并替换唯一文本

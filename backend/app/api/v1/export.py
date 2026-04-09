@@ -1,5 +1,39 @@
 # -*- coding: utf-8 -*-
-"""项目导出/导入 API endpoints。"""
+"""
+SoloEngine : 项目导出/导入API模块
+
+@file export.py
+@description 项目导出/导入接口 - 项目导入导出相关API端点
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 项目导出为JSON/ZIP格式
+    - 项目导入
+    - 导出格式配置
+    - 导出元数据管理
+
+依赖:
+    - json: JSON处理
+    - uuid: UUID生成
+    - zipfile: ZIP文件处理
+    - io: IO操作
+    - os: 操作系统接口
+    - logging: 日志记录
+    - datetime: 日期时间处理
+    - typing: 类型注解支持
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+
+使用示例:
+    - POST /api/v1/export/{project_name} - 导出项目
+    - POST /api/v1/export/import - 导入项目
+
+使用场景：
+    - 项目备份和迁移
+    - 项目分享
+"""
 
 import json
 import uuid

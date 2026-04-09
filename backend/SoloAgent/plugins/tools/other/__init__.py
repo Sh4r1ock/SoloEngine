@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-其他工具模块。
+SoloEngine : 其他工具模块，提供其他辅助工具
 
 @file __init__.py
 @description 提供其他辅助工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - ExitPlanMode: 退出计划模式工具

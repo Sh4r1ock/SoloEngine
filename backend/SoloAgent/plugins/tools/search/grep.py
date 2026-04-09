@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-正则表达式搜索工具模块。
+SoloEngine : 正则表达式搜索工具模块，使用ripgrep进行搜索
 
 @file grep.py
 @description 使用 ripgrep 进行正则表达式搜索
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 基于正则表达式的文本搜索

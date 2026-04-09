@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Agent 预设配置模块。
+SoloEngine : Agent预设配置模块，提供常用Agent配置的快捷创建函数
 
 @file presets.py
-@description 提供常用 Agent 配置的快捷创建函数
-@author SoloEngine Team
-@date 2026-02-20
+@description 提供常用Agent配置的快捷创建函数
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 提供多种预设 Agent 配置模板

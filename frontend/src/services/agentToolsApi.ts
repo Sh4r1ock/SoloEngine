@@ -1,17 +1,29 @@
 /**
+ * SoloEngine : Agent工具API服务模块
+ *
  * @file agentToolsApi.ts
  * @description Agent工具API服务 - LLM调用、浏览器操作、文档读写等工具接口
- * @author SoloEngine Team
- * @date 2026-02-22
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - LLM对话API
- * - 浏览器自动化操作API
- * - 文档读写操作API
- * 
+ * 本模块提供以下核心功能：
+ *     - LLM对话API
+ *     - 浏览器自动化操作API
+ *     - 文档读写操作API
+ *     - 代码执行API
+ *     - 文件操作API
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { agentToolsApi } from './agentToolsApi'
+ *     - const response = await agentToolsApi.chat({ message: 'Hello' })
+ *
  * 使用场景：
- * - 调试面板调用Agent工具
- * - 工作流执行过程中的工具调用
+ *     - 调试面板调用Agent工具
+ *     - 工作流执行过程中的工具调用
  */
 
 import { api } from './api';

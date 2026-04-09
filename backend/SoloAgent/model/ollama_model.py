@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Ollama local model chat class."""
+"""
+SoloEngine : Ollama本地模型实现，支持本地部署的LLM
+
+@file ollama_model.py
+@description 实现Ollama本地模型的调用接口，支持本地部署的开源模型
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供Ollama本地模型的实现，包括：
+    - OllamaChatModel: Ollama模型主类
+    - 支持流式输出和非流式输出
+    - 支持本地模型管理
+    - 支持多种开源模型（Llama、Mistral等）
+
+依赖:
+    - asyncio: 异步操作
+    - json: JSON处理
+    - datetime: 时间处理
+    - typing: 类型提示
+    - .model_response: 响应类
+    - .model_base: 模型基类
+    - .model_usage: 使用统计类
+    - ..message: 消息类型定义
+
+使用示例:
+    - from SoloAgent.model import OllamaChatModel
+    - model = OllamaChatModel(model_name="llama2")
+    - response = await model(messages)
+"""
 import asyncio
 import json
 from datetime import datetime
@@ -25,10 +54,29 @@ from ..types import JSONSerializableObject
 
 
 class OllamaChatModel(ChatModelBase):
-    """The Ollama local model chat class.
+    """
+    Ollama本地模型聊天类
 
-    Ollama is an open-source local LLM runner that supports
-    running models like Llama 2, Mistral, Gemma, etc. locally.
+    职责:
+        - 实现Ollama本地模型的API调用
+        - 支持流式输出和非流式输出
+        - 支持本地模型管理
+        - 支持多种开源模型（Llama、Mistral、Gemma等）
+
+    属性:
+        model_name: 模型名称
+        base_url: Ollama API服务器地址
+        stream: 是否使用流式输出
+        generate_kwargs: 生成参数
+        client: HTTP异步客户端
+
+    示例:
+        >>> model = OllamaChatModel(
+        ...     model_name="llama2",
+        ...     base_url="http://localhost:11434"
+        ... )
+        >>> messages = [{"role": "user", "content": "你好"}]
+        >>> response = await model(messages)
     """
 
     def __init__(

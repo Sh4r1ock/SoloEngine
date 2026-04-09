@@ -1,3 +1,28 @@
+/**
+ * SoloEngine : 路由配置模块
+ *
+ * @file router.tsx
+ * @description React Router路由配置
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块配置前端路由，包括：
+ *     - 页面路由定义
+ *     - 懒加载配置
+ *     - 受保护路由
+ *     - 加载状态 fallback
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *
+ * 使用示例:
+ *     - import router from './router'
+ *     - <RouterProvider router={router} />
+ */
+
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Spin } from 'antd';

@@ -1,12 +1,35 @@
 /**
+ * SoloEngine : 主菜单页面组件
+ *
  * @file MainMenu.tsx
  * @description 主菜单页面 - 系统主菜单导航页面
- * @author SoloEngine Team
- * @date 2026-02-19
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本组件提供以下核心功能：
+ *     - 系统主菜单导航
+ *     - AgenticFlow列表管理
+ *     - Skills管理
+ *     - MCP服务器管理
+ *     - 市场浏览
+ *     - 系统设置
+ *     - LLM配置
+ *     - 用户登出
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *     - @ant-design/icons: Ant Design图标
+ *     - ../../store/authStore: 认证状态管理
+ *
+ * 使用示例:
+ *     - <Route path="/main/:tab" element={<MainMenu />} />
  */
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography, Dropdown, Avatar, Button, Space } from 'antd';
+import { Layout, Menu, Typography, Dropdown, Avatar, Button, Space, Spin } from 'antd';
 import {
   AppstoreOutlined,
   ApiOutlined,
@@ -17,16 +40,29 @@ import {
   LogoutOutlined,
   CloudServerOutlined,
 } from '@ant-design/icons';
-import AgenticFlowList from './AgenticFlowList';
-import SkillsManager from '../../components/SkillsManager/SkillsManager';
-import MCPManager from '../../components/MCPManager/MCPManager';
-import MarketplacePage from '../Marketplace/MarketplacePage';
-import SettingsPage from './SettingsPage';
-import LLMPage from './LLMPage';
 import { useAuthStore } from '../../store/authStore';
+
+const AgenticFlowList = lazy(() => import('./AgenticFlowList'));
+const SkillsManager = lazy(() => import('../../components/SkillsManager/SkillsManager'));
+const MCPManager = lazy(() => import('../../components/MCPManager/MCPManager'));
+const MarketplacePage = lazy(() => import('../Marketplace/MarketplacePage'));
+const SettingsPage = lazy(() => import('./SettingsPage'));
+const LLMPage = lazy(() => import('./LLMPage'));
 
 const { Content, Header } = Layout;
 const { Text } = Typography;
+
+const LoadingFallback = () => (
+  <div style={{
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+    minHeight: 400,
+  }}>
+    <Spin size="large" />
+  </div>
+);
 
 const MainMenu: React.FC = () => {
   const { tab } = useParams<{ tab: string }>();
@@ -75,22 +111,34 @@ const MainMenu: React.FC = () => {
   const currentTab = tab || 'agenticflow';
 
   const renderContent = () => {
+    let content;
     switch (currentTab) {
       case 'agenticflow':
-        return <AgenticFlowList />;
+        content = <AgenticFlowList />;
+        break;
       case 'skills':
-        return <SkillsManager />;
+        content = <SkillsManager />;
+        break;
       case 'mcp':
-        return <MCPManager />;
+        content = <MCPManager />;
+        break;
       case 'llm':
-        return <LLMPage />;
+        content = <LLMPage />;
+        break;
       case 'marketplace':
-        return <MarketplacePage />;
+        content = <MarketplacePage />;
+        break;
       case 'settings':
-        return <SettingsPage />;
+        content = <SettingsPage />;
+        break;
       default:
-        return <AgenticFlowList />;
+        content = <AgenticFlowList />;
     }
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        {content}
+      </Suspense>
+    );
   };
 
   return (

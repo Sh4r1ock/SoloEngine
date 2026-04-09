@@ -1,34 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-模型响应模块。
+SoloEngine : 模型响应模块，定义聊天模型的响应数据结构
 
 @file model_response.py
 @description 定义聊天模型的响应数据结构
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 定义统一的模型响应数据结构
-- 支持多种内容块类型（文本、工具调用、思考、音频）
-- 提供使用量统计和元数据存储
+本模块提供统一的模型响应数据结构定义，包括：
+    - ChatResponse: 聊天响应数据类
+    - 支持多种内容块类型（文本、工具调用、思考、音频）
+    - 提供使用量统计和元数据存储
 
-内容块类型：
-    - TextBlock: 纯文本内容
-    - ToolUseBlock: 工具调用请求
-    - ThinkingBlock: 思考过程（如 Claude 的 extended thinking）
-    - AudioBlock: 音频内容
+依赖:
+    - json: JSON处理
+    - dataclasses: 数据类
+    - typing: 类型提示
+    - .model_usage: 使用统计
+    - ..utils: 工具函数
+    - ..message: 消息类型
+    - ..types: 类型定义
 
-数据结构：
-    ChatResponse 包含：
-    - content: 内容块列表
-    - id: 响应唯一标识
-    - created_at: 创建时间
-    - type: 响应类型
-    - usage: Token 使用量统计
-    - metadata: 额外元数据
-    - stop_reason: 停止原因（end_turn, tool_use, max_tokens 等）
-
-状态: ✅ 完整实现
+使用示例:
+    - from SoloAgent.model import ChatResponse
+    - response = ChatResponse(content=[{"type": "text", "text": "Hello"}])
 """
 
 import json
@@ -49,35 +45,28 @@ from ..types import JSONSerializableObject
 @dataclass
 class ChatResponse(DictMixin):
     """
-    聊天模型响应数据类。
+    聊天模型响应数据类
     
-    封装 LLM API 调用的响应结果，包含生成的内容、
-    使用量统计和元数据信息。
+    职责:
+        - 封装 LLM API 调用的响应结果
+        - 包含生成的内容、使用量统计和元数据信息
+        - 支持多种内容块类型
     
-    使用 dataclass 实现，支持：
-        - 自动生成 __init__、__repr__ 等方法
-        - 通过 DictMixin 支持字典转换
-        - 不可变语义（通过 frozen=True 可选）
+    属性:
+        content: 响应内容块列表
+        id: 响应唯一标识符
+        created_at: 响应创建时间
+        type: 响应类型
+        usage: Token使用量统计
+        metadata: 额外元数据
+        stop_reason: 停止原因
     
-    内容块类型：
-        - TextBlock: 文本内容，如 {"type": "text", "text": "你好"}
-        - ToolUseBlock: 工具调用，如 {"type": "tool_use", "name": "search", "input": {...}}
-        - ThinkingBlock: 思考过程，如 {"type": "thinking", "thinking": "..."}
-        - AudioBlock: 音频内容，如 {"type": "audio", "data": "..."}
-    
-    Example:
+    示例:
         >>> response = ChatResponse(
-        ...     content=[{"type": "text", "text": "你好！有什么可以帮助你的？"}],
+        ...     content=[{"type": "text", "text": "你好！"}],
         ...     usage=ChatUsage(input_tokens=10, output_tokens=20, time=0.5)
         ... )
-        >>> 
         >>> print(response.to_dict())
-        >>> print(response.content[0]["text"])
-    
-    Note:
-        - id 默认使用时间戳生成
-        - created_at 默认使用当前时间
-        - type 固定为 "chat"
     """
 
     content: Sequence[TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock]

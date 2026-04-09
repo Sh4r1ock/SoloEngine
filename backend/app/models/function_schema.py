@@ -1,5 +1,30 @@
 # -*- coding: utf-8 -*-
-"""Function Schema 定义。"""
+"""
+SoloEngine : Function Schema定义模块
+
+@file function_schema.py
+@description Function Schema定义 - 函数参数和工具定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义Function Schema相关的数据模型，包括：
+    - 参数类型枚举
+    - 参数Schema
+    - 函数Schema
+    - 工具调用
+    - 函数注册表
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.models.function_schema import FunctionSchema, ParameterSchema
+    - param = ParameterSchema(type="string", description="搜索关键词")
+    - func = FunctionSchema(name="search", description="搜索工具", parameters={"query": param})
+"""
 
 from typing import Dict, List, Any, Optional, Literal
 from dataclasses import dataclass, field

@@ -1,3 +1,31 @@
+# -*- coding: utf-8 -*-
+"""
+SoloEngine : 节点数据模型模块
+
+@file node.py
+@description 节点数据模型定义 - Agent节点基类和具体实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义Agent节点相关的数据模型，包括：
+    - Agent节点抽象基类
+    - Orchestrator节点
+    - Planner节点
+    - Executor节点
+    - Custom节点
+
+依赖:
+    - abc: 抽象基类
+    - typing: 类型注解支持
+    - json: JSON处理
+
+使用示例:
+    - from app.models.node import OrchestratorNode, PlannerNode
+    - node = OrchestratorNode(id="1", name="orchestrator", config={})
+    - result = await node.run(global_context)
+"""
+
 from abc import ABC, abstractmethod
 from typing import Literal, Dict, Any
 import json

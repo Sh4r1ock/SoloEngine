@@ -1,12 +1,23 @@
 /**
+ * SoloEngine : 工具API服务模块
+ *
  * @file toolsApi.ts
  * @description 工具API服务 - 本地工具列表获取
- * @author SoloEngine Team
- * @date 2026-03-17
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 获取本地工具列表
- * - 工具信息查询
+ * 本模块提供以下核心功能：
+ *     - 获取本地工具列表
+ *     - 工具信息查询
+ *     - Agent预设获取
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { toolsApi } from './toolsApi'
+ *     - const tools = await toolsApi.getTools()
  */
 
 import { api } from './api';

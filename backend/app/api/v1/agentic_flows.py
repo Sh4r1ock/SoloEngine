@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-AgenticFlow 管理 API endpoints。
+SoloEngine : AgenticFlow管理API模块，提供AgenticFlow管理相关API端点
 
 @file agentic_flows.py
 @description AgenticFlow接口 - Agentic管理相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 获取用户的所有AgenticFlow列表

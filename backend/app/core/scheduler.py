@@ -1,24 +1,42 @@
 """
+SoloEngine : 调度器模块
+
 @file scheduler.py
 @description 调度器 - 工作流调度执行模块
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 调度和执行工作流节点
-- 管理执行顺序
-- 处理节点依赖
-- 支持并行执行
-- 智能调度策略
+本模块提供以下核心功能：
+    - 调度和执行工作流节点
+    - 管理执行顺序
+    - 处理节点依赖
+    - 支持并行执行
+    - 智能调度策略
+    - 上下文变量传递
+
+依赖:
+    - asyncio: 异步IO支持
+    - typing: 类型注解支持
+    - enum: 枚举类型支持
+    - datetime: 日期时间处理
+    - app.models.node: 节点模型
+    - app.core.context_manager: 上下文管理器
+    - app.core.tool_registry: 工具注册表
+
+使用示例:
+    - from app.core.scheduler import Scheduler, ExecutionMode
+    - scheduler = Scheduler(collaboration_graph, ExecutionMode.ADAPTIVE)
+    - result = await scheduler.start(initial_context)
 
 使用场景：
-- 工作流执行引擎
-- 节点调度和上下文管理
+    - 工作流执行引擎
+    - 节点调度和上下文管理
 
 注意事项：
-- 需要正确配置协作图
-- 支持上下文变量传递
-- 并行执行需要正确处理依赖关系
+    - 需要正确配置协作图
+    - 支持上下文变量传递
+    - 并行执行需要正确处理依赖关系
 """
 import asyncio
 from typing import Dict, Any, Optional, List, Set, Tuple

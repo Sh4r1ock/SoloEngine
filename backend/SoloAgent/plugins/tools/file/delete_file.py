@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-文件删除工具模块。
+SoloEngine : 文件删除工具模块，提供文件删除功能
 
 @file delete_file.py
 @description 提供文件删除功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 支持一次删除多个文件

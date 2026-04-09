@@ -1,6 +1,36 @@
 /**
+ * SoloEngine : 运行面板主组件
+ *
  * @file index.tsx
  * @description 运行面板主组件 - 模块化重构版本
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本组件提供以下核心功能：
+ *     - AgenticFlow运行交互界面
+ *     - 消息列表显示
+ *     - 消息输入和发送
+ *     - 会话管理
+ *     - 文件资源管理器
+ *     - WebSocket实时通信
+ *     - Agentic面板显示
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *     - @ant-design/icons: Ant Design图标
+ *     - ./stores/runPanelStore: 运行面板状态管理
+ *     - ./hooks/useStreamingData: 流数据Hook
+ *     - ../../hooks/useRunWebSocket: WebSocket Hook
+ *     - ../../store/runProjectStore: 运行项目状态管理
+ *     - ../../services/runApi: 运行API服务
+ *     - ../../services/agenticFlowApi: AgenticFlow API服务
+ *     - ../../services/runProjectApi: 运行项目API服务
+ *
+ * 使用示例:
+ *     - <RunPanel agenticFlowId="flow-id" />
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -618,7 +648,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         stopRunning();
         setIsWaitingReply(false);
         if (!isCancelled) {
-          message.error(event.error || 'Execution failed');
+          message.error(event.error || '执行失败');
         }
         break;
       }
@@ -638,7 +668,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     runProjectId: currentProject?.id || null,
     onMessage: handleWebSocketMessage,
     onEvent: handleExecutionEvent,
-    onError: () => message.error('WebSocket connection error'),
+    onError: () => message.error('WebSocket连接错误'),
     autoReconnect: true,
   });
 

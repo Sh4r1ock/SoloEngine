@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""The OpenAI text embedding model class."""
+"""
+SoloEngine : OpenAI文本嵌入模型模块
+
+@file openai_embedding.py
+@description 提供OpenAI文本嵌入模型实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供OpenAI文本嵌入模型，包括：
+    - OpenAITextEmbedding: OpenAI文本嵌入模型
+    - 支持OpenAI API的嵌入生成
+    - 支持批量处理和缓存功能
+
+依赖:
+    - datetime: 日期时间
+    - typing: 类型提示
+    - openai: OpenAI Python客户端
+    - .embedding_response: 嵌入响应
+    - .embedding_usage: 嵌入使用统计
+    - .cache_base: 缓存基类
+    - .embedding_base: 嵌入模型基类
+    - ..message: 消息类型
+
+使用示例:
+    - from SoloAgent.embedding import OpenAITextEmbedding
+    - model = OpenAITextEmbedding(api_key="your_key", model_name="text-embedding-3-small")
+    - response = await model(["文本1", "文本2"])
+"""
+
 from datetime import datetime
 from typing import Any, List
 
@@ -11,10 +40,33 @@ from ..message import TextBlock
 
 
 class OpenAITextEmbedding(EmbeddingModelBase):
-    """OpenAI text embedding model class."""
+    """
+    OpenAI文本嵌入模型
+
+    职责:
+        - 实现OpenAI API的嵌入生成
+        - 支持文本输入
+        - 支持批量处理
+        - 支持缓存功能
+
+    属性:
+        supported_modalities: 支持的模态列表，仅支持文本
+        client: OpenAI异步客户端
+        embedding_cache: 嵌入缓存
+        batch_size: 批量大小
+        max_tokens_per_batch: 每批次最大Token数
+
+    示例:
+        >>> model = OpenAITextEmbedding(
+        ...     api_key="your_key",
+        ...     model_name="text-embedding-3-small",
+        ...     dimensions=1536
+        ... )
+        >>> response = await model(["你好", "世界"])
+    """
 
     supported_modalities: list[str] = ["text"]
-    """This class only supports text input."""
+    """仅支持文本输入"""
 
     def __init__(
         self,
@@ -26,22 +78,23 @@ class OpenAITextEmbedding(EmbeddingModelBase):
         max_tokens_per_batch: int = 8191,
         **kwargs: Any,
     ) -> None:
-        """Initialize the OpenAI text embedding model class.
+        """
+        初始化OpenAI文本嵌入模型
 
         Args:
-            api_key (`str`):
-                The OpenAI API key.
-            model_name (`str`):
-                The name of the embedding model.
-            dimensions (`int`, defaults to 1024):
-                The dimension of the embedding vector.
-            embedding_cache (`EmbeddingCacheBase | None`, defaults to `None`):
-                The embedding cache class instance, used to cache the
-                embedding results to avoid repeated API calls.
-            batch_size (`int`, defaults to 2048):
-                Maximum number of texts to embed in a single API call.
-            max_tokens_per_batch (`int`, defaults to 8191):
-                Maximum tokens per text in a batch (OpenAI limit).
+            api_key: OpenAI API密钥
+            model_name: 嵌入模型名称
+            dimensions: 嵌入向量维度
+            embedding_cache: 嵌入缓存实例
+            batch_size: 单次API调用的最大文本数
+            max_tokens_per_batch: 每批次最大Token数（OpenAI限制）
+            **kwargs: 额外的关键字参数
+
+        示例:
+            >>> model = OpenAITextEmbedding(
+            ...     api_key="your_key",
+            ...     model_name="text-embedding-3-small"
+            ... )
         """
         import openai
 
@@ -57,11 +110,21 @@ class OpenAITextEmbedding(EmbeddingModelBase):
         text: List[str | TextBlock],
         **kwargs: Any,
     ) -> EmbeddingResponse:
-        """Call the OpenAI embedding API.
+        """
+        调用OpenAI嵌入API
 
         Args:
-            text (`List[str | TextBlock]`):
-                The input text to be embedded. It can be a list of strings.
+            text: 输入文本列表
+            **kwargs: 额外的关键字参数
+
+        Returns:
+            EmbeddingResponse: 嵌入响应
+
+        Raises:
+            ValueError: 输入格式不支持时抛出
+
+        示例:
+            >>> response = await model(["文本1", "文本2"])
         """
         gather_text = []
         for _ in text:

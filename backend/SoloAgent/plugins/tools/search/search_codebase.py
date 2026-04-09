@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-语义代码搜索工具模块。
+SoloEngine : 语义代码搜索工具模块，使用向量嵌入进行语义代码搜索
 
 @file search_codebase.py
 @description 使用向量嵌入进行语义代码搜索
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 基于向量嵌入的语义代码搜索

@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Edge TTS Model implementation using Microsoft Edge's online TTS service."""
+"""
+SoloEngine : Edge TTS模型实现
+
+@file edge_tts.py
+@description Edge文本转语音模型实现，使用Microsoft Edge的在线TTS服务
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供Edge TTS模型实现，包括：
+    - EdgeTTSModel: Edge文本转语音模型
+    - 使用Microsoft Edge的免费在线TTS服务
+    - 支持多种语音和语言
+    - 支持流式合成
+
+依赖:
+    - os: 操作系统接口
+    - aiofiles: 异步文件操作
+    - typing: 类型提示
+    - datetime: 日期时间
+    - logging: 日志记录
+    - json: JSON处理
+    - edge_tts: Edge TTS库
+    - ...core.interfaces: 核心接口
+
+使用示例:
+    - from SoloAgent.plugins.tts import EdgeTTSModel
+    - tts = EdgeTTSModel(voice="zh-CN-XiaoxiaoNeural")
+    - result = await tts.synthesize("你好世界")
+    - voices = await tts.get_available_voices()
+"""
 
 import os
 import aiofiles
@@ -14,17 +44,45 @@ logger = logging.getLogger(__name__)
 
 
 class EdgeTTSModel(ITTSModel):
-    """Edge TTS model implementation using Microsoft Edge's free online TTS."""
-    
+    """
+    Edge文本转语音模型
+
+    职责:
+        - 实现ITTSModel接口
+        - 调用Microsoft Edge的在线TTS服务
+        - 支持多种语音和语言
+        - 支持流式合成
+
+    属性:
+        voice: 默认语音
+        output_path: 输出路径
+        _communicate: Edge TTS通信对象
+
+    示例:
+        >>> tts = EdgeTTSModel(voice="zh-CN-XiaoxiaoNeural")
+        >>> result = await tts.synthesize("你好世界")
+        >>> print(result["output_file"])
+    """
+
     def __init__(
         self,
         voice: str = "en-US-AriaNeural",
         output_path: str = "./tts_output",
     ):
+        """
+        初始化Edge TTS模型
+
+        Args:
+            voice: 默认语音，默认为"en-US-AriaNeural"
+            output_path: 输出路径，默认为"./tts_output"
+
+        示例:
+            >>> tts = EdgeTTSModel(voice="zh-CN-XiaoxiaoNeural")
+        """
         self.voice = voice
         self.output_path = output_path
         self._communicate = None
-        
+
         os.makedirs(output_path, exist_ok=True)
     
     def _get_edge_tts(self):
