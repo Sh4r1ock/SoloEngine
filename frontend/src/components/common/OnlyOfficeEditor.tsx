@@ -61,11 +61,11 @@ const OnlyOfficeEditor: React.FC<OnlyOfficeEditorProps> = ({
         setConfig(response.data.data.config);
         setDocServerUrl(response.data.data.documentServerUrl);
       } else {
-        throw new Error(response.data.message || 'Failed to get config');
+        throw new Error(response.data.message || '获取配置失败');
       }
     } catch (err: any) {
       console.error('Failed to fetch OnlyOffice config:', err);
-      setError(err.message || 'Failed to load editor');
+      setError(err.message || '加载编辑器失败');
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ const OnlyOfficeEditor: React.FC<OnlyOfficeEditorProps> = ({
       }
     } catch (err: any) {
       console.error('Failed to initialize OnlyOffice editor:', err);
-      setError(err.message || 'Failed to initialize editor');
+      setError(err.message || '初始化编辑器失败');
     }
   };
 

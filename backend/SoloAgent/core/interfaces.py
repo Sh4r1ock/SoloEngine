@@ -1,34 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-SoloEngine 插件接口模块。
+ReAct核心机制-interfaces.py: 定义SoloEngine的核心插件接口，实现模块化的Agent架构
 
 @file interfaces.py
-@description 定义 SoloEngine 的核心插件接口，实现模块化的 Agent 架构
-@author SoloEngine Team
-@date 2026-02-20
+@description 定义ReAct核心所需的插件接口规范，支持可扩展的插件架构
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 定义统一的插件接口规范（抽象基类）
-- 支持多种插件类型的可扩展架构
-- 为 ReAct 核心提供可插拔的功能组件
-
-插件类型：
+本模块定义ReAct核心机制所需的插件接口规范，提供以下核心接口：
 - IMemory: 记忆插件接口，用于对话历史和上下文存储
 - IRAG: 检索增强生成插件接口，用于知识库检索
 - IToolExecutor: 工具执行器接口，用于工具调用
-- IMCPClient: MCP 客户端接口，用于 Model Context Protocol
+- IMCPClient: MCP客户端接口，用于Model Context Protocol
 - IPlanNotebook: 计划笔记本接口，用于任务规划
-- ITTSModel: TTS 模型接口，用于语音合成
+- ITTSModel: TTS模型接口，用于语音合成
 
 设计模式：
 - 策略模式：不同插件实现相同接口，可互换使用
-- 依赖注入：ReAct 核心通过接口注入插件依赖
+- 依赖注入：ReAct核心通过接口注入插件依赖
 - 开闭原则：对扩展开放，对修改关闭
 
-使用场景：
-- Agent 组装时注入各类插件
-- 插件开发者实现具体功能
-- 运行时动态切换插件实现
+依赖:
+- abc: 抽象基类定义
+- typing: 类型提示
+- ..message: 消息类型
+- ..types: 可序列化对象类型
+
+使用示例:
+- class MyMemory(IMemory): ...
+- core = ReActCore(memory=MyMemory())
 """
 
 from abc import ABC, abstractmethod

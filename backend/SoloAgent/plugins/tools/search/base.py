@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-搜索工具基类模块。
+SoloEngine : 搜索工具基类模块，提供搜索工具的公共功能
 
 @file base.py
 @description 提供搜索工具的公共功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 搜索工具错误基类

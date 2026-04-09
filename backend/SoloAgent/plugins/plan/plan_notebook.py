@@ -1,5 +1,37 @@
 # -*- coding: utf-8 -*-
-"""计划笔记本插件实现。"""
+"""
+SoloEngine : 计划笔记本插件，提供任务规划功能
+
+@file plan_notebook.py
+@description 计划笔记本插件实现，支持创建、管理、执行计划
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供计划笔记本插件，包括：
+    - PlanStep: 计划步骤数据类
+    - Plan: 计划数据类
+    - PlanMemory: 计划记忆存储
+    - PlanNotebookPlugin: 计划笔记本插件
+    - 支持创建、更新、删除计划
+    - 支持步骤管理和进度追踪
+
+依赖:
+    - json: JSON处理
+    - uuid: UUID生成
+    - logging: 日志记录
+    - typing: 类型提示
+    - dataclasses: 数据类
+    - datetime: 日期时间
+    - pathlib: 路径处理
+    - ...core.interfaces: 核心接口
+
+使用示例:
+    - from SoloAgent.plugins.plan import PlanNotebookPlugin
+    - planner = PlanNotebookPlugin()
+    - plan = await planner.create_plan("目标", steps=["步骤1", "步骤2"])
+    - progress = await planner.get_plan_progress(plan["plan_id"])
+"""
 
 import json
 import uuid
@@ -16,7 +48,31 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PlanStep:
-    """计划步骤。"""
+    """
+    计划步骤数据类
+
+    职责:
+        - 存储计划步骤信息
+        - 管理步骤状态
+        - 记录执行结果
+
+    属性:
+        step_id: 步骤唯一标识
+        description: 步骤描述
+        status: 步骤状态（pending/in_progress/completed/failed）
+        dependencies: 依赖的步骤ID列表
+        result: 执行结果
+        error: 错误信息
+        created_at: 创建时间
+        updated_at: 更新时间
+
+    示例:
+        >>> step = PlanStep(
+        ...     step_id="plan-123_step_0",
+        ...     description="执行步骤1",
+        ...     status="pending"
+        ... )
+    """
     step_id: str
     description: str
     status: str = "pending"  # pending, in_progress, completed, failed
@@ -29,7 +85,31 @@ class PlanStep:
 
 @dataclass
 class Plan:
-    """计划定义。"""
+    """
+    计划数据类
+
+    职责:
+        - 存储计划信息
+        - 管理计划步骤
+        - 记录计划状态
+
+    属性:
+        plan_id: 计划唯一标识
+        goal: 计划目标
+        steps: 步骤列表
+        context: 上下文信息
+        status: 计划状态（draft/active/completed/abandoned）
+        version: 版本号
+        created_at: 创建时间
+        updated_at: 更新时间
+
+    示例:
+        >>> plan = Plan(
+        ...     plan_id="plan-123",
+        ...     goal="完成项目",
+        ...     steps=[step1, step2]
+        ... )
+    """
     plan_id: str
     goal: str
     steps: List[PlanStep] = field(default_factory=list)
@@ -41,12 +121,38 @@ class Plan:
 
 
 class PlanMemory:
-    """计划记忆存储。"""
+    """
+    计划记忆存储类
+
+    职责:
+        - 存储和加载计划
+        - 管理计划文件
+        - 提供计划查询功能
+
+    属性:
+        storage_path: 存储路径
+        _plans: 计划字典
+
+    示例:
+        >>> memory = PlanMemory("/path/to/plans")
+        >>> memory.save(plan)
+        >>> loaded_plan = memory.load("plan-123")
+    """
 
     def __init__(self, storage_path: Optional[str] = None):
+        """
+        初始化计划记忆存储
+
+        Args:
+            storage_path: 存储路径，默认为"plans"
+
+        示例:
+            >>> memory = PlanMemory("/path/to/plans")
+        """
         self.storage_path = Path(storage_path) if storage_path else Path("plans")
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self._plans: Dict[str, Plan] = {}
+        """计划字典 {plan_id: Plan}"""
         self._load_plans()
 
     def _load_plans(self):
@@ -162,9 +268,40 @@ class PlanMemory:
 
 
 class PlanNotebookPlugin(IPlanNotebook):
-    """计划笔记本插件。"""
+    """
+    计划笔记本插件
+
+    职责:
+        - 实现IPlanNotebook接口
+        - 提供计划创建、管理、执行功能
+        - 支持步骤管理和进度追踪
+        - 自动保存计划状态
+
+    属性:
+        memory: 计划记忆存储
+        _auto_save: 是否自动保存
+        _max_plans: 最大计划数量
+        _initialized: 是否已初始化
+        _current_plan_id: 当前计划ID
+
+    示例:
+        >>> planner = PlanNotebookPlugin()
+        >>> plan = await planner.create_plan("目标", steps=["步骤1"])
+        >>> progress = await planner.get_plan_progress(plan["plan_id"])
+    """
 
     def __init__(self, storage_path: Optional[str] = None, auto_save: bool = True, max_plans: int = 10):
+        """
+        初始化计划笔记本插件
+
+        Args:
+            storage_path: 存储路径
+            auto_save: 是否自动保存
+            max_plans: 最大计划数量
+
+        示例:
+            >>> planner = PlanNotebookPlugin("/path/to/plans", auto_save=True)
+        """
         self.memory = PlanMemory(storage_path)
         self._auto_save = auto_save
         self._max_plans = max_plans

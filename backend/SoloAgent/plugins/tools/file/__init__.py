@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-文件操作工具模块。
+SoloEngine : 文件操作工具模块，提供文件读写删除等功能
 
 @file __init__.py
 @description 提供文件操作相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - Read: 读取文件内容

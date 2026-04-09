@@ -1,20 +1,35 @@
 /**
+ * SoloEngine : 本地存储服务模块
+ *
  * @file localStorage.ts
  * @description 本地存储服务 - 项目数据本地存储模块
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供项目数据的本地存储和读取功能
- * - 保存项目、加载项目、获取项目列表、删除项目
- * 
+ * 本模块提供以下核心功能：
+ *     - 项目数据的本地存储和读取
+ *     - 保存项目
+ *     - 加载项目
+ *     - 获取项目列表
+ *     - 删除项目
+ *     - 项目导入导出
+ *
+ * 依赖:
+ *     - ../types/canvas: 画布类型定义
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { localStorageService } from './localStorage'
+ *     - await localStorageService.saveProject(project)
+ *
  * 使用场景：
- * - 项目数据的持久化存储
- * - 项目导入导出功能
- * 
+ *     - 项目数据的持久化存储
+ *     - 项目导入导出功能
+ *
  * 注意事项：
- * - 支持localStorage和服务器端存储两种方式
- * - 导出功能生成JSON格式文件
+ *     - 支持localStorage和服务器端存储两种方式
+ *     - 导出功能生成JSON格式文件
  */
 import { NodeData, EdgeData } from '../types/canvas';
 import { api } from './api';
@@ -140,7 +155,7 @@ class LocalStorageService {
   exportFlow(projectName: string): string {
     const flow = this.loadFlow(projectName);
     if (!flow) {
-      throw new Error(`Flow "${projectName}" not found`);
+      throw new Error(`未找到流程"${projectName}"`);
     }
     return JSON.stringify(flow, null, 2);
   }
@@ -148,7 +163,7 @@ class LocalStorageService {
   downloadFlow(projectName: string): void {
     const flow = this.loadFlow(projectName);
     if (!flow) {
-      throw new Error(`Flow "${projectName}" not found`);
+      throw new Error(`未找到流程"${projectName}"`);
     }
 
     const jsonStr = JSON.stringify(flow, null, 2);

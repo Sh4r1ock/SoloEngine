@@ -1,21 +1,34 @@
 /**
+ * SoloEngine : 画布状态管理模块
+ *
  * @file canvasStore.ts
  * @description 画布状态管理 - 工作流画布状态管理模块
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 使用Zustand实现状态管理
- * - 管理画布节点、边、选中状态等
- * - 管理节点数据、管理边数据、管理选中状态、撤销/重做状态
- * 
- * 使用场景：
- * - 画布编辑器的核心状态管理
- * - 节点和边的增删改查操作
- * 
+ * 本模块提供以下核心功能：
+ *     - 使用Zustand实现状态管理
+ *     - 管理画布节点、边、选中状态等
+ *     - 管理节点数据、管理边数据、管理选中状态
+ *     - 撤销/重做状态管理
+ *     - 自动保存功能
+ *     - 历史记录管理（最多30条）
+ *
+ * 依赖:
+ *     - zustand: 状态管理库
+ *     - ../types/canvas: 画布类型定义
+ *     - ../services/localStorage: 本地存储服务
+ *     - ../services/agenticFlowApi: AgenticFlow API服务
+ *     - ../services/llmApi: LLM API服务
+ *
+ * 使用示例:
+ *     - import { useCanvasStore } from './store/canvasStore'
+ *     - const { nodes, edges, addNode, addEdge } = useCanvasStore()
+ *
  * 注意事项：
- * - 支持自动保存功能
- * - 支持撤销/重做历史记录（最多30条）
+ *     - 支持自动保存功能
+ *     - 支持撤销/重做历史记录（最多30条）
  */
 import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../types/canvas';

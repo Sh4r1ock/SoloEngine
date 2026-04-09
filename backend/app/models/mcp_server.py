@@ -1,5 +1,30 @@
 # -*- coding: utf-8 -*-
-"""MCP 服务器数据模型。"""
+"""
+SoloEngine : MCP服务器数据模型模块
+
+@file mcp_server.py
+@description MCP服务器数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义MCP服务器相关的数据模型，包括：
+    - MCP传输类型枚举
+    - MCP服务器状态枚举
+    - MCP工具定义
+    - MCP资源定义
+    - MCP服务器配置
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.models.mcp_server import MCPServer, MCPTransportType
+    - server = MCPServer(id="1", name="my_server", transport_type=MCPTransportType.HTTP)
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

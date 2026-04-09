@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Agent 钩子类型定义模块。
+SoloEngine : Agent钩子类型定义模块
 
 @file hook.py
-@description 定义 Agent 生命周期钩子的类型
-@author SoloEngine Team
-@date 2026-02-20
+@description 定义Agent生命周期钩子的类型
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 定义 Agent 钩子的类型名称
-- 支持基础 Agent 钩子和 ReAct Agent 钩子
-- 用于在 Agent 生命周期的特定点注入自定义逻辑
+本模块提供Agent钩子类型定义，包括：
+    - AgentHookTypes: 基础Agent钩子类型
+    - ReActAgentHookTypes: ReAct Agent钩子类型
+    - 用于在Agent生命周期的特定点注入自定义逻辑
 
 钩子类型：
-    基础 Agent 钩子（AgentHookTypes）：
+    基础Agent钩子（AgentHookTypes）：
         - pre_reply: 回复前钩子
         - post_reply: 回复后钩子
         - pre_print: 打印前钩子
@@ -21,7 +22,7 @@ Agent 钩子类型定义模块。
         - pre_observe: 观察前钩子
         - post_observe: 观察后钩子
     
-    ReAct Agent 钩子（ReActAgentHookTypes）：
+    ReAct Agent钩子（ReActAgentHookTypes）：
         - 继承所有基础钩子
         - pre_reasoning: 推理前钩子
         - post_reasoning: 推理后钩子
@@ -29,14 +30,21 @@ Agent 钩子类型定义模块。
         - post_acting: 行动后钩子
 
 设计理念：
-    钩子系统允许在 Agent 执行流程的关键点插入自定义逻辑，
+    钩子系统允许在Agent执行流程的关键点插入自定义逻辑，
     如日志记录、性能监控、状态检查等。
 
 使用场景：
-    - 日志记录：记录 Agent 的执行过程
+    - 日志记录：记录Agent的执行过程
     - 性能监控：测量各阶段的执行时间
-    - 状态检查：验证 Agent 状态
+    - 状态检查：验证Agent状态
     - 调试：在关键点打印调试信息
+
+依赖:
+    - typing: 类型提示
+
+使用示例:
+    - from SoloAgent.types import AgentHookTypes
+    - hook_type: AgentHookTypes = "pre_reply"
 
 状态: ✅ 完整实现
 """

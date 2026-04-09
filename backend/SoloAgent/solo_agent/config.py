@@ -1,6 +1,27 @@
 """
-SoloAgent 配置模块
-提供简洁的声明式配置接口
+SoloAgent机制-config.py: SoloAgent配置模块，提供简洁的声明式配置接口
+
+@file config.py
+@description 定义SoloAgent的配置数据类，支持声明式配置
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义SoloAgent机制的配置数据类，提供以下功能：
+- SoloAgentConfig: 主配置数据类，包含所有Agent配置项
+- SubAgentInfo: 子Agent信息数据类
+- 支持声明式配置：只需指定名称即可自动加载详细配置
+- 配置细节在运行时按需从数据库/文件加载
+- 支持完整的LLM参数配置（temperature, max_tokens等）
+
+依赖:
+- uuid: 用于生成唯一标识符
+- dataclasses: 用于定义数据类
+- typing: 类型提示支持
+
+使用示例:
+- config = SoloAgentConfig(name="my_agent", provider="openai", model="gpt-4")
+- config = SoloAgentConfig(name="my_agent", system_prompt="你是助手")
 """
 import uuid
 from dataclasses import dataclass, field
@@ -9,9 +30,17 @@ from typing import Optional, List, Dict, Any
 
 @dataclass
 class SubAgentInfo:
-    """SubAgent 信息数据类
+    """
+    子Agent信息数据类
     
-    用于存储 SubAgent 的元信息，分为显示给模型的字段和后端使用的字段。
+    职责:
+    - 存储子Agent的元信息
+    - 区分显示给模型的字段和后端使用的字段
+    
+    属性:
+        subagent_name (str): 子Agent名称，显示给模型
+        description (str): 子Agent描述，显示给模型
+        subagent_id (str): 子Agent唯一标识，后端使用
     """
     subagent_name: str
     description: str
@@ -20,10 +49,29 @@ class SubAgentInfo:
 
 @dataclass
 class SoloAgentConfig:
-    """SoloAgent 配置 - 简洁的声明式配置
+    """
+    SoloAgent配置数据类
     
-    只需指定名称，自动加载详细配置。
-    配置细节在运行时按需从数据库/文件加载。
+    职责:
+    - 提供简洁的声明式配置接口
+    - 支持运行时按需加载详细配置
+    - 包含完整的Agent运行参数
+    
+    属性:
+        name (str): Agent名称
+        provider (str): LLM提供商
+        model (str): 模型名称
+        system_prompt (str): 系统提示词
+        desc (str): Agent描述
+        skills (List[Dict]): Skill列表
+        tools (List[str]): 工具列表
+        mcp_servers (Any): MCP服务器配置
+        subagents (List[Dict]): 子Agent配置
+        memory (bool): 是否启用记忆
+        max_iters (int): 最大迭代次数
+        stream (bool): 是否流式输出
+        temperature (float): 温度参数
+        max_tokens (int): 最大token数
     """
     
     name: str

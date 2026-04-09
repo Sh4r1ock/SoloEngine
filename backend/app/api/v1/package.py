@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""打包 API endpoints。"""
+"""
+SoloEngine : 打包API模块
+
+@file package.py
+@description 打包接口 - 项目打包相关API端点
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 创建项目包
+    - 下载项目包
+    - 获取包信息
+    - 列出所有包
+
+依赖:
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+    - app.core.packager: 打包服务
+
+使用示例:
+    - POST /api/v1/package/create - 创建包
+    - GET /api/v1/package/download/{project_name} - 下载包
+
+使用场景：
+    - 项目打包和分发
+    - 部署准备
+"""
 
 import logging
 from typing import Optional, List

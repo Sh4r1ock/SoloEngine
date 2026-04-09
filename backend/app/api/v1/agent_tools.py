@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Agent Tools API endpoints.
+SoloEngine : Agent工具API模块，提供LLM调用、浏览器操作、文档读写等工具接口
 
 @file agent_tools.py
 @description Agent工具API - LLM调用、浏览器操作、文档读写等工具接口
-@author SoloEngine Team
-@date 2026-02-22
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - LLM对话接口（支持用户配置的模型）

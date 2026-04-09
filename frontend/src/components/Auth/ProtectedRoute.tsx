@@ -1,13 +1,26 @@
 /**
+ * SoloEngine : 路由守卫组件
+ *
  * @file ProtectedRoute.tsx
  * @description 路由守卫组件 - 保护需要认证的路由
- * @author SoloEngine Team
- * @date 2026-02-23
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 检查用户登录状态
- * - 未登录时重定向到登录页面
- * - 支持加载状态显示
+ * 本组件提供以下核心功能：
+ *     - 检查用户登录状态
+ *     - 未登录时重定向到登录页面
+ *     - 支持加载状态显示
+ *     - 自动加载用户信息
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *     - ../../store/authStore: 认证状态管理
+ *
+ * 使用示例:
+ *     - <ProtectedRoute><EditorPage /></ProtectedRoute>
  */
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';

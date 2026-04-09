@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-命令执行工具模块。
+SoloEngine : 命令执行工具模块，提供命令执行相关功能
 
 @file __init__.py
 @description 提供命令执行相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - RunCommand: 执行终端命令

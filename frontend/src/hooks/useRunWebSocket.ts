@@ -1,8 +1,25 @@
 /**
+ * SoloEngine : WebSocket Hook模块
+ *
  * @file useRunWebSocket.ts
  * @description WebSocket Hook - 运行面板实时通信
- * @author SoloEngine Team
- * @date 2026-02-24
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本Hook提供以下核心功能：
+ *     - WebSocket连接管理
+ *     - 执行事件监听
+ *     - 消息处理
+ *     - 自动重连
+ *     - 连接状态管理
+ *
+ * 依赖:
+ *     - react: React核心库
+ *
+ * 使用示例:
+ *     - import { useRunWebSocket } from './hooks/useRunWebSocket'
+ *     - const { connect, disconnect, events } = useRunWebSocket()
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';

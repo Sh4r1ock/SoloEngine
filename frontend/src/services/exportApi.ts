@@ -1,20 +1,31 @@
 /**
+ * SoloEngine : 导出/导入API服务模块
+ *
  * @file exportApi.ts
  * @description 导出/导入API服务 - 项目导出导入相关接口封装
- * @author SoloEngine Team
- * @date 2026-02-20
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供项目导出功能
- * - 提供项目导入功能
- * - 支持多种导出格式
- * 
+ * 本模块提供以下核心功能：
+ *     - 项目导出功能
+ *     - 项目导入功能
+ *     - 支持多种导出格式（JSON、ZIP）
+ *     - 支持包含历史记录
+ *     - 支持包含Skills配置
+ *     - 支持包含MCP配置
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { exportApi } from './exportApi'
+ *     - const blob = await exportApi.exportProject(projectId, { format: 'json' })
+ *
  * 使用场景：
- * - 项目备份
- * - 项目迁移
- * - 项目分享
- * 
- * 状态: ✅ 完整实现
+ *     - 项目备份
+ *     - 项目迁移
+ *     - 项目分享
  */
 import { api } from './api';
 

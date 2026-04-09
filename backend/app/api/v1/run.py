@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-运行 API endpoints。
+SoloEngine : 运行API模块，提供工作流运行相关API端点
 
 @file run.py
 @description 运行接口 - 工作流运行相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - JSON工作流执行接口

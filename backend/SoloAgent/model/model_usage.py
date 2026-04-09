@@ -1,28 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-模型使用量统计模块。
+SoloEngine : 模型使用量统计模块，定义聊天模型API调用的使用量统计
 
 @file model_usage.py
 @description 定义聊天模型 API 调用的使用量统计
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 记录 API 调用的 Token 使用量
-- 统计响应时间
-- 支持成本计算和分析
+本模块提供模型使用量统计功能，包括：
+    - ChatUsage: 聊天模型使用量统计数据类
+    - 记录 API 调用的 Token 使用量
+    - 统计响应时间
+    - 支持成本计算和分析
 
-统计指标：
-    - input_tokens: 输入 Token 数量
-    - output_tokens: 输出 Token 数量
-    - time: 响应时间（秒）
+依赖:
+    - dataclasses: 数据类
+    - typing: 类型提示
+    - ..utils: 工具类
 
-用途：
-    - 成本监控和预算控制
-    - 性能分析和优化
-    - 使用量报告
-
-状态: ✅ 完整实现
+使用示例:
+    - from SoloAgent.model import ChatUsage
+    - usage = ChatUsage(input_tokens=100, output_tokens=50, time=1.5)
 """
 
 from dataclasses import dataclass, field
@@ -34,29 +33,26 @@ from ..utils import DictMixin
 @dataclass
 class ChatUsage(DictMixin):
     """
-    聊天模型使用量统计数据类。
+    聊天模型使用量统计数据类
     
-    记录单次 API 调用的资源使用情况，包括 Token 数量和响应时间。
-    这些数据可用于成本计算、性能监控和使用量分析。
+    职责:
+        - 记录单次 API 调用的资源使用情况
+        - 包括 Token 数量和响应时间
+        - 支持成本计算、性能监控和使用量分析
     
-    使用 dataclass 实现，支持：
-        - 自动生成 __init__、__repr__ 等方法
-        - 通过 DictMixin 支持字典转换
+    属性:
+        input_tokens: 输入 Token 数量
+        output_tokens: 输出 Token 数量
+        time: 响应时间（秒）
+        type: 使用类型
     
-    Token 计费说明：
-        - input_tokens: 提示词和对话历史消耗的 Token
-        - output_tokens: 模型生成内容消耗的 Token
-        - 通常输出 Token 价格高于输入 Token
-    
-    Example:
+    示例:
         >>> usage = ChatUsage(
         ...     input_tokens=100,
         ...     output_tokens=50,
         ...     time=1.5
         ... )
-        >>> 
-        >>> total_tokens = usage.input_tokens + usage.output_tokens
-        >>> print(f"总 Token: {total_tokens}, 耗时: {usage.time}s")
+        >>> print(f"总 Token: {usage.total_tokens}")
     
     Note:
         - time 单位为秒

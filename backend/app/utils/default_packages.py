@@ -1,18 +1,32 @@
 # -*- coding: utf-8 -*-
 """
-默认MCP和Skills包数据
+SoloEngine : 默认MCP和Skills包数据模块
 
 @file default_packages.py
 @description 默认MCP和Skills包配置数据 - 基于网络搜索获取的权威MCP服务器和Skills包
-@author System
-@date 2026-02-23
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 默认MCP服务器配置
+    - 默认Skills包配置
+    - 社区精选工具和服务
+
+依赖:
+    - 无（纯数据定义）
+
+使用示例:
+    - from app.utils.default_packages import DEFAULT_MCP_SERVERS, DEFAULT_SKILLS_PACKAGES
+    - for server in DEFAULT_MCP_SERVERS:
+    -     print(server["name"])
 
 数据来源:
-- MCP服务器: Anthropic官方 @modelcontextprotocol/servers
-- MCP服务器: GitHub官方 github-mcp-server
-- MCP服务器: awesome-mcp-servers社区精选
-- Skills包: Anthropic官方 @anthropics/skills
-- Skills包: awesome-claude-skills社区精选
+    - MCP服务器: Anthropic官方 @modelcontextprotocol/servers
+    - MCP服务器: GitHub官方 github-mcp-server
+    - MCP服务器: awesome-mcp-servers社区精选
+    - Skills包: Anthropic官方 @anthropics/skills
+    - Skills包: awesome-claude-skills社区精选
 """
 
 DEFAULT_MCP_SERVERS = [

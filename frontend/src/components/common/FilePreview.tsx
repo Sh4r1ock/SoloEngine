@@ -68,7 +68,17 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileName, filePath, fileType 
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Error response:', errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const statusMap: Record<number, string> = {
+          400: '请求参数错误',
+          401: '登录已过期',
+          403: '没有权限访问',
+          404: '文件不存在',
+          500: '服务器内部错误',
+          502: '网关错误',
+          503: '服务暂时不可用',
+          504: '网关超时',
+        };
+        throw new Error(statusMap[response.status] || `服务器错误 (${response.status})`);
       }
       
       const blob = await response.blob();
@@ -83,7 +93,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ fileName, filePath, fileType 
       setBlobUrl(newBlobUrl);
     } catch (err: any) {
       console.error('Failed to load file as blob:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load file');
+      setError(err instanceof Error ? err.message : '加载文件失败');
     } finally {
       setLoading(false);
     }

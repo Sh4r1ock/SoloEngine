@@ -36,7 +36,7 @@ interface RunProjectState {
   setProjectFromSelectOrCreate: (data: SelectOrCreateProjectResponse) => void;
   setProjectLoading: (loading: boolean) => void;
   loadCurrentProject: (agenticFlowId?: string) => Promise<void>;
-  loadRecentProjects: (agenticFlowId: string) => Promise<void>;
+  loadRecentProjects: (agenticFlowId: string) => Promise<RecentProjectInfo[]>;
   listFiles: (path?: string, pattern?: string) => Promise<void>;
   setCurrentPath: (path: string) => void;
   clearProject: () => void;

@@ -1,24 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-SQLite 数据库管理模块。
+SoloEngine : SQLite数据库管理模块
 
 @file database.py
 @description 数据库管理 - SQLite数据库连接和模型定义
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- SQLite数据库连接管理
-- ORM模型定义
-- 数据库初始化和迁移
-- 长期存储支持
-- 用户数据隔离
+本模块提供以下核心功能：
+    - SQLite数据库连接管理
+    - ORM模型定义
+    - 数据库初始化和迁移
+    - 长期存储支持
+    - 用户数据隔离
+    - 密码加密存储
+    - API密钥加密存储
+
+依赖:
+    - sqlalchemy: ORM框架
+    - cryptography: 加密库（可选）
+    - pwdlib: 密码哈希库（可选）
+
+使用示例:
+    - from app.core.database import db_manager, get_db_context
+    - with get_db_context() as db:
+    -     user = db_manager.get_user_by_id(db, user_id)
 
 使用场景：
-- Agent长期记忆存储
-- 执行历史持久化
-- 项目数据存储
-- 用户管理
+    - Agent长期记忆存储
+    - 执行历史持久化
+    - 项目数据存储
+    - 用户管理
 """
 
 import os

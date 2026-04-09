@@ -1,16 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-LLM 统一服务层模块。
+SoloEngine : LLM统一服务层模块
 
 @file llm_service.py
-@description 封装LLM调用的通用逻辑，为API层提供统一接口
-@author SoloEngine Team
-@date 2026-02-22
+@description LLM统一服务层 - 封装LLM调用的通用逻辑，为API层提供统一接口
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 统一LLM调用接口
-- 封装配置解密和模型创建逻辑
-- 提供标准化的响应格式
+本模块提供以下核心功能：
+    - 统一LLM调用接口
+    - 封装配置解密和模型创建逻辑
+    - 提供标准化的响应格式
+    - 自动处理加密的API Key
+    - 支持参数覆盖配置
+
+依赖:
+    - typing: 类型注解支持
+    - SoloAgent.model: LLM工厂和模型
+    - SoloAgent.model.model_response: 聊天响应
+    - SoloAgent.message: 消息块
+    - app.core.database: 数据库模型和加密服务
+
+使用示例:
+    - from app.core.llm_service import LLMService
+    - result = await LLMService.chat(
+    -     config=llm_config,
+    -     message="你好",
+    -     system_prompt="你是一个助手"
+    - )
+    - print(result["content"])
 
 设计理念：
     通过服务层封装底层LLM抽象层，为API层提供简洁的调用接口。

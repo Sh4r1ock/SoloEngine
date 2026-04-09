@@ -1,3 +1,25 @@
+/**
+ * SoloEngine : 工作区API服务模块
+ *
+ * @file workspaceApi.ts
+ * @description 工作区API服务 - 文件系统浏览和管理
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 获取工作区根目录列表
+ *     - 浏览目录内容
+ *     - 文件系统操作
+ *
+ * 依赖:
+ *     - axios: HTTP客户端
+ *
+ * 使用示例:
+ *     - import { workspaceApi } from './workspaceApi'
+ *     - const roots = await workspaceApi.getWorkspaceRoots()
+ */
+
 import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8990';

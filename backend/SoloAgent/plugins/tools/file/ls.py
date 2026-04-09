@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-目录列表工具模块。
+SoloEngine : 目录列表工具模块，提供目录内容列表功能
 
 @file ls.py
 @description 提供目录内容列表功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 列出目录内容

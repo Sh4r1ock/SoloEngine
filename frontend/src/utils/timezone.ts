@@ -1,7 +1,30 @@
 /**
- * 时区工具模块
- * 
- * 提供统一的时间处理方法，支持用户自定义时区
+ * SoloEngine : 时区工具模块
+ *
+ * @file timezone.ts
+ * @description 时区工具 - 提供统一的时间处理方法，支持用户自定义时区
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 设置用户时区
+ *     - 获取当前用户时区
+ *     - 格式化时间为用户时区
+ *     - 格式化时间为短格式
+ *     - 获取当前时间
+ *     - 获取所有可用时区列表
+ *     - 获取常用时区列表
+ *
+ * 依赖:
+ *     - dayjs: 日期时间处理库
+ *     - dayjs/plugin/utc: UTC插件
+ *     - dayjs/plugin/timezone: 时区插件
+ *
+ * 使用示例:
+ *     - import { setUserTimezone, formatTime, getUserTimezone } from './timezone'
+ *     - setUserTimezone('Asia/Shanghai')
+ *     - const formatted = formatTime(new Date())
  */
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';

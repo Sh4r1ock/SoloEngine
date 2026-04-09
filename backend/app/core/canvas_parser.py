@@ -1,22 +1,33 @@
+# -*- coding: utf-8 -*-
 """
+SoloEngine : 画布解析器模块
+
 @file canvas_parser.py
-@description 画布解析器 - 工作流画布数据解析模块
-@author SoloEngine Team
-@date 2026-02-19
+@description 工作流画布数据解析模块
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 解析画布JSON数据
-- 构建执行图
-- 解析节点数据、解析边数据
-- 构建执行依赖图、验证画布结构
+本模块提供以下核心功能：
+    - 解析画布JSON数据
+    - 构建执行图
+    - 解析节点数据、解析边数据
+    - 构建执行依赖图、验证画布结构
 
-使用场景：
-- 工作流执行前的数据验证和转换
-- 将前端画布数据转换为可执行的协作图
+依赖:
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - pydantic: 数据验证
+    - app.models.node: 节点模型
+
+使用示例:
+    - from app.core.canvas_parser import CanvasParser
+    - is_valid = CanvasParser.validate(canvas_data)
+    - parsed = CanvasParser.parse(canvas_data)
 
 注意事项：
-- 支持orchestrator、planner、executor、custom四种Agent类型
-- ReactFlow节点类型统一为'agent'
+    - 支持orchestrator、planner、executor、custom四种Agent类型
+    - ReactFlow节点类型统一为'agent'
 """
 import logging
 from typing import Dict, Any, List
@@ -25,25 +36,79 @@ from app.models.node import AgentNode, OrchestratorNode, PlannerNode, ExecutorNo
 
 logger = logging.getLogger(__name__)
 
+
 class NodeData(BaseModel):
+    """
+    节点数据模型
+    
+    属性:
+        id (str): 节点ID
+        type (str): 节点类型
+        position (Dict[str, float]): 节点位置
+        data (Dict[str, Any]): 节点数据
+    """
     id: str
     type: str
     position: Dict[str, float]
     data: Dict[str, Any]
 
+
 class EdgeData(BaseModel):
+    """
+    边数据模型
+    
+    属性:
+        id (str): 边ID
+        source (str): 源节点ID
+        target (str): 目标节点ID
+        label (str): 边标签
+    """
     id: str
     source: str
     target: str
     label: str
 
+
 class CanvasData(BaseModel):
+    """
+    画布数据模型
+    
+    属性:
+        nodes (List[NodeData]): 节点列表
+        edges (List[EdgeData]): 边列表
+    """
     nodes: List[NodeData]
     edges: List[EdgeData]
 
+
 class CanvasParser:
+    """
+    画布解析器
+    
+    职责:
+        - 验证画布数据格式
+        - 解析画布数据为可执行的节点和边
+        - 构建执行依赖图
+    
+    示例:
+        >>> is_valid = CanvasParser.validate(canvas_data)
+        >>> parsed = CanvasParser.parse(canvas_data)
+    """
+
     @staticmethod
     def validate(canvas_data: Dict[str, Any]) -> bool:
+        """
+        验证画布数据格式
+        
+        Args:
+            canvas_data: 画布数据字典
+            
+        Returns:
+            是否验证通过
+            
+        Example:
+            >>> is_valid = CanvasParser.validate({"nodes": [], "edges": []})
+        """
         try:
             CanvasData(**canvas_data)
             return True
@@ -53,6 +118,22 @@ class CanvasParser:
     
     @staticmethod
     def parse(canvas_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        解析画布数据
+        
+        Args:
+            canvas_data: 画布数据字典
+            
+        Returns:
+            包含nodes和edges的解析结果字典
+            
+        Raises:
+            ValueError: 如果画布数据无效
+            
+        Example:
+            >>> parsed = CanvasParser.parse(canvas_data)
+            >>> nodes = parsed["nodes"]
+        """
         if not CanvasParser.validate(canvas_data):
             raise ValueError("Invalid canvas data")
         

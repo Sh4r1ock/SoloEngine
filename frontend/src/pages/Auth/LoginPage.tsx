@@ -1,8 +1,27 @@
 /**
+ * SoloEngine : 登录页面组件
+ *
  * @file LoginPage.tsx
  * @description 登录页面 - 用户登录功能独立页面
- * @author SoloEngine Team
- * @date 2026-02-19
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本组件提供以下核心功能：
+ *     - 用户登录表单
+ * *     - 登录状态验证
+ *     - 登录成功后跳转
+ *     - 错误消息提示
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *     - @ant-design/icons: Ant Design图标
+ *     - ../../store/authStore: 认证状态管理
+ *
+ * 使用示例:
+ *     - <Route path="/login" element={<LoginPage />} />
  */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';

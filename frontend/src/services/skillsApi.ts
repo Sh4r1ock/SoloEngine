@@ -1,20 +1,34 @@
 /**
+ * SoloEngine : Skills API服务模块
+ *
  * @file skillsApi.ts
  * @description Skills API服务 - Skills包管理接口封装
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供Skills包管理相关的接口调用
- * - 获取Skills列表、安装/卸载/更新Skill、获取Skill详情
- * 
+ * 本模块提供以下核心功能：
+ *     - 获取Skills列表
+ *     - 安装Skill包
+ *     - 卸载Skill包
+ *     - 更新Skill包
+ *     - 获取Skill详情
+ *     - 导入/导出Skills包
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { skillsApi } from './skillsApi'
+ *     - const packages = await skillsApi.getPackages()
+ *
  * 使用场景：
- * - Skills包的创建、导入和管理
- * - Skills包的激活和停用
- * 
+ *     - Skills包的创建、导入和管理
+ *     - Skills包的激活和停用
+ *
  * 注意事项：
- * - Skills包需要正确配置元数据
- * - 支持导入外部Skills包文件
+ *     - Skills包需要正确配置元数据
+ *     - 支持导入外部Skills包文件
  */
 import { api } from './api';
 

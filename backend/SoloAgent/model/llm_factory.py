@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-LLM 工厂模块。
+SoloEngine : LLM工厂模块，统一创建各类模型实例
 
 @file llm_factory.py
-@description 提供统一的 LLM 模型实例创建接口
-@author SoloEngine Team
-@date 2026-02-20
+@description 提供统一的LLM模型实例创建接口，支持多种提供商
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 根据提供商名称创建模型实例

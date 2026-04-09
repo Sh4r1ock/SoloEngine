@@ -1,19 +1,38 @@
 # -*- coding: utf-8 -*-
 """
-LLM configuration API endpoints.
+SoloEngine : LLM配置API模块
 
 @file config.py
 @description LLM配置接口 - 模型管理相关API端点
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 获取LLM提供商列表
-- 获取提供商支持的模型列表
-- 创建/更新/删除LLM配置
-- 设置默认模型
-- 测试模型连接
-- 获取使用统计
+本模块提供以下核心功能：
+    - 获取LLM提供商列表
+    - 获取提供商支持的模型列表
+    - 创建/更新/删除LLM配置
+    - 设置默认模型
+    - 测试模型连接
+    - 获取使用统计
+
+依赖:
+    - os: 操作系统接口
+    - typing: 类型注解支持
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+    - sqlalchemy: ORM框架
+    - app.core.database: 数据库管理
+    - SoloAgent.model: LLM工厂
+    - SoloAgent.llm_tracker: LLM使用追踪
+
+使用示例:
+    - GET /api/v1/llm/providers - 获取提供商列表
+    - POST /api/v1/llm/configs - 创建LLM配置
+
+使用场景：
+    - LLM模型配置管理
+    - API密钥管理
 """
 import os
 from typing import List, Optional

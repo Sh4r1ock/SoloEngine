@@ -1,5 +1,29 @@
 # -*- coding: utf-8 -*-
-"""执行历史数据模型。"""
+"""
+SoloEngine : 执行历史数据模型模块
+
+@file execution_history.py
+@description 执行历史数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义执行历史相关的数据模型，包括：
+    - 执行状态枚举
+    - 执行步骤记录
+    - 执行历史记录
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.models.execution_history import ExecutionHistory, ExecutionStatus
+    - history = ExecutionHistory(history_id="1", flow_id="flow1")
+    - history.add_step(step)
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

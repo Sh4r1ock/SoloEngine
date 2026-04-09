@@ -1,5 +1,32 @@
 # -*- coding: utf-8 -*-
-"""包格式定义。"""
+"""
+SoloEngine : 包格式定义模块
+
+@file package_schema.py
+@description 包格式数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义打包相关的数据模型，包括：
+    - 包状态枚举
+    - 运行时类型枚举
+    - 包依赖
+    - 包文件
+    - 包清单
+    - 打包配置
+    - 打包结果
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.schemas.package_schema import PackageConfig, PackageManifest
+    - config = PackageConfig(project_name="my_project", name="my_package")
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

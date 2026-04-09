@@ -1,5 +1,33 @@
 # -*- coding: utf-8 -*-
-"""The JSON session class for SoloEngine."""
+"""
+SoloEngine : JSON会话模块，提供JSON格式的会话状态存储
+
+@file json_session.py
+@description 提供JSON格式的会话状态存储和加载
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供JSON会话实现，包括：
+    - JSONSession: JSON会话类
+    - 支持会话状态的JSON格式存储
+    - 支持从JSON文件加载会话状态
+    - 支持状态模块映射
+
+依赖:
+    - json: JSON处理
+    - os: 操作系统接口
+    - .session_base: 会话基类
+    - ..utils.state_module: 状态模块
+    - ..utils: 工具函数
+
+使用示例:
+    - from SoloAgent.session import JSONSession
+    - session = JSONSession(save_dir="./sessions")
+    - await session.save_session_state("session-123", memory=memory_module)
+    - await session.load_session_state("session-123", memory=memory_module)
+"""
+
 import json
 import os
 
@@ -9,22 +37,38 @@ from ..utils import logger
 
 
 class JSONSession(SessionBase):
-    """The JSON session class."""
+    """
+    JSON会话类
+
+    职责:
+        - 实现基于JSON的会话状态存储
+        - 支持会话状态保存到JSON文件
+        - 支持从JSON文件加载会话状态
+        - 管理状态模块映射
+
+    属性:
+        save_dir: 保存目录
+
+    示例:
+        >>> session = JSONSession(save_dir="./sessions")
+        >>> await session.save_session_state("session-123", memory=memory_module)
+        >>> await session.load_session_state("session-123", memory=memory_module)
+    """
 
     def __init__(
         self,
         session_id: str | None = None,
         save_dir: str = "./",
     ) -> None:
-        """Initialize the JSON session class.
+        """
+        初始化JSON会话类
 
         Args:
-            session_id (`str`):
-                The session id, deprecated and move to the `save_session_state`
-                and `load_session_state` methods to support different session
-                ids.
-            save_dir (`str`, defaults to `"./"`):
-                The directory to save the session state.
+            session_id: 会话ID（已弃用，请使用save_session_state和load_session_state方法）
+            save_dir: 保存目录，默认为当前目录
+
+        示例:
+            >>> session = JSONSession(save_dir="./sessions")
         """
         self.save_dir = save_dir
 
@@ -36,15 +80,18 @@ class JSONSession(SessionBase):
             )
 
     def _get_save_path(self, session_id: str) -> str:
-        """The path to save the session state.
+        """
+        获取会话状态的保存路径
 
         Args:
-            session_id (`str`):
-                The session id.
+            session_id: 会话ID
 
         Returns:
-            `str`:
-                The path to save the session state.
+            str: 保存路径
+
+        示例:
+            >>> path = session._get_save_path("session-123")
+            >>> print(path)  # "./sessions/session-123.json"
         """
         os.makedirs(self.save_dir, exist_ok=True)
         return os.path.join(self.save_dir, f"{session_id}.json")
@@ -54,13 +101,15 @@ class JSONSession(SessionBase):
         session_id: str,
         **state_modules_mapping: StateModule,
     ) -> None:
-        """Save the session state.
+        """
+        保存会话状态
 
         Args:
-            session_id (`str`):
-                The session id.
-            **state_modules_mapping (`dict[str, StateModule]`):
-                A dictionary mapping of state module names to their instances.
+            session_id: 会话ID
+            **state_modules_mapping: 状态模块名称到实例的映射字典
+
+        示例:
+            >>> await session.save_session_state("session-123", memory=memory_module)
         """
         save_path = self._get_save_path(session_id)
         
@@ -84,15 +133,19 @@ class JSONSession(SessionBase):
         allow_not_exist: bool = True,
         **state_modules_mapping: StateModule,
     ) -> None:
-        """Load the session state.
+        """
+        加载会话状态
 
         Args:
-            session_id (`str`):
-                The session id.
-            allow_not_exist (`bool`, defaults to `True`):
-                Whether to allow the session file not to exist.
-            **state_modules_mapping (`dict[str, StateModule]`):
-                A dictionary mapping of state module names to their instances.
+            session_id: 会话ID
+            allow_not_exist: 是否允许会话文件不存在
+            **state_modules_mapping: 状态模块名称到实例的映射字典
+
+        Raises:
+            FileNotFoundError: 当allow_not_exist为False且文件不存在时抛出
+
+        示例:
+            >>> await session.load_session_state("session-123", memory=memory_module)
         """
         save_path = self._get_save_path(session_id)
         

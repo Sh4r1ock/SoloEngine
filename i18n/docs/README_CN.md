@@ -8,7 +8,7 @@
 [!\[TypeScript\](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white null)](https://www.typescriptlang.org/)
 [!\[License\](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square null)](./LICENSE)
 
-**语言**: [English](../../README.md) | 简体中文
+**语言**: [English](../../README.md) | 简体中文 | [Español](./README_ES.md) | [Deutsch](./README_DE.md) | [Français](./README_FR.md)
 
 </div>
 
@@ -604,7 +604,21 @@ SoloEngine 正处于快速发展阶段，我们致力于打造一个开源、开
 
 ## 许可证
 
-本项目采用 Apache-2.0 许可证。详见 [LICENSE](../../LICENSE) 文件。
+Copyright 2026 Sh4rlock
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+详见 [LICENSE](../../LICENSE) 文件。
 
 ***
 

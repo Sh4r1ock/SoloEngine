@@ -1,21 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-运行项目 API endpoints。
+SoloEngine : 运行项目API模块
 
 @file run_project.py
 @description 运行项目管理API - 项目选择、文件系统隔离、最近项目记录
-@author SoloEngine Team
-@date 2026-02-22
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 项目选择和切换
-- 文件夹选择对话框接口
-- 最近项目记录管理
-- 文件系统访问隔离
+本模块提供以下核心功能：
+    - 项目选择和切换
+    - 文件夹选择对话框接口
+    - 最近项目记录管理
+    - 文件系统访问隔离
+    - 项目配置管理
+
+依赖:
+    - os: 操作系统接口
+    - json: JSON处理
+    - logging: 日志记录
+    - shutil: 文件操作
+    - typing: 类型注解支持
+    - datetime: 日期时间处理
+    - pathlib: 路径处理
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+    - sqlalchemy: ORM框架
+
+使用示例:
+    - POST /api/v1/run-project/select - 选择项目
+    - GET /api/v1/run-project/recent - 获取最近项目
 
 使用场景：
-- 运行场景中的项目管理
-- 文件系统沙箱隔离
+    - 运行场景中的项目管理
+    - 文件系统沙箱隔离
 """
 import os
 import json

@@ -1,22 +1,29 @@
 /**
+ * SoloEngine : 认证API服务模块
+ *
  * @file authApi.ts
  * @description 认证API服务 - 用户认证相关接口封装
- * @author SoloEngine Team
- * @date 2026-02-20
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供用户登录、注册、登出、获取当前用户等认证相关接口调用
- * - 用户登录、用户注册、用户登出、获取用户信息
- * 
- * 使用场景：
- * - 用户身份验证和会话管理
- * - 用户账户管理
- * 
+ * 本模块提供以下核心功能：
+ *     - 用户登录
+ *     - 用户注册
+ *     - 令牌刷新
+ *     - 获取当前用户信息
+ *     - 用户登出
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import authApi from './authApi'
+ *     - const token = await authApi.login('username', 'password')
+ *
  * 注意事项：
- * - 登录成功后会返回JWT令牌
- * - 需要妥善处理令牌的存储和刷新
- * 
- * 状态: ✅ 完整实现
+ *     - 登录成功后会返回JWT令牌
+ *     - 需要妥善处理令牌的存储和刷新
  */
 import { api, ApiResponse } from './api';
 

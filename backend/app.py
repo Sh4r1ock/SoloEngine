@@ -1,22 +1,35 @@
 """
+SoloEngine : FastAPI主应用模块
+
 @file app.py
 @description FastAPI主应用 - FastAPI应用主模块
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 创建和配置FastAPI应用实例
-- 注册路由和中间件
-- 配置CORS跨域支持
-- 提供项目保存和加载API
+本模块提供以下核心功能：
+    - 创建和配置FastAPI应用实例
+    - 注册路由和中间件
+    - 配置CORS跨域支持
+    - 提供项目保存和加载API
+    - 系统用户和Skills初始化
+
+依赖:
+    - fastapi: FastAPI框架
+    - fastapi.middleware.cors: CORS中间件
+    - logging: 日志记录
+    - app.api.v1: API路由模块
+
+使用示例:
+    - uvicorn app:app --host 0.0.0.0 --port 8990
 
 使用场景：
-- 作为FastAPI服务器的入口点
-- 配置全局中间件和路由
+    - 作为FastAPI服务器的入口点
+    - 配置全局中间件和路由
 
 注意事项：
-- CORS配置允许所有来源（生产环境应限制）
-- 支持热重载开发模式
+    - CORS配置允许所有来源（生产环境应限制）
+    - 支持热重载开发模式
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

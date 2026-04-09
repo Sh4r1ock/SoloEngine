@@ -1,5 +1,24 @@
 /**
- * 设置服务 - 时区设置相关 API
+ * SoloEngine : 设置API服务模块
+ *
+ * @file settingsApi.ts
+ * @description 设置服务 - 时区设置相关API
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 获取当前用户时区设置
+ *     - 设置用户时区
+ *     - 获取所有可用时区列表
+ *     - 获取当前时间信息
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { getTimezone, setTimezone } from './settingsApi'
+ *     - const timezone = await getTimezone()
  */
 import { api } from './api';
 

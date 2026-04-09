@@ -1,17 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-时区管理工具模块。
+SoloEngine : 时区管理工具模块
 
 @file timezone_utils.py
-@description 统一的时区管理工具，支持用户自定义时区设置
-@author SoloEngine Team
-@date 2026-03-08
+@description 时区管理工具 - 统一的时区管理，支持用户自定义时区设置
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 统一的时间获取方法
-- 时区转换功能
-- 用户时区设置管理
-- 时间格式化工具
+本模块提供以下核心功能：
+    - 统一的时间获取方法
+    - 时区转换功能
+    - 用户时区设置管理
+    - 时间格式化工具
+    - ISO 8601格式解析和生成
+
+依赖:
+    - datetime: 日期时间处理
+    - zoneinfo: 时区信息
+    - typing: 类型注解支持
+    - logging: 日志记录
+
+使用示例:
+    - from app.utils.timezone_utils import TimezoneManager, utc_now, user_now
+    - TimezoneManager.set_user_timezone("Asia/Shanghai")
+    - now = user_now()
+    - formatted = TimezoneManager.format_for_user(now)
+
+设计理念：
+    所有时间在数据库中以UTC存储，显示时转换为用户时区。
 """
 
 from datetime import datetime, timezone

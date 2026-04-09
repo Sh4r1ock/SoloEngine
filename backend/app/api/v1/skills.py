@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Skills 管理 API endpoints。
+SoloEngine : Skills管理API模块，提供Skills包管理相关API端点
 
 @file skills.py
 @description Skills接口 - Skills包管理相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 获取已安装Skills列表接口

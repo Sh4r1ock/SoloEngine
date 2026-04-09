@@ -1,5 +1,42 @@
 # -*- coding: utf-8 -*-
-"""打包引擎。"""
+"""
+SoloEngine : 打包引擎模块
+
+@file packager.py
+@description 打包引擎 - AgenticFlow打包和导出模块
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - AgenticFlow打包为可执行文件
+    - 生成Dockerfile和docker-compose配置
+    - 支持ZIP格式导出
+    - 生成主程序入口
+    - Skills依赖打包
+
+依赖:
+    - os: 操作系统接口
+    - json: JSON处理
+    - uuid: UUID生成
+    - zipfile: ZIP文件处理
+    - shutil: 文件操作
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - pathlib: 路径处理
+
+使用示例:
+    - from app.core.packager import Packager, PackageConfig
+    - packager = Packager()
+    - config = PackageConfig(name="my_flow", version="1.0.0")
+    - result = await packager.create_package("project_name", config)
+
+使用场景：
+    - 导出AgenticFlow为独立可执行包
+    - 部署到生产环境
+    - 分享工作流
+"""
 
 import os
 import json

@@ -1,5 +1,48 @@
+/**
+ * SoloEngine : WebSocket服务模块
+ *
+ * @file websocket.ts
+ * @description WebSocket服务 - 实时通信服务
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - WebSocket连接管理
+ *     - 消息接收和分发
+ *     - 自动重连机制
+ *     - 连接状态管理
+ *
+ * 依赖:
+ *     - ../types/canvas: 画布类型定义
+ *
+ * 使用示例:
+ *     - import { WebSocketService } from './websocket'
+ *     - const ws = new WebSocketService()
+ *     - await ws.connect('task-id')
+ */
+
 import { WebSocketEvent } from '../types/canvas';
 
+/**
+ * WebSocket服务类
+ *
+ * 职责:
+ *     - 管理WebSocket连接
+ *     - 处理消息接收和分发
+ *     - 实现自动重连机制
+ *
+ * 属性:
+ *     - ws: WebSocket实例
+ *     - messageHandlers: 消息处理器列表
+ *     - reconnectAttempts: 重连尝试次数
+ *     - maxReconnectAttempts: 最大重连次数
+ *
+ * 示例:
+ *     >>> const ws = new WebSocketService()
+ *     >>> ws.onMessage((event) => console.log(event))
+ *     >>> await ws.connect('task-id')
+ */
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private messageHandlers: ((event: WebSocketEvent) => void)[] = [];

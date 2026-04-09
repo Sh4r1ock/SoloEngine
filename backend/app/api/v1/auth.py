@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-认证 API endpoints。
+SoloEngine : 认证API模块，提供用户认证相关API端点
 
 @file auth.py
 @description 认证接口 - 用户认证相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 用户登录认证接口，验证用户名密码，返回JWT令牌

@@ -1,13 +1,26 @@
 /**
+ * SoloEngine : 认证状态管理模块
+ *
  * @file authStore.ts
  * @description 认证状态管理 - 用户认证状态管理模块
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 管理用户登录状态、用户信息、认证令牌等
- * - 使用Cookie持久化登录状态
- * - 支持令牌自动刷新
+ * 本模块提供以下核心功能：
+ *     - 管理用户登录状态
+ *     - 管理用户信息
+ *     - 管理认证令牌
+ *     - 使用Cookie持久化登录状态
+ *     - 支持令牌自动刷新
+ *
+ * 依赖:
+ *     - zustand: 状态管理库
+ *     - ../services/authApi: 认证API服务
+ *
+ * 使用示例:
+ *     - import { useAuthStore } from './store/authStore'
+ *     - const { user, login, logout } = useAuthStore()
  */
 import { create } from 'zustand';
 import { authApi, User, Token } from '../services/authApi';
@@ -75,17 +88,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error: any) {
       let errorMessage = '登录失败';
       const detail = error?.response?.data?.detail;
-      
+
+      // 后端错误信息中文映射
+      const errorMap: Record<string, string> = {
+        'Incorrect username or password': '用户名或密码错误',
+        'User not found': '用户不存在',
+        'User already exists': '用户已存在',
+        'Email already registered': '邮箱已被注册',
+        'Invalid token': '登录已过期，请重新登录',
+        'Token expired': '登录已过期，请重新登录',
+        'Invalid authorization header': '登录信息无效，请重新登录',
+        'Invalid token type': '登录信息无效，请重新登录',
+        'Invalid token payload': '登录信息无效，请重新登录',
+        'Not authenticated': '请先登录',
+        'User is inactive': '账户已被禁用',
+        'Not enough permissions': '没有权限执行此操作',
+        'Invalid refresh token': '登录已过期，请重新登录',
+        'Failed to update user': '更新用户信息失败',
+        'Cannot delete yourself': '不能删除自己的账户',
+      };
+
       if (detail) {
         if (detail.includes('per')) {
           errorMessage = '登录请求过于频繁，请稍后再试';
         } else {
-          errorMessage = detail;
+          errorMessage = errorMap[detail] || detail;
         }
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       set({ error: errorMessage, loading: false });
       return { success: false, error: errorMessage };
     }
@@ -106,17 +138,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (error: any) {
       let errorMessage = '注册失败';
       const detail = error?.response?.data?.detail;
-      
+
+      // 后端错误信息中文映射
+      const errorMap: Record<string, string> = {
+        'User already exists': '用户名已被注册',
+        'Email already registered': '邮箱已被注册',
+        'Invalid username format': '用户名格式不正确',
+        'Invalid email format': '邮箱格式不正确',
+        'Password too short': '密码长度不能少于6位',
+      };
+
       if (detail) {
         if (detail.includes('per')) {
           errorMessage = '注册请求过于频繁，请稍后再试';
         } else {
-          errorMessage = detail;
+          errorMessage = errorMap[detail] || detail;
         }
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       set({ error: errorMessage, loading: false });
       return { success: false, error: errorMessage };
     }

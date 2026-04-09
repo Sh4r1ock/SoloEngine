@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-文件读取工具模块。
+SoloEngine : 文件读取工具模块，提供文件读取功能
 
 @file read.py
 @description 提供文件读取功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 支持读取文件并显示行号

@@ -1,6 +1,32 @@
 # -*- coding: utf-8 -*-
-"""The truncated formatter base class, which allows to truncate the input
-messages."""
+"""
+SoloEngine : 截断格式化器基类，支持消息截断
+
+@file truncated_formatter_base.py
+@description 实现支持Token限制的消息格式化器基类
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供截断格式化器基类，包括：
+    - TruncatedFormatterBase: 截断格式化器基类
+    - 支持Token计数和限制
+    - 支持消息截断策略
+    - 支持消息分组处理
+
+依赖:
+    - abc: 抽象基类
+    - copy: 深拷贝
+    - typing: 类型提示
+    - .formatter_base: 格式化器基类
+    - ..message: 消息类型
+    - ..token_counter: Token计数器
+    - ..tracing: 追踪装饰器
+
+使用示例:
+    - from SoloAgent.formatter import TruncatedFormatterBase
+    - formatter = TruncatedFormatterBase(token_counter=counter, max_tokens=4096)
+"""
 from abc import ABC
 from copy import deepcopy
 from typing import (
@@ -17,25 +43,49 @@ from ..tracing import trace_format
 
 
 class TruncatedFormatterBase(FormatterBase, ABC):
-    """Base class for truncated formatters, which formats input messages into
-    required formats with tokens under a specified limit."""
+    """
+    截断格式化器基类
+
+    职责:
+        - 格式化输入消息为所需格式
+        - 支持Token限制和截断
+        - 管理消息分组
+        - 处理系统消息、工具序列和Agent消息
+
+    属性:
+        token_counter: Token计数器实例
+        max_tokens: 最大Token数限制
+
+    示例:
+        >>> formatter = TruncatedFormatterBase(
+        ...     token_counter=token_counter,
+        ...     max_tokens=4096
+        ... )
+        >>> formatted = await formatter.format(messages)
+    """
 
     def __init__(
         self,
         token_counter: TokenCounterBase | None = None,
         max_tokens: int | None = None,
     ) -> None:
-        """Initialize the TruncatedFormatterBase.
+        """
+        初始化截断格式化器基类
 
         Args:
-            token_counter (`TokenCounterBase | None`, optional):
-                A token counter instance used to count tokens in the messages.
-                If not provided, the formatter will format the messages
-                without considering token limits.
-            max_tokens (`int | None`, optional):
-                The maximum number of tokens allowed in the formatted
-                messages. If not provided, the formatter will not truncate
-                the messages.
+            token_counter: Token计数器实例，用于计算消息中的Token数。
+                如果未提供，格式化器将不考虑Token限制。
+            max_tokens: 格式化消息中允许的最大Token数。
+                如果未提供，格式化器将不会截断消息。
+
+        Raises:
+            AssertionError: 当max_tokens不大于0时抛出
+
+        示例:
+            >>> formatter = TruncatedFormatterBase(
+            ...     token_counter=token_counter,
+            ...     max_tokens=4096
+            ... )
         """
         self.token_counter = token_counter
 
@@ -50,17 +100,20 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         msgs: list[Msg],
         **kwargs: Any,
     ) -> list[dict[str, Any]]:
-        """Format the input messages into the required format. If token
-        counter and max token limit are provided, the messages will be
-        truncated to fit the limit.
+        """
+        格式化输入消息为所需格式
+
+        如果提供了Token计数器和最大Token限制，消息将被截断以适应限制。
 
         Args:
-            msgs (`list[Msg]`):
-                The input messages to be formatted.
+            msgs: 要格式化的输入消息列表
+            **kwargs: 额外的关键字参数
 
         Returns:
-            `list[dict[str, Any]]`:
-                The formatted messages in the required format.
+            list[dict[str, Any]]: 格式化后的消息列表
+
+        示例:
+            >>> formatted = await formatter.format(messages)
         """
 
         # Check if the input messages are valid
@@ -116,11 +169,21 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         self,
         msg: Msg,
     ) -> dict[str, Any]:
-        """Format system message for the LLM API.
+        """
+        格式化系统消息为LLM API格式
 
-        .. note:: This is the default implementation. For certain LLM APIs
-        with specific requirements, you may need to implement a custom
-        formatting function to accommodate those particular needs.
+        这是默认实现。对于某些有特定要求的LLM API，
+        可能需要实现自定义格式化函数来满足特定需求。
+
+        Args:
+            msg: 系统消息对象
+
+        Returns:
+            dict[str, Any]: 格式化后的系统消息字典
+
+        示例:
+            >>> system_msg = Msg(name="system", content="你是助手", role="system")
+            >>> formatted = await formatter._format_system_message(system_msg)
         """
         return {
             "role": "system",
@@ -131,8 +194,24 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         self,
         msgs: list[Msg],
     ) -> list[dict[str, Any]]:
-        """Given a sequence of tool call/result messages, format them into
-        the required format for the LLM API."""
+        """
+        格式化工具调用/结果消息序列
+
+        将工具调用和结果消息序列格式化为LLM API所需的格式
+
+        Args:
+            msgs: 工具调用/结果消息列表
+
+        Returns:
+            list[dict[str, Any]]: 格式化后的消息列表
+
+        Raises:
+            NotImplementedError: 子类必须实现此方法
+
+        示例:
+            >>> tool_msgs = [msg1, msg2]
+            >>> formatted = await formatter._format_tool_sequence(tool_msgs)
+        """
         raise NotImplementedError(
             "_format_tool_sequence is not implemented",
         )
@@ -142,39 +221,55 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         msgs: list[Msg],
         is_first: bool = True,
     ) -> list[dict[str, Any]]:
-        """Given a sequence of messages without tool calls/results, format
-        them into the required format for the LLM API."""
+        """
+        格式化Agent消息序列
+
+        将不包含工具调用/结果的Agent消息序列格式化为LLM API所需的格式
+
+        Args:
+            msgs: Agent消息列表
+            is_first: 是否为第一条Agent消息
+
+        Returns:
+            list[dict[str, Any]]: 格式化后的消息列表
+
+        Raises:
+            NotImplementedError: 子类必须实现此方法
+
+        示例:
+            >>> agent_msgs = [msg1, msg2]
+            >>> formatted = await formatter._format_agent_message(agent_msgs)
+        """
         raise NotImplementedError(
             "_format_agent_message is not implemented",
         )
 
     async def _truncate(self, msgs: list[Msg]) -> list[Msg]:
-        """Truncate the input messages, so that it can fit the token limit.
-        This function is called only when
+        """
+        截断输入消息以适应Token限制
 
-        - both `token_counter` and `max_tokens` are provided,
-        - the formatted output of the input messages exceeds the token limit.
+        此函数仅在以下情况下被调用：
+        - 同时提供了token_counter和max_tokens
+        - 输入消息的格式化输出超过了Token限制
 
-        .. tip:: This function only provides a simple strategy, and developers
-         can override this method to implement more sophisticated
-         truncation strategies.
+        提示：此函数只提供简单的截断策略，开发者可以覆盖此方法
+        以实现更复杂的截断策略。
 
-        .. note:: The tool call message should be truncated together with
-         its corresponding tool result message to satisfy the LLM API
-         requirements.
+        注意：工具调用消息应与其对应的工具结果消息一起截断，
+        以满足LLM API的要求。
 
         Args:
-            msgs (`list[Msg]`):
-                The input messages to be truncated.
-
-        Raises:
-            `ValueError`:
-                If the system prompt message already exceeds the token limit,
-                or if there are tool calls without corresponding tool results.
+            msgs: 要截断的输入消息列表
 
         Returns:
-            `list[Msg]`:
-                The truncated messages.
+            list[Msg]: 截断后的消息列表
+
+        Raises:
+            ValueError: 当系统提示消息已超过Token限制时抛出
+            ValueError: 当存在没有对应工具结果的工具调用时抛出
+
+        示例:
+            >>> truncated = await formatter._truncate(messages)
         """
         start_index = 0
         if len(msgs) > 0 and msgs[0].role == "system":
@@ -215,12 +310,20 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         return msgs[:start_index]
 
     async def _count(self, msgs: list[dict[str, Any]]) -> int | None:
-        """Count the number of tokens in the input messages. If token counter
-        is not provided, `None` will be returned.
+        """
+        计算输入消息中的Token数
+
+        如果未提供Token计数器，则返回None
 
         Args:
-            msgs (`list[Msg]`):
-                The input messages to count tokens for.
+            msgs: 要计算Token的输入消息列表
+
+        Returns:
+            int | None: Token数量，如果未提供计数器则返回None
+
+        示例:
+            >>> count = await formatter._count(formatted_messages)
+            >>> print(count)  # 150
         """
         if self.token_counter is None:
             return None
@@ -234,27 +337,27 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         Tuple[Literal["tool_sequence", "agent_message"], list[Msg]],
         None,
     ]:
-        """Group the input messages into two types and yield them as a
-        generator. The two types are:
+        """
+        将输入消息分组为两种类型
 
-        - agent message that doesn't contain tool calls/results, and
-        - tool sequence that consisted of a sequence of tool calls/results
+        两种类型分别是：
+        - agent_message: 不包含工具调用/结果的Agent消息
+        - tool_sequence: 由工具调用/结果组成的消息序列
 
-        .. note:: The group operation is used in multi-agent scenario, where
-         multiple entities are involved in the input messages. So that to be
-         compatible with tools API, we have to group the messages and format
-         them with different strategies.
+        注意：分组操作用于多Agent场景，其中多个实体参与输入消息。
+        为了兼容工具API，我们必须对消息进行分组并使用不同的策略格式化。
 
         Args:
-            msgs (`list[Msg]`):
-                The input messages to be grouped, where the system prompt
-                message shouldn't be included.
+            msgs: 要分组的输入消息列表（不应包含系统提示消息）
 
         Yields:
-            `AsyncGenerator[Tuple[str, list[Msg]], None]`:
-                A generator that yields tuples of group type and the list of
-                messages in that group. The group type can be either
-                "tool_sequence" or "agent_message".
+            AsyncGenerator[Tuple[str, list[Msg]], None]: 生成器，
+                产生分组类型和该组中的消息列表。
+                分组类型可以是"tool_sequence"或"agent_message"
+
+        示例:
+            >>> async for group_type, group_msgs in formatter._group_messages(msgs):
+            ...     print(f"Type: {group_type}, Count: {len(group_msgs)}")
         """
 
         group_type: Literal["tool_sequence", "agent_message"] | None = None

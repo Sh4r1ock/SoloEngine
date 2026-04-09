@@ -1,22 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-执行上下文管理器。
+SoloEngine : 执行上下文管理器模块
 
 @file execution_context.py
-@description 管理运行中的任务，支持取消操作
-@author SoloEngine Team
-@date 2026-03-16
+@description 执行上下文管理器 - 管理运行中的任务，支持取消操作
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 跟踪运行中的 asyncio.Task
-- 提供 cancel_event 信号传播
-- 支持通过 WebSocket 或 HTTP API 取消任务
-- 自动清理已完成的任务
+本模块提供以下核心功能：
+    - 跟踪运行中的 asyncio.Task
+    - 提供 cancel_event 信号传播
+    - 支持通过 WebSocket 或 HTTP API 取消任务
+    - 自动清理已完成的任务
+    - 多任务并发管理
+
+依赖:
+    - asyncio: 异步IO支持
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - threading: 线程锁支持
+
+使用示例:
+    - from app.core.execution_context import ExecutionContextManager
+    - manager = ExecutionContextManager()
+    - context = manager.register(task, user_id, flow_id, session_id, project_id)
+    - success = manager.cancel(user_id, flow_id, session_id, project_id)
 
 使用场景：
-- 用户点击停止按钮时取消正在运行的 LLM 推理
-- 超时自动取消任务
-- 多任务并发管理
+    - 用户点击停止按钮时取消正在运行的 LLM 推理
+    - 超时自动取消任务
+    - 多任务并发管理
 """
 
 import asyncio

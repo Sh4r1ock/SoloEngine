@@ -1,20 +1,30 @@
 /**
+ * SoloEngine : 打包API服务模块
+ *
  * @file packageApi.ts
  * @description 打包API服务 - 项目打包相关接口封装
- * @author SoloEngine Team
- * @date 2026-02-20
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 提供项目打包功能
- * - 提供包管理功能
- * - 支持包下载和部署
- * 
+ * 本模块提供以下核心功能：
+ *     - 项目打包功能
+ *     - 包管理功能
+ *     - 包下载
+ *     - 部署准备
+ *     - 包配置管理
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { packageApi } from './packageApi'
+ *     - const result = await packageApi.createPackage(projectId, config)
+ *
  * 使用场景：
- * - 项目打包发布
- * - 包管理
- * - 部署准备
- * 
- * 状态: ✅ 完整实现
+ *     - 项目打包发布
+ *     - 包管理
+ *     - 部署准备
  */
 import { api } from './api';
 

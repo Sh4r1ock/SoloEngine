@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""OpenAI TTS Model implementation."""
+"""
+SoloEngine : OpenAI TTS模型实现
+
+@file openai_tts.py
+@description OpenAI文本转语音模型实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供OpenAI TTS模型实现，包括：
+    - OpenAITTSModel: OpenAI文本转语音模型
+    - 支持多种语音（alloy, echo, fable, onyx, nova, shimmer）
+    - 支持语速调节
+    - 支持多种输出格式
+
+依赖:
+    - os: 操作系统接口
+    - aiofiles: 异步文件操作
+    - typing: 类型提示
+    - datetime: 日期时间
+    - logging: 日志记录
+    - httpx: HTTP客户端
+    - ...core.interfaces: 核心接口
+
+使用示例:
+    - from SoloAgent.plugins.tts import OpenAITTSModel
+    - tts = OpenAITTSModel(api_key="your_key")
+    - result = await tts.synthesize("Hello World")
+    - voices = await tts.get_available_voices()
+"""
 
 import os
 import aiofiles
@@ -13,8 +42,29 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAITTSModel(ITTSModel):
-    """OpenAI Text-to-Speech model implementation."""
-    
+    """
+    OpenAI文本转语音模型
+
+    职责:
+        - 实现ITTSModel接口
+        - 调用OpenAI TTS API
+        - 支持多种语音和语速
+        - 管理音频输出
+
+    属性:
+        api_key: OpenAI API密钥
+        model: TTS模型名称
+        voice: 默认语音
+        output_path: 输出路径
+        base_url: API基础URL
+        _client: HTTP客户端
+
+    示例:
+        >>> tts = OpenAITTSModel(api_key="your_key", voice="alloy")
+        >>> result = await tts.synthesize("Hello World")
+        >>> print(result["output_file"])
+    """
+
     def __init__(
         self,
         api_key: Optional[str] = None,
@@ -23,13 +73,26 @@ class OpenAITTSModel(ITTSModel):
         output_path: str = "./tts_output",
         base_url: Optional[str] = None,
     ):
+        """
+        初始化OpenAI TTS模型
+
+        Args:
+            api_key: OpenAI API密钥，默认从环境变量读取
+            model: TTS模型名称，默认为"tts-1"
+            voice: 默认语音，默认为"alloy"
+            output_path: 输出路径，默认为"./tts_output"
+            base_url: API基础URL，默认为OpenAI官方API
+
+        示例:
+            >>> tts = OpenAITTSModel(api_key="your_key")
+        """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.voice = voice
         self.output_path = output_path
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
         self._client = None
-        
+
         os.makedirs(output_path, exist_ok=True)
     
     def _get_client(self):

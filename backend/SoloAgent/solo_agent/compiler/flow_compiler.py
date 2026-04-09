@@ -1,13 +1,41 @@
 """
-AgenticFlow 编译器
-将画布 JSON 编译为可执行的多智能体系统
+AgenticFlow编译器机制-flow_compiler.py: AgenticFlow编译器，将画布JSON编译为可执行的多智能体系统
 
-功能增强：
-- 网关注册集成
-- 并发处理机制
-- 流式输出回调支持
-- 完整数据库持久化
-- 自动加载 LLM/MCP/Skills 配置
+@file flow_compiler.py
+@description 实现AgenticFlow编译器，将画布配置编译为可执行的CompiledFlow
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块实现AgenticFlow编译器机制，提供以下核心功能：
+- AgenticFlowCompiler: 将画布JSON编译为CompiledFlow
+- CompiledFlow: 编译后的流程对象，作为MCP Host管理多Agent执行
+- CompiledFlowFactory: 流程工厂，创建CompiledFlow实例
+- FlowRunner: 流程运行器，执行编译后的流程
+- ExecutionEvent: 执行事件数据类，用于事件通知
+
+核心特性：
+- 网关注册集成：与AgenticFlowGateway协作
+- 并发处理机制：支持多Agent并发执行
+- 流式输出回调：支持实时输出到前端
+- 完整数据库持久化：自动保存执行历史
+- 自动加载配置：自动加载LLM/MCP/Skills配置
+
+依赖:
+- os, uuid, time, asyncio, json: 基础库
+- typing: 类型提示
+- collections: 有序字典
+- threading: 线程锁
+- datetime: 时间处理
+- dataclasses: 数据类
+- ..config: SoloAgentConfig
+- ..agent: SoloAgent
+- app.core.config: 应用配置
+
+使用示例:
+- compiler = AgenticFlowCompiler()
+- compiled = await compiler.compile(canvas_config)
+- async for event in compiled.run(user_input): process(event)
 """
 import os
 import uuid
@@ -30,7 +58,26 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExecutionEvent:
-    """执行事件数据类"""
+    """
+    执行事件数据类
+    
+    职责:
+    - 封装流程执行过程中的各类事件
+    - 支持多种事件类型：消息、工具调用、Skill调用、MCP调用等
+    - 提供时间戳和元数据支持
+    
+    属性:
+        event_type (str): 事件类型
+        agent_id (Optional[str]): Agent ID
+        agent_name (Optional[str]): Agent名称
+        content (Optional[str]): 内容
+        message (Optional[Dict]): 消息数据
+        tool_name (Optional[str]): 工具名称
+        tool_args (Optional[Dict]): 工具参数
+        tool_result (Optional[str]): 工具结果
+        timestamp (str): 时间戳
+        metadata (Dict[str, Any]): 元数据
+    """
     event_type: str
     agent_id: Optional[str] = None
     agent_name: Optional[str] = None
@@ -55,13 +102,24 @@ class ExecutionEvent:
 
 
 class CompiledFlow:
-    """编译后的 AgenticFlow - 作为MCP Host
+    """
+    编译后的AgenticFlow类 - 作为MCP Host
     
-    职责：
-    1. 管理多个Agent的执行
-    2. 协调会话生命周期
-    3. Host层统一管理MCP Client
-    4. 事件管理和流式输出
+    职责:
+    - 管理多个Agent的执行
+    - 协调会话生命周期
+    - Host层统一管理MCP Client
+    - 事件管理和流式输出
+    
+    属性:
+        agents (Dict[str, SoloAgent]): Agent字典
+        edges (Dict[str, List[str]]): Agent连接关系
+        orchestrator_id (Optional[str]): 编排器Agent ID
+        agentic_flow_id (str): AgenticFlow ID
+        session_id (str): 会话ID
+        user_id (str): 用户ID
+        run_project_id (str): 运行项目ID
+        mcp_client_manager (Optional[MCPHostClientManager]): MCP客户端管理器
     """
     
     def __init__(
@@ -75,7 +133,8 @@ class CompiledFlow:
         run_project_id: str = None,
         mcp_client_manager: Optional["MCPHostClientManager"] = None,
     ):
-        """初始化CompiledFlow
+        """
+        初始化CompiledFlow
         
         Args:
             agents: Agent字典

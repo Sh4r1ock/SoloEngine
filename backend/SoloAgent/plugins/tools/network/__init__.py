@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-网络工具模块。
+SoloEngine : 网络工具模块，提供网络搜索和网页获取功能
 
 @file __init__.py
 @description 提供网络相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - WebSearch: 网络搜索工具

@@ -1,8 +1,25 @@
 /**
+ * SoloEngine : 开放市场API服务模块
+ *
  * @file marketplaceApi.ts
  * @description 开放市场API服务 - MCP和Skills市场接口封装
- * @author SoloEngine Team
- * @date 2026-02-19
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 获取MCP市场列表
+ *     - 获取Skills市场列表
+ *     - 安装市场项目
+ *     - 搜索市场项目
+ *     - 按分类筛选
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { marketplaceApi } from './marketplaceApi'
+ *     - const items = await marketplaceApi.getMCPMarket()
  */
 
 import { api } from './api';

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-JSON 相关类型定义模块。
+SoloEngine : JSON类型定义模块，定义JSON可序列化类型
 
 @file json.py
-@description 定义 JSON 可序列化类型
-@author SoloEngine Team
-@date 2026-02-20
+@description 定义JSON可序列化类型
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 定义 JSON 原始类型

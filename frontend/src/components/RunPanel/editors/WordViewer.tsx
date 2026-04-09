@@ -82,7 +82,15 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
           } else if (response.status === 404) {
             throw new Error('文件不存在');
           }
-          throw new Error(`获取文件失败: ${response.status} ${response.statusText}`);
+          const statusMap: Record<number, string> = {
+            400: '请求参数错误',
+            403: '没有权限访问',
+            500: '服务器内部错误',
+            502: '网关错误',
+            503: '服务暂时不可用',
+            504: '网关超时',
+          };
+          throw new Error(statusMap[response.status] || `获取文件失败 (${response.status})`);
         }
         
         arrayBuffer = await response.arrayBuffer();

@@ -1,7 +1,37 @@
+# -*- coding: utf-8 -*-
+"""
+SoloEngine : 文件管理器模块
+
+@file file_manager.py
+@description 文件管理器 - AgenticFlow文件存储管理
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - AgenticFlow文件存储
+    - 文件读写操作
+    - 文件列表管理
+    - 文件存在性检查
+
+依赖:
+    - os: 操作系统接口
+    - json: JSON处理
+    - pathlib: 路径处理
+    - typing: 类型注解支持
+
+使用示例:
+    - from frontend_interaction.save_service.file_manager import FileManager
+    - manager = FileManager()
+    - manager.save_flow_to_file("my_flow", flow_data)
+    - data = manager.load_flow_from_file("my_flow")
+"""
+
 import os
 import json
 from pathlib import Path
 from typing import Dict, Any, Optional
+
 
 class FileManager:
     def __init__(self, base_dir: str = None):

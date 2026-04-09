@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Anthropic Claude 聊天模型类。
+SoloEngine : Anthropic Claude模型实现，支持Claude 3系列
 
 @file anthropic_model.py
-@description 实现 Anthropic Claude 系列模型的 API 调用
-@author SoloEngine Team
-@date 2026-02-20
+@description 实现Anthropic Claude系列模型的API调用，支持Claude 3 Opus/Sonnet/Haiku
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 支持 Anthropic Claude 系列模型（Claude 3 Opus, Sonnet, Haiku）

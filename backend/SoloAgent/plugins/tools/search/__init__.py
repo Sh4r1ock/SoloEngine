@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-搜索工具模块。
+SoloEngine : 搜索工具模块，提供代码搜索和文件匹配功能
 
 @file __init__.py
 @description 提供代码搜索相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - SearchCodebase: 代码库语义搜索

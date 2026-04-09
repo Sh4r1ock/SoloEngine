@@ -1,3 +1,28 @@
+# -*- coding: utf-8 -*-
+"""
+SoloEngine : 应用模块入口
+
+@file __init__.py
+@description 应用模块入口，初始化FastAPI应用
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块是应用模块的入口，执行以下初始化操作：
+    - 加载环境变量
+    - 配置系统路径
+    - 导入FastAPI应用实例
+
+依赖:
+    - dotenv: 环境变量加载
+    - pathlib: 路径处理
+    - sys: 系统路径配置
+
+使用示例:
+    - from app import app
+    - uvicorn.run(app)
+"""
+
 from dotenv import load_dotenv
 from pathlib import Path
 

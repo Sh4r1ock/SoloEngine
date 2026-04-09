@@ -1,18 +1,37 @@
 # -*- coding: utf-8 -*-
 """
-MCP Host Client 管理器
+AgenticFlow编译器机制-mcp_host_client_manager.py: MCP Host Client管理器
 
-职责：
+@file mcp_host_client_manager.py
+@description Host层MCP Client统一管理，符合MCP官方架构
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块实现AgenticFlow编译器机制的MCP Host Client管理器，提供以下核心功能：
+- Host层统一管理所有MCP Client
+- 编译时收集所有Agent配置的mcp_servers
+- 统一创建和注册MCPClient
+- 管理Client生命周期（连接、断开、重连）
+- 多个Agent共享同一个Client实例
+
+核心职责：
 1. Host层统一管理所有MCP Client
 2. 编译时收集所有Agent配置的mcp_servers
 3. 统一创建和注册MCPClient
-4. 管理Client生命周期(连接、断开、重连)
+4. 管理Client生命周期（连接、断开、重连）
 5. 多个Agent共享同一个Client
 
-@file mcp_host_client_manager.py
-@description Host层MCP Client统一管理
-@author SoloEngine Team
-@date 2026-04-08
+依赖:
+- logging: 日志记录
+- typing: 类型提示
+- asyncio: 异步操作
+- SoloAgent.plugins.mcp.mcp_client: MCPClient实现
+
+使用示例:
+- manager = MCPHostClientManager()
+- result = await manager.register_servers(mcp_servers, user_id)
+- tools = await manager.get_all_tools()
 """
 
 import logging
@@ -25,13 +44,18 @@ logger = logging.getLogger(__name__)
 
 
 class MCPHostClientManager:
-    """MCP Host Client 管理器
+    """
+    MCP Host Client管理器类
     
-    Host层统一管理所有MCP Client，符合MCP官方架构。
+    职责:
+    - Host层统一管理所有MCP Client
+    - 符合MCP官方架构设计
+    - 管理Client生命周期
+    - 支持多Agent共享Client
     
-    Attributes:
-        _clients: Dict[str, MCPClient] - server_name到Client的映射
-        _server_configs: Dict[str, Dict] - server_name到配置的映射
+    属性:
+        _clients (Dict[str, MCPClient]): server_name到Client的映射
+        _server_configs (Dict[str, Dict]): server_name到配置的映射
     """
     
     def __init__(self):
