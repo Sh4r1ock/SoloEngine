@@ -1,43 +1,47 @@
 # -*- coding: utf-8 -*-
 """
-ReAct 核心微内核模块。
+ReAct核心机制-react_core.py: 实现ReAct（Reasoning + Acting）架构的核心微内核
 
 @file react_core.py
-@description 实现 ReAct（Reasoning + Acting）架构的核心微内核
-@author SoloEngine Team
-@date 2026-02-20
+@description 实现ReAct架构的核心微内核，提供推理-行动循环和四事件机制
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 实现推理-行动循环的核心逻辑
-- 支持多轮迭代直到任务完成
-- 自动检测任务完成条件（支持多模型 API）
-- 集成记忆、RAG、工具执行等插件
+本模块是ReAct核心机制的实现，提供以下核心功能：
+- 实现推理-行动循环的核心逻辑（Thought → Action → Observation）
+- 支持多轮迭代直到任务完成，可配置最大迭代次数
+- 自动检测任务完成条件，统一处理多模型API差异
+- 集成记忆、RAG、工具执行等插件接口
+- 实现四事件机制：ToolCallEventType工具调用事件管理
+- 维护_conversation_history作为唯一记忆缓存
 
-ReAct 架构说明：
-    ReAct 是一种将推理（Reasoning）和行动（Acting）交替进行的 Agent 架构。
-    每轮迭代包含：
-    1. Thought（思考）：分析当前状态，决定下一步行动
-    2. Action（行动）：执行工具调用或生成回复
-    3. Observation（观察）：获取行动结果，更新状态
+ReAct架构说明：
+ReAct是一种将推理（Reasoning）和行动（Acting）交替进行的Agent架构。
+每轮迭代包含三个阶段：
+1. Thought（思考）：分析当前状态，决定下一步行动
+2. Action（行动）：执行工具调用或生成回复
+3. Observation（观察）：获取行动结果，更新状态
 
 多模型任务完成检测：
-    不同模型使用不同的 API 字段表示任务完成：
-    - Claude: stop_reason = "end_turn" (完成) / "tool_use" (工具调用)
-    - OpenAI/GLM/DeepSeek: finish_reason = "stop" (完成) / "tool_calls" (工具调用)
-    
-    本模块统一处理这些差异，提供一致的任务完成检测接口。
+不同模型使用不同的API字段表示任务完成：
+- Claude: stop_reason = "end_turn" (完成) / "tool_use" (工具调用)
+- OpenAI/GLM/DeepSeek: finish_reason = "stop" (完成) / "tool_calls" (工具调用)
+本模块统一处理这些差异，提供一致的任务完成检测接口。
 
-设计理念：
-    - 微内核架构：核心只负责控制流，功能通过插件接口扩展
-    - 单一职责：核心不包含具体业务逻辑，只协调各组件
-    - 可测试性：通过依赖注入实现松耦合，便于单元测试
+依赖:
+- asyncio: 异步操作支持
+- json: JSON数据处理
+- re: 正则表达式
+- typing: 类型提示
+- ..message: 消息类型定义
+- ..model: 模型基类
+- ..formatter: 格式化器
+- .interfaces: 核心插件接口
 
-使用场景：
-    - 对话型 Agent 的核心引擎
-    - 任务执行型 Agent 的控制中心
-    - 多 Agent 系统的单个 Agent 实例
-
-状态: ✅ 完整实现
+使用示例:
+- core = ReActCore(model=model, tools=tools, memory=memory)
+- async for chunk in core.reply(user_input): process(chunk)
 """
 
 import asyncio
@@ -136,7 +140,23 @@ class StopReason(Enum):
 
 
 class ToolCallEventType(str, Enum):
-    """工具调用事件类型"""
+    """
+    工具调用事件类型枚举
+    
+    职责:
+        - 定义工具调用过程中的四种事件类型
+        - 用于标识工具调用生命周期的各个阶段
+    
+    属性:
+        TOOL_CALL_START: 工具调用开始事件
+        TOOL_CALL_ARGS: 工具调用参数传输事件
+        TOOL_CALL_END: 工具调用结束事件
+        TOOL_CALL_RESULT: 工具调用结果事件
+    
+    示例:
+        >>> event_type = ToolCallEventType.TOOL_CALL_START
+        >>> print(event_type.value)
+    """
     TOOL_CALL_START = "TOOL_CALL_START"
     TOOL_CALL_ARGS = "TOOL_CALL_ARGS"
     TOOL_CALL_END = "TOOL_CALL_END"
@@ -186,6 +206,22 @@ class ToolCallEventManager:
         })
     
     def on_tool_call_args(self, tool_call_id: str, delta: str):
+        """
+        处理工具调用参数增量更新
+        
+        Args:
+            tool_call_id: 工具调用ID
+            delta: 参数增量内容
+        
+        Returns:
+            None
+        
+        Raises:
+            无异常抛出
+        
+        Example:
+            >>> manager.on_tool_call_args("call_123", '{"key": "val')
+        """
         if tool_call_id not in self._active_tool_calls:
             logger.warning(f"[ToolCallEventManager] Unknown tool_call_id: {tool_call_id}")
             return

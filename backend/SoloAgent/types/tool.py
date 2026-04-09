@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-工具相关类型定义模块。
+SoloEngine : 工具相关类型定义模块
 
 @file tool.py
 @description 定义工具函数的类型签名
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 定义工具函数的类型签名
-- 支持同步和异步工具函数
-- 支持生成器风格的工具函数
+本模块提供工具函数类型定义，包括：
+    - ToolFunction: 工具函数类型别名
+    - 支持同步和异步工具函数
+    - 支持生成器风格的工具函数
 
 工具函数类型：
     ToolFunction 支持以下返回类型：
@@ -29,6 +30,15 @@
     - 定义工具函数时的类型注解
     - 工具执行器中的类型检查
     - IDE 自动补全和类型检查
+
+依赖:
+    - typing: 类型提示
+    - ..plugins.tools: 工具响应类型
+
+使用示例:
+    - from SoloAgent.types import ToolFunction
+    - def my_tool() -> ToolFunction:
+    -     return {"content": "结果"}
 
 状态: ✅ 完整实现
 """

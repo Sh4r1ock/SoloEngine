@@ -1,6 +1,31 @@
 """
-SoloAgent 基础类
-简洁的 Agent 配置类，支持声明式配置
+SoloAgent机制-agent.py: SoloAgent基础类，简洁的Agent配置类，支持声明式配置
+
+@file agent.py
+@description SoloAgent基础类实现，支持声明式配置和延迟加载
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块实现SoloAgent机制的基础类，提供以下核心功能：
+- 声明式配置：只需指定名称，自动加载详细配置
+- 延迟加载：配置细节在运行时按需从数据库/文件加载
+- 多模型支持：通过provider + model自动选择模型
+- 流式输出：原生支持流式响应
+- 子Agent调用：支持通过subagents列表调用子Agent
+- 记忆管理：与CompiledFlow层协作，统一处理历史消息
+
+依赖:
+- asyncio: 异步操作支持
+- json: JSON数据处理
+- logging: 日志记录
+- typing: 类型提示
+- .config: SoloAgentConfig配置类
+
+使用示例:
+- config = SoloAgentConfig(name="my_agent", provider="openai", model="gpt-4")
+- agent = SoloAgent(config)
+- async for chunk in agent.run("用户输入"): process(chunk)
 """
 import asyncio
 import json
@@ -20,19 +45,37 @@ logger = logging.getLogger(__name__)
 
 
 class SoloAgent:
-    """SoloAgent - 简洁的 Agent 基础类
+    """
+    SoloAgent基础类
     
-    特点：
-    - 声明式配置：只需指定名称，自动加载详细配置
-    - 延迟加载：配置细节在运行时按需加载
-    - 支持多模型：通过 provider + model 自动选择模型
-    - 支持流式输出：原生支持流式响应
-    - 支持子Agent调用：通过 subagents 列表
+    职责:
+    - 提供简洁的Agent基础实现
+    - 支持声明式配置和延迟加载
+    - 管理LLM模型、ReAct核心、MCP客户端
+    - 协调子Agent调用
+    - 与CompiledFlow层协作处理历史消息
     
-    注意：记忆管理由 CompiledFlow 层统一处理，Agent 不再管理 _memory_plugin
+    属性:
+        config (SoloAgentConfig): Agent配置
+        _initialized (bool): 是否已初始化
+        _llm (Optional[BaseLLM]): LLM模型实例
+        _core (Optional[ReActCore]): ReAct核心实例
+        _mcp_clients (List[MCPClient]): MCP客户端列表
+        _tools (Dict[str, Any]): 工具字典
+        _subagents (Dict[str, SoloAgent]): 子Agent字典
+        _message_history (List[Dict]): 消息历史
+    
+    注意：
+        记忆管理由CompiledFlow层统一处理，Agent本身不直接管理_memory_plugin
     """
     
     def __init__(self, config: SoloAgentConfig):
+        """
+        初始化SoloAgent
+        
+        Args:
+            config: SoloAgent配置对象
+        """
         self.config = config
         self._initialized = False
         
@@ -92,7 +135,23 @@ class SoloAgent:
         return self._subagents.get(agent_id)
     
     def set_stream_callback(self, callback: callable) -> None:
-        """设置流式输出回调函数"""
+        """
+        设置流式输出回调函数
+
+        Args:
+            callback: 流式输出回调函数，接收delta数据和agent信息
+
+        Returns:
+            None
+
+        Raises:
+            无异常抛出
+
+        Example:
+            >>> def on_stream(delta, agent_id=None, agent_name=None):
+            ...     print(delta)
+            >>> agent.set_stream_callback(on_stream)
+        """
         self._stream_callback = callback
         if self._core:
             self._core.stream_callback = callback
@@ -113,7 +172,22 @@ class SoloAgent:
                     subagent._core._tool_call_event_manager.agent_name = subagent.name
     
     def set_message_history(self, history: List[Dict[str, Any]]) -> None:
-        """设置消息历史（由 CompiledFlow 层调用）"""
+        """
+        设置消息历史（由 CompiledFlow 层调用）
+
+        Args:
+            history: 消息历史列表，每个元素包含role和data字段
+
+        Returns:
+            None
+
+        Raises:
+            无异常抛出
+
+        Example:
+            >>> history = [{"role": "user", "data": [{"type": "text", "text": "Hello"}]}]
+            >>> agent.set_message_history(history)
+        """
         self._message_history = history
 
     def _convert_history_to_msgs(self, history: List[Dict[str, Any]]) -> List["Msg"]:
@@ -239,6 +313,25 @@ class SoloAgent:
         return msgs
 
     async def initialize(self) -> None:
+        """
+        初始化Agent
+
+        加载LLM模型、工具、MCP服务器等配置，创建ReAct核心实例。
+        这是一个异步方法，需要在首次调用reply或stream之前执行。
+
+        Args:
+            无参数
+
+        Returns:
+            None
+
+        Raises:
+            RuntimeError: 当核心初始化失败时抛出
+
+        Example:
+            >>> await agent.initialize()
+            >>> print(f"Agent '{agent.name}' initialized")
+        """
         if self._initialized:
             return
             
@@ -450,6 +543,26 @@ class SoloAgent:
         )
     
     async def reply(self, message: str, cancel_event: asyncio.Event = None) -> str:
+        """
+        处理用户消息并生成回复
+
+        这是Agent的主要入口方法，使用ReAct核心处理用户输入并返回文本回复。
+
+        Args:
+            message: 用户输入消息
+            cancel_event: 取消事件，用于中断处理
+
+        Returns:
+            str: Agent的文本回复
+
+        Raises:
+            RuntimeError: 当Agent核心未初始化时抛出
+            Exception: 当处理过程中发生错误时抛出
+
+        Example:
+            >>> response = await agent.reply("Hello, how are you?")
+            >>> print(response)
+        """
         if not self._initialized:
             await self.initialize()
         
@@ -492,6 +605,24 @@ class SoloAgent:
         return {"role": "assistant", "content": str(self._last_response), "reasoning_content": None}
     
     async def stream(self, message: str) -> AsyncGenerator[str, None]:
+        """
+        流式处理用户消息并生成回复
+
+        以流式方式处理用户输入，逐步返回生成的文本片段。
+
+        Args:
+            message: 用户输入消息
+
+        Returns:
+            AsyncGenerator[str, None]: 文本片段的异步生成器
+
+        Raises:
+            RuntimeError: 当Agent核心未初始化时抛出
+
+        Example:
+            >>> async for chunk in agent.stream("Tell me a story"):
+            ...     print(chunk, end="")
+        """
         if not self._initialized:
             await self.initialize()
         
@@ -548,6 +679,25 @@ class SoloAgent:
                 yield chunk
     
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        调用指定工具
+
+        根据工具名称查找并执行工具，返回执行结果。
+
+        Args:
+            tool_name: 工具名称
+            arguments: 工具参数字典
+
+        Returns:
+            Dict[str, Any]: 工具执行结果，包含success和result字段
+
+        Raises:
+            ValueError: 当工具不存在或没有execute方法时抛出
+
+        Example:
+            >>> result = await agent.call_tool("search", {"query": "python"})
+            >>> print(result["result"])
+        """
         from .tools import ToolRegistry
         
         tool = ToolRegistry.get_tool(tool_name)
@@ -563,6 +713,25 @@ class SoloAgent:
             raise ValueError(f"Tool '{tool_name}' does not have execute method")
     
     async def call_subagent(self, subagent_name: str, task: str) -> str:
+        """
+        调用子Agent执行任务
+
+        根据子Agent名称查找并分配任务，返回执行结果。
+
+        Args:
+            subagent_name: 子Agent名称
+            task: 任务描述
+
+        Returns:
+            str: 子Agent的执行结果
+
+        Raises:
+            ValueError: 当子Agent不存在时抛出
+
+        Example:
+            >>> result = await agent.call_subagent("code_reviewer", "Review this code")
+            >>> print(result)
+        """
         subagent = self.get_subagent(subagent_name)
         if subagent is None:
             for agent in self._subagents.values():
@@ -617,6 +786,24 @@ class SoloAgent:
         return False
     
     async def close(self) -> None:
+        """
+        关闭Agent并清理资源
+
+        关闭所有MCP客户端连接，重置初始化状态。
+
+        Args:
+            无参数
+
+        Returns:
+            None
+
+        Raises:
+            无异常抛出
+
+        Example:
+            >>> await agent.close()
+            >>> print("Agent closed")
+        """
         for client in self._mcp_clients:
             if hasattr(client, 'close'):
                 await client.close()

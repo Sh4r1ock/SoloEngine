@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 
 const CUSTOM_PRESET = {
@@ -28,6 +28,32 @@ try {
   console.warn('Failed to load agent_presets.json, using Custom only')
 }
 
+function getEnvPort(key: string, defaultValue: number): number {
+  const envPath = resolve(__dirname, '../.env')
+  if (existsSync(envPath)) {
+    try {
+      const content = readFileSync(envPath, 'utf-8')
+      const lines = content.split('\n')
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (trimmed.startsWith(`${key}=`)) {
+          const value = trimmed.split('=')[1]
+          const port = parseInt(value, 10)
+          if (!isNaN(port) && port > 0 && port < 65536) {
+            return port
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`Failed to read .env file, using default ${key}`)
+    }
+  }
+  return defaultValue
+}
+
+const FRONTEND_PORT = getEnvPort('FRONTEND_PORT', 8991)
+const BACKEND_PORT = getEnvPort('BACKEND_PORT', 8990)
+
 export default defineConfig({
   plugins: [react()],
   define: {
@@ -35,10 +61,20 @@ export default defineConfig({
   },
   publicDir: '../icon',
   server: {
-    port: 8991,
+    port: FRONTEND_PORT,
     proxy: {
       '/api': {
-        target: 'http://localhost:8990',
+        target: `http://localhost:${BACKEND_PORT}`,
+        changeOrigin: true,
+        ws: true
+      }
+    }
+  },
+  preview: {
+    port: FRONTEND_PORT,
+    proxy: {
+      '/api': {
+        target: `http://localhost:${BACKEND_PORT}`,
         changeOrigin: true,
         ws: true
       }
@@ -48,6 +84,24 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: (id) => {
+          if (id.includes('@ant-design/icons')) {
+            return 'antd';
+          }
+          if (id.includes('antd') || id.includes('@ant-design')) {
+            return 'antd';
+          }
+          if (id.includes('echarts')) {
+            return 'echarts';
+          }
+          if (id.includes('reactflow')) {
+            return 'reactflow';
+          }
+          if (id.includes('react-router-dom')) {
+            return 'react-router';
+          }
+          if (id.includes('zustand')) {
+            return 'zustand';
+          }
           if (id.includes('@codemirror')) {
             if (id.includes('@codemirror/lang-')) {
               const match = id.match(/@codemirror\/lang-(\w+)/);

@@ -1,5 +1,34 @@
 # -*- coding: utf-8 -*-
-"""Function Calling 适配器。"""
+"""
+SoloEngine : Function Calling 适配器模块
+
+@file function_calling.py
+@description Function Calling 适配器 - 支持多提供商的函数调用
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 函数注册和管理
+    - 多提供商工具格式转换（OpenAI、Anthropic、Qwen、Ollama）
+    - 工具调用解析和执行
+    - 参数验证
+    - 执行历史记录
+
+依赖:
+    - json: JSON处理
+    - uuid: UUID生成
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - ..models.function_schema: 函数Schema定义
+
+使用示例:
+    - from app.core.function_calling import FunctionCallingAdapter
+    - adapter = FunctionCallingAdapter()
+    - adapter.register_function("search", "搜索工具", {...})
+    - result = await adapter.execute_tool_call(tool_call)
+"""
 
 import json
 import uuid
@@ -19,7 +48,30 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FunctionCallResult:
-    """函数调用结果。"""
+    """
+    函数调用结果数据类
+    
+    职责:
+        - 存储函数调用的结果信息
+        - 记录成功/失败状态和错误信息
+    
+    属性:
+        tool_call_id (str): 工具调用ID
+        name (str): 函数名称
+        arguments (Dict[str, Any]): 调用参数
+        result (Optional[Any]): 执行结果
+        error (Optional[str]): 错误信息
+        success (bool): 是否成功
+    
+    示例:
+        >>> result = FunctionCallResult(
+        ...     tool_call_id="call_123",
+        ...     name="search",
+        ...     arguments={"query": "python"},
+        ...     result={"hits": 10},
+        ...     success=True
+        ... )
+    """
     tool_call_id: str
     name: str
     arguments: Dict[str, Any]
@@ -29,9 +81,34 @@ class FunctionCallResult:
 
 
 class FunctionCallingAdapter:
-    """Function Calling 适配器。"""
+    """
+    Function Calling 适配器
+    
+    职责:
+        - 管理函数注册表
+        - 支持多提供商工具格式转换
+        - 解析和执行工具调用
+        - 验证函数参数
+        - 记录执行历史
+    
+    属性:
+        registry (FunctionRegistry): 函数注册表
+        _execution_history (List[FunctionCallResult]): 执行历史
+    
+    示例:
+        >>> adapter = FunctionCallingAdapter()
+        >>> adapter.register_function("search", "搜索工具", {...})
+        >>> tools = adapter.get_tools_for_provider("openai")
+        >>> result = await adapter.execute_tool_call(tool_call)
+    """
 
     def __init__(self, registry: Optional[FunctionRegistry] = None):
+        """
+        初始化Function Calling适配器
+        
+        Args:
+            registry: 函数注册表，如果为None则创建默认注册表
+        """
         self.registry = registry or create_function_registry_with_commons()
         self._execution_history: List[FunctionCallResult] = []
 
@@ -43,7 +120,28 @@ class FunctionCallingAdapter:
         required: Optional[List[str]] = None,
         handler: Optional[Callable] = None,
     ) -> FunctionSchema:
-        """注册函数。"""
+        """
+        注册函数
+        
+        Args:
+            name: 函数名称
+            description: 函数描述
+            parameters: 参数字典
+            required: 必需参数列表
+            handler: 函数处理器
+            
+        Returns:
+            注册的函数Schema
+            
+        Example:
+            >>> schema = adapter.register_function(
+            ...     "search",
+            ...     "搜索工具",
+            ...     {"query": {"type": "string", "description": "搜索查询"}},
+            ...     required=["query"],
+            ...     handler=search_handler
+            ... )
+        """
         from ..models.function_schema import ParameterSchema
         
         param_schemas = {}
@@ -64,11 +162,33 @@ class FunctionCallingAdapter:
         )
 
     def unregister_function(self, name: str) -> bool:
-        """注销函数。"""
+        """
+        注销函数
+        
+        Args:
+            name: 函数名称
+            
+        Returns:
+            是否成功注销
+            
+        Example:
+            >>> success = adapter.unregister_function("search")
+        """
         return self.registry.unregister(name)
 
     def get_tools_for_provider(self, provider: str) -> List[Dict[str, Any]]:
-        """获取指定提供商的工具格式。"""
+        """
+        获取指定提供商的工具格式
+        
+        Args:
+            provider: 提供商名称（openai、anthropic、qwen、ollama）
+            
+        Returns:
+            工具格式列表
+            
+        Example:
+            >>> tools = adapter.get_tools_for_provider("openai")
+        """
         if provider in ("openai", "qwen", "ollama"):
             return self.registry.to_openai_tools()
         elif provider == "anthropic":
@@ -81,7 +201,19 @@ class FunctionCallingAdapter:
         response: Dict[str, Any],
         provider: str,
     ) -> List[ToolCall]:
-        """解析响应中的工具调用。"""
+        """
+        解析响应中的工具调用
+        
+        Args:
+            response: LLM响应字典
+            provider: 提供商名称
+            
+        Returns:
+            工具调用列表
+            
+        Example:
+            >>> tool_calls = adapter.parse_tool_calls(response, "openai")
+        """
         tool_calls = []
 
         if provider in ("openai", "qwen", "ollama"):
@@ -113,7 +245,22 @@ class FunctionCallingAdapter:
         tool_call: ToolCall,
         handler: Optional[Callable] = None,
     ) -> FunctionCallResult:
-        """执行工具调用。"""
+        """
+        执行工具调用
+        
+        Args:
+            tool_call: 工具调用对象
+            handler: 可选的自定义处理器
+            
+        Returns:
+            函数调用结果
+            
+        Raises:
+            ValueError: 如果找不到函数处理器
+            
+        Example:
+            >>> result = await adapter.execute_tool_call(tool_call)
+        """
         tool_call.status = "running"
         
         try:
@@ -167,7 +314,20 @@ class FunctionCallingAdapter:
         schema: FunctionSchema,
         arguments: Dict[str, Any],
     ) -> None:
-        """验证参数。"""
+        """
+        验证参数
+        
+        Args:
+            schema: 函数Schema
+            arguments: 参数字典
+            
+        Raises:
+            ValueError: 如果缺少必需参数
+            TypeError: 如果参数类型不匹配
+            
+        Example:
+            >>> adapter._validate_arguments(schema, {"query": "python"})
+        """
         # 检查必需参数
         for required_param in schema.required:
             if required_param not in arguments:
@@ -187,7 +347,21 @@ class FunctionCallingAdapter:
         value: Any,
         schema: Any,
     ) -> None:
-        """验证参数类型。"""
+        """
+        验证参数类型
+        
+        Args:
+            name: 参数名称
+            value: 参数值
+            schema: 参数Schema
+            
+        Raises:
+            TypeError: 如果类型不匹配
+            ValueError: 如果值不符合约束
+            
+        Example:
+            >>> adapter._validate_type("age", 25, param_schema)
+        """
         expected_type = schema.type
         
         if expected_type == "string":
@@ -241,7 +415,19 @@ class FunctionCallingAdapter:
         result: FunctionCallResult,
         provider: str,
     ) -> Dict[str, Any]:
-        """格式化工具结果用于发送给模型。"""
+        """
+        格式化工具结果用于发送给模型
+        
+        Args:
+            result: 函数调用结果
+            provider: 提供商名称
+            
+        Returns:
+            格式化后的结果字典
+            
+        Example:
+            >>> formatted = adapter.format_tool_result_for_provider(result, "openai")
+        """
         if provider in ("openai", "qwen", "ollama"):
             return {
                 "role": "tool",
@@ -265,11 +451,24 @@ class FunctionCallingAdapter:
             }
 
     def get_execution_history(self) -> List[FunctionCallResult]:
-        """获取执行历史。"""
+        """
+        获取执行历史
+        
+        Returns:
+            执行历史列表
+            
+        Example:
+            >>> history = adapter.get_execution_history()
+        """
         return self._execution_history.copy()
 
     def clear_execution_history(self) -> None:
-        """清除执行历史。"""
+        """
+        清除执行历史
+        
+        Example:
+            >>> adapter.clear_execution_history()
+        """
         self._execution_history.clear()
 
 
@@ -277,7 +476,19 @@ def create_tool_call_message(
     tool_calls: List[ToolCall],
     provider: str,
 ) -> Dict[str, Any]:
-    """创建工具调用消息。"""
+    """
+    创建工具调用消息
+    
+    Args:
+        tool_calls: 工具调用列表
+        provider: 提供商名称
+        
+    Returns:
+        工具调用消息字典
+        
+    Example:
+        >>> message = create_tool_call_message(tool_calls, "openai")
+    """
     if provider in ("openai", "qwen", "ollama"):
         return {
             "role": "assistant",

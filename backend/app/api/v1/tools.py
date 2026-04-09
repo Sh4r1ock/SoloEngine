@@ -1,16 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-工具管理 API endpoints。
+SoloEngine : 工具管理API模块
 
 @file tools.py
 @description 工具接口 - 工具管理相关API端点
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 获取工具列表
-- 注册/注销工具
-- 调用工具
+本模块提供以下核心功能：
+    - 获取工具列表
+    - 注册/注销工具
+    - 调用工具
+    - 工具信息查询
+
+依赖:
+    - fastapi: Web框架
+    - pydantic: 数据验证
+    - app.core.tool_registry: 工具注册表
+    - app.api.v1.auth: 认证依赖
+    - app.core.auth: 用户认证
+
+使用示例:
+    - GET /api/v1/tools - 获取工具列表
+    - POST /api/v1/tools/{tool_id}/call - 调用工具
 """
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Any, List, Optional

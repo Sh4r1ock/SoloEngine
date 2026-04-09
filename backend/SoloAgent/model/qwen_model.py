@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Qwen (通义千问) chat model class."""
+"""
+SoloEngine : 通义千问(Qwen)模型实现，支持阿里DashScope API
+
+@file qwen_model.py
+@description 实现通义千问系列模型的调用接口，支持流式输出和工具调用
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供通义千问(Qwen)系列模型的实现，包括：
+    - QwenChatModel: 千问模型主类
+    - 支持流式输出和非流式输出
+    - 支持工具调用(Function Calling)
+    - 支持多轮对话
+    - 自动处理API密钥和环境变量
+
+依赖:
+    - dashscope: 阿里云DashScope SDK
+    - datetime: 时间处理
+    - typing: 类型提示
+    - collections: 有序字典
+    - .model_response: 响应类
+    - .model_base: 模型基类
+    - .model_usage: 使用统计类
+    - ..message: 消息类型定义
+
+使用示例:
+    - from SoloAgent.model import QwenChatModel
+    - model = QwenChatModel(model_name="qwen-plus", api_key="your_key")
+    - response = await model(messages)
+"""
 from datetime import datetime
 from typing import (
     Any,
@@ -55,7 +85,32 @@ else:
 
 
 class QwenChatModel(ChatModelBase):
-    """The Qwen (Tongyi Qianwen) chat model class."""
+    """
+    通义千问(Qwen)聊天模型类
+    
+    职责:
+        - 实现通义千问系列模型的 API 调用
+        - 支持流式输出和非流式输出
+        - 支持工具调用(Function Calling)
+        - 支持多轮对话
+    
+    属性:
+        model_name: 模型名称
+        api_key: API密钥
+        stream: 是否使用流式输出
+        api_key_env_var: API密钥环境变量名
+        client_kwargs: 客户端额外参数
+        generate_kwargs: 生成参数
+    
+    示例:
+        >>> model = QwenChatModel(
+        ...     model_name="qwen-plus",
+        ...     api_key="your_key",
+        ...     stream=True
+        ... )
+        >>> messages = [{"role": "user", "content": "你好"}]
+        >>> response = await model(messages)
+    """
 
     def __init__(
         self,
@@ -67,18 +122,26 @@ class QwenChatModel(ChatModelBase):
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize Qwen (Tongyi Qianwen) client.
-
+        """
+        初始化通义千问客户端
+        
         Args:
-            model_name (str): The name of the model to use in Qwen API.
-                (e.g., "qwen-plus", "qwen-turbo", "qwen-max")
-            api_key (str | None): The API key for Qwen API.
-                If not specified, it will be read from environment variable.
-            stream (bool): Whether to use streaming output or not.
-            api_key_env_var (str): Environment variable name for API key.
-            client_kwargs (dict | None): Extra keyword arguments for Qwen client.
-            generate_kwargs (dict | None): Extra keyword arguments used in Qwen API generation.
-            **kwargs (Any): Additional keyword arguments.
+            model_name: 模型名称，如 "qwen-plus", "qwen-turbo", "qwen-max"
+            api_key: API密钥，None则从环境变量读取
+            stream: 是否使用流式输出
+            api_key_env_var: API密钥环境变量名
+            client_kwargs: 客户端额外参数
+            generate_kwargs: 生成参数
+            **kwargs: 其他参数
+        
+        Returns:
+            None
+        
+        Raises:
+            ValueError: 当API密钥无效时抛出
+        
+        Example:
+            >>> model = QwenChatModel(model_name="qwen-plus")
         """
         super().__init__(model_name, stream)
 

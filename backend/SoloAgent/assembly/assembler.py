@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Agent 组装器模块。
+SoloEngine : Agent组装器模块，提供灵活的Agent组装功能
 
 @file assembler.py
-@description 提供灵活的 Agent 组装功能，支持多种插件配置方式
-@author SoloEngine Team
-@date 2026-02-20
+@description 提供灵活的Agent组装功能，支持多种插件配置方式
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 提供统一的 Agent 组装入口（ReActAgent 类）
-- 支持灵活的插件配置方式（字典、列表、实例）
-- 自动处理插件依赖和初始化
-- 支持多种传输协议的 MCP 客户端
+本模块提供Agent组装器，包括：
+    - ReActAgent: ReAct Agent组装器
+    - 支持灵活的插件配置方式（字典、列表、实例）
+    - 自动处理插件依赖和初始化
+    - 支持多种传输协议的MCP客户端
+    - 支持记忆、RAG、工具、MCP、计划、TTS插件
 
 配置方式：
     1. None: 完全禁用该功能
@@ -21,18 +23,36 @@ Agent 组装器模块。
 
 支持的插件类型：
     - memory_config: 记忆插件配置（向量记忆/黑洞记忆）
-    - rag_config: RAG 插件配置（知识库检索）
+    - rag_config: RAG插件配置（知识库检索）
     - tool_configs: 工具配置（本地工具）
-    - mcp_configs: MCP 客户端配置（远程工具）
+    - mcp_configs: MCP客户端配置（远程工具）
     - plan_config: 计划插件配置（任务规划）
-    - tts_config: TTS 插件配置（语音合成）
+    - tts_config: TTS插件配置（语音合成）
 
-使用场景：
-    - 快速创建配置好的 Agent 实例
-    - 从配置文件加载 Agent 配置
-    - 动态组装不同功能的 Agent
+依赖:
+    - typing: 类型提示
+    - inspect: 反射检查
+    - logging: 日志记录
+    - ..core.react_core: ReAct核心
+    - ..core.interfaces: 核心接口
+    - ..plugins.memory: 记忆插件
+    - ..plugins.rag: RAG插件
+    - ..plugins.tools: 工具插件
+    - ..plugins.mcp: MCP客户端
+    - ..plugins.plan: 计划插件
+    - ..model: 聊天模型
+    - ..formatter: 格式化器
 
-状态: ✅ 完整实现
+使用示例:
+    - from SoloAgent.assembly import ReActAgent
+    - agent = ReActAgent(
+    -     name="assistant",
+    -     model=model,
+    -     formatter=formatter,
+    -     system_prompt="你是一个助手"
+    - )
+    - await agent.connect_mcp_servers()
+    - response = await agent.reply("你好！")
 """
 
 from typing import Optional, List, Dict, Any, Union
@@ -54,63 +74,46 @@ logger = logging.getLogger(__name__)
 
 class ReActAgent:
     """
-    ReAct Agent 组装器 - 主要用户接口。
-    
-    这是创建 Agent 的主要入口类，提供了灵活的插件配置方式。
-    内部使用 ReActCore 作为核心引擎，通过组装器模式简化配置。
-    
-    核心功能：
-        1. 插件配置处理：支持多种配置格式（字典、列表、实例）
-        2. MCP 客户端管理：自动创建和连接 MCP 服务器
-        3. 计划上下文注入：将计划状态注入用户消息
-        4. TTS 集成：自动将响应转换为语音
-    
-    配置示例：
-        单个记忆配置：
-            memory_config={"type": "vector", "max_size": 1000}
-        
-        多个 RAG 知识库：
-            rag_config=[
-                {"type": "knowledge_base", "path": "data1"},
-                {"type": "knowledge_base", "path": "data2"}
-            ]
-        
-        多个 MCP 客户端：
-            mcp_configs=[
-                {"type": "stdio", "command": "mcp-server1"},
-                {"type": "http", "url": "http://localhost:8000"}
-            ]
-    
-    生命周期：
+    ReAct Agent组装器
+
+    职责:
+        - 提供Agent组装的主要入口
+        - 支持灵活的插件配置（字典、列表、实例）
+        - 管理MCP客户端连接
+        - 注入计划上下文
+        - 集成TTS语音合成
+
+    属性:
+        name: Agent名称
+        _core: ReActCore核心实例
+        _plan_plugin: 计划插件
+        _tts_plugin: TTS插件
+        _mcp_clients: MCP客户端列表
+        _model: 聊天模型
+        _formatter: 格式化器
+        _system_prompt: 系统提示词
+
+    生命周期:
         1. 创建实例：解析配置，创建插件实例
-        2. 连接 MCP：调用 connect_mcp_servers()
-        3. 使用 Agent：调用 reply() 方法
-        4. 断开连接：调用 disconnect_mcp_servers()
-    
-    Example:
+        2. 连接MCP：调用connect_mcp_servers()
+        3. 使用Agent：调用reply()方法
+        4. 断开连接：调用disconnect_mcp_servers()
+
+    示例:
         >>> from SoloAgent.model import OpenAIChatModel
         >>> from SoloAgent.formatter import OpenAIChatFormatter
-        >>> 
         >>> model = OpenAIChatModel(model_name="gpt-4")
         >>> formatter = OpenAIChatFormatter()
-        >>> 
         >>> agent = ReActAgent(
         ...     name="assistant",
         ...     model=model,
         ...     formatter=formatter,
-        ...     system_prompt="你是一个有帮助的助手。",
+        ...     system_prompt="你是一个助手",
         ...     enable_memory=True,
         ...     enable_tools=True
         ... )
-        >>> 
         >>> await agent.connect_mcp_servers()
         >>> response = await agent.reply("你好！")
-        >>> await agent.disconnect_mcp_servers()
-    
-    Note:
-        - 使用 MCP 客户端前需要调用 connect_mcp_servers()
-        - 使用完毕后应调用 disconnect_mcp_servers() 清理资源
-        - TTS 功能需要配置 tts_config 参数
     """
     
     def __init__(

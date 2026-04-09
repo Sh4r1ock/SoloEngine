@@ -1,28 +1,65 @@
 # -*- coding: utf-8 -*-
-"""Simple TTS model for SoloEngine."""
+"""
+SoloEngine : 简单TTS模型，提供占位符实现
+
+@file simple_tts.py
+@description 提供简单的TTS模型占位符实现
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - SimpleTTSModel: 简单TTS模型，返回空音频数据
+    - 用于不需要或不支持TTS的环境
+
+依赖:
+    - typing: 类型注解支持
+    - ..core.interfaces: 核心接口定义
+
+使用示例:
+    - from SoloAgent.tts import SimpleTTSModel
+    - tts = SimpleTTSModel()
+    - audio = await tts.synthesize("Hello World")
+"""
 
 from typing import Any
 from ..core.interfaces import ITTSModel
 
 
 class SimpleTTSModel(ITTSModel):
-    """Simple TTS model that returns empty audio data.
+    """
+    简单TTS模型，返回空音频数据作为占位符
     
-    This is a placeholder implementation for environments where
-    TTS is not needed or not supported.
+    职责:
+        - 提供TTS接口的占位符实现
+        - 用于不需要或不支持TTS的环境
+    
+    属性:
+        无
+    
+    示例:
+        >>> tts = SimpleTTSModel()
+        >>> audio = await tts.synthesize("Hello World")
+        >>> print(len(audio))
+        0
     """
     
     async def synthesize(self, text: str, **kwargs) -> bytes:
-        """Synthesize speech from text.
+        """
+        将文本合成为语音
         
-        Returns empty bytes as a placeholder.
+        返回空字节作为占位符
         
         Args:
-            text: Text to synthesize.
-            **kwargs: Additional arguments (ignored).
+            text: 要合成的文本
+            **kwargs: 额外参数（被忽略）
             
         Returns:
-            Empty bytes.
+            空字节串
+            
+        Example:
+            >>> tts = SimpleTTSModel()
+            >>> audio = await tts.synthesize("Hello World")
         """
         # Log that TTS was called (optional)
         # import logging

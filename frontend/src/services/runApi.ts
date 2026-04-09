@@ -1,18 +1,30 @@
 /**
+ * SoloEngine : 运行API服务模块
+ *
  * @file runApi.ts
  * @description 运行API服务 - 工作流运行相关API调用
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 运行会话管理API
- * - JSON工作流执行API
- * - 执行历史API
- * - 会话消息持久化API
- * 
+ * 本模块提供以下核心功能：
+ *     - 运行会话管理API
+ *     - JSON工作流执行API
+ *     - 执行历史API
+ *     - 会话消息持久化API
+ *     - 获取会话消息列表
+ *     - 添加消息到会话
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { runApi } from './runApi'
+ *     - const result = await runApi.executeFlow(flowId, input)
+ *
  * 使用场景：
- * - 运行面板调用后端运行服务
- * - 执行工作流JSON
+ *     - 运行面板调用后端运行服务
+ *     - 执行工作流JSON
  */
 
 import { api } from './api';
@@ -172,12 +184,22 @@ export const runApi = {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const statusMap: Record<number, string> = {
+        400: '请求参数错误',
+        401: '登录已过期，请重新登录',
+        403: '没有权限执行此操作',
+        404: '请求的资源不存在',
+        500: '服务器内部错误，请检查后端服务',
+        502: '网关错误，请刷新页面重试',
+        503: '服务暂时不可用，请稍后重试',
+        504: '网关超时，请稍后重试',
+      };
+      throw new Error(statusMap[response.status] || `服务器错误 (${response.status})`);
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error('No response body');
+      throw new Error('响应内容为空');
     }
 
     const decoder = new TextDecoder();
@@ -265,7 +287,17 @@ export const runApi = {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const statusMap: Record<number, string> = {
+        400: '请求参数错误',
+        401: '登录已过期，请重新登录',
+        403: '没有权限执行此操作',
+        404: '会话不存在',
+        500: '服务器内部错误，请检查后端服务',
+        502: '网关错误，请刷新页面重试',
+        503: '服务暂时不可用，请稍后重试',
+        504: '网关超时，请稍后重试',
+      };
+      throw new Error(statusMap[response.status] || `服务器错误 (${response.status})`);
     }
     
     const data = await response.json();

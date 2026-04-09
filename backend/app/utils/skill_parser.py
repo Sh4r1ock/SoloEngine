@@ -1,5 +1,35 @@
 # -*- coding: utf-8 -*-
-"""Skills 包解析器，用于解析 SKILL.md 和包结构。"""
+"""
+SoloEngine : Skills包解析器模块
+
+@file skill_parser.py
+@description Skills包解析器 - 用于解析SKILL.md和包结构
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 解析SKILL.md文件
+    - 解析Skills包结构
+    - 生成Skills提示词
+    - 创建新Skills包
+
+依赖:
+    - os: 操作系统接口
+    - re: 正则表达式
+    - yaml: YAML解析
+    - typing: 类型注解支持
+    - pathlib: 路径处理
+    - logging: 日志记录
+
+使用示例:
+    - from app.utils.skill_parser import SkillParser, SkillsPackageBuilder
+    - parser = SkillParser("/path/to/skills")
+    - package = parser.parse_package("/path/to/skill")
+
+设计理念：
+    Skills包采用SKILL.md作为元数据文件，支持YAML前置元数据。
+"""
 
 import os
 import re

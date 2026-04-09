@@ -1,11 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-时区设置 API。
+SoloEngine : 时区设置API模块
 
 @file settings.py
-@description 时区和用户设置相关的 API 端点
-@author SoloEngine Team
-@date 2026-03-08
+@description 时区和用户设置相关的API端点
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供以下核心功能：
+    - 获取用户时区设置
+    - 更新用户时区设置
+    - 获取可用时区列表
+    - 获取常用时区列表
+
+依赖:
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+    - typing: 类型注解支持
+    - logging: 日志记录
+    - app.utils.timezone_utils: 时区工具
+
+使用示例:
+    - GET /settings/timezone - 获取当前时区
+    - POST /settings/timezone - 更新时区
+
+使用场景：
+    - 用户偏好设置管理
+    - 时间显示本地化
 """
 
 from fastapi import APIRouter, HTTPException

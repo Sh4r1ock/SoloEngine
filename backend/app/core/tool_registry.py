@@ -1,17 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-工具注册表模块。
+SoloEngine : 工具注册表模块
 
 @file tool_registry.py
 @description 工具注册表 - 工具管理和执行模块
-@author SoloEngine Team
-@date 2026-02-20
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 注册和管理工具
-- 支持Python函数工具
-- 支持MCP工具调用
-- 工具发现和执行
+本模块提供以下核心功能：
+    - 注册和管理工具
+    - 支持Python函数工具
+    - 支持MCP工具调用
+    - 工具发现和执行
+    - 内置工具集合
+
+依赖:
+    - typing: 类型注解支持
+    - asyncio: 异步IO支持
+    - json: JSON处理
+    - logging: 日志记录
+    - os: 操作系统接口
+    - subprocess: 子进程管理
+    - httpx: HTTP客户端
+    - datetime: 日期时间处理
+    - re: 正则表达式
+
+使用示例:
+    - from app.core.tool_registry import tool_registry
+    - tool_registry.register("my_tool", my_func, "描述", parameters)
+    - result = await tool_registry.call_tool("my_tool", {"arg": "value"})
+
+使用场景：
+    - 工具管理和发现
+    - MCP工具集成
+    - 内置工具调用
 """
 from typing import Dict, Any, Callable, Optional, List
 import asyncio

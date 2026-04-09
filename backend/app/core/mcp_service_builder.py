@@ -1,20 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-自定义MCP服务创建工具。
+SoloEngine : MCP服务构建器模块
 
 @file mcp_service_builder.py
 @description MCP服务构建器 - 创建自定义MCP服务
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 创建自定义MCP服务模板
-- 生成MCP服务代码
-- 支持多种传输协议
+本模块提供以下核心功能：
+    - 创建自定义MCP服务模板
+    - 生成MCP服务代码（Python/TypeScript）
+    - 支持多种传输协议（stdio/http）
+    - 生成MCP服务配置
+    - 提供预设模板
+
+依赖:
+    - os: 操作系统接口
+    - json: JSON处理
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - pathlib: 路径处理
+    - datetime: 日期时间处理
+
+使用示例:
+    - from app.core.mcp_service_builder import MCPServiceBuilder
+    - builder = MCPServiceBuilder()
+    - result = builder.create_service("my_service", "描述", tools, "python", "stdio")
 
 使用场景：
-- 用户手动编写新的MCP服务
-- 快速生成MCP服务框架
+    - 用户手动编写新的MCP服务
+    - 快速生成MCP服务框架
 """
 
 import os

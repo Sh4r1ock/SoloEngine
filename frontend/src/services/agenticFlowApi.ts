@@ -1,8 +1,26 @@
 /**
+ * SoloEngine : AgenticFlow API服务模块
+ *
  * @file agenticFlowApi.ts
  * @description AgenticFlow API服务 - 工作流管理相关API调用
- * @author SoloEngine Team
- * @date 2026-02-19
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
+ * 功能描述：
+ * 本模块提供以下核心功能：
+ *     - 获取AgenticFlow列表
+ *     - 创建AgenticFlow
+ *     - 更新AgenticFlow
+ *     - 删除AgenticFlow
+ *     - 运行AgenticFlow
+ *     - 获取运行历史
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { agenticFlowApi } from './agenticFlowApi'
+ *     - const flows = await agenticFlowApi.getFlows()
  */
 
 import { api } from './api';

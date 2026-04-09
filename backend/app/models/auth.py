@@ -1,5 +1,31 @@
 # -*- coding: utf-8 -*-
-"""用户/角色数据模型。"""
+"""
+SoloEngine : 用户/角色数据模型模块
+
+@file auth.py
+@description 用户/角色数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义用户认证相关的数据模型，包括：
+    - 用户角色枚举
+    - 用户数据模型
+    - 角色数据模型
+    - 令牌数据模型
+    - 令牌数据载荷
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+    - enum: 枚举类型支持
+
+使用示例:
+    - from app.models.auth import User, UserRole
+    - user = User(id="1", username="test", email="test@example.com", hashed_password="***")
+    - role = UserRole.ADMIN
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

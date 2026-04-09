@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-任务管理工具模块。
+SoloEngine : 任务管理工具模块，提供任务管理相关功能
 
 @file __init__.py
 @description 提供任务管理相关工具的统一导出
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - TodoWrite: 任务列表管理

@@ -1,9 +1,42 @@
 # -*- coding: utf-8 -*-
 """
-MCP (Model Context Protocol) client for SoloEngine.
+SoloEngine : MCP客户端，实现Model Context Protocol
 
-使用官方 MCP Python SDK 实现的客户端。
-支持 stdio、SSE 和 Streamable HTTP 传输协议。
+@file mcp_client.py
+@description 使用官方MCP Python SDK实现的客户端，支持多种传输协议
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供MCP客户端实现，包括：
+    - MCPClient: MCP客户端，实现Model Context Protocol
+    - MCPServerConfig: MCP服务器配置
+    - MCPClientManager: MCP客户端管理器
+    - 支持stdio、SSE和Streamable HTTP传输协议
+    - 支持工具调用、资源读取、提示词获取
+
+MCP协议说明：
+MCP (Model Context Protocol) 是模型上下文协议，用于标准化
+AI模型与外部工具、数据源之间的通信。
+
+依赖:
+    - asyncio: 异步IO
+    - json: JSON处理
+    - uuid: UUID生成
+    - os: 操作系统接口
+    - sys: 系统接口
+    - logging: 日志记录
+    - typing: 类型提示
+    - dataclasses: 数据类
+    - contextlib: 上下文管理器
+    - mcp: 官方MCP Python SDK
+
+使用示例:
+    - from SoloAgent.plugins.mcp import MCPClient
+    - client = MCPClient(config={"transport": "stdio", "command": "..."})
+    - await client.connect()
+    - tools = await client.get_tools()
+    - result = await client.call_tool("tool_name", {"arg": "value"})
 """
 
 import asyncio
@@ -23,7 +56,35 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class MCPServerConfig:
-    """MCP 服务器配置。"""
+    """
+    MCP服务器配置数据类
+
+    职责:
+        - 存储MCP服务器的配置信息
+        - 支持多种传输协议配置
+        - 管理服务器连接参数
+
+    属性:
+        id: 服务器唯一标识
+        name: 服务器名称
+        transport: 传输类型（stdio/sse/http）
+        url: 服务器URL（sse/http使用）
+        headers: HTTP请求头
+        timeout: 超时时间（秒）
+        enabled: 是否启用
+        command: stdio命令
+        args: stdio参数
+        env: 环境变量
+
+    示例:
+        >>> config = MCPServerConfig(
+        ...     id="github",
+        ...     name="GitHub MCP",
+        ...     transport="stdio",
+        ...     command="npx",
+        ...     args=["-y", "@modelcontextprotocol/server-github"]
+        ... )
+    """
     id: str
     name: str
     transport: str  # 'stdio', 'sse', or 'http'
@@ -37,20 +98,51 @@ class MCPServerConfig:
 
 
 class MCPClient(IMCPClient):
-    """MCP 客户端实现 - 使用官方 MCP Python SDK。"""
+    """
+    MCP客户端实现类
+
+    职责:
+        - 实现MCP协议客户端
+        - 支持多种传输协议（stdio/sse/http）
+        - 管理与服务器的连接
+        - 提供工具调用、资源读取、提示词获取功能
+
+    属性:
+        config: 客户端配置
+        _connected: 是否已连接
+        _tools: 工具列表
+        _resources: 资源列表
+        _prompts: 提示词列表
+        _session: MCP会话
+        _session_context: 会话上下文
+        _client_context: 客户端上下文
+
+    示例:
+        >>> client = MCPClient(config={
+        ...     "transport": "stdio",
+        ...     "command": "npx",
+        ...     "args": ["-y", "@modelcontextprotocol/server-github"]
+        ... })
+        >>> await client.connect()
+        >>> tools = await client.get_tools()
+    """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """初始化 MCP 客户端。
+        """
+        初始化MCP客户端
 
         Args:
             config: 配置字典，可包含:
                 - transport: 传输类型 ('stdio', 'sse', 'http')
-                - url: 服务器 URL (sse/http)
-                - command: stdio 命令
-                - args: stdio 参数
+                - url: 服务器URL (sse/http)
+                - command: stdio命令
+                - args: stdio参数
                 - env: 环境变量
-                - headers: HTTP 头
+                - headers: HTTP头
                 - timeout: 超时时间（秒）
+
+        示例:
+            >>> client = MCPClient({"transport": "stdio", "command": "..."})
         """
         self.config = config or {}
         self._connected = False
@@ -417,9 +509,28 @@ class MCPClient(IMCPClient):
 
 
 class MCPClientManager:
-    """MCP 客户端管理器，管理多个 MCP 服务器连接。"""
+    """
+    MCP客户端管理器
+
+    职责:
+        - 管理多个MCP服务器连接
+        - 统一获取所有服务器的工具
+        - 路由工具调用到对应服务器
+        - 管理服务器生命周期
+
+    属性:
+        _clients: 客户端字典 {server_id: MCPClient}
+        _servers: 服务器配置字典 {server_id: MCPServerConfig}
+
+    示例:
+        >>> manager = MCPClientManager()
+        >>> await manager.add_server(config)
+        >>> all_tools = await manager.get_all_tools()
+        >>> result = await manager.call_tool("server_id", "tool_name", {})
+    """
 
     def __init__(self):
+        """初始化MCP客户端管理器。"""
         self._clients: Dict[str, MCPClient] = {}
         self._servers: Dict[str, MCPServerConfig] = {}
 

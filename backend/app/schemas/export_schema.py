@@ -1,5 +1,29 @@
 # -*- coding: utf-8 -*-
-"""导出格式定义。"""
+"""
+SoloEngine : 导出格式定义模块
+
+@file export_schema.py
+@description 导出格式数据模型定义
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块定义导出相关的数据模型，包括：
+    - 导出节点
+    - 导出边
+    - 导出技能
+    - 导出MCP配置
+    - 导出项目
+
+依赖:
+    - typing: 类型注解支持
+    - dataclasses: 数据类支持
+    - datetime: 日期时间处理
+
+使用示例:
+    - from app.schemas.export_schema import ExportProject, ExportNode
+    - project = ExportProject(name="my_project", nodes=[], edges=[])
+"""
 
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field

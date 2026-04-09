@@ -1,17 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-开放市场 API endpoints。
+SoloEngine : 开放市场API模块
 
 @file marketplace.py
 @description 开放市场接口 - MCP和Skills市场相关API端点
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 获取MCP市场列表
-- 获取Skills市场列表
-- 导入市场项目
-- 搜索市场内容
+本模块提供以下核心功能：
+    - 获取MCP市场列表
+    - 获取Skills市场列表
+    - 导入市场项目
+    - 搜索市场内容
+    - 缓存市场数据
+
+依赖:
+    - os: 操作系统接口
+    - json: JSON处理
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - fastapi: FastAPI框架
+    - pydantic: 数据验证
+    - app.core.cache: 缓存服务
+
+使用示例:
+    - GET /api/v1/marketplace/mcp - 获取MCP市场列表
+    - GET /api/v1/marketplace/skills - 获取Skills市场列表
+
+使用场景：
+    - MCP和Skills市场浏览
+    - 第三方工具发现
 """
 
 import os

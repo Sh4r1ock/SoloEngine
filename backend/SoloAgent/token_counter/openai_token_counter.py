@@ -1,5 +1,37 @@
 # -*- coding: utf-8 -*-
-"""The OpenAI token counting class for SoloEngine."""
+"""
+SoloEngine : OpenAI Token计数器模块
+
+@file openai_token_counter.py
+@description 提供OpenAI模型的Token计数功能
+@author Sh4rlock
+@date 2026-04-09
+
+功能描述：
+本模块提供OpenAI Token计数器，包括：
+    - OpenAITokenCounter: OpenAI Token计数器
+    - 支持文本Token计数
+    - 支持图像Token计数（视觉模型）
+    - 支持工具Token计数
+    - 支持多种OpenAI模型
+
+依赖:
+    - base64: Base64编码
+    - io: IO操作
+    - json: JSON处理
+    - math: 数学运算
+    - typing: 类型提示
+    - requests: HTTP请求
+    - PIL: 图像处理
+    - tiktoken: OpenAI Token编码
+    - .token_base: Token计数器基类
+
+使用示例:
+    - from SoloAgent.token_counter import OpenAITokenCounter
+    - counter = OpenAITokenCounter(model_name="gpt-4")
+    - count = await counter.count(messages)
+"""
+
 import base64
 import io
 import json
@@ -17,7 +49,21 @@ def _calculate_tokens_for_high_quality_image(
     width: int,
     height: int,
 ) -> int:
-    """Calculate the number of tokens for a high-quality image."""
+    """
+    计算高质量图像的Token数量
+
+    Args:
+        base_tokens: 基础Token数
+        tile_tokens: 每个tile的Token数
+        width: 图像宽度
+        height: 图像高度
+
+    Returns:
+        int: 总Token数
+
+    示例:
+        >>> tokens = _calculate_tokens_for_high_quality_image(85, 170, 1024, 1024)
+    """
     # Step1: scale to fit within a 2048x2048 box
     if width > 2048 or height > 2048:
         ratio = min(2048 / width, 2048 / height)
@@ -43,7 +89,21 @@ def _calculate_tokens_for_high_quality_image(
 
 
 def _get_size_of_image_url(url: str) -> tuple[int, int]:
-    """Get the size of an image from the given URL."""
+    """
+    从URL获取图像尺寸
+
+    Args:
+        url: 图像URL或Base64数据
+
+    Returns:
+        tuple[int, int]: 图像宽度和高度
+
+    Raises:
+        requests.RequestException: HTTP请求失败时抛出
+
+    示例:
+        >>> width, height = _get_size_of_image_url("https://example.com/image.jpg")
+    """
     if url.startswith("data:image/"):
         base64_data = url.split("base64,")[1]
         image_data = base64.b64decode(base64_data)
@@ -58,7 +118,21 @@ def _get_size_of_image_url(url: str) -> tuple[int, int]:
 
 
 def _get_base_and_tile_tokens(model_name: str) -> tuple[int, int]:
-    """Get the base and tile tokens for the given OpenAI model."""
+    """
+    获取OpenAI模型的基础Token和tile Token数
+
+    Args:
+        model_name: 模型名称
+
+    Returns:
+        tuple[int, int]: (基础Token数, tile Token数)
+
+    Raises:
+        ValueError: 当模型不支持时抛出
+
+    示例:
+        >>> base, tile = _get_base_and_tile_tokens("gpt-4o")
+    """
     if any(
         model_name.startswith(_)
         for _ in [
@@ -92,7 +166,20 @@ def _calculate_tokens_for_tools(
     tools: list[dict],
     encoding: Any,
 ) -> int:
-    """Calculate the tokens for the given tools JSON schema."""
+    """
+    计算工具的Token数量
+
+    Args:
+        model_name: 模型名称
+        tools: 工具定义列表
+        encoding: Token编码器
+
+    Returns:
+        int: 工具的总Token数
+
+    示例:
+        >>> tokens = _calculate_tokens_for_tools("gpt-4", tools, encoding)
+    """
     if not tools:
         return 0
 
@@ -145,7 +232,23 @@ def _count_content_tokens_for_openai_vision_model(
     content: list[dict],
     encoding: Any,
 ) -> int:
-    """Count the number of tokens for the content of an OpenAI vision model."""
+    """
+    计算OpenAI视觉模型内容的Token数量
+
+    Args:
+        model_name: 模型名称
+        content: 内容列表
+        encoding: Token编码器
+
+    Returns:
+        int: 内容的总Token数
+
+    Raises:
+        ValueError: 当内容类型不支持时抛出
+
+    示例:
+        >>> tokens = _count_content_tokens_for_openai_vision_model("gpt-4o", content, encoding)
+    """
     num_tokens = 0
     for item in content:
         assert isinstance(item, dict), (
@@ -226,14 +329,31 @@ def _count_content_tokens_for_openai_vision_model(
 
 
 class OpenAITokenCounter(TokenCounterBase):
-    """The OpenAI token counting class."""
+    """
+    OpenAI Token计数器
+
+    职责:
+        - 实现TokenCounterBase接口
+        - 计算OpenAI模型的Token数量
+        - 支持文本、图像、工具Token计数
+
+    属性:
+        model_name: 模型名称
+
+    示例:
+        >>> counter = OpenAITokenCounter(model_name="gpt-4")
+        >>> count = await counter.count(messages, tools)
+    """
 
     def __init__(self, model_name: str) -> None:
-        """Initialize the OpenAI token counter.
+        """
+        初始化OpenAI Token计数器
 
         Args:
-            model_name (`str`):
-                The name of the OpenAI model to use for token counting.
+            model_name: OpenAI模型名称
+
+        示例:
+            >>> counter = OpenAITokenCounter("gpt-4")
         """
         self.model_name = model_name
 
@@ -243,18 +363,19 @@ class OpenAITokenCounter(TokenCounterBase):
         tools: list[dict] = None,
         **kwargs: Any,
     ) -> int:
-        """Count the token numbers of the given messages.
+        """
+        计算给定消息的Token数量
 
         Args:
-            messages (`list[dict[str, Any]]`):
-                A list of dictionaries, where `role` and `content` fields are
-                required.
-            tools (`list[dict]`, defaults to `None`):
-                A list of tool definitions.
-            **kwargs: Additional keyword arguments.
+            messages: 消息字典列表，需要包含role和content字段
+            tools: 工具定义列表
+            **kwargs: 额外的关键字参数
 
         Returns:
-            The total number of tokens.
+            int: Token总数
+
+        示例:
+            >>> count = await counter.count(messages, tools)
         """
         import tiktoken
 

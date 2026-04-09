@@ -1,22 +1,38 @@
 /**
+ * SoloEngine : 编辑器主页面组件
+ *
  * @file EditorPage.tsx
  * @description 编辑器主页面 - 工作流编辑器核心页面
- * @author SoloEngine Team
- * @date 2026-02-19
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 集成画布编辑、节点面板、属性编辑器、工具栏等核心编辑功能
- * - 支持工作流可视化编辑
- * - 支持节点拖拽和连线
- * - 支持属性配置和工具操作
- * 
- * 使用场景：
- * - 用户创建或编辑工作流项目时使用
- * - 需要配置节点属性时使用
- * 
+ * 本组件提供以下核心功能：
+ *     - 集成画布编辑、节点面板、属性编辑器、工具栏等核心编辑功能
+ *     - 支持工作流可视化编辑
+ *     - 支持节点拖拽和连线
+ *     - 支持属性配置和工具操作
+ *     - 支持预览功能
+ *     - 支持项目保存和加载
+ *
+ * 依赖:
+ *     - react: React核心库
+ *     - react-router-dom: 路由管理
+ *     - antd: Ant Design组件
+ *     - @ant-design/icons: Ant Design图标
+ *     - ../../components/Canvas/Canvas: 画布组件
+ *     - ../../components/PropertyEditor/PropertyEditor: 属性编辑器
+ *     - ../../components/Preview/Preview: 预览组件
+ *     - ../../store/canvasStore: 画布状态管理
+ *     - ../../services/localStorage: 本地存储服务
+ *     - ../../services/agenticFlowApi: AgenticFlow API服务
+ *
+ * 使用示例:
+ *     - <Route path="/editor/:projectId" element={<EditorPage />} />
+ *
  * 注意事项：
- * - 支持Ctrl+Z撤销和Ctrl+Y重做快捷键
- * - 属性面板宽度可通过拖拽调整
+ *     - 支持Ctrl+Z撤销和Ctrl+Y重做快捷键
+ *     - 属性面板宽度可通过拖拽调整
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';

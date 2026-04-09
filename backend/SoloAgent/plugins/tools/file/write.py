@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-文件写入工具模块。
+SoloEngine : 文件写入工具模块，提供文件写入功能
 
 @file write.py
 @description 提供文件写入功能
-@author SoloEngine Team
-@date 2026-03-02
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
 - 写入内容到文件（UTF-8 编码）

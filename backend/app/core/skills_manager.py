@@ -1,24 +1,43 @@
 # -*- coding: utf-8 -*-
 """
-Skills 包管理器。
+SoloEngine : Skills包管理器模块
 
 @file skills_manager.py
 @description Skills管理器 - Skills包管理模块
-@author SoloEngine Team
-@date 2026-02-19
+@author Sh4rlock
+@date 2026-04-09
 
 功能描述：
-- 管理Skills包的安装、卸载、更新
-- 安装Skills包、卸载Skills包
-- 更新Skills包、加载Skills配置
+本模块提供以下核心功能：
+    - 管理Skills包的安装、卸载、更新
+    - 安装Skills包、卸载Skills包
+    - 更新Skills包、加载Skills配置
+    - Skills包的导入导出
+    - Skills包搜索
+
+依赖:
+    - os: 操作系统接口
+    - shutil: 文件操作
+    - logging: 日志记录
+    - typing: 类型注解支持
+    - pathlib: 路径处理
+    - zipfile: ZIP文件处理
+    - tempfile: 临时文件处理
+    - app.utils.skill_parser: Skill解析器
+
+使用示例:
+    - from app.core.skills_manager import SkillsManager
+    - manager = SkillsManager()
+    - packages = manager.list_packages()
+    - manager.import_package("/path/to/skill.zip")
 
 使用场景：
-- Skills包的生命周期管理
-- Skills包的导入导出
+    - Skills包的生命周期管理
+    - Skills包的导入导出
 
 注意事项：
-- Skills包需要正确配置元数据
-- 支持ZIP格式导入导出
+    - Skills包需要正确配置元数据
+    - 支持ZIP格式导入导出
 """
 
 import os

@@ -1,18 +1,30 @@
 /**
+ * SoloEngine : 运行项目API服务模块
+ *
  * @file runProjectApi.ts
  * @description 运行项目API服务 - 项目选择、文件系统隔离、最近项目记录
- * @author SoloEngine Team
- * @date 2026-02-22
- * 
+ * @author Sh4rlock
+ * @date 2026-04-09
+ *
  * 功能描述：
- * - 项目选择和创建API
- * - 文件夹选择对话框接口
- * - 最近项目记录管理
- * - 沙箱文件系统操作
- * 
+ * 本模块提供以下核心功能：
+ *     - 项目选择和创建API
+ *     - 文件夹选择对话框接口
+ *     - 最近项目记录管理
+ *     - 沙箱文件系统操作
+ *     - 文件浏览和管理
+ *     - 文件上传和下载
+ *
+ * 依赖:
+ *     - ./api: API基础服务
+ *
+ * 使用示例:
+ *     - import { runProjectApi } from './runProjectApi'
+ *     - const project = await runProjectApi.selectOrCreateProject(flowId, folderPath)
+ *
  * 使用场景：
- * - 运行场景中的项目管理
- * - 文件系统沙箱隔离
+ *     - 运行场景中的项目管理
+ *     - 文件系统沙箱隔离
  */
 
 import { api } from './api';
