@@ -1,17 +1,17 @@
 <div align="center">
 
-<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="500"/>
+<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
 </div>
 
 ---
 
-<h3 align="center"><b>让 AI 驱动每一个行业。</b></h3>
+<h2 align="center"><b>让 AI 驱动每一个行业。</b></h2>
 
 ---
 
-**SoloEngine** 是第一款低代码 Agentic AI 开发平台。你只需像组建一支创业团队那样：将所需的 Agent 拖入画布，连接协作关系，点击编译——此后的规划、执行与交付，全部由 Agent 自主完成。
-No Workflow. No orchestration code. Just Agents that get things done.
+<p align="center"><b>SoloEngine</b> 是第一款低代码 Agentic AI 开发平台。你只需像组建一支创业团队那样：将所需的 Agent 拖入画布，连接协作关系，点击编译——此后的规划、执行与交付，全部由 Agent 自主完成。</p>
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
 
@@ -24,7 +24,13 @@ No Workflow. No orchestration code. Just Agents that get things done.
 
 </div>
 
-[English](../../README.md) | 简体中文 | [Español](./README_ES.md) | [Deutsch](./README_DE.md) | [Français](./README_FR.md)
+<p align="center">
+  <a href="../../README.md">English</a> |
+  简体中文 |
+  <a href="./README_ES.md">Español</a> |
+  <a href="./README_DE.md">Deutsch</a> |
+  <a href="./README_FR.md">Français</a>
+</p>
 
 ---
 
@@ -84,14 +90,14 @@ npm run dev
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
 
-⭐ **如果你觉得 SoloEngine 有用，欢迎给我们点亮 Star——每一颗都是对我们莫大的鼓励！**
+<p align="center">⭐ <b>如果你觉得 SoloEngine 有用，欢迎给我们点亮 Star——每一颗都是对我们莫大的鼓励！</b></p>
 
 ## 致谢
 
 特别感谢：
 
 <p align="center">
-  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="40"/></a>
+  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
 </p>
 
 ## 参与贡献
