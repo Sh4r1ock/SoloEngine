@@ -1,17 +1,17 @@
 <div align="center">
 
-<img src="icon/SoloEngine.png" alt="SoloEngine" width="500"/>
+<img src="icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
 </div>
 
 ---
 
-<h3 align="center"><b>Let AI Run Every Industry.</b></h3>
+<h2 align="center"><b>Let AI Run Every Industry.</b></h2>
 
 ---
 
-**SoloEngine** is the first low-code platform that compiles Agentic AI. Staff a team of Agents like a startup — drag them onto the canvas, connect the org chart, compile — they plan, act, and deliver on their own.
-No Workflow. No orchestration code. Just Agents that get things done.
+<p align="center"><b>SoloEngine</b> is the first low-code platform that compiles Agentic AI. Staff a team of Agents like a startup — drag them onto the canvas, connect the org chart, compile — they plan, act, and deliver on their own.</p>
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
 
@@ -24,7 +24,13 @@ No Workflow. No orchestration code. Just Agents that get things done.
 
 </div>
 
-[English](./README.md) | [简体中文](i18n/docs/README_CN.md) | [Español](i18n/docs/README_ES.md) | [Deutsch](i18n/docs/README_DE.md) | [Français](i18n/docs/README_FR.md)
+<p align="center">
+  <a href="./README.md">English</a> |
+  <a href="i18n/docs/README_CN.md">简体中文</a> |
+  <a href="i18n/docs/README_ES.md">Español</a> |
+  <a href="i18n/docs/README_DE.md">Deutsch</a> |
+  <a href="i18n/docs/README_FR.md">Français</a>
+</p>
 
 ---
 
@@ -84,14 +90,14 @@ Open **http://localhost:8991** and build your first Agent team.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
 
-⭐ **If you find this useful, give us a star — it helps a lot!**
+<p align="center">⭐ <b>If you find this useful, give us a star — it helps a lot!</b></p>
 
 ## Acknowledgments
 
 Special thanks to:
 
 <p align="center">
-  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="40"/></a>
+  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
 </p>
 
 ## Contributing

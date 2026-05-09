@@ -1,18 +1,18 @@
 <div align="center">
 
-<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="500"/>
+<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
 </div>
 
 ---
 
-<h3 align="center"><b>Que la IA impulse cada industria.</b></h3>
+<h2 align="center"><b>Que la IA impulse cada industria.</b></h2>
 
 ---
 
-**SoloEngine** es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y compila. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.
+<p align="center"><b>SoloEngine</b> es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y compila. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.</p>
 
-No Workflow. No orchestration code. Just Agents that get things done.
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
 
@@ -25,7 +25,13 @@ No Workflow. No orchestration code. Just Agents that get things done.
 
 </div>
 
-[English](../../README.md) | [简体中文](./README_CN.md) | Español | [Deutsch](./README_DE.md) | [Français](./README_FR.md)
+<p align="center">
+  <a href="../../README.md">English</a> |
+  <a href="./README_CN.md">简体中文</a> |
+  Español |
+  <a href="./README_DE.md">Deutsch</a> |
+  <a href="./README_FR.md">Français</a>
+</p>
 
 ---
 
@@ -85,14 +91,14 @@ Abre **http://localhost:8991** en el navegador y construye tu primer equipo de A
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
 
-⭐ **Si SoloEngine te resulta útil, ¡regálanos una estrella! Cada una es un gran estímulo para nosotros.**
+<p align="center">⭐ <b>Si SoloEngine te resulta útil, ¡regálanos una estrella! Cada una es un gran estímulo para nosotros.</b></p>
 
 ## Agradecimientos
 
 Un agradecimiento especial a:
 
 <p align="center">
-  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="40"/></a>
+  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
 </p>
 
 ## Contribuciones

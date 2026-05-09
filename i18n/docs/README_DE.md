@@ -1,18 +1,18 @@
 <div align="center">
 
-<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="300"/>
+<img src="../../icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
 </div>
 
 ---
 
-<h3 align="center"><b>KI treibt jede Branche an.</b></h3>
+<h2 align="center"><b>KI treibt jede Branche an.</b></h2>
 
 ---
 
-**SoloEngine** ist die erste Low-Code Agentic AI-Entwicklungsplattform. Stell es dir wie das Zusammenstellen eines Startup-Teams vor: Ziehe die benötigten Agents auf die Arbeitsfläche, verbinde ihre Zusammenarbeit, kompiliere — ab diesem Moment planen, handeln und liefern sie eigenständig.
+<p align="center"><b>SoloEngine</b> ist die erste Low-Code Agentic AI-Entwicklungsplattform. Stell es dir wie das Zusammenstellen eines Startup-Teams vor: Ziehe die benötigten Agents auf die Arbeitsfläche, verbinde ihre Zusammenarbeit, kompiliere — ab diesem Moment planen, handeln und liefern sie eigenständig.</p>
 
-No Workflow. No orchestration code. Just Agents that get things done.
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
 
@@ -25,7 +25,13 @@ No Workflow. No orchestration code. Just Agents that get things done.
 
 </div>
 
-[English](../../README.md) | [简体中文](./README_CN.md) | [Español](./README_ES.md) | Deutsch | [Français](./README_FR.md)
+<p align="center">
+  <a href="../../README.md">English</a> |
+  <a href="./README_CN.md">简体中文</a> |
+  <a href="./README_ES.md">Español</a> |
+  Deutsch |
+  <a href="./README_FR.md">Français</a>
+</p>
 
 ---
 
@@ -85,14 +91,14 @@ npm run dev
 
 [![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
 
-⭐ **Wenn dir SoloEngine gefällt, gib uns einen Stern — jeder einzelne zählt!**
+<p align="center">⭐ <b>Wenn dir SoloEngine gefällt, gib uns einen Stern — jeder einzelne zählt!</b></p>
 
 ## Danksagung
 
 Besonderer Dank an:
 
 <p align="center">
-  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="40"/></a>
+  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
 </p>
 
 ## Mitwirken
