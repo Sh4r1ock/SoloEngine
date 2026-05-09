@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-Backend API runs on `http://localhost:8991`, frontend dev server on `http://localhost:5173`.
+Backend API runs on `http://localhost:8990`, frontend dev server on `http://localhost:8991`.
 
 ## What to contribute
 
