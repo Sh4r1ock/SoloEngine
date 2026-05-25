@@ -60,7 +60,7 @@ Les alternatives actuelles ne résolvent pas davantage le problème : les platef
 
 ### Comment ça fonctionne
 
-Tous les Agents partagent les mêmes primitives sous-jacentes ; seule leur configuration diffère. Le design visuel du canevas est compilé directement en une équipe d'Agents exécutable.
+Tous les Agents partagent la même architecture sous-jacente ; seule leur configuration diffère. Le design visuel du canevas est compilé directement en un Agentic AI exécutable.
 
 1. **Compiler** — La disposition visuelle est transformée, par tri topologique, en un graphe orienté acyclique (DAG) d'Agents. Un même compilateur génère une infinité de combinaisons d'équipes.
 2. **Moteur ReAct unifié** — Chaque Agent exécute le même cycle « penser → agir → observer → répéter ».
