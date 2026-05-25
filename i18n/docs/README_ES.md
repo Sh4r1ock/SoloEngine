@@ -10,7 +10,11 @@
 
 ---
 
+<<<<<<< HEAD
 <p align="center"><b>SoloEngine</b> es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y ejecuta. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.</p>
+=======
+<p align="center"><b>SoloEngine</b> es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y compila. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.</p>
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -26,8 +30,13 @@
 </div>
 
 <p align="center">
+<<<<<<< HEAD
   <a href="../../README.md">简体中文</a> |
   <a href="./README_EN.md">English</a> |
+=======
+  <a href="../../README.md">English</a> |
+  <a href="./README_CN.md">简体中文</a> |
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
   Español |
   <a href="./README_DE.md">Deutsch</a> |
   <a href="./README_FR.md">Français</a>
@@ -37,7 +46,11 @@
 
 ## ¿Por qué SoloEngine?
 
+<<<<<<< HEAD
 La Agentic AI está transformando el desarrollo de software: un solo desarrollador logra hoy lo que antes exigía un equipo de diez personas. Sin embargo, esta revolución jamás salió del IDE. Para construir un AI Agent real, tenías que escribir pipelines de LangChain a mano, depurar bucles ReAct una y otra vez, y definir esquemas de herramientas uno por uno. ¿No sabes programar? Entonces todo esto queda fuera de tu alcance.
+=======
+La Agentic AI está transformando el desarrollo de software: un solo desarrollador logra hoy lo que antes exigía un equipo de diez personas. Sin embargo, esta revolución jamás salió del editor de código. Para construir un AI Agent real, tenías que escribir pipelines de LangChain a mano, depurar bucles ReAct una y otra vez, y definir esquemas de herramientas uno por uno. ¿No sabes programar? Entonces todo esto queda fuera de tu alcance.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 Las alternativas actuales tampoco resuelven el problema: las plataformas de workflow (Dify, n8n, etc.) ejecutan rutas fijas preorquestadas, sin Agents autónomos en su núcleo; los frameworks de código (LangChain, CrewAI, etc.) exigen dominar Python. **SoloEngine** existe precisamente para cerrar esa brecha.
 
@@ -50,8 +63,13 @@ Las alternativas actuales tampoco resuelven el problema: las plataformas de work
 | Colaboración Multi-Agent | ✗ | ✓ | ✓ |
 
 - **No es una herramienta de workflow más.** Los Agents operan con el ciclo «pensar → actuar → observar → repetir». Todas las decisiones se toman en tiempo de ejecución. Si un Agent de investigación se atasca, ajusta su plan sobre la marcha, sin rutas de respaldo predefinidas.
+<<<<<<< HEAD
 - **Los expertos de dominio construyen directamente.** Un abogado arrastra un Agent de revisión de contratos al lienzo, lo conecta a un Agent de investigación y ejecuta. Sin intervención de programadores.
 - **Herramientas, Skills, MCP: todo es conectable en caliente.** Cada Agent carga solo lo que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
+=======
+- **Los expertos de dominio construyen directamente.** Un abogado arrastra un Agent de revisión de contratos al lienzo, lo conecta a un Agent de investigación y compila. Sin intervención de programadores.
+- **Herramientas, Skills, MCP: todo es conectable.** Cada Agent carga solo lo que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 - **Una sola capa de adaptación para todos los modelos.** OpenAI, Anthropic, Ollama, DeepSeek, Qwen, Zhipu: una interfaz unificada, cambio transparente.
 
 ### Cómo funciona
@@ -83,8 +101,13 @@ Abre **http://localhost:8991** en el navegador y construye tu primer equipo de A
 
 ## Casos de uso
 
+<<<<<<< HEAD
 - **VibeLawing**: un abogado arrastra Agents de búsqueda, archivo y formato al lienzo en secuencia y ejecuta. La IA desglosará y planificará automáticamente el trabajo legal: analizará los hechos, localizará las normas, organizará la jurisprudencia, estructurará los argumentos y formateará los documentos. Solo necesitas revisar y hacer ajustes antes de entregar — todo el proceso resulta tan natural como cuando un desarrollador hace vibe coding en Cursor.
 - **VibeMarketing**: un especialista en marketing arrastra Agents de investigación, redacción y recursos al lienzo y ejecuta. SoloEngine analizará automáticamente a la audiencia, investigará a partir de ahí soluciones de producto pertinentes y hará un benchmarking con la competencia para elaborar estrategias de marketing — entregándote un plan de marketing impecable.
+=======
+- **VibeLawing**: un abogado arrastra Agents de búsqueda, archivo y formato al lienzo, y compila. El trabajo legal fluye de inmediato: se localizan normas, se organiza jurisprudencia, se formatean documentos, con la misma naturalidad con que un desarrollador hace vibe coding en Cursor.
+- **VibeMarketing**: un especialista en marketing arrastra Agents de investigación, redacción y diseño al lienzo, y compila. Las campañas se generan y el análisis de audiencia se realiza de forma autónoma.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 - **Empaquetado en un clic**: cuando tu equipo de Agents está listo, un solo clic genera un producto completo que cualquiera puede usar directamente.
 
 ## Tendencias de Stars
