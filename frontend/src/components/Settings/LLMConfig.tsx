@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Button, message, Space, DatePicker, Row, Col, Statistic, Popconfirm, Tooltip } from 'antd';
-import { BarChartOutlined, ReloadOutlined, DownloadOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Button, App, Space, DatePicker, Row, Col, Statistic, Tooltip, Select } from 'antd';
+import { BarChartOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../../services/api';
+import { llmApi, LLMConfig as LLMConfigType } from '../../services/llmApi';
 
 const { RangePicker } = DatePicker;
 
@@ -31,16 +32,33 @@ interface DailyUsageData {
 }
 
 const LLMConfig: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [usageData, setUsageData] = useState<DailyUsageData | null>(null);
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs]>([
     dayjs().subtract(6, 'day'),
     dayjs(),
   ]);
+  const [selectedModel, setSelectedModel] = useState<string>('');
+  const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
 
   useEffect(() => {
+    loadModelOptions();
     loadUsage();
   }, []);
+
+  const loadModelOptions = async () => {
+    try {
+      const configs = await llmApi.getConfigs();
+      const uniqueModels = [...new Set(configs.map((c: LLMConfigType) => c.model_name).filter(Boolean))];
+      setModelOptions([
+        { label: '全部模型', value: '' },
+        ...uniqueModels.map((m: string) => ({ label: m, value: m })),
+      ]);
+    } catch {
+      setModelOptions([{ label: '全部模型', value: '' }]);
+    }
+  };
 
   const loadUsage = async () => {
     setLoading(true);
@@ -50,38 +68,29 @@ const LLMConfig: React.FC = () => {
         params.start_date = dateRange[0].format('YYYY-MM-DD');
         params.end_date = dateRange[1].format('YYYY-MM-DD');
       }
+      if (selectedModel && selectedModel !== '') {
+        params.model_name = selectedModel;
+      }
 
-      const response = await api.get('/llm/usage/daily', { params });
+      const response = await api.get('/llm/usage', { params });
 
       if (response.code === 200 && response.data) {
         setUsageData(response.data);
       } else {
-        setUsageData({
-          daily: [],
-          summary: {
-            total_requests: 0,
-            total_tokens: 0,
-            avg_tokens_per_request: 0,
-            avg_time_per_request: 0,
-          },
-          date_range: { start: null, end: null },
-        });
+        setUsageData(emptyData());
       }
     } catch (error) {
-      setUsageData({
-        daily: [],
-        summary: {
-          total_requests: 0,
-          total_tokens: 0,
-          avg_tokens_per_request: 0,
-          avg_time_per_request: 0,
-        },
-        date_range: { start: null, end: null },
-      });
+      setUsageData(emptyData());
     } finally {
       setLoading(false);
     }
   };
+
+  const emptyData = (): DailyUsageData => ({
+    daily: [],
+    summary: { total_requests: 0, total_tokens: 0, avg_tokens_per_request: 0, avg_time_per_request: 0 },
+    date_range: { start: null, end: null },
+  });
 
   const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
     if (dates && dates[0] && dates[1]) {
@@ -95,19 +104,28 @@ const LLMConfig: React.FC = () => {
 
   const handleExport = async (format: string = 'json') => {
     try {
-      const response = await api.get('/llm/usage/export', {
-        params: { format },
-      });
+      const params: Record<string, string> = { format };
+      if (selectedModel && selectedModel !== '') {
+        params.model_name = selectedModel;
+      }
+      if (dateRange[0] && dateRange[1]) {
+        params.start_date = dateRange[0].format('YYYY-MM-DD');
+        params.end_date = dateRange[1].format('YYYY-MM-DD');
+      }
+      const response = await api.get('/llm/usage/export', { params });
 
       if (response.code === 200) {
+        const data = response.data;
+        if (format === 'csv') {
+          const csvContent = data;
+          const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8' });
+          downloadBlob(blob, `llm_usage_export.csv`);
+        } else {
+          const jsonStr = JSON.stringify(data, null, 2);
+          const blob = new Blob([jsonStr], { type: 'application/json' });
+          downloadBlob(blob, `llm_usage_export.json`);
+        }
         message.success('使用数据已导出');
-        const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `llm_usage_export.${format}`;
-        link.click();
-        URL.revokeObjectURL(url);
       } else {
         message.error('导出使用数据失败：' + response.message);
       }
@@ -116,21 +134,13 @@ const LLMConfig: React.FC = () => {
     }
   };
 
-  const handleClearHistory = async () => {
-    try {
-      const response = await api.delete('/llm/usage', {
-        params: { days_to_keep: 30 },
-      });
-
-      if (response.code === 200) {
-        message.success(`已清除 ${response.data?.removed_count || 0} 条历史记录`);
-        loadUsage();
-      } else {
-        message.error('清除历史数据失败：' + response.message);
-      }
-    } catch (error) {
-      message.error('清除历史数据失败：' + String(error));
-    }
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const getRequestsChartOption = () => {
@@ -138,40 +148,12 @@ const LLMConfig: React.FC = () => {
     const requests = usageData?.daily.map(d => d.requests) || [];
 
     return {
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-      },
-      grid: {
-        left: '3%',
-        right: '3%',
-        bottom: '3%',
-        top: 30,
-        containLabel: true,
-      },
-      xAxis: {
-        type: 'category',
-        data: dates,
-        axisLabel: { rotate: 45, fontSize: 11, margin: 8 },
-        boundaryGap: true,
-      },
-      yAxis: {
-        type: 'value',
-        name: '请求数',
-      },
-      series: [{
-        name: '请求数',
-        type: 'bar',
-        data: requests,
-        itemStyle: {
-          color: '#5470c6',
-          borderRadius: [4, 4, 0, 0],
-        },
-        barWidth: 30,
-        barMaxWidth: 30,
-        barMinWidth: 30,
-      }],
-      barCategoryGap: '80%',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid: { left: '3%', right: '3%', bottom: '3%', top: 30, containLabel: true },
+      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 11, margin: 8 }, boundaryGap: true },
+      yAxis: { type: 'value', name: '请求数' },
+      series: [{ name: '请求数', type: 'bar', data: requests, itemStyle: { color: '#5470c6', borderRadius: [4, 4, 0, 0] }, barWidth: '40%', barMaxWidth: 50 }],
+      barCategoryGap: '60%',
     };
   };
 
@@ -180,40 +162,12 @@ const LLMConfig: React.FC = () => {
     const tokens = usageData?.daily.map(d => d.tokens) || [];
 
     return {
-      tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
-      },
-      grid: {
-        left: '3%',
-        right: '3%',
-        bottom: '3%',
-        top: 30,
-        containLabel: true,
-      },
-      xAxis: {
-        type: 'category',
-        data: dates,
-        axisLabel: { rotate: 45, fontSize: 11, margin: 8 },
-        boundaryGap: true,
-      },
-      yAxis: {
-        type: 'value',
-        name: 'Token数',
-      },
-      series: [{
-        name: 'Token数',
-        type: 'bar',
-        data: tokens,
-        itemStyle: {
-          color: '#5470c6',
-          borderRadius: [4, 4, 0, 0],
-        },
-        barWidth: 30,
-        barMaxWidth: 30,
-        barMinWidth: 30,
-      }],
-      barCategoryGap: '80%',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      grid: { left: '3%', right: '3%', bottom: '3%', top: 30, containLabel: true },
+      xAxis: { type: 'category', data: dates, axisLabel: { rotate: 45, fontSize: 11, margin: 8 }, boundaryGap: true },
+      yAxis: { type: 'value', name: 'Token数' },
+      series: [{ name: 'Token数', type: 'bar', data: tokens, itemStyle: { color: '#5470c6', borderRadius: [4, 4, 0, 0] }, barWidth: '40%', barMaxWidth: 50 }],
+      barCategoryGap: '60%',
     };
   };
 
@@ -225,7 +179,7 @@ const LLMConfig: React.FC = () => {
   };
 
   return (
-    <div style={{ height: '100%' }}>
+    <div>
       <Card
         title={
           <Space>
@@ -234,7 +188,15 @@ const LLMConfig: React.FC = () => {
           </Space>
         }
         extra={
-          <Space>
+          <Space wrap>
+            <Select
+              placeholder="选择模型"
+              value={selectedModel}
+              onChange={(val) => setSelectedModel(val)}
+              style={{ width: 180 }}
+              options={modelOptions}
+              allowClear
+            />
             <RangePicker
               value={dateRange}
               onChange={handleDateChange}
@@ -250,50 +212,34 @@ const LLMConfig: React.FC = () => {
                 刷新
               </Button>
             </Tooltip>
-            <Tooltip title="导出 JSON">
-              <Button icon={<DownloadOutlined />} onClick={() => handleExport('json')}>
+            <Tooltip title="导出 CSV">
+              <Button icon={<DownloadOutlined />} onClick={() => handleExport('csv')}>
                 导出
               </Button>
             </Tooltip>
-            <Popconfirm
-              title="确定要清除历史数据吗？"
-              onConfirm={handleClearHistory}
-              okText="确定"
-              cancelText="取消"
-            >
-              <Button danger icon={<DeleteOutlined />}>
-                清除历史
-              </Button>
-            </Popconfirm>
           </Space>
         }
-        style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-        styles={{ body: { flex: 1, overflow: 'auto', padding: 16 } }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 16 }}>
-          <Row gutter={16} style={{ flex: 1, minHeight: 250 }}>
-            <Col span={12} style={{ height: '100%' }}>
-              <div style={{ height: '100%', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Row gutter={16} style={{ minHeight: 300 }}>
+            <Col span={12}>
+              <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
                 <div style={{ fontWeight: 500, marginBottom: 8 }}>请求数统计</div>
-                <div style={{ height: 'calc(100% - 30px)' }}>
-                  <ReactECharts
-                    option={getRequestsChartOption()}
-                    style={{ height: '100%', width: '100%' }}
-                    opts={{ renderer: 'canvas' }}
-                  />
-                </div>
+                <ReactECharts
+                  option={getRequestsChartOption()}
+                  style={{ height: 280, width: '100%' }}
+                  opts={{ renderer: 'canvas' }}
+                />
               </div>
             </Col>
-            <Col span={12} style={{ height: '100%' }}>
-              <div style={{ height: '100%', border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+            <Col span={12}>
+              <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
                 <div style={{ fontWeight: 500, marginBottom: 8 }}>Token 数统计</div>
-                <div style={{ height: 'calc(100% - 30px)' }}>
-                  <ReactECharts
-                    option={getTokensChartOption()}
-                    style={{ height: '100%', width: '100%' }}
-                    opts={{ renderer: 'canvas' }}
-                  />
-                </div>
+                <ReactECharts
+                  option={getTokensChartOption()}
+                  style={{ height: 280, width: '100%' }}
+                  opts={{ renderer: 'canvas' }}
+                />
               </div>
             </Col>
           </Row>

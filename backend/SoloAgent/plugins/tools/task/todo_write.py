@@ -24,7 +24,7 @@ TodoWrite 工具模块。
 """
 
 from typing import Dict, Any, List, Optional
-from .base import BaseTaskTool, TaskToolError, TaskStatus
+from .base import BaseTaskTool, TaskStatus
 
 
 class TodoWrite(BaseTaskTool):
@@ -130,10 +130,11 @@ class TodoWrite(BaseTaskTool):
         content = "\n".join(content_parts)
         
         result = {
-            "content": content,  # 必须包含 content 字段，符合工具返回值规范
+            "content": content,
             "todos": validated_todos,
             "statistics": statistics,
             "success": True,
+            "error_message": None,
         }
         
         if summary:
@@ -153,59 +154,56 @@ class TodoWrite(BaseTaskTool):
             Dict[str, Any]: 工具规范
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "TodoWrite",
-                "description": (
-                    "使用此工具可以创建和管理工作会话的结构化任务列表。"
-                    "这有助于跟踪进度、组织复杂任务，并向用户展示完成情况。"
-                    "任务列表应包含3-10个任务项，每个任务包含id、content、status和priority字段。"
-                    "同时只能有一个任务处于in_progress状态。"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "todos": {
-                            "type": "array",
-                            "description": "任务列表（3-10个任务）",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {
-                                        "type": "string",
-                                        "description": "任务唯一标识"
-                                    },
-                                    "content": {
-                                        "type": "string",
-                                        "description": "任务内容描述"
-                                    },
-                                    "status": {
-                                        "type": "string",
-                                        "enum": ["pending", "in_progress", "completed"],
-                                        "description": "任务状态"
-                                    },
-                                    "priority": {
-                                        "type": "string",
-                                        "enum": ["high", "medium", "low"],
-                                        "description": "任务优先级"
-                                    },
-                                    "summary": {
-                                        "type": "string",
-                                        "description": "完成摘要（仅completed状态时使用）"
-                                    }
+            "name": "TodoWrite",
+            "description": (
+                "使用此工具可以创建和管理工作会话的结构化任务列表。"
+                "这有助于跟踪进度、组织复杂任务，并向用户展示完成情况。"
+                "任务列表应包含3-10个任务项，每个任务包含id、content、status和priority字段。"
+                "同时只能有一个任务处于in_progress状态。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "任务列表（3-10个任务）",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "任务唯一标识"
                                 },
-                                "required": ["id", "content", "status"]
+                                "content": {
+                                    "type": "string",
+                                    "description": "任务内容描述"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed"],
+                                    "description": "任务状态"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["high", "medium", "low"],
+                                    "description": "任务优先级"
+                                },
+                                "summary": {
+                                    "type": "string",
+                                    "description": "完成摘要（仅completed状态时使用）"
+                                }
                             },
-                            "minItems": 3,
-                            "maxItems": 10
+                            "required": ["id", "content", "status"]
                         },
-                        "summary": {
-                            "type": "string",
-                            "description": "整体摘要（可选）"
-                        }
+                        "minItems": 3,
+                        "maxItems": 10
                     },
-                    "required": ["todos"]
-                }
+                    "summary": {
+                        "type": "string",
+                        "description": "整体摘要（可选）"
+                    }
+                },
+                "required": ["todos"]
             }
         }
     
@@ -233,33 +231,3 @@ class TodoWrite(BaseTaskTool):
         """清空任务列表。"""
         self._todos = []
 
-
-def get_todo_write_tool_spec() -> Dict[str, Any]:
-    """
-    获取 TodoWrite 工具规范。
-    
-    Returns:
-        Dict[str, Any]: 工具规范
-    """
-    tool = TodoWrite()
-    return tool.get_tool_spec()
-
-
-async def todo_write(
-    todos: List[Dict[str, Any]],
-    summary: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    TodoWrite 工具函数。
-    
-    异步包装器，用于注册到工具执行器。
-    
-    Args:
-        todos (List[Dict[str, Any]]): 任务列表
-        summary (Optional[str], optional): 整体摘要。默认为 None。
-    
-    Returns:
-        Dict[str, Any]: 执行结果
-    """
-    tool = TodoWrite()
-    return tool.execute(todos=todos, summary=summary)

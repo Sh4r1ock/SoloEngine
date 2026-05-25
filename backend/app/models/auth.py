@@ -30,6 +30,9 @@ SoloEngine : 用户/角色数据模型模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
 from enum import Enum
 
 
@@ -50,8 +53,8 @@ class User:
     is_active: bool = True
     is_superuser: bool = False
     roles: List[str] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     last_login: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -78,8 +81,8 @@ class User:
             is_active=data.get("is_active", True),
             is_superuser=data.get("is_superuser", False),
             roles=data.get("roles", []),
-            created_at=data.get("created_at", datetime.now().isoformat()),
-            updated_at=data.get("updated_at", datetime.now().isoformat()),
+            created_at=data.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            updated_at=data.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
             last_login=data.get("last_login"),
         )
 
@@ -91,7 +94,7 @@ class Role:
     name: str
     description: str = ""
     permissions: List[str] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {

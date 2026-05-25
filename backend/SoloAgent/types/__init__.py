@@ -39,6 +39,7 @@ from .json import (
 from .tool import (
     ToolFunction,
 )
+from .protocols import StreamCallback
 
 __all__ = [
     "AgentHookTypes",
@@ -47,4 +48,5 @@ __all__ = [
     "JSONPrimitive",
     "JSONSerializableObject",
     "ToolFunction",
+    "StreamCallback",
 ]

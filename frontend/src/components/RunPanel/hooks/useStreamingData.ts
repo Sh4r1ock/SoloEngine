@@ -53,18 +53,32 @@ export const useStreamingData = () => {
     return null;
   };
 
-  const updateStreamingData = useCallback(() => {
+  const collectAllBlocks = (): DataBlock[] => {
     const allBlocks = [...stateRef.current.completedBlocks];
     if (stateRef.current.currentBlock) {
-      // 检查currentBlock是否已经在completedBlocks中（引用比较）
       const isInCompleted = stateRef.current.completedBlocks.includes(
         stateRef.current.currentBlock
       );
       if (!isInCompleted) {
-        allBlocks.push(stateRef.current.currentBlock);
+        // 使用展开运算符创建新对象引用，确保 React.memo 的引用比较能检测到变化
+        allBlocks.push({ ...stateRef.current.currentBlock });
+      } else {
+        // currentBlock 已在 completedBlocks 中（pushScope 后），替换为新引用以触发重渲染
+        const idx = allBlocks.indexOf(stateRef.current.currentBlock);
+        if (idx >= 0) {
+          allBlocks[idx] = { ...stateRef.current.currentBlock };
+        }
       }
     }
-    setStreamingData(allBlocks);
+    return allBlocks;
+  };
+
+  const updateStreamingData = useCallback(() => {
+    setStreamingData(collectAllBlocks());
+  }, [setStreamingData]);
+
+  const flushStreamingData = useCallback(() => {
+    setStreamingData(collectAllBlocks());
   }, [setStreamingData]);
 
   const finalizeCurrentBlock = useCallback(() => {
@@ -239,8 +253,8 @@ export const useStreamingData = () => {
     currentAgentIdRef.current = newAgentId;
 
     // 5. 更新 UI
-    updateStreamingData();
-  }, [updateStreamingData]);
+    flushStreamingData();
+  }, [flushStreamingData]);
 
   const popScope = useCallback(() => {
     // 1. SubAgent 的 currentBlock 追加到 completedBlocks（并折叠）
@@ -267,9 +281,9 @@ export const useStreamingData = () => {
       }
 
       // 5. 更新 UI（MainAgent + SubAgent 数据都显示）
-      updateStreamingData();
+      flushStreamingData();
     }
-  }, [updateStreamingData]);
+  }, [flushStreamingData]);
 
   const handleAgentSwitch = useCallback((newAgentId: string, newAgentName: string) => {
     if (!rootAgentIdRef.current) {
@@ -290,15 +304,16 @@ export const useStreamingData = () => {
   // 使用 useRef 存储所有回调函数，避免依赖链问题
   const callbacksRef = useRef({
     updateStreamingData,
+    flushStreamingData,
     finalizeCurrentBlock,
     processContentChunk,
     processToolCalls,
     handleAgentSwitch,
   });
 
-  // 更新 ref
   callbacksRef.current = {
     updateStreamingData,
+    flushStreamingData,
     finalizeCurrentBlock,
     processContentChunk,
     processToolCalls,
@@ -395,6 +410,12 @@ export const useStreamingData = () => {
 
     const finalData = [...stateRef.current.completedBlocks];
 
+    for (const block of finalData) {
+      if (!block._userToggled) {
+        block._isExpanding = false;
+      }
+    }
+
     clearStreamingData();
     stateRef.current = {
       completedBlocks: [],
@@ -422,17 +443,70 @@ export const useStreamingData = () => {
     rootAgentIdRef.current = null;
   }, [clearStreamingData]);
 
+  const addFileChangePreview = useCallback((fileChanges: any[], agentId?: string, agentName?: string) => {
+    const mappedChanges = fileChanges.map(fc => ({
+      file_path: fc.file_path,
+      operation: fc.operation,
+      content_type: fc.content_type || 'text',
+      diff: fc.diff ? {
+        lines_added: fc.diff.lines_added ?? 0,
+        lines_removed: fc.diff.lines_removed ?? 0,
+      } : undefined,
+      tool_call_id: fc.tool_call_id,
+      _preview: true,
+    }));
+
+    if (stateRef.current.currentBlock) {
+      const isInCompleted = stateRef.current.completedBlocks.includes(
+        stateRef.current.currentBlock
+      );
+      if (!isInCompleted) {
+        stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      }
+      stateRef.current.currentBlock = null;
+    }
+
+    const existingFcBlockIndex = stateRef.current.completedBlocks.findIndex(
+      b => b.type === 'file_changes' && b.agent_id === agentId
+    );
+    if (existingFcBlockIndex >= 0) {
+      const existingBlock = stateRef.current.completedBlocks[existingFcBlockIndex];
+      const existingMap = new Map(
+        (existingBlock.file_changes || []).map((fc: any) => [fc.tool_call_id || fc.file_path, fc])
+      );
+      for (const fc of mappedChanges) {
+        existingMap.set(fc.tool_call_id || fc.file_path, fc);
+      }
+      existingBlock.file_changes = Array.from(existingMap.values());
+    } else {
+      const previewBlock: DataBlock = {
+        type: 'file_changes',
+        file_changes: mappedChanges,
+        agent_id: agentId,
+        agent_name: agentName,
+        agent_level: scopeStackRef.current.length,
+      };
+      stateRef.current.completedBlocks.push(previewBlock);
+    }
+    flushStreamingData();
+  }, [flushStreamingData]);
+
   const setCurrentMsgIdRef = useCallback((msgId: string) => {
     currentMsgIdRef.current = msgId;
   }, []);
 
+  // 使用useRef保持streamingDataRef的稳定性
+  const streamingDataRefStable = useRef({ current: streamingData });
+  streamingDataRefStable.current = { current: streamingData };
+
   return {
     streamingData,
-    streamingDataRef: { current: streamingData },
+    streamingDataRef: streamingDataRefStable.current,
     processStreamChunk,
     processLegacyStream,
     finalizeStream,
     resetStream,
+    addFileChangePreview,
     lastChunkType: stateRef.current.lastChunkType,
     currentMsgIdRef,
     setCurrentMsgIdRef,

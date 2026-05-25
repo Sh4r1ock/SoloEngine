@@ -28,7 +28,6 @@ SoloEngine : 状态模块，支持嵌套状态的序列化和反序列化
 from collections import OrderedDict
 from typing import Any
 
-from ..types import JSONSerializableObject
 
 
 class StateModule:

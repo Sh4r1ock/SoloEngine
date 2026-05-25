@@ -30,11 +30,10 @@ SoloEngine : JWT 认证服务模块
     - user = await auth_service.get_user(user_id)
 """
 
-import os
 import logging
 from typing import Dict, Optional, Any
-from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 try:
     import jwt
@@ -45,7 +44,9 @@ except ImportError:
     InvalidTokenError = Exception
 
 from app.models.auth import User, Token
-from app.core.database import db_manager, get_db_context, UserModel, hash_password, verify_password
+from app.core.database import db_manager, get_db_context, UserModel, hash_password
+from app.core.config import settings
+from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +71,9 @@ def _user_model_to_dataclass(user_model: UserModel) -> User:
         hashed_password=user_model.hashed_password,
         is_active=user_model.is_active,
         is_superuser=user_model.is_superuser,
-        created_at=user_model.created_at.isoformat() if user_model.created_at else "",
-        updated_at=user_model.updated_at.isoformat() if user_model.updated_at else "",
-        last_login=user_model.last_login.isoformat() if user_model.last_login else None,
+        created_at=format_iso(user_model.created_at),
+        updated_at=format_iso(user_model.updated_at),
+        last_login=format_iso(user_model.last_login),
     )
 
 
@@ -102,8 +103,8 @@ class AuthService:
         self,
         secret_key: Optional[str] = None,
         algorithm: str = "HS256",
-        access_token_expire_minutes: int = 30,
-        refresh_token_expire_days: int = 7,
+        access_token_expire_minutes: int = None,
+        refresh_token_expire_days: int = None,
     ):
         """
         初始化认证服务
@@ -117,14 +118,14 @@ class AuthService:
         if not HAS_AUTH_DEPS:
             logger.warning("Auth dependencies not installed. Install with: pip install pyjwt[crypto] pwdlib[argon2]")
 
-        self.secret_key = secret_key or os.getenv("SECRET_KEY", "change-this-secret-key-in-production")
+        self.secret_key = secret_key or settings.SECRET_KEY
         if self.secret_key == "change-this-secret-key-in-production":
             logger.warning("Using default SECRET_KEY. Please set a secure random key in production.")
         if len(self.secret_key) < 32:
             logger.warning("SECRET_KEY is shorter than 32 characters. Consider using a longer key for production.")
         self.algorithm = algorithm
-        self.access_token_expire_minutes = access_token_expire_minutes
-        self.refresh_token_expire_days = refresh_token_expire_days
+        self.access_token_expire_minutes = access_token_expire_minutes or settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        self.refresh_token_expire_days = refresh_token_expire_days or settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS
 
     def create_access_token(
         self,
@@ -154,9 +155,9 @@ class AuthService:
             )
 
         if expires_delta:
-            expire = datetime.now(timezone.utc) + expires_delta
+            expire = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) + expires_delta
         else:
-            expire = datetime.now(timezone.utc) + timedelta(minutes=self.access_token_expire_minutes)
+            expire = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) + timedelta(minutes=self.access_token_expire_minutes)
 
         to_encode = {
             "sub": user_id,
@@ -193,9 +194,9 @@ class AuthService:
             )
 
         if expires_delta:
-            expire = datetime.now(timezone.utc) + expires_delta
+            expire = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) + expires_delta
         else:
-            expire = datetime.now(timezone.utc) + timedelta(days=self.refresh_token_expire_days)
+            expire = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) + timedelta(days=self.refresh_token_expire_days)
 
         to_encode = {
             "sub": user_id,
@@ -450,7 +451,7 @@ class AuthService:
             if is_active is not None:
                 user_model.is_active = is_active
 
-            user_model.updated_at = datetime.now(timezone.utc)
+            user_model.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             db.commit()
             db.refresh(user_model)
             

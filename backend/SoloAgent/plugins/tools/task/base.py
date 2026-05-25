@@ -55,7 +55,7 @@ class TaskToolError(Exception):
         """
         return {
             "success": False,
-            "error": self.message,
+            "error_message": self.message,
             "error_code": self.error_code,
         }
 
@@ -109,6 +109,8 @@ class BaseTaskTool:
         """
         result = {
             "success": True,
+            "error_message": None,
+            "metadata": {},
             **data,
         }
         if message:
@@ -129,8 +131,10 @@ class BaseTaskTool:
         """
         return {
             "success": False,
-            "error": message,
+            "content": message,
+            "error_message": message,
             "error_code": error_code or "TASK_ERROR",
+            "metadata": {}
         }
     
     def validate_status(self, status: str) -> bool:

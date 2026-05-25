@@ -36,7 +36,7 @@ ExitPlanMode工具模块 - 退出计划模式实现。
 from typing import Dict, Any, Optional
 import logging
 
-from .base import BaseOtherTool, OtherToolError, ToolAction
+from .base import BaseOtherTool
 
 logger = logging.getLogger(__name__)
 
@@ -198,45 +198,10 @@ class ExitPlanModeTool(BaseOtherTool):
                 "在计划制定完成后调用此工具，等待用户批准后开始执行。"
                 "此工具不需要任何参数。"
             ),
-            "parameters": {}
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            }
         }
 
-
-async def exit_plan_mode_function(
-    plan_content: Optional[str] = None,
-    plan_steps: Optional[list] = None
-) -> Dict[str, Any]:
-    """
-    ExitPlanMode工具函数 - 直接调用入口。
-    
-    提供简化的函数式调用接口。
-    
-    Args:
-        plan_content (str, optional): 计划内容描述。
-        plan_steps (list, optional): 计划步骤列表。
-    
-    Returns:
-        Dict[str, Any]: 执行结果。
-    
-    Example:
-        >>> result = await exit_plan_mode_function(
-        ...     plan_content="实现用户登录功能",
-        ...     plan_steps=["创建登录表单", "验证用户输入"]
-        ... )
-    """
-    tool = ExitPlanModeTool()
-    return await tool.execute(
-        plan_content=plan_content,
-        plan_steps=plan_steps
-    )
-
-
-def get_exit_plan_mode_tool_spec() -> Dict[str, Any]:
-    """
-    获取ExitPlanMode工具规范。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到ToolkitExecutor。
-    """
-    tool = ExitPlanModeTool()
-    return tool.get_tool_spec()

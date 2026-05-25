@@ -124,6 +124,14 @@ code {
   color: var(--error-color);
 }
 
+pre > code {
+  padding: 0;
+  background-color: transparent;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
 pre {
   font-family: var(--font-family-code);
   background-color: var(--bg-tertiary);
@@ -408,7 +416,6 @@ pre {
 
 .ant-modal {
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
 }
 
 .ant-modal-header {

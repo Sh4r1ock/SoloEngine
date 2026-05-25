@@ -32,7 +32,6 @@ SoloEngine : OpenAI格式化器，将消息转换为OpenAI API格式
     - formatted = await formatter.format(messages)
 """
 import base64
-import copy
 import json
 import os
 from typing import Any
@@ -503,7 +502,7 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                 logger.error(f"  !!! ERROR: Message {i} has tool_calls but NO reasoning_content!")
                 logger.error(f"  Message {i} full: {msg}")
         
-        # 验证 tool_calls 和 tool 消息是否匹配
+        # 验证并修复 tool_calls 和 tool 消息的配对关系
         tool_call_ids = set()
         tool_ids = set()
         for msg in formatted:
@@ -513,9 +512,36 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
             elif msg.get('role') == 'tool':
                 tool_ids.add(msg.get('tool_call_id'))
         
-        missing = tool_call_ids - tool_ids
-        if missing:
-            logger.error(f"[OpenAIChatFormatter] Missing tool messages for tool_call_ids: {missing}")
+        # 第一步：移除孤立的 tool 消息（没有对应 tool_calls 的 tool 消息）
+        orphan_tool_ids = tool_ids - tool_call_ids
+        if orphan_tool_ids:
+            formatted = [msg for msg in formatted if not (
+                msg.get('role') == 'tool' and msg.get('tool_call_id') in orphan_tool_ids
+            )]
+            logger.warning(f"[OpenAIChatFormatter] Removed {len(orphan_tool_ids)} orphan tool messages: {orphan_tool_ids}")
+        
+        # 第二步：为有 tool_calls 但缺少对应 tool 消息的 assistant 消息补充空 tool 消息
+        tool_ids_in_messages = set()
+        for msg in formatted:
+            if msg.get('role') == 'tool':
+                tool_ids_in_messages.add(msg.get('tool_call_id'))
+        
+        missing_tool_ids = tool_call_ids - tool_ids_in_messages
+        if missing_tool_ids:
+            new_formatted = []
+            for msg in formatted:
+                new_formatted.append(msg)
+                if msg.get('role') == 'assistant' and 'tool_calls' in msg:
+                    for tc in msg['tool_calls']:
+                        if tc.get('id') in missing_tool_ids:
+                            new_formatted.append({
+                                "role": "tool",
+                                "tool_call_id": tc.get('id'),
+                                "content": ""
+                            })
+                            missing_tool_ids.discard(tc.get('id'))
+            formatted = new_formatted
+            logger.warning(f"[OpenAIChatFormatter] Added {len(tool_call_ids - tool_ids_in_messages)} missing tool messages")
         else:
             logger.info(f"[OpenAIChatFormatter] All tool_calls have matching tool messages")
         

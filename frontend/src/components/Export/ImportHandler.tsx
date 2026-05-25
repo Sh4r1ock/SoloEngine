@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Button, message, Space, Typography, Card, Alert } from 'antd';
+import { Upload, Button, App, Space, Typography, Card, Alert } from 'antd';
 import { UploadOutlined, InboxOutlined, FileTextOutlined } from '@ant-design/icons';
 import { api } from '../../services/api';
 
@@ -11,6 +11,7 @@ interface ImportHandlerProps {
 }
 
 const ImportHandler: React.FC<ImportHandlerProps> = ({ onImport }) => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
 

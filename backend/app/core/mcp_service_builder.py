@@ -34,11 +34,12 @@ SoloEngine : MCP服务构建器模块
 """
 
 import os
-import json
 import logging
-from typing import Dict, List, Any, Optional
-from pathlib import Path
+from typing import Dict, List, Any
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class MCPServiceTemplate:
 {service_name} - MCP服务
 
 描述: {description}
-创建时间: {datetime.now().isoformat()}
+创建时间: {datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()}
 """
 
 import asyncio
@@ -255,7 +256,8 @@ async def run_http(host: str = "localhost", port: int = 8080):
     
     try:
         while True:
-            await asyncio.sleep(3600)
+            from app.core.config import settings
+            await asyncio.sleep(settings.MCP_SERVICE_KEEPALIVE_INTERVAL)
     except asyncio.CancelledError:
         pass
     finally:
@@ -333,7 +335,7 @@ if __name__ == "__main__":
  * {service_name} - MCP服务
  * 
  * 描述: {description}
- * 创建时间: {datetime.now().isoformat()}
+ * 创建时间: {datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()}
  */
 
 import {{ Server }} from '@modelcontextprotocol/sdk/server/index.js';
@@ -416,7 +418,10 @@ main().catch(console.error);
             config["args"] = args or [f"{service_name.lower().replace('-', '_')}.py"]
             config["env"] = env or {}
         elif transport in ["http", "websocket", "sse"]:
-            config["url"] = url or f"http://localhost:8080"
+            config["url"] = url
+            if not config["url"]:
+                from app.core.config import settings
+                config["url"] = settings.MCP_DEFAULT_URL
 
         return config
 

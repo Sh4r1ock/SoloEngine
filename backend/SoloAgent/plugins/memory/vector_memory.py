@@ -35,8 +35,8 @@
 
 from typing import List, Optional, Dict, Any
 import numpy as np
-from dataclasses import dataclass
-
+from dataclasses import dataclass, field
+from app.core.config import settings
 from ...core.interfaces import IMemory
 from ...message import Msg
 from ...embedding import get_embedding_service, EmbeddingService
@@ -76,10 +76,10 @@ class VectorMemoryConfig:
         ... )
     """
     
-    max_size: int = 1000
+    max_size: int = field(default_factory=lambda: settings.VECTOR_MEMORY_MAX_SIZE)
     """最大存储消息数量，超过时淘汰最旧消息"""
     
-    similarity_threshold: float = 0.7
+    similarity_threshold: float = field(default_factory=lambda: settings.VECTOR_MEMORY_SIMILARITY_THRESHOLD)
     """相似度阈值，范围 0-1，越高要求越严格"""
     
     embedding_provider: str = "openai"
@@ -338,7 +338,6 @@ class VectorMemoryPlugin(IMemory):
         Note:
             当前版本不支持从状态恢复，需要扩展实现。
         """
-        pass
     
     def _calculate_similarity(
         self, 

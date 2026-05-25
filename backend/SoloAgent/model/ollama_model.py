@@ -29,18 +29,18 @@ SoloEngine : Ollama本地模型实现，支持本地部署的LLM
     - model = OllamaChatModel(model_name="llama2")
     - response = await model(messages)
 """
-import asyncio
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import (
     Any,
     AsyncGenerator,
     Literal,
-    Optional,
 )
 from collections import OrderedDict
 
 import httpx
+from app.core.config import settings
 from .model_response import ChatResponse
 from .model_base import ChatModelBase
 from .model_usage import ChatUsage
@@ -85,25 +85,20 @@ class OllamaChatModel(ChatModelBase):
         base_url: str = "http://localhost:11434",
         stream: bool = True,
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
+        client_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
-        """Initialize Ollama client.
-
-        Args:
-            model_name (str): The name of the model to use (e.g., "llama2",
-                "mistral", "gemma:2b").
-            base_url (str): The base URL of the Ollama API server.
-                Default is "http://localhost:11434".
-            stream (bool): Whether to use streaming output or not.
-            generate_kwargs (dict | None): Extra keyword arguments used in
-                Ollama API generation, e.g., "temperature", "num_ctx".
-            **kwargs (Any): Additional keyword arguments.
-        """
         super().__init__(model_name, stream)
 
         self.base_url = base_url.rstrip("/")
         self.generate_kwargs = generate_kwargs or {}
-        self.client = httpx.AsyncClient(timeout=300.0)
+        from app.core.config import settings
+        
+        timeout = None
+        if client_kwargs and "timeout" in client_kwargs:
+            timeout = client_kwargs["timeout"]
+        
+        self.client = httpx.AsyncClient(timeout=timeout or float(settings.OLLAMA_REQUEST_TIMEOUT))
 
     async def __call__(
         self,
@@ -111,6 +106,7 @@ class OllamaChatModel(ChatModelBase):
         tools: list[dict] | None = None,
         tool_choice: Literal["auto", "none", "any"] | str | None = None,
         structured_model: Any = None,
+        cancel_event: asyncio.Event = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         """Get response from Ollama chat completion API.
@@ -163,7 +159,7 @@ class OllamaChatModel(ChatModelBase):
             # We'll store it but Ollama may ignore it
             payload["tool_choice"] = tool_choice
 
-        start_datetime = datetime.now()
+        start_datetime = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
 
         try:
             if self.stream:
@@ -174,6 +170,7 @@ class OllamaChatModel(ChatModelBase):
                 return self._parse_ollama_stream_response(
                     start_datetime,
                     response,
+                    cancel_event,
                 )
             else:
                 response = await self.client.post(
@@ -209,35 +206,26 @@ class OllamaChatModel(ChatModelBase):
     def _format_tools_for_ollama(self, tools: list[dict]) -> list[dict]:
         """Format tools for Ollama API.
 
-        Ollama has a different tool format than OpenAI.
-        We'll convert OpenAI-style tool definitions to Ollama format.
+        Ollama uses the same tool format as OpenAI Function Calling.
+        The input tools are already in the correct format from get_available_tools(),
+        so we pass them through directly.
         """
         if not tools:
             return []
-
-        formatted_tools = []
-        for tool in tools:
-            formatted = {
-                "type": "function",
-                "function": {
-                    "name": tool.get("name", ""),
-                    "description": tool.get("description", ""),
-                    "parameters": tool.get("parameters", {}),
-                },
-            }
-            formatted_tools.append(formatted)
-        return formatted_tools
+        return tools
 
     async def _parse_ollama_stream_response(
         self,
         start_datetime: datetime,
         response,
+        cancel_event: asyncio.Event = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """Parse Ollama streaming response and yield ChatResponse objects.
 
         Args:
             start_datetime (datetime): The start datetime of response generation.
             response: Ollama streaming response object.
+            cancel_event (asyncio.Event, optional): Cancel event. Defaults to None.
 
         Returns:
             AsyncGenerator[ChatResponse, None]: Generator yielding ChatResponse objects.
@@ -250,8 +238,14 @@ class OllamaChatModel(ChatModelBase):
         last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
         last_tool_calls = OrderedDict()  # 记录上次输出的工具调用，用于计算增量
 
+        self._save_response_ref(response)
         try:
             async for line in response.aiter_lines():
+                if cancel_event and cancel_event.is_set():
+                    logger.info("[Ollama] Cancel event detected, closing stream")
+                    await response.aclose()
+                    self._was_cancelled = True
+                    raise asyncio.CancelledError()
                 if not line.strip():
                     continue
 
@@ -289,7 +283,7 @@ class OllamaChatModel(ChatModelBase):
                         usage = ChatUsage(
                             input_tokens=data.get("prompt_eval_count", 0),
                             output_tokens=data.get("eval_count", 0),
-                            time=(datetime.now() - start_datetime).total_seconds(),
+                            time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
                         )
 
                     # Yield response periodically
@@ -389,6 +383,8 @@ class OllamaChatModel(ChatModelBase):
                 usage=None,
                 metadata={"error": f"Stream parsing error: {str(e)}"},
             )
+        finally:
+            self._clear_response_ref()
 
     async def _parse_ollama_completion_response(
         self,
@@ -467,7 +463,7 @@ class OllamaChatModel(ChatModelBase):
             usage = ChatUsage(
                 input_tokens=data.get("prompt_eval_count", 0),
                 output_tokens=data.get("eval_count", 0),
-                time=(datetime.now() - start_datetime).total_seconds(),
+                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
             )
 
         metadata = metadata or {}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Tabs, Card, Input, Select, Tag, Button, Spin, Empty, Typography, Row, Col, Badge, Tooltip, message } from 'antd';
+import { Tabs, Card, Input, Select, Tag, Button, Spin, Empty, Typography, Row, Col, Badge, Tooltip, App } from 'antd';
 import {
   SearchOutlined,
   DownloadOutlined,
@@ -182,6 +182,7 @@ const MarketCard: React.FC<MarketCardProps> = ({ item, type, onInstall, installi
 };
 
 const MarketplacePage: React.FC = () => {
+  const { message } = App.useApp();
   const [activeTab, setActiveTab] = useState<'mcp' | 'skills'>('mcp');
   const [mcpData, setMcpData] = useState<MarketData | null>(null);
   const [skillsData, setSkillsData] = useState<MarketData | null>(null);

@@ -26,12 +26,3 @@ SoloEngine : API v1 模块入口
     - from app.api.v1 import tools, websocket
 """
 
-from . import tools
-from . import websocket
-from . import config
-from . import run
-from . import skills
-from . import marketplace
-from . import agent_tools
-from . import run_project
-from . import settings

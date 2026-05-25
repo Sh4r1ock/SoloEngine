@@ -33,7 +33,7 @@ import os
 import sys
 import logging
 
-from .base import BaseAgentTool, AgentToolError, ToolContext, ToolPermission
+from .base import BaseAgentTool, ToolContext, ToolPermission
 
 logger = logging.getLogger(__name__)
 
@@ -50,21 +50,18 @@ class SkillContext:
     
     Attributes:
         skill_name (str): 技能名称
-        system_prompt (str): 系统提示词
-        instructions (str): 技能指令
         tool_permissions (ToolPermission): 工具权限
         metadata (Dict[str, Any]): 额外元数据（包含 folder_path, description 等）
         is_active (bool): 是否激活
     """
     skill_name: str = ""
-    system_prompt: str = ""
-    instructions: str = ""
     tool_permissions: Optional[ToolPermission] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
     is_active: bool = False
 
 
 class SkillTool(BaseAgentTool):
+    needs_runtime_data = True
     """
     Skill工具 - 在主对话中执行技能。
     
@@ -121,8 +118,6 @@ class SkillTool(BaseAgentTool):
                     continue
                 self._loaded_skills[name] = SkillContext(
                     skill_name=name,
-                    system_prompt=skill.get("instructions", ""),
-                    instructions=skill.get("instructions", ""),
                     metadata={
                         "id": skill.get("id"),
                         "name": name,
@@ -142,19 +137,17 @@ class SkillTool(BaseAgentTool):
         available_skills_xml = self._format_available_skills_xml()
         skill_names = list(self._loaded_skills.keys())
         
-        description = f"""Launch a agent and assign a task to it.
+        description = f"""Execute a skill within the main conversation.
 
-Available agents:
+Available skills:
 {available_skills_xml}
 
-When to use the Agent tool:
-  - When the user asks for a specific skill or capability that matches one of the available agents
-  - When searching for high-level concepts that need specialized knowledge
-  - When you need to combine multiple techniques to solve a complex problem
+When to use this tool:
+  - When a skill is relevant to the user's request
+  - When you need specialized capabilities provided by a skill
 
 IMPORTANT: When a skill is relevant, you must invoke this tool IMMEDIATELY as your first action.
 NEVER just announce or mention a skill in your text response without actually calling this tool.
-
 Do not invoke a skill if it is already running."""
         
         properties = {
@@ -251,8 +244,8 @@ Do not invoke a skill if it is already running."""
         folder_path = skill_context.metadata.get("folder_path", "")
         logger.info(f"[SkillTool] Executing skill '{name}', folder_path: {folder_path}")
         
-        instructions = skill_context.instructions
-        logger.info(f"[SkillTool] Initial instructions length: {len(instructions) if instructions else 0}")
+        instructions = ""
+        logger.info(f"[SkillTool] Initial instructions length: 0")
         
         if not instructions and folder_path:
             skill_md_path = os.path.join(folder_path, "SKILL.md")
@@ -261,7 +254,6 @@ Do not invoke a skill if it is already running."""
                 try:
                     with open(skill_md_path, "r", encoding="utf-8") as f:
                         instructions = f.read()
-                    skill_context.instructions = instructions
                     logger.info(f"[SkillTool] Read SKILL.md successfully, length: {len(instructions)}")
                 except Exception as e:
                     logger.warning(f"Failed to read SKILL.md for '{name}': {e}")
@@ -285,6 +277,7 @@ Do not invoke a skill if it is already running."""
         return {
             "success": True,
             "skill_name": name,
+            "error_message": None,
             "content": json.dumps({
                 "instructions": instructions if instructions else "",
                 "skill_directory": folder_path
@@ -354,13 +347,9 @@ Do not invoke a skill if it is already running."""
             
             metadata = self._parse_skill_metadata(content)
             metadata["folder_path"] = skill_path
-            instructions = self._extract_instructions(content)
-            system_prompt = self._generate_system_prompt(metadata, instructions)
             
             return SkillContext(
                 skill_name=skill_name,
-                system_prompt=system_prompt,
-                instructions=instructions,
                 metadata=metadata,
                 is_active=False
             )
@@ -411,51 +400,6 @@ Do not invoke a skill if it is already running."""
         
         return metadata
     
-    def _extract_instructions(self, content: str) -> str:
-        """
-        提取技能指令。
-        
-        从SKILL.md中提取指令内容（去除frontmatter）。
-        
-        Args:
-            content (str): SKILL.md内容
-        
-        Returns:
-            str: 指令内容
-        """
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                return parts[2].strip()
-        
-        return content
-    
-    def _generate_system_prompt(
-        self,
-        metadata: Dict[str, Any],
-        instructions: str
-    ) -> str:
-        """
-        生成技能的系统提示词。
-        
-        Args:
-            metadata (Dict[str, Any]): 技能元数据
-            instructions (str): 技能指令
-        
-        Returns:
-            str: 系统提示词
-        """
-        name = metadata.get("name", "未知技能")
-        description = metadata.get("description", "")
-        
-        system_prompt = f"""你正在使用 '{name}' 技能。
-
-技能描述：{description}
-
-{instructions}
-"""
-        return system_prompt
-    
     def get_active_skill(self) -> Optional[str]:
         """
         获取当前激活的技能名称。
@@ -474,39 +418,3 @@ Do not invoke a skill if it is already running."""
         """
         return list(self._loaded_skills.keys())
 
-
-async def skill_tool_function(
-    name: str,
-    **kwargs
-) -> Dict[str, Any]:
-    """
-    Skill工具函数 - 直接调用入口。
-    
-    提供简化的函数式调用接口。
-    
-    Args:
-        name (str): 技能名称。
-        **kwargs: 额外参数。
-    
-    Returns:
-        Dict[str, Any]: 执行结果。
-    
-    Example:
-        >>> result = await skill_tool_function(name="canvas-design")
-    """
-    tool = SkillTool()
-    return await tool.execute(name=name, **kwargs)
-
-
-def get_skill_tool_spec(skills_info: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    """
-    获取Skill工具规范。
-    
-    Args:
-        skills_info (List[Dict[str, Any]], optional): Skills 信息列表
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到ToolkitExecutor。
-    """
-    tool = SkillTool(skills_info=skills_info)
-    return tool.get_tool_spec()

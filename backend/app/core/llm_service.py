@@ -42,8 +42,7 @@ from typing import Dict, Optional, Any
 
 from SoloAgent.model import LLMFactory
 from SoloAgent.model.model_response import ChatResponse
-from SoloAgent.message import TextBlock
-from app.core.database import LLMConfigModel, db_manager, encryption_service
+from app.core.database import LLMConfigModel, encryption_service
 
 
 class LLMService:

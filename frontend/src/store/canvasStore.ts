@@ -32,8 +32,8 @@
  */
 import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../types/canvas';
+import { APP_CONFIG } from '../config/index';
 
-import { localStorageService } from '../services/localStorage';
 import { agenticFlowApi } from '../services/agenticFlowApi';
 import { llmApi } from '../services/llmApi';
 
@@ -95,9 +95,9 @@ interface CanvasStore {
 }
 
 const defaultSettings: GlobalSettings = {
-  maxContextLength: 4096,
-  maxIterations: 100,
-  timeout: 30000,
+  maxContextLength: APP_CONFIG.CANVAS_DEFAULT_MAX_CONTEXT_LENGTH,
+  maxIterations: APP_CONFIG.CANVAS_DEFAULT_MAX_ITERATIONS,
+  timeout: APP_CONFIG.CANVAS_DEFAULT_TIMEOUT,
 };
 
 let debouncedPushHistory: (() => void) | null = null;

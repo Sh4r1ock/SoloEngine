@@ -39,6 +39,8 @@ import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from pathlib import Path
 
 from ...core.interfaces import IPlanNotebook
@@ -79,8 +81,8 @@ class PlanStep:
     dependencies: List[str] = field(default_factory=list)
     result: Optional[str] = None
     error: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
 
 
 @dataclass
@@ -116,8 +118,8 @@ class Plan:
     context: Dict[str, Any] = field(default_factory=dict)
     status: str = "draft"  # draft, active, completed, abandoned
     version: int = 1
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
 
 
 class PlanMemory:
@@ -176,8 +178,8 @@ class PlanMemory:
                 dependencies=s.get("dependencies", []),
                 result=s.get("result"),
                 error=s.get("error"),
-                created_at=s.get("created_at", datetime.now().isoformat()),
-                updated_at=s.get("updated_at", datetime.now().isoformat()),
+                created_at=s.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+                updated_at=s.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
             )
             for s in data.get("steps", [])
         ]
@@ -189,8 +191,8 @@ class PlanMemory:
             context=data.get("context", {}),
             status=data.get("status", "draft"),
             version=data.get("version", 1),
-            created_at=data.get("created_at", datetime.now().isoformat()),
-            updated_at=data.get("updated_at", datetime.now().isoformat()),
+            created_at=data.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            updated_at=data.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
         )
 
     def _plan_to_dict(self, plan: Plan) -> Dict[str, Any]:
@@ -422,11 +424,11 @@ class PlanNotebookPlugin(IPlanNotebook):
                                 step.result = step_update["result"]
                             if "error" in step_update:
                                 step.error = step_update["error"]
-                            step.updated_at = datetime.now().isoformat()
+                            step.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
                             break
         
         plan.version += 1
-        plan.updated_at = datetime.now().isoformat()
+        plan.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
         
         self.memory.save(plan)
         
@@ -483,7 +485,7 @@ class PlanNotebookPlugin(IPlanNotebook):
         
         plan.steps.append(step)
         plan.version += 1
-        plan.updated_at = datetime.now().isoformat()
+        plan.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
         
         self.memory.save(plan)
         
@@ -523,11 +525,11 @@ class PlanNotebookPlugin(IPlanNotebook):
                     step.result = result
                 if error:
                     step.error = error
-                step.updated_at = datetime.now().isoformat()
+                step.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
                 break
         
         plan.version += 1
-        plan.updated_at = datetime.now().isoformat()
+        plan.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
         
         self.memory.save(plan)
 

@@ -32,13 +32,13 @@ SoloEngine : Edge TTS模型实现
 """
 
 import os
-import aiofiles
 from typing import Optional, Dict, Any
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import logging
-import json
 
 from ...core.interfaces import ITTSModel
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ class EdgeTTSModel(ITTSModel):
             volume = kwargs.get("volume", "+0%")
             
             if not output_file:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
                 output_file = os.path.join(self.output_path, f"tts_{timestamp}.mp3")
             
             communicate = Communicate(

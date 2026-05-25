@@ -47,6 +47,7 @@ export interface Session {
   created_at?: string;
   updated_at?: string;
   duration_ms?: number;
+  first_assistant_content?: string;
 }
 
 export interface DataBlock {
@@ -77,6 +78,7 @@ export interface SessionMessage {
   timestamp?: string;
   reasoning_content?: string;
   tokens?: number;
+  error?: string;
 }
 
 export interface ExecutionStep {
@@ -91,7 +93,7 @@ export interface ExecutionStep {
   created_at: string;
 }
 
-export interface ToolCallRecord {
+export interface ToolCallRecordAPI {
   id: string;
   tool_name: string;
   arguments: Record<string, any>;
@@ -315,7 +317,7 @@ export const runApi = {
     return response.data;
   },
 
-  async getSessionToolCalls(sessionId: string): Promise<ToolCallRecord[]> {
+  async getSessionToolCalls(sessionId: string): Promise<ToolCallRecordAPI[]> {
     const response = await api.get(`/run/sessions/${sessionId}/tools`);
     if (response.data && response.data.data) {
       return response.data.data;
@@ -331,13 +333,6 @@ export const runApi = {
       params: { format },
     });
     return response.data;
-  },
-
-  createWebSocket(agenticFlowId: string, sessionId: string, runProjectId: string): WebSocket {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const token = localStorage.getItem('access_token');
-    return new WebSocket(`${protocol}//${host}/api/v1/run/ws/${agenticFlowId}/${sessionId}/${runProjectId}?token=${token}`);
   },
 };
 

@@ -3,7 +3,9 @@
  * @description 运行面板类型定义
  */
 
-export type DataBlockType = 'content' | 'reasoning_content' | 'tool_calls';
+import { FileOperationType, FileContentTypeType } from '../constants/fileChangeTypes';
+
+export type DataBlockType = 'content' | 'reasoning_content' | 'reasoning' | 'tool_calls' | 'tool_call' | 'file_changes';
 
 export interface ToolCall {
   id: string;
@@ -15,17 +17,33 @@ export interface ToolCall {
   result?: string;
 }
 
+export interface FileChangeInfo {
+  file_path: string;
+  operation: FileOperationType;
+  content_type: FileContentTypeType;
+  id?: string;
+  diff?: {
+    lines_added: number;
+    lines_removed: number;
+  };
+  tool_call_id?: string;
+  status?: string;
+  _preview?: boolean;
+}
+
 export interface DataBlock {
+  id?: string;
   type: DataBlockType;
   content?: string;
   reasoning_content?: string;
   tool_calls?: ToolCall[];
+  file_changes?: FileChangeInfo[];
   agent_id?: string;
   agent_name?: string;
   agent_level?: number;
-  // 新增：存储展开状态
+  name?: string;
+  arguments?: string;
   _isExpanding?: boolean;
-  // 新增：用户是否手动操作过
   _userToggled?: boolean;
 }
 
@@ -41,6 +59,7 @@ export interface LLMMessage {
   agent_name?: string;
   parent_agent_id?: string;
   status?: 'completed' | 'error' | 'stopped' | 'running';
+  error?: string;
 }
 
 export type CallType = 'tool' | 'skill' | 'mcp' | 'subagent';
@@ -79,13 +98,18 @@ export interface SubagentOutput {
 
 export interface FileTab {
   id: string;
+  key?: string;
   name: string;
+  title?: string;
   path: string;
   content: string;
+  originalContent?: string;
+  language?: string;
   isModified: boolean;
   isLoading: boolean;
   isBinary: boolean;
-  type: 'editor' | 'document';
+  hasExternalChange: boolean;
+  type: 'editor' | 'document' | 'markdown';
 }
 
 export type PanelType = 'editor' | 'terminal' | 'browser' | 'document' | 'changes';
@@ -128,6 +152,7 @@ export interface ExtendedRunSession extends RunSession {
   subagentOutputs?: SubagentOutput[];
   startTime?: number;
   firstAssistantContent?: string;
+  fileChangesMap?: { [messageId: string]: FileChangeInfo[] };
 }
 
 export interface ToolCallRecord {
@@ -148,6 +173,8 @@ export interface SessionMessage {
   role: string;
   content?: string;
   reasoning_content?: string;
+  status?: 'completed' | 'error' | 'stopped' | 'running';
+  error?: string;
   data: DataBlock[];
   message_index: number;
   prompt_tokens?: number;
@@ -237,4 +264,15 @@ export interface EditorRegistryEntry {
   status: EditorStatus;
   refCount: number;
   instanceIds: Set<string>;
+}
+
+export interface MessageFileChangesMap {
+  [messageId: string]: FileChangeInfo[];
+}
+
+export interface FileSystemChange {
+  file_path: string;
+  operation: 'created' | 'deleted' | 'modified' | 'moved';
+  is_directory: boolean;
+  dest_path?: string;
 }

@@ -32,9 +32,9 @@ SoloEngine : 打包API模块
 
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Response, Depends
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ...core.packager import packager, PackageConfig, PackageResult
 from .auth import get_current_user

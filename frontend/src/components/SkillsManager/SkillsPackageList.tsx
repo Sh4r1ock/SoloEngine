@@ -1,5 +1,5 @@
 import React from 'react';
-import { message } from 'antd';
+import { App } from 'antd';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import UnifiedCard from '../common/UnifiedCard';
 import { getDefaultIcon } from '../../utils/iconLibrary';
@@ -19,6 +19,7 @@ const SkillsPackageList: React.FC<SkillsPackageListProps> = ({
   onRefresh,
   onEditInfo,
 }) => {
+  const { message } = App.useApp();
   const handleToggleActive = async (pkg: SkillsPackage, checked: boolean) => {
     try {
       if (checked) {

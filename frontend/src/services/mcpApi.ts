@@ -32,9 +32,10 @@
  *     - MCP服务已集成到主后端端口8990
  */
 import axios, { AxiosResponse, AxiosError } from 'axios';
+import { APP_CONFIG } from '../config/index';
 
-const MCP_SERVICE_URL = 'http://localhost:8990/api/v1';
-const MCP_REQUEST_TIMEOUT = 30000;
+const MCP_SERVICE_URL = APP_CONFIG.API_BASE_URL + '/api/v1';
+const MCP_REQUEST_TIMEOUT = APP_CONFIG.MCP_REQUEST_TIMEOUT;
 
 export interface ApiResponse<T = any> {
   code: number;
@@ -101,12 +102,10 @@ const mcpClient = axios.create({
 mcpClient.interceptors.request.use(
   (config) => {
     const token = getCookie('access_token') || localStorage.getItem('access_token');
-    console.log('MCP API Request Interceptor - Token exists:', !!token);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('MCP API Request Interceptor - Authorization header set');
     } else {
-      console.warn('MCP API Request Interceptor - No token found!');
+      console.warn('[MCP] No token found for request');
     }
     return config;
   },
@@ -117,8 +116,39 @@ mcpClient.interceptors.request.use(
 
 mcpClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
-    // 转换错误消息为中文
+  async (error: AxiosError) => {
+    const originalRequest = error.config;
+    const url = originalRequest?.url || '';
+
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
+
+    if (error.response?.status === 401 && originalRequest && !isAuthEndpoint) {
+      const refreshToken = getCookie('refresh_token') || localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        try {
+          const response = await axios.post(`${MCP_SERVICE_URL}/auth/refresh`, {
+            refresh_token: refreshToken,
+          });
+          const { access_token, refresh_token } = response.data.data;
+          document.cookie = `access_token=${encodeURIComponent(access_token)}; path=/; max-age=604800; SameSite=Strict`;
+          document.cookie = `refresh_token=${encodeURIComponent(refresh_token)}; path=/; max-age=604800; SameSite=Strict`;
+          localStorage.setItem('access_token', access_token);
+          localStorage.setItem('refresh_token', refresh_token);
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          return mcpClient(originalRequest);
+        } catch (refreshError) {
+          document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          window.location.href = '/login';
+          return Promise.reject(refreshError);
+        }
+      } else {
+        window.location.href = '/login';
+      }
+    }
+
     const chineseMessage = getErrorMessage(error);
     if (error.message) {
       error.message = chineseMessage;
@@ -435,14 +465,6 @@ class MCPApi {
 
   async healthCheck() {
     return mcpApiRequest.get('/mcp/health');
-  }
-
-  async getOpenMCPList() {
-    return mcpApiRequest.get('/mcp/open/list');
-  }
-
-  async importOpenMCP(mcpId: string) {
-    return mcpApiRequest.post(`/mcp/open/import/${mcpId}`);
   }
 
   async updateToolEnabled(serverId: string, toolName: string, isEnabled: boolean) {

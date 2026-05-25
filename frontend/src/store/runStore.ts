@@ -7,39 +7,19 @@
  * 功能描述：
  * - 管理运行会话状态、执行日志等
  * - 管理运行状态、存储执行日志
- * - 支持会话消息持久化
  * 
  * 使用场景：
  * - 工作流运行功能
  */
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { runApi, Session, SessionMessage } from '../services/runApi';
+import type {
+  RunSession,
+  ToolCallRecord,
+  ExtendedRunSession,
+} from '../components/RunPanel/types';
 
-export interface RunSession {
-  id: string;
-  status: string;
-  error?: string;
-  started_at?: string;
-  completed_at?: string;
-  created_at?: string;
-  updated_at?: string;
-  duration_ms?: number;
-  token_usage?: Record<string, number>;
-}
-
-export interface ToolCallRecord {
-  id: string;
-  type: 'tool' | 'skill' | 'mcp';
-  name: string;
-  status: 'pending' | 'running' | 'success' | 'error';
-  arguments?: Record<string, any>;
-  result?: any;
-  error?: string;
-  startTime: number;
-  endTime?: number;
-  duration?: number;
-}
+export type { RunSession, ToolCallRecord, ExtendedRunSession };
 
 export interface SubagentOutput {
   id: string;
@@ -47,17 +27,6 @@ export interface SubagentOutput {
   output: string;
   status: 'running' | 'completed' | 'error';
   calls: ToolCallRecord[];
-}
-
-export interface ExtendedRunSession extends RunSession {
-  name?: string;
-  createdAt?: string;
-  agentId?: string;
-  agentName?: string;
-  messages?: SessionMessage[];
-  toolCalls?: ToolCallRecord[];
-  subagentOutputs?: SubagentOutput[];
-  startTime?: number;
 }
 
 export type OperationPanelType = 'tools' | 'subagents' | 'history' | null;
@@ -105,8 +74,7 @@ interface RunState {
 }
 
 export const useRunStore = create<RunState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       sessions: [],
       currentSession: null,
       currentSessionId: null,
@@ -260,6 +228,8 @@ export const useRunStore = create<RunState>()(
             role: msg.role,
             content: msg.content || '',
             reasoning_content: msg.reasoning_content,
+            status: msg.status,
+            error: msg.error,
             data: msg.data || [],
             message_index: msg.message_index ?? index,
             timestamp: msg.created_at || new Date().toISOString(),
@@ -299,11 +269,4 @@ export const useRunStore = create<RunState>()(
         }
       },
     }),
-    {
-      name: 'run-store',
-      partialize: (state) => ({
-        currentSessionId: state.currentSessionId,
-      }),
-    }
-  )
 );

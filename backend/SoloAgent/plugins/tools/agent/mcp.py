@@ -30,9 +30,11 @@ import asyncio
 import json
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from .base import BaseAgentTool, AgentToolError, ToolContext, ToolPermission
+from .base import BaseAgentTool, ToolContext, ToolPermission
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,8 @@ class MCPServerInfo:
         prompts (List[Dict[str, Any]]): 提示词列表
         client (Optional[Any]): MCPClient实例
         is_connected (bool): 是否已连接
+        _manager (Optional[Any]): MCPHostClientManager引用，用于动态获取client
+        _user_id (Optional[str]): 用户ID，用于重新加载时权限检查
     """
     server_id: str = ""
     server_name: str = ""
@@ -61,6 +65,69 @@ class MCPServerInfo:
     prompts: List[Dict[str, Any]] = field(default_factory=list)
     client: Optional[Any] = None
     is_connected: bool = False
+    _manager: Optional[Any] = None
+    _user_id: Optional[str] = None
+    
+    def get_client(self) -> Optional[Any]:
+        """动态获取client，优先从manager获取最新状态"""
+        if self._manager:
+            return self._manager.get_client(self.server_name)
+        return self.client
+    
+    def check_connected(self) -> bool:
+        """检查连接状态"""
+        client = self.get_client()
+        return client is not None
+    
+    async def reload_if_empty(self) -> bool:
+        """如果数据为空，重新从数据库加载MCP server配置
+        
+        Returns:
+            bool: 是否成功重新加载
+        """
+        # 检查是否数据为空
+        if self.tools or self.resources or self.prompts:
+            return True  # 数据不为空，无需重新加载
+        
+        if not self._manager or not self.server_id:
+            return False
+        
+        try:
+            from app.core.database import get_db_context, MCPServerModel
+            from sqlalchemy.orm import joinedload
+            
+            with get_db_context() as db:
+                server = db.query(MCPServerModel).options(
+                    joinedload(MCPServerModel.sse_config),
+                    joinedload(MCPServerModel.stdio_config),
+                    joinedload(MCPServerModel.http_config)
+                ).filter(MCPServerModel.id == self.server_id).first()
+                
+                if not server:
+                    logger.warning(f"[MCPServerInfo] Server '{self.server_id}' not found in database")
+                    return False
+                
+                # 权限检查
+                if not server.is_public and self._user_id and str(server.user_id) != str(self._user_id):
+                    logger.warning(f"[MCPServerInfo] No permission to access server '{self.server_name}'")
+                    return False
+                
+                # 更新数据
+                self.server_description = getattr(server, 'description', '')
+                self.tools = getattr(server, 'tools', [])
+                # 尝试从manager获取最新的resources和prompts
+                if self._manager:
+                    config = self._manager.get_server_config(self.server_name)
+                    if config:
+                        self.resources = config.get('resources', [])
+                        self.prompts = config.get('prompts', [])
+                
+                logger.info(f"[MCPServerInfo] Reloaded server '{self.server_name}' with {len(self.tools)} tools")
+                return True
+                
+        except Exception as e:
+            logger.error(f"[MCPServerInfo] Failed to reload server '{self.server_name}': {e}")
+            return False
 
 
 @dataclass
@@ -82,6 +149,7 @@ class MCPConnectionConfig:
 
 
 class MCPTool(BaseAgentTool):
+    needs_runtime_data = True
     """MCP工具 - 调用MCP服务器上的工具
     
     参考SkillTool的设计模式：
@@ -272,7 +340,7 @@ IMPORTANT:
             - Tier 3: Execution (server_name + tool_name + arguments) → 执行工具
         """
         start_time = time.time()
-        execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%dT%H:%M:%S%z")
 
         if not server_name:
             return self._create_error_result(
@@ -363,6 +431,7 @@ IMPORTANT:
             "success": True,
             "mode": "discovery",
             "server_name": server_info.server_name,
+            "error_message": None,
             "available_tools": tools_summary,
             "total_count": len(tools_summary),
             "hint": "Use tool_name='keyword' to search, or exact tool_name to get schema",
@@ -398,6 +467,7 @@ IMPORTANT:
             "success": True,
             "mode": "search",
             "server_name": server_info.server_name,
+            "error_message": None,
             "search_query": query,
             "match_count": len(matches),
             "matched_tools": matches,
@@ -437,6 +507,7 @@ IMPORTANT:
             "success": True,
             "mode": "schema_search",
             "server_name": server_info.server_name,
+            "error_message": None,
             "search_query": query,
             "match_count": len(matches),
             "matched_tools": matches,
@@ -461,6 +532,7 @@ IMPORTANT:
                     "success": True,
                     "mode": "schema",
                     "server_name": server_info.server_name,
+                    "error_message": None,
                     "tool_name": tool_name,
                     "description": tool.get("description"),
                     "input_schema": tool.get("input_schema", {}),
@@ -504,6 +576,7 @@ IMPORTANT:
             "success": True,
             "mode": "batch_schema",
             "server_name": server_info.server_name,
+            "error_message": None,
             "requested_count": len(tool_names),
             "found_count": len(found_tools),
             "tools": found_tools,
@@ -525,6 +598,11 @@ IMPORTANT:
     ) -> Dict[str, Any]:
         """Tier 3: 执行工具
 
+        支持：
+        1. 等待异步连接完成
+        2. 数据为空时重新加载MCP server
+        3. 连接断开时自动重连
+
         Args:
             server_info: 服务器信息
             tool_name: 工具名称
@@ -535,7 +613,14 @@ IMPORTANT:
         Returns:
             Dict[str, Any]: 执行结果
         """
-        # 验证工具存在
+        # 步骤1: 如果数据为空，尝试重新加载
+        if not server_info.tools:
+            logger.info(f"[MCPTool] Server '{server_info.server_name}' has no tools, attempting to reload...")
+            reload_success = await server_info.reload_if_empty()
+            if not reload_success:
+                logger.warning(f"[MCPTool] Failed to reload server '{server_info.server_name}'")
+
+        # 步骤2: 验证工具存在
         tool = self._find_tool_exact(server_info, tool_name)
         if not tool:
             return self._create_error_result(
@@ -546,54 +631,114 @@ IMPORTANT:
                 tool_name=tool_name
             )
 
-        client = server_info.client
+        # 步骤3: 动态获取client（支持等待异步连接）
+        client = server_info.get_client() if hasattr(server_info, 'get_client') else server_info.client
+
+        # 步骤4: 如果client为None，等待异步连接完成
         if not client:
-            return self._create_error_result(
-                error_code="MCP_NOT_CONNECTED",
-                message=f"MCP server '{server_info.server_name}' is not connected",
-                execution_time=execution_time,
-                server_name=server_info.server_name,
-                tool_name=tool_name
-            )
+            if hasattr(server_info, '_manager') and server_info._manager:
+                logger.info(f"[MCPTool] Waiting for MCP server '{server_info.server_name}' to connect...")
 
-        # 执行工具
-        try:
-            result = await self._call_with_retry(
-                client.call_tool,
-                tool_name,
-                arguments or {}
-            )
-            call_duration_ms = int((time.time() - start_time) * 1000)
+                # 等待异步连接完成（最多30秒）
+                wait_success = await server_info._manager.wait_for_connection(
+                    server_info.server_name,
+                    timeout=30.0
+                )
 
-            # 提取content中的文本内容
-            texts = []
-            if result.get("content"):
-                for item in result["content"]:
-                    if item.get("type") == "text":
-                        texts.append(item.get("text", ""))
+                if wait_success:
+                    client = server_info._manager.get_client(server_info.server_name)
+                    logger.info(f"[MCPTool] MCP server '{server_info.server_name}' connected after waiting")
+                else:
+                    logger.warning(f"[MCPTool] Timeout waiting for MCP server '{server_info.server_name}'")
 
-            return {
-                "success": True,
-                "content": "\n".join(texts),  # 只返回content文本
-                "metadata": {
-                    "mode": "execution",
-                    "server_name": server_info.server_name,
-                    "tool_name": tool_name,
-                    "execution_time": execution_time,
-                    "server_id": server_info.server_id,
-                    "connection_status": "connected",
-                    "call_duration_ms": call_duration_ms
+            # 如果仍然无法获取client，尝试主动连接
+            if not client and hasattr(server_info, '_manager') and server_info._manager:
+                logger.info(f"[MCPTool] Attempting to connect MCP server '{server_info.server_name}'...")
+                try:
+                    await server_info._manager.connect_server_by_id(
+                        server_info.server_id,
+                        server_info.server_name,
+                        server_info._user_id
+                    )
+                    client = server_info._manager.get_client(server_info.server_name)
+                except Exception as e:
+                    logger.error(f"[MCPTool] Failed to connect server '{server_info.server_name}': {e}")
+
+            if not client:
+                return self._create_error_result(
+                    error_code="MCP_NOT_CONNECTED",
+                    message=f"MCP server '{server_info.server_name}' is not connected",
+                    execution_time=execution_time,
+                    server_name=server_info.server_name,
+                    tool_name=tool_name
+                )
+
+        # 步骤5: 执行工具（带自动重连）
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                result = await self._call_with_retry(
+                    client.call_tool,
+                    tool_name,
+                    arguments or {}
+                )
+                call_duration_ms = int((time.time() - start_time) * 1000)
+
+                # 提取content中的文本内容
+                texts = []
+                if result.get("content"):
+                    for item in result["content"]:
+                        if item.get("type") == "text":
+                            texts.append(item.get("text", ""))
+
+                return {
+                    "success": True,
+                    "content": "\n".join(texts),
+                    "error_message": None,
+                    "metadata": {
+                        "mode": "execution",
+                        "server_name": server_info.server_name,
+                        "tool_name": tool_name,
+                        "execution_time": execution_time,
+                        "server_id": server_info.server_id,
+                        "connection_status": "connected",
+                        "call_duration_ms": call_duration_ms
+                    }
                 }
-            }
-        except Exception as e:
-            logger.error(f"[MCPTool] Tool execution failed: {e}")
-            return self._create_error_result(
-                error_code="TOOL_EXECUTION_ERROR",
-                message=f"Tool execution failed: {str(e)}",
-                execution_time=execution_time,
-                server_name=server_info.server_name,
-                tool_name=tool_name
-            )
+            except Exception as e:
+                error_msg = str(e).lower()
+                # 检测连接相关错误
+                is_connection_error = any([
+                    "not connected" in error_msg,
+                    "connection" in error_msg,
+                    "disconnected" in error_msg,
+                    "closed" in error_msg,
+                ])
+
+                if is_connection_error and attempt < max_retries - 1:
+                    logger.warning(f"[MCPTool] Connection error, attempting to reconnect (attempt {attempt + 1})...")
+                    # 尝试重新连接
+                    if hasattr(server_info, '_manager') and server_info._manager:
+                        try:
+                            await server_info._manager.reconnect_server(
+                                server_info.server_name,
+                                server_info.server_id,
+                                server_info._user_id
+                            )
+                            client = server_info._manager.get_client(server_info.server_name)
+                            if client:
+                                continue  # 重连成功，重试执行
+                        except Exception as reconnect_error:
+                            logger.error(f"[MCPTool] Reconnect failed: {reconnect_error}")
+
+                logger.error(f"[MCPTool] Tool execution failed: {e}")
+                return self._create_error_result(
+                    error_code="TOOL_EXECUTION_ERROR",
+                    message=f"Tool execution failed: {str(e)}",
+                    execution_time=execution_time,
+                    server_name=server_info.server_name,
+                    tool_name=tool_name
+                )
 
     async def _call_with_retry(
         self,
@@ -651,6 +796,7 @@ IMPORTANT:
             "success": False,
             "server_name": server_name,
             "tool_name": tool_name,
+            "error_message": message,
             "content": json.dumps({
                 "error": {
                     "code": error_code,
@@ -673,7 +819,7 @@ IMPORTANT:
         Returns:
             Dict[str, Any]: 断开连接结果
         """
-        execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%dT%H:%M:%S%z")
         
         disconnected_servers = []
         
@@ -694,6 +840,7 @@ IMPORTANT:
         
         return {
             "success": True,
+            "error_message": None,
             "content": json.dumps({
                 "disconnected_servers": disconnected_servers
             }, ensure_ascii=False),
@@ -711,7 +858,7 @@ IMPORTANT:
         Returns:
             Dict[str, Any]: 资源列表结果
         """
-        execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%dT%H:%M:%S%z")
         
         server_info = self._mcp_servers_info.get(server_name)
         if not server_info:
@@ -724,6 +871,7 @@ IMPORTANT:
         return {
             "success": True,
             "server_name": server_name,
+            "error_message": None,
             "content": json.dumps({
                 "resources": server_info.resources
             }, ensure_ascii=False),
@@ -744,7 +892,7 @@ IMPORTANT:
             Dict[str, Any]: 资源内容结果
         """
         start_time = time.time()
-        execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%dT%H:%M:%S%z")
         
         server_info = self._mcp_servers_info.get(server_name)
         if not server_info or not server_info.client:
@@ -762,6 +910,7 @@ IMPORTANT:
             return {
                 "success": True,
                 "server_name": server_name,
+                "error_message": None,
                 "content": json.dumps({
                     "resource": result
                 }, ensure_ascii=False),
@@ -788,7 +937,7 @@ IMPORTANT:
         Returns:
             Dict[str, Any]: 提示词列表结果
         """
-        execution_time = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%dT%H:%M:%S%z")
         
         server_info = self._mcp_servers_info.get(server_name)
         if not server_info:
@@ -801,6 +950,7 @@ IMPORTANT:
         return {
             "success": True,
             "server_name": server_name,
+            "error_message": None,
             "content": json.dumps({
                 "prompts": server_info.prompts
             }, ensure_ascii=False),
@@ -842,50 +992,3 @@ IMPORTANT:
         await self.disconnect()
         self._mcp_servers_info.clear()
 
-
-async def mcp_tool_function(
-    server_name: str,
-    tool_name: str,
-    arguments: Dict[str, Any] = None,
-    **kwargs
-) -> Dict[str, Any]:
-    """MCP工具函数 - 直接调用入口
-    
-    提供简化的函数式调用接口。
-    
-    Args:
-        server_name (str): MCP服务器名称
-        tool_name (str): 工具名称
-        arguments (Dict[str, Any], optional): 工具参数
-        **kwargs: 额外参数
-    
-    Returns:
-        Dict[str, Any]: 执行结果
-    
-    Example:
-        >>> result = await mcp_tool_function(
-        ...     server_name="github",
-        ...     tool_name="create_issue",
-        ...     arguments={"owner": "xxx", "repo": "xxx", "title": "Bug"}
-        ... )
-    """
-    tool = MCPTool()
-    return await tool.execute(
-        server_name=server_name,
-        tool_name=tool_name,
-        arguments=arguments,
-        **kwargs
-    )
-
-
-def get_mcp_tool_spec(mcp_servers_info: Optional[Dict[str, MCPServerInfo]] = None) -> Dict[str, Any]:
-    """获取MCP工具规范
-    
-    Args:
-        mcp_servers_info (Dict[str, MCPServerInfo], optional): MCP服务器信息字典
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到ToolkitExecutor
-    """
-    tool = MCPTool(mcp_servers_info=mcp_servers_info)
-    return tool.get_tool_spec()

@@ -16,7 +16,10 @@
 """
 
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
+from app.utils.timezone_utils import format_iso
 import logging
 
 from ...core.interfaces import IMemory
@@ -154,7 +157,8 @@ class DatabaseMemoryPlugin(IMemory):
             try:
                 query = db.query(SessionMessageModel).filter(
                     SessionMessageModel.session_id == self._session_id,
-                    SessionMessageModel.user_id == self._user_id
+                    SessionMessageModel.user_id == self._user_id,
+                    SessionMessageModel.is_deleted == False
                 ).order_by(SessionMessageModel.message_index)
                 
                 if self._max_memory_length:
@@ -177,7 +181,7 @@ class DatabaseMemoryPlugin(IMemory):
                         "completion_tokens": record.completion_tokens,
                         "total_tokens": record.total_tokens,
                         "message_index": record.message_index,
-                        "created_at": record.created_at.isoformat() if record.created_at else None,
+                        "created_at": format_iso(record.created_at) if record.created_at else None,
                     }
                     self._messages.append(message_data)
                 
@@ -197,7 +201,8 @@ class DatabaseMemoryPlugin(IMemory):
                 self._ensure_session_exists()
                 
                 max_index = db.query(SessionMessageModel.message_index).filter(
-                    SessionMessageModel.session_id == self._session_id
+                    SessionMessageModel.session_id == self._session_id,
+                    SessionMessageModel.is_deleted == False
                 ).order_by(SessionMessageModel.message_index.desc()).first()
                 
                 next_index = (max_index[0] + 1) if max_index and max_index[0] is not None else 0
@@ -211,6 +216,7 @@ class DatabaseMemoryPlugin(IMemory):
                     role=message_data.get("role", "user"),
                     data=data,
                     status=message_data.get("status", "completed"),
+                    error=message_data.get("error"),
                     message_index=next_index,
                     prompt_tokens=message_data.get("prompt_tokens"),
                     completion_tokens=message_data.get("completion_tokens"),
@@ -257,7 +263,7 @@ class DatabaseMemoryPlugin(IMemory):
             current_usage["total_tokens"] = current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens
             
             session.token_usage = current_usage
-            session.updated_at = datetime.now(timezone.utc)
+            session.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             db.commit()
         except Exception as e:
             logger.warning(f"Failed to update session token usage: {e}")

@@ -32,6 +32,8 @@ import tempfile
 import base64
 import json
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from json_repair import repair_json
 from .logging import logger
 
@@ -50,7 +52,7 @@ def _get_timestamp(add_random_suffix: bool = False) -> str:
         >>> timestamp = _get_timestamp()
         >>> timestamp_with_suffix = _get_timestamp(add_random_suffix=True)
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     if add_random_suffix:
         # Add a random suffix to the timestamp

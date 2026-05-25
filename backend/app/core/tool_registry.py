@@ -41,9 +41,11 @@ import asyncio
 import json
 import logging
 import os
+from app.core.config import settings
 import subprocess
 import httpx
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import re
 
 logger = logging.getLogger(__name__)
@@ -343,12 +345,12 @@ class ToolRegistry:
                     url=url,
                     headers=headers,
                     json=body if body else None,
-                    timeout=30
+                    timeout=settings.TOOL_REGISTRY_REQUEST_TIMEOUT
                 )
                 return json.dumps({
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
-                    "body": response.text[:5000]
+                    "body": response.text[:settings.TOOL_REGISTRY_BODY_TRUNCATE]
                 }, indent=2)
         except Exception as e:
             return f"Error making HTTP request: {str(e)}"
@@ -363,7 +365,7 @@ class ToolRegistry:
     
     async def _datetime_now_tool(self, format: str = "%Y-%m-%d %H:%M:%S") -> str:
         """获取当前时间工具实现。"""
-        return datetime.now().strftime(format)
+        return datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime(format)
     
     async def _calculator_tool(self, expression: str) -> str:
         """计算器工具实现 - 使用安全计算。"""

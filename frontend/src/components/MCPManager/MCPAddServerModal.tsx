@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Modal, Form, Input, Select, InputNumber, Switch, message, Button, Divider, Alert, Card, Row, Col, Tag, Tabs, Upload, Radio, List, Tooltip } from 'antd';
+import { Modal, Form, Input, Select, InputNumber, Switch, App, Button, Divider, Alert, Card, Row, Col, Tag, Tabs, Upload, Radio, List, Tooltip } from 'antd';
 import { PlusOutlined, DeleteOutlined, UploadOutlined, FolderOpenOutlined, FileZipOutlined, ApiOutlined, CloudServerOutlined, CodeOutlined, ToolOutlined } from '@ant-design/icons';
 import { MCPServer, MCPTool } from '../../services/mcpApi';
 import { mcpApi, CreateHttpServerRequest, CreateSseServerRequest } from '../../services/mcpApi';
@@ -61,6 +61,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     onClose,
     onSave,
 }) => {
+    const { message } = App.useApp();
     const [form] = Form.useForm();
     const [saving, setSaving] = useState(false);
     const [createType, setCreateType] = useState<CreateType>('python');
@@ -71,7 +72,8 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     const [tags, setTags] = useState<string[]>([]);
     const [inputTagValue, setInputTagValue] = useState('');
     const [tools, setTools] = useState<MCPTool[]>([]);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [connecting, setConnecting] = useState(false);
+    const [isOpeningDialog, setIsOpeningDialog] = useState(false);
 
     useEffect(() => {
         if (visible) {
@@ -268,6 +270,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     };
 
     const handleConnectAndLoadTools = async () => {
+        setConnecting(true);
         try {
             const values = form.getFieldsValue();
 
@@ -411,6 +414,8 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 message.error('连接失败：' + String(error.message || error));
             }
             setTools([]);
+        } finally {
+            setConnecting(false);
         }
     };
 
@@ -456,6 +461,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         try {
             const values = await form.validateFields();
             setSaving(true);
+            console.log('[MCP Save] createType:', createType, 'server:', !!server, 'tools count:', tools.length);
 
             if (createType === 'python') {
                 const tools = [{
@@ -521,14 +527,14 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     }
                 }
             } else if (createType === 'stdio') {
-                // 判断是更新还是创建
                 if (server) {
-                    // 更新现有 Stdio MCP 的基本信息
+                    console.log('[MCP Save] Updating stdio server:', server.id, 'tools:', tools.length);
                     const response = await mcpApi.updateServer(server.id, {
                         description: values.description,
                         tags: tags,
                         tools: tools,
                     });
+                    console.log('[MCP Save] Update response:', response.code, response.message);
 
                     if (response.code === 200) {
                         message.success('Stdio MCP 更新成功！');
@@ -701,6 +707,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 }
             }
         } catch (error) {
+            console.error('[MCP Save] Error:', error);
             message.error('保存失败：' + String(error));
         } finally {
             setSaving(false);
@@ -1011,7 +1018,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                         accept=".zip,.mcpb"
                         fileList={fileList}
                         beforeUpload={(file) => {
-                            const nativeFile = file.originFileObj || file;
+                            const nativeFile = (file as any).originFileObj || file;
 
                             setFileList([{
                                 uid: file.uid || nativeFile.name,
@@ -1043,41 +1050,78 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                     </Upload>
                 ) : (
                     <div>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            multiple
-                            webkitdirectory=""
-                            directory=""
-                            style={{ display: 'none' }}
-                            onChange={(e) => {
-                                const nativeFiles = Array.from(e.target.files || []);
+                        <Button
+                            icon={<FolderOpenOutlined />}
+                            loading={isOpeningDialog}
+                            disabled={isOpeningDialog}
+                            onClick={() => {
+                                setIsOpeningDialog(true);
 
-                                if (nativeFiles.length > 0) {
-                                    const firstRelativePath = nativeFiles[0].webkitRelativePath || '';
-                                    const folderName = firstRelativePath.split(/[/\\]/)[0] || 'mcp_server';
+                                // 使用setTimeout让UI有时间更新，显示加载状态
+                                setTimeout(() => {
+                                    // 动态创建input元素
+                                    const input = document.createElement('input');
+                                    input.type = 'file';
+                                    input.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0;width:1px;height:1px;pointer-events:none;';
+                                    input.setAttribute('webkitdirectory', '');
+                                    input.setAttribute('directory', '');
+                                    input.multiple = true;
 
-                                    form.setFieldsValue({ name: folderName });
-                                }
+                                    input.onchange = (e) => {
+                                        const nativeFiles = Array.from((e.target as HTMLInputElement).files || []);
 
-                                const mappedFiles = nativeFiles.map(f => ({
-                                    uid: `${f.name}-${Date.now()}`,
-                                    name: f.webkitRelativePath || f.name,
-                                    status: 'done' as const,
-                                    originFileObj: f,
-                                }));
-                                
-                                setFileList(mappedFiles);
+                                        if (nativeFiles.length > 0) {
+                                            const firstRelativePath = nativeFiles[0].webkitRelativePath || '';
+                                            const folderName = firstRelativePath.split(/[/\\]/)[0] || 'mcp_server';
 
-                                // 分析文件类型并设置标签（仅在新创建时）
-                                if (!server) {
-                                    const fileTags = analyzeFileTags(mappedFiles);
-                                    setTags(fileTags);
-                                }
+                                            form.setFieldsValue({ name: folderName });
+                                        }
+
+                                        const mappedFiles = nativeFiles.map(f => ({
+                                            uid: `${f.name}-${Date.now()}`,
+                                            name: f.webkitRelativePath || f.name,
+                                            status: 'done' as const,
+                                            originFileObj: f,
+                                        }));
+
+                                        setFileList(mappedFiles);
+
+                                        // 分析文件类型并设置标签（仅在新创建时）
+                                        if (!server) {
+                                            const fileTags = analyzeFileTags(mappedFiles);
+                                            setTags(fileTags);
+                                        }
+
+                                        // 清理DOM
+                                        if (input.parentNode) {
+                                            document.body.removeChild(input);
+                                        }
+                                        setIsOpeningDialog(false);
+                                    };
+
+                                    // 处理用户取消选择的情况
+                                    const handleWindowFocus = () => {
+                                        setTimeout(() => {
+                                            if (input.parentNode) {
+                                                document.body.removeChild(input);
+                                            }
+                                            setIsOpeningDialog(false);
+                                            window.removeEventListener('focus', handleWindowFocus);
+                                        }, 300);
+                                    };
+                                    window.addEventListener('focus', handleWindowFocus);
+
+                                    // 添加到DOM并触发点击
+                                    document.body.appendChild(input);
+
+                                    // 使用requestAnimationFrame确保DOM更新完成后再触发点击
+                                    requestAnimationFrame(() => {
+                                        input.click();
+                                    });
+                                }, 100); // 100ms延迟确保UI更新和浏览器主线程空闲
                             }}
-                        />
-                        <Button icon={<FolderOpenOutlined />} onClick={() => fileInputRef.current?.click()}>
-                            选择文件夹
+                        >
+                            {isOpeningDialog ? '正在打开...' : '选择文件夹'}
                         </Button>
                         {fileList.length > 0 && (
                             <div style={{ marginTop: 8 }}>
@@ -1184,6 +1228,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                             type="primary"
                             size="small"
                             onClick={handleConnectAndLoadTools}
+                            loading={connecting}
                         >
                             连接
                         </Button>
@@ -1215,7 +1260,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                             <span>{tool.name}</span>
                                             {tool.is_enabled === false && (
-                                                <Tag color="default" size="small">已禁用</Tag>
+                                                <Tag color="default">已禁用</Tag>
                                             )}
                                         </div>
                                     }

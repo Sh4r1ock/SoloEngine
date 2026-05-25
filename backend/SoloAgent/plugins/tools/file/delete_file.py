@@ -144,56 +144,15 @@ class DeleteFile(BaseFileTool):
                 "注意：删除操作不可逆。"
             ),
             "parameters": {
-                "file_paths": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "要删除的文件绝对路径列表。",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "file_paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要删除的文件绝对路径列表。",
+                    },
                 },
+                "required": ["file_paths"],
             },
         }
 
-
-def delete_files(
-    file_paths: List[str],
-) -> Dict[str, Any]:
-    """
-    删除文件的便捷函数。
-    
-    Args:
-        file_paths (List[str]): 要删除的文件绝对路径列表。
-    
-    Returns:
-        Dict[str, Any]: 删除结果。
-    
-    Example:
-        >>> result = delete_files(["/path/to/file1.py", "/path/to/file2.py"])
-    """
-    tool = DeleteFile()
-    return tool.execute(file_paths=file_paths)
-
-
-def get_delete_file_tool_spec() -> Dict[str, Any]:
-    """
-    获取删除文件工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-    """
-    return {
-        "name": "DeleteFile",
-        "description": (
-            "删除一个或多个文件。"
-            "删除前会验证文件是否存在。"
-            "支持批量删除，返回每个文件的删除结果。"
-            "注意：删除操作不可逆。"
-        ),
-        "parameters": {
-            "file_paths": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "要删除的文件绝对路径列表。",
-                "required": True,
-            },
-        },
-    }

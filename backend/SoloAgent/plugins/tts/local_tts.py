@@ -34,12 +34,13 @@ SoloEngine : 本地TTS模型实现
 """
 
 import os
-import aiofiles
 from typing import Optional, Dict, Any
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import logging
 
 from ...core.interfaces import ITTSModel
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class LocalTTSModel(ITTSModel):
         engine = self._get_engine()
         
         if not output_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
             output_file = os.path.join(self.output_path, f"tts_{timestamp}.wav")
         
         rate = kwargs.get("rate", 150)
@@ -192,7 +193,7 @@ class LocalTTSModel(ITTSModel):
             language = kwargs.get("language", self.language)
             
             if not output_file:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
                 output_file = os.path.join(self.output_path, f"tts_{timestamp}.mp3")
             
             def save_audio():
@@ -226,7 +227,7 @@ class LocalTTSModel(ITTSModel):
         engine = self._get_engine()
         
         if not output_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
             output_file = os.path.join(self.output_path, f"tts_{timestamp}.wav")
         
         speaker = kwargs.get("speaker", None)

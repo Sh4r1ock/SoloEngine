@@ -21,16 +21,16 @@ SoloEngine : 正则表达式搜索工具模块，使用ripgrep进行搜索
 状态: ✅ 模块初始化完成
 """
 
-import os
 import re
+import asyncio
 import logging
-import subprocess
 import shutil
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
 
-from .base import BaseSearchTool, SearchToolError
+from .base import BaseSearchTool
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,12 @@ class Grep(BaseSearchTool):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=settings.GREP_TOOL_TIMEOUT)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                return self.format_error(f"搜索超时（{settings.GREP_TOOL_TIMEOUT}秒），请缩小搜索范围或使用更具体的路径")
             
             if process.returncode not in (0, 1):
                 error_msg = stderr.decode('utf-8', errors='ignore').strip()
@@ -423,6 +428,8 @@ class Grep(BaseSearchTool):
         results = []
         file_counts: Dict[str, int] = {}
         files_with_matches: List[str] = []
+        max_files = settings.GREP_MAX_FILES
+        scanned_files = 0
         
         path_obj = PathlibPath(path)
         
@@ -436,6 +443,10 @@ class Grep(BaseSearchTool):
         for file_path in files_to_search:
             if not file_path.is_file():
                 continue
+            
+            scanned_files += 1
+            if scanned_files > max_files:
+                break
             
             if glob and not fnmatch.fnmatch(file_path.name, glob):
                 continue
@@ -666,124 +677,78 @@ class Grep(BaseSearchTool):
             Dict[str, Any]: 工具规范
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "Grep",
-                "description": (
-                    "基于 ripgrep 构建的强大搜索工具。\n\n"
-                    "用法:\n"
-                    "  - 始终使用 Grep 进行搜索任务。不要作为 Bash 命令调用 `grep` 或 `rg`。\n"
-                    "  - 支持完整的正则表达式语法（如 \"log.*Error\", \"function\\s+\\w+\")\n"
-                    "  - 使用 glob 参数过滤文件（如 \"*.js\", \"**/*.tsx\")\n"
-                    "  - 使用 type 参数按文件类型过滤（如 js, py, rust）\n"
-                    "  - 输出模式: \"content\" 显示匹配行, \"files_with_matches\" 仅显示文件路径, "
-                    "\"count\" 显示匹配计数\n"
-                    "  - 多行匹配: 使用 multiline=true，模式可以跨行匹配\n"
-                    "  - ripgrep 模式语法: 注意在 Go 代码中需要转义字面大括号，如 `interface\\{\\}`\n"
-                    "  - 默认情况下模式在单行内匹配。跨行模式使用 multiline=true\n"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {
-                            "type": "string",
-                            "description": "要搜索的正则表达式模式",
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": "搜索路径（rg PATH）。默认为当前工作目录。",
-                        },
-                        "glob": {
-                            "type": "string",
-                            "description": "glob 模式过滤文件（rg --glob），如 \"*.js\", \"**/*.tsx\"",
-                        },
-                        "output_mode": {
-                            "type": "string",
-                            "enum": ["content", "files_with_matches", "count"],
-                            "description": "输出模式",
-                        },
-                        "n": {
-                            "type": "boolean",
-                            "description": "显示行号（rg -n）。仅在 output_mode 为 content 时有效。",
-                        },
-                        "C": {
-                            "type": "integer",
-                            "description": "显示匹配前后 N 行上下文（rg -C）。仅在 output_mode 为 content 时有效。",
-                        },
-                        "A": {
-                            "type": "integer",
-                            "description": "显示匹配后 N 行（rg -A）。仅在 output_mode 为 content 时有效。",
-                        },
-                        "B": {
-                            "type": "integer",
-                            "description": "显示匹配前 N 行（rg -B）。仅在 output_mode 为 content 时有效。",
-                        },
-                        "i": {
-                            "type": "boolean",
-                            "description": "忽略大小写（rg -i）",
-                        },
-                        "head_limit": {
-                            "type": "integer",
-                            "description": "限制输出前 N 条结果。适用于所有输出模式。",
-                        },
-                        "multiline": {
-                            "type": "boolean",
-                            "description": "启用多行模式（rg -U --multiline-dotall）。默认为 false。",
-                        },
-                        "type": {
-                            "type": "string",
-                            "description": "文件类型过滤（rg --type）。常见类型: js, py, rust, go, java 等。",
-                        },
-                        "offset": {
-                            "type": "integer",
-                            "description": "跳过前 N 条结果后再应用 head_limit。适用于所有输出模式。",
-                        },
+            "name": "Grep",
+            "description": (
+                "基于 ripgrep 构建的强大搜索工具。\n\n"
+                "用法:\n"
+                "  - 始终使用 Grep 进行搜索任务。不要作为 Bash 命令调用 `grep` 或 `rg`。\n"
+                "  - 支持完整的正则表达式语法（如 \"log.*Error\", \"function\\s+\\w+\")\n"
+                "  - 使用 glob 参数过滤文件（如 \"*.js\", \"**/*.tsx\")\n"
+                "  - 使用 type 参数按文件类型过滤（如 js, py, rust）\n"
+                "  - 输出模式: \"content\" 显示匹配行, \"files_with_matches\" 仅显示文件路径, "
+                "\"count\" 显示匹配计数\n"
+                "  - 多行匹配: 使用 multiline=true，模式可以跨行匹配\n"
+                "  - ripgrep 模式语法: 注意在 Go 代码中需要转义字面大括号，如 `interface\\{\\}`\n"
+                "  - 默认情况下模式在单行内匹配。跨行模式使用 multiline=true\n"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "要搜索的正则表达式模式",
                     },
-                    "required": ["pattern"],
+                    "path": {
+                        "type": "string",
+                        "description": "搜索路径（rg PATH）。默认为当前工作目录。",
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "glob 模式过滤文件（rg --glob），如 \"*.js\", \"**/*.tsx\"",
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "enum": ["content", "files_with_matches", "count"],
+                        "description": "输出模式",
+                    },
+                    "n": {
+                        "type": "boolean",
+                        "description": "显示行号（rg -n）。仅在 output_mode 为 content 时有效。",
+                    },
+                    "C": {
+                        "type": "integer",
+                        "description": "显示匹配前后 N 行上下文（rg -C）。仅在 output_mode 为 content 时有效。",
+                    },
+                    "A": {
+                        "type": "integer",
+                        "description": "显示匹配后 N 行（rg -A）。仅在 output_mode 为 content 时有效。",
+                    },
+                    "B": {
+                        "type": "integer",
+                        "description": "显示匹配前 N 行（rg -B）。仅在 output_mode 为 content 时有效。",
+                    },
+                    "i": {
+                        "type": "boolean",
+                        "description": "忽略大小写（rg -i）",
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "限制输出前 N 条结果。适用于所有输出模式。",
+                    },
+                    "multiline": {
+                        "type": "boolean",
+                        "description": "启用多行模式（rg -U --multiline-dotall）。默认为 false。",
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "文件类型过滤（rg --type）。常见类型: js, py, rust, go, java 等。",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "跳过前 N 条结果后再应用 head_limit。适用于所有输出模式。",
+                    },
                 },
+                "required": ["pattern"],
             },
         }
 
-
-import asyncio
-
-
-async def grep(
-    pattern: str,
-    path: Optional[str] = None,
-    glob: Optional[str] = None,
-    output_mode: str = "files_with_matches",
-    n: bool = False,
-    C: int = 0,
-    i: bool = False,
-    head_limit: int = 100,
-    working_directory: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    正则表达式搜索便捷函数。
-    
-    Args:
-        pattern (str): 正则表达式模式
-        path (Optional[str], optional): 搜索路径。默认为 None
-        glob (Optional[str], optional): glob 模式。默认为 None
-        output_mode (str, optional): 输出模式。默认为 "files_with_matches"
-        n (bool, optional): 是否显示行号。默认为 False
-        C (int, optional): 上下文行数。默认为 0
-        i (bool, optional): 是否忽略大小写。默认为 False
-        head_limit (int, optional): 结果限制。默认为 100
-        working_directory (Optional[str], optional): 工作目录。默认为 None
-    
-    Returns:
-        Dict[str, Any]: 搜索结果
-    """
-    tool = Grep(working_directory=working_directory)
-    return await tool.execute(
-        pattern=pattern,
-        path=path,
-        glob=glob,
-        output_mode=output_mode,
-        n=n,
-        C=C,
-        i=i,
-        head_limit=head_limit,
-    )

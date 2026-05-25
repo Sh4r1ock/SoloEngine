@@ -50,7 +50,7 @@ import ReactFlow, {
   Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Dropdown, Menu, Button, Input, Modal, message, Tooltip } from 'antd';
+import { Dropdown, Menu, Button, Input, Modal, App, Tooltip } from 'antd';
 import { 
   PlusOutlined, 
   UserOutlined, 
@@ -156,6 +156,7 @@ const nodeTypes: NodeTypes = {
 };
 
 const Canvas: React.FC = () => {
+  const { message } = App.useApp();
   const { 
     nodes, 
     edges, 
@@ -291,7 +292,6 @@ const Canvas: React.FC = () => {
         agentType: presetId,
         color: preset?.color || '#3F51B5',
         system_prompt: preset?.system_prompt || '',
-        user_prompt: '',
         assistant_prompt: '',
         skills: preset?.skills || [],
         tools: preset?.tools || [],
@@ -431,7 +431,6 @@ const Canvas: React.FC = () => {
           agentType: presetId,
           color: preset?.color || '#3F51B5',
           system_prompt: preset?.system_prompt || '',
-          user_prompt: '',
           assistant_prompt: '',
           skills: preset?.skills || [],
           tools: preset?.tools || [],

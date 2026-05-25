@@ -25,11 +25,9 @@ import os
 import logging
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
 import hashlib
-import json
 
-from .base import BaseSearchTool, SearchToolError
+from .base import BaseSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +129,11 @@ class CodeIndex:
         if self._embedding_service is None:
             try:
                 from ....embedding.embedding_service import get_embedding_service
-                self._embedding_service = get_embedding_service()
+                embedding_config = self._config.get("embedding_config") if self._config else None
+                if embedding_config:
+                    self._embedding_service = get_embedding_service(embedding_config)
+                else:
+                    self._embedding_service = get_embedding_service()
             except ImportError:
                 logger.warning("Embedding service not available")
                 return None
@@ -513,59 +515,34 @@ class SearchCodebase(BaseSearchTool):
             Dict[str, Any]: 工具规范
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "SearchCodebase",
-                "description": (
-                    "使用语义搜索在代码库中查找相关代码片段。"
-                    "这是一个强大的检索/嵌入模型套件，能够从代码库中召回最相关的代码片段。"
-                    "维护代码库的实时索引，结果始终反映代码库的当前状态。"
-                    "支持跨不同编程语言检索。"
-                    "只反映代码库在磁盘上的当前状态，没有版本控制或代码历史信息。"
-                    "当需要按名称查找文件时，使用 Glob 工具。"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "information_request": {
-                            "type": "string",
-                            "description": "需要查找的信息描述",
-                        },
-                        "target_directories": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": (
-                                "要搜索的特定目录（必须使用绝对路径，"
-                                "必须使用操作系统的正确文件路径分隔符）。"
-                                "如果未提供，默认搜索项目根目录。"
-                                "可以指定多个目录进行定向搜索。"
-                            ),
-                        },
+            "name": "SearchCodebase",
+            "description": (
+                "使用语义搜索在代码库中查找相关代码片段。"
+                "这是一个强大的检索/嵌入模型套件，能够从代码库中召回最相关的代码片段。"
+                "维护代码库的实时索引，结果始终反映代码库的当前状态。"
+                "支持跨不同编程语言检索。"
+                "只反映代码库在磁盘上的当前状态，没有版本控制或代码历史信息。"
+                "当需要按名称查找文件时，使用 Glob 工具。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "information_request": {
+                        "type": "string",
+                        "description": "需要查找的信息描述",
                     },
-                    "required": ["information_request"],
+                    "target_directories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "要搜索的特定目录（必须使用绝对路径，"
+                            "必须使用操作系统的正确文件路径分隔符）。"
+                            "如果未提供，默认搜索项目根目录。"
+                            "可以指定多个目录进行定向搜索。"
+                        ),
+                    },
                 },
+                "required": ["information_request"],
             },
         }
 
-
-async def search_codebase(
-    information_request: str,
-    target_directories: Optional[List[str]] = None,
-    working_directory: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    语义代码搜索便捷函数。
-    
-    Args:
-        information_request (str): 搜索请求描述
-        target_directories (Optional[List[str]], optional): 目标目录列表。默认为 None
-        working_directory (Optional[str], optional): 工作目录。默认为 None
-    
-    Returns:
-        Dict[str, Any]: 搜索结果
-    """
-    tool = SearchCodebase(working_directory=working_directory)
-    return await tool.execute(
-        information_request=information_request,
-        target_directories=target_directories,
-    )

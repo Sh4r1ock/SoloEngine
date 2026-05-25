@@ -363,10 +363,13 @@ class TruncatedFormatterBase(FormatterBase, ABC):
         group_type: Literal["tool_sequence", "agent_message"] | None = None
         group = []
         for msg in msgs:
+            is_tool_related = (
+                msg.has_content_blocks("tool_use") or 
+                msg.has_content_blocks("tool_result") or
+                msg.has_content_blocks("tool_calls")
+            )
             if group_type is None:
-                if msg.has_content_blocks(
-                    "tool_use",
-                ) or msg.has_content_blocks("tool_result"):
+                if is_tool_related:
                     group_type = "tool_sequence"
                 else:
                     group_type = "agent_message"
@@ -374,26 +377,19 @@ class TruncatedFormatterBase(FormatterBase, ABC):
                 group.append(msg)
                 continue
 
-            # determine if this msg has the same type as the current group
             if group_type == "tool_sequence":
-                if msg.has_content_blocks(
-                    "tool_use",
-                ) or msg.has_content_blocks("tool_result"):
+                if is_tool_related:
                     group.append(msg)
-
                 else:
                     yield group_type, group
                     group = [msg]
                     group_type = "agent_message"
 
             elif group_type == "agent_message":
-                if msg.has_content_blocks(
-                    "tool_use",
-                ) or msg.has_content_blocks("tool_result"):
+                if is_tool_related:
                     yield group_type, group
                     group = [msg]
                     group_type = "tool_sequence"
-
                 else:
                     group.append(msg)
         if group_type:

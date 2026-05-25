@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, Space, message, Divider, Switch, InputNumber } from 'antd';
+import { Modal, Form, Input, Select, Button, Space, App, Divider, Switch, InputNumber } from 'antd';
 import { DownloadOutlined, AppstoreOutlined } from '@ant-design/icons';
 import { api } from '../../services/api';
 
@@ -16,6 +16,7 @@ const PackagerModal: React.FC<PackagerModalProps> = ({
   onClose,
   onPackage,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [packageResult, setPackageResult] = useState<any>(null);

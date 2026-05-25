@@ -44,7 +44,6 @@ export interface SkillsPackage {
   description?: string;
   author?: string;
   tags?: string[];
-  instructions?: string;
   folder_path?: string;
   is_active: boolean;
   is_public?: boolean;
@@ -60,7 +59,6 @@ export interface SkillsPackage {
     description: string;
     author: string;
     tags: string[];
-    instructions: string;
   };
   skills?: Array<{
     path: string;
@@ -123,6 +121,46 @@ class SkillsApi {
     });
   }
 
+  async parseImportPackage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/skills/import/parse', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  }
+
+  async cleanupTempFile(tempId: string) {
+    const formData = new FormData();
+    formData.append('temp_id', tempId);
+    return api.post('/skills/import/cleanup', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  }
+
+  async importPackageWithForm(data: {
+    tempId: string;
+    name: string;
+    description: string;
+    author: string;
+    tags: string[];
+  }) {
+    const formData = new FormData();
+    formData.append('temp_id', data.tempId);
+    formData.append('name', data.name);
+    formData.append('description', data.description);
+    formData.append('author', data.author);
+    formData.append('tags', JSON.stringify(data.tags));
+    return api.post('/skills/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  }
+
   async searchPackages(query: string, tags?: string[]) {
     return api.post('/skills/search', { query, tags });
   }
@@ -131,16 +169,8 @@ class SkillsApi {
     return api.get(`/skills/packages/${packageId}/skills/${skillName}`);
   }
 
-  async generatePrompt(packageId: string, context?: Record<string, any>) {
-    return api.post('/skills/prompt', { package_id: packageId, context });
-  }
-
   async exportPackage(packageId: string) {
     return api.get(`/skills/packages/${packageId}/export`);
-  }
-
-  async initDefaultSkills() {
-    return api.post('/skills/init-defaults');
   }
 
   async getPackageFiles(packageId: string) {

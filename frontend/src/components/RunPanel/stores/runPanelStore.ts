@@ -4,8 +4,8 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { runApi } from '../../../services/runApi';
+import { runProjectApi } from '../../../services/runProjectApi';
 import type {
   LLMMessage,
   DataBlock,
@@ -14,12 +14,19 @@ import type {
   FileTab,
   AgenticPanel,
   ExtendedRunSession,
-  SessionMessage,
   CurrentProject,
   RecentProjectInfo,
+  MessageFileChangesMap,
+  FileSystemChange,
 } from '../types';
 
-const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+const generateId = () => `id_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+
+function normalizeFilePath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+const _lastExternalChangeTime: Record<string, number> = {};
 
 interface RunPanelState {
   sessions: ExtendedRunSession[];
@@ -60,6 +67,17 @@ interface RunPanelState {
   expandedToolCalls: string[];
   streamingExpandedKeys: string[];
 
+  recallingMessageId: string | null;
+  recallPreviewFiles: Record<string, Array<{ file_path: string; original_operation: string; recall_action: string; lines_added: number; lines_removed: number }>>;
+  recallPreviewMessageId: string | null;
+  fileChangeRefreshKey: number;
+  fileChangesMap: MessageFileChangesMap;
+  fileChangesLoaded: boolean;
+  activeChangesMessageId: string | null;
+
+  expandedBlockKeys: Record<string, boolean>;
+  toggleBlockExpand: (blockKey: string, currentIsExpanding: boolean) => void;
+
   setCurrentSessionId: (sessionId: string | null) => void;
   setSessions: (sessions: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
   setSearchQuery: (query: string) => void;
@@ -95,6 +113,8 @@ interface RunPanelState {
   closeDocumentTab: (id: string) => void;
   setActiveDocumentTabId: (id: string | null) => void;
 
+  openOrNavigateFile: (params: { filePath: string; fileName: string; isCode: boolean; isBinary: boolean; projectFolderPath: string | null }) => { tab: FileTab; existed: boolean };
+
   openAgenticPanel: (type: string) => void;
   closeAgenticPanel: (id: string) => void;
   setActiveAgenticTab: (tab: string | null) => void;
@@ -113,15 +133,23 @@ interface RunPanelState {
   setExpandedToolCalls: (keys: string[]) => void;
   setStreamingExpandedKeys: (keys: string[]) => void;
 
-  loadSessions: (agenticFlowId: string, runProjectId: string) => Promise<void>;
-  loadSessionMessages: (sessionId: string) => Promise<void>;
-  createNewSession: (agenticFlowId: string, projectId: string) => string | null;
-  deleteSession: (sessionId: string) => Promise<void>;
+  setRecallingMessageId: (messageId: string | null) => void;
+  setRecallPreviewFiles: (messageId: string, files: Array<{ file_path: string; original_operation: string; recall_action: string; lines_added: number; lines_removed: number }>) => void;
+  clearRecallPreview: () => void;
+  incrementFileChangeRefreshKey: () => void;
+  setFileChangesMap: (map: MessageFileChangesMap | ((prev: MessageFileChangesMap) => MessageFileChangesMap)) => void;
+  setActiveChangesMessageId: (messageId: string | null) => void;
+
+  createNewSession: (agenticFlowId: string | null, projectId: string | null) => string | null;
+  deleteSession: (sessionId: string, agenticFlowId?: string | null, projectId?: string | null) => Promise<boolean>;
+  loadSessionsForProject: (agenticFlowId: string, projectId: string) => Promise<void>;
+
+  handleExternalFileChanges: (changes: FileSystemChange[]) => void;
+  resolveExternalChange: (tabId: string) => Promise<void>;
 }
 
 export const useRunPanelStore = create<RunPanelState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       sessions: [],
       currentSessionId: null,
       loading: false,
@@ -148,7 +176,7 @@ export const useRunPanelStore = create<RunPanelState>()(
         { id: 'terminal', type: 'terminal', title: '终端', isOpen: false },
         { id: 'browser', type: 'browser', title: '浏览器', isOpen: false },
         { id: 'document', type: 'document', title: '文档', isOpen: false },
-        { id: 'changes', type: 'changes', title: '文档变更', isOpen: false },
+        { id: 'changes', type: 'changes', title: '文件变更', isOpen: false },
       ],
       activeAgenticTab: null,
       panelRatios: [1, 4, 4, 1],
@@ -166,6 +194,24 @@ export const useRunPanelStore = create<RunPanelState>()(
       expandedToolCalls: [],
       streamingExpandedKeys: [],
 
+      recallingMessageId: null,
+      recallPreviewFiles: {},
+      recallPreviewMessageId: null,
+      fileChangeRefreshKey: 0,
+      fileChangesMap: {},
+      fileChangesLoaded: false,
+      activeChangesMessageId: null,
+
+      expandedBlockKeys: {},
+      toggleBlockExpand: (blockKey: string, currentIsExpanding: boolean) => {
+        set((state) => ({
+          expandedBlockKeys: {
+            ...state.expandedBlockKeys,
+            [blockKey]: !currentIsExpanding,
+          },
+        }));
+      },
+
       setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
       setSessions: (sessionsOrUpdater) => {
         if (typeof sessionsOrUpdater === 'function') {
@@ -175,8 +221,14 @@ export const useRunPanelStore = create<RunPanelState>()(
         }
       },
       setSearchQuery: (query) => set({ searchQuery: query }),
-      startRunning: () => set({ isRunning: true }),
-      stopRunning: () => set({ isRunning: false }),
+      startRunning: () => set((state) => {
+        if (state.isRunning) return state;
+        return { isRunning: true };
+      }),
+      stopRunning: () => set((state) => {
+        if (!state.isRunning && !state.isWaitingReply) return state;
+        return { isRunning: false, isWaitingReply: false };
+      }),
 
       addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
       setMessages: (messagesOrUpdater) => {
@@ -189,14 +241,24 @@ export const useRunPanelStore = create<RunPanelState>()(
       clearMessages: () => set({ messages: [] }),
       setStreamingData: (dataOrUpdater) => {
         if (typeof dataOrUpdater === 'function') {
-          set((state) => ({ streamingData: dataOrUpdater(state.streamingData) }));
+          set((state) => {
+            const newData = dataOrUpdater(state.streamingData);
+            if (newData === state.streamingData) return state;
+            return { streamingData: newData };
+          });
         } else {
-          set({ streamingData: dataOrUpdater });
+          set((state) => {
+            if (dataOrUpdater === state.streamingData) return state;
+            return { streamingData: dataOrUpdater };
+          });
         }
       },
       clearStreamingData: () => set({ streamingData: [] }),
       setInputText: (text) => set({ inputText: text }),
-      setIsWaitingReply: (waiting) => set({ isWaitingReply: waiting }),
+      setIsWaitingReply: (waiting) => set((state) => {
+        if (state.isWaitingReply === waiting) return state;
+        return { isWaitingReply: waiting };
+      }),
       setCurrentMsgId: (id) => set({ currentMsgId: id }),
 
       addCallRecord: (record) => set((state) => ({ callRecords: [...state.callRecords, record] })),
@@ -267,6 +329,58 @@ export const useRunPanelStore = create<RunPanelState>()(
       },
       setActiveDocumentTabId: (id) => set({ activeDocumentTabId: id }),
 
+      openOrNavigateFile: ({ filePath, fileName, isCode, isBinary }) => {
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const tabId = `tab_${normalizedPath}`;
+        const state = get();
+        const panelType = isCode ? 'editor' : 'document';
+        const tabs = isCode ? state.editorTabs : state.documentTabs;
+        
+        const existingTab = tabs.find(t => t.id === tabId);
+        
+        if (existingTab) {
+          const newPanels = state.agenticPanels.map(p =>
+            p.type === panelType ? { ...p, isOpen: true } : p
+          );
+          isCode
+            ? set({ activeEditorTabId: tabId, agenticPanels: newPanels, activeAgenticTab: panelType })
+            : set({ activeDocumentTabId: tabId, agenticPanels: newPanels, activeAgenticTab: panelType });
+          return { tab: existingTab, existed: true };
+        }
+        
+        const newTab: FileTab = {
+          id: tabId,
+          name: fileName,
+          path: normalizedPath,
+          content: '',
+          isModified: false,
+          isLoading: true,
+          isBinary,
+          hasExternalChange: false,
+          type: isCode ? 'editor' : 'document',
+        };
+        
+        const newPanels = state.agenticPanels.map(p =>
+          p.type === panelType ? { ...p, isOpen: true } : p
+        );
+        
+        isCode
+          ? set({
+              editorTabs: [...state.editorTabs, newTab],
+              activeEditorTabId: tabId,
+              agenticPanels: newPanels,
+              activeAgenticTab: panelType,
+            })
+          : set({
+              documentTabs: [...state.documentTabs, newTab],
+              activeDocumentTabId: tabId,
+              agenticPanels: newPanels,
+              activeAgenticTab: panelType,
+            });
+        
+        return { tab: newTab, existed: false };
+      },
+
       openAgenticPanel: (type) => set((state) => {
         const newPanels = state.agenticPanels.map((p) =>
           p.type === type ? { ...p, isOpen: true } : p
@@ -301,105 +415,173 @@ export const useRunPanelStore = create<RunPanelState>()(
       setExpandedToolCalls: (keys) => set({ expandedToolCalls: keys }),
       setStreamingExpandedKeys: (keys) => set({ streamingExpandedKeys: keys }),
 
-      loadSessions: async (agenticFlowId, runProjectId) => {
-        set({ loading: true, error: null });
-        try {
-          const sessions = await runApi.getSessions({
-            agentic_flow_id: agenticFlowId,
-            run_project_id: runProjectId,
-            limit: 50,
-          });
+      setRecallingMessageId: (messageId) => set({ recallingMessageId: messageId }),
 
-          const currentSessions = get().sessions;
+      setRecallPreviewFiles: (messageId, files) => set((state) => ({
+        recallPreviewFiles: { ...state.recallPreviewFiles, [messageId]: files },
+        recallPreviewMessageId: messageId,
+      })),
 
-          const extendedSessions: ExtendedRunSession[] = sessions.map((s) => {
-            const existingSession = currentSessions.find((cs) => cs.id === s.id);
-            return {
-              ...s,
-              messages: existingSession?.messages || [],
-              toolCalls: existingSession?.toolCalls || [],
-              subagentOutputs: existingSession?.subagentOutputs || [],
-            };
-          });
-          set({ sessions: extendedSessions });
-        } catch (error: any) {
-          set({ error: error.message || 'Failed to load sessions' });
-        } finally {
-          set({ loading: false });
+      clearRecallPreview: () => set({ recallPreviewMessageId: null }),
+
+      incrementFileChangeRefreshKey: () => set((state) => ({
+        fileChangeRefreshKey: state.fileChangeRefreshKey + 1,
+      })),
+
+      setFileChangesMap: (mapOrUpdater) => {
+        if (typeof mapOrUpdater === 'function') {
+          set((state) => ({ fileChangesMap: mapOrUpdater(state.fileChangesMap) }));
+        } else {
+          set({ fileChangesMap: mapOrUpdater });
         }
       },
 
-      loadSessionMessages: async (sessionId) => {
-        try {
-          const messages = await runApi.getSessionMessages(sessionId);
-
-          const formattedMessages: SessionMessage[] = messages.map((msg, index) => ({
-            id: msg.id,
-            role: msg.role,
-            content: msg.content || '',
-            reasoning_content: msg.reasoning_content,
-            data: msg.data || [],
-            message_index: msg.message_index ?? index,
-            timestamp: msg.created_at || new Date().toISOString(),
-            created_at: msg.created_at,
-            tokens: msg.total_tokens,
-            prompt_tokens: msg.prompt_tokens,
-            completion_tokens: msg.completion_tokens,
-            total_tokens: msg.total_tokens,
-          }));
-
-          set((state) => ({
-            sessions: state.sessions.map((s) =>
-              s.id === sessionId ? { ...s, messages: formattedMessages } : s
-            ),
-          }));
-        } catch (error: any) {
-          console.error('Failed to load session messages:', error);
-        }
-      },
+      setActiveChangesMessageId: (messageId) => set({ activeChangesMessageId: messageId }),
 
       createNewSession: (agenticFlowId, projectId) => {
         if (!agenticFlowId || !projectId) {
           return null;
         }
-
         const newSessionId = crypto.randomUUID();
-        set({ currentSessionId: newSessionId });
-
-        const newSession: ExtendedRunSession = {
-          id: newSessionId,
-          status: 'pending',
-          name: `会话 ${get().sessions.length + 1}`,
-          createdAt: new Date().toISOString(),
+        set({
+          currentSessionId: newSessionId,
           messages: [],
-        };
-
-        set((state) => ({ sessions: [newSession, ...state.sessions] }));
-
+          fileChangesLoaded: false,
+          callRecords: [],
+        });
         return newSessionId;
       },
 
-      deleteSession: async (sessionId) => {
-        await runApi.deleteSession(sessionId);
-        const newSessions = get().sessions.filter((s) => s.id !== sessionId);
-        set({ sessions: newSessions });
+      deleteSession: async (sessionId, agenticFlowId, projectId) => {
+        try {
+          await runApi.deleteSession(sessionId);
+          const state = get();
+          const newSessions = state.sessions.filter(s => s.id !== sessionId);
+          let updates: Partial<RunPanelState> = { sessions: newSessions };
 
-        if (get().currentSessionId === sessionId) {
-          if (newSessions.length > 0) {
-            set({ currentSessionId: newSessions[0].id });
-          } else {
-            set({ currentSessionId: null });
+          if (state.currentSessionId === sessionId) {
+            if (newSessions.length > 0) {
+              updates.currentSessionId = newSessions[0].id;
+            } else {
+              updates.currentSessionId = null;
+              if (agenticFlowId && projectId) {
+                const key = `soloengine-session-${agenticFlowId}-${projectId}`;
+                localStorage.removeItem(key);
+              }
+            }
+            updates.messages = [];
+          }
+          set(updates);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      loadSessionsForProject: async (agenticFlowId, projectId) => {
+        try {
+          const sessionsData = await runApi.getSessions({
+            agentic_flow_id: agenticFlowId,
+            run_project_id: projectId,
+            limit: 50,
+          });
+
+          const currentSessions = get().sessions;
+          const extendedSessions: ExtendedRunSession[] = sessionsData.map((s: any) => {
+            const existingSession = currentSessions.find((cs: any) => cs.id === s.id);
+            return {
+              ...s,
+              firstAssistantContent: s.first_assistant_content || undefined,
+              createdAt: s.created_at || new Date().toISOString(),
+              messages: existingSession?.messages || [],
+              fileChangesMap: existingSession?.fileChangesMap,
+            };
+          });
+
+          extendedSessions.sort((a: any, b: any) =>
+            new Date(b.updated_at || b.createdAt || '').getTime() - new Date(a.updated_at || a.createdAt || '').getTime()
+          );
+
+          set({ sessions: extendedSessions });
+        } catch (error) {
+          console.warn('Failed to load sessions:', error);
+        }
+      },
+
+      handleExternalFileChanges: (changes) => {
+        const state = get();
+        const now = Date.now();
+
+        for (const change of changes) {
+          if (change.operation !== 'modified') continue;
+
+          const normalizedPath = normalizeFilePath(change.file_path);
+
+          const key = `${normalizedPath}:modified`;
+          const lastTime = _lastExternalChangeTime[key] || 0;
+          if (now - lastTime < 500) continue;
+          _lastExternalChangeTime[key] = now;
+
+          const editorTab = state.editorTabs.find(
+            (t) => normalizeFilePath(t.path) === normalizedPath
+          );
+          if (editorTab) {
+            if (editorTab.isModified) {
+              set({
+                editorTabs: state.editorTabs.map((t) =>
+                  t.id === editorTab.id ? { ...t, hasExternalChange: true } : t
+                ),
+              });
+            } else {
+              runProjectApi.readFile(editorTab.path).then((response) => {
+                set({
+                  editorTabs: get().editorTabs.map((t) =>
+                    t.id === editorTab.id ? { ...t, content: response.data.content, isLoading: false } : t
+                  ),
+                });
+              });
+            }
+          }
+
+          const docTab = state.documentTabs.find(
+            (t) => normalizeFilePath(t.path) === normalizedPath
+          );
+          if (docTab && !docTab.isModified) {
+            runProjectApi.readFile(docTab.path).then((response) => {
+              set({
+                documentTabs: get().documentTabs.map((t) =>
+                  t.id === docTab.id ? { ...t, content: response.data.content, isLoading: false } : t
+                ),
+              });
+            });
           }
         }
       },
+
+      resolveExternalChange: async (tabId: string) => {
+        const state = get();
+        const tab = state.editorTabs.find((t) => t.id === tabId)
+            || state.documentTabs.find((t) => t.id === tabId);
+        if (!tab) return;
+
+        const response = await runProjectApi.readFile(tab.path);
+        const fileContent = response.data.content;
+        set({
+          editorTabs: state.editorTabs.map((t) =>
+            t.id === tabId
+              ? { ...t, content: fileContent, isLoading: false, hasExternalChange: false, isModified: false }
+              : t
+          ),
+          documentTabs: state.documentTabs.map((t) =>
+            t.id === tabId
+              ? { ...t, content: fileContent, isLoading: false, hasExternalChange: false, isModified: false }
+              : t
+          ),
+        });
+      },
+
+
     }),
-    {
-      name: 'run-panel-store',
-      partialize: (state) => ({
-        currentSessionId: state.currentSessionId,
-      }),
-    }
-  )
 );
 
 export { generateId };

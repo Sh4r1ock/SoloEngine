@@ -33,7 +33,11 @@ import sys
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from enum import Enum
+
+from app.core.config import settings
+from app.utils.timezone_utils import format_iso
 
 
 ALLOWED_COMMANDS = {
@@ -125,12 +129,10 @@ class CommandToolError(Exception):
 
 class CommandSecurityError(CommandToolError):
     """命令安全错误，当命令被判定为不安全时抛出。"""
-    pass
 
 
 class CommandNotFoundError(CommandToolError):
     """命令未找到错误，当指定的命令 ID 不存在时抛出。"""
-    pass
 
 
 @dataclass
@@ -162,7 +164,7 @@ class CommandInfo:
     cwd: Optional[str] = None
     command_type: CommandType = CommandType.OTHER
     requires_approval: bool = False
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     started_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
     exit_code: Optional[int] = None
@@ -178,9 +180,9 @@ class CommandInfo:
             "cwd": self.cwd,
             "command_type": self.command_type.value,
             "requires_approval": self.requires_approval,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "created_at": format_iso(self.created_at),
+            "started_at": format_iso(self.started_at),
+            "finished_at": format_iso(self.finished_at),
             "exit_code": self.exit_code,
         }
 
@@ -276,7 +278,7 @@ class CommandRegistry:
         Returns:
             int: 清理的命令数量。
         """
-        now = datetime.now()
+        now = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         to_remove = []
         for cmd_id, cmd_info in self._commands.items():
             if cmd_info.state in (CommandState.DONE, CommandState.ERROR, CommandState.STOPPED):
@@ -401,6 +403,6 @@ class BaseCommandTool:
             str: 格式为 "cmd_{timestamp}_{random}" 的唯一标识符。
         """
         import uuid
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d%H%M%S")
         short_uuid = uuid.uuid4().hex[:8]
         return f"cmd_{timestamp}_{short_uuid}"

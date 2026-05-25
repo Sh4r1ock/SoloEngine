@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Modal, Input, Typography, message, Empty, Spin } from 'antd';
+import { Modal, Input, Typography, App, Empty, Spin } from 'antd';
 import { AppstoreOutlined } from '@ant-design/icons';
 import { agenticFlowApi, AgenticFlow } from '../../services/agenticFlowApi';
 import UnifiedCard from '../../components/common/UnifiedCard';
@@ -11,6 +11,7 @@ const { Text } = Typography;
 const { TextArea } = Input;
 
 const AgenticFlowList: React.FC = () => {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const [flows, setFlows] = useState<AgenticFlow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -136,7 +137,7 @@ const AgenticFlowList: React.FC = () => {
   });
 
   return (
-    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100vh' }}>
+    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100%' }}>
       <PageHeader
         icon={<AppstoreOutlined />}
         title="AgenticFlow"
@@ -199,7 +200,7 @@ const AgenticFlowList: React.FC = () => {
                 icon={flow.icon || getDefaultIcon('agenticFlow')}
                 tags={tags}
                 isTemplate={flow.is_template}
-                isDefault={isSystem}
+                isSystem={isSystem}
                 updatedAt={flow.updated_at}
                 onIconChange={(icon: string) => handleIconChange(flow, icon)}
                 onClick={(e?: React.MouseEvent) => {
@@ -240,27 +241,43 @@ const AgenticFlowList: React.FC = () => {
         okButtonProps={{ disabled: !newFlowName.trim() }}
       >
         <div style={{ marginBottom: '16px' }}>
-          <Text>名称 <Text type="danger">*</Text></Text>
+          <div style={{ marginBottom: '8px' }}>
+            <Text>名称 <Text type="danger">*</Text></Text>
+          </div>
           <Input
             placeholder="请输入Agentic名称"
             value={newFlowName}
             onChange={e => setNewFlowName(e.target.value)}
-            style={{ marginTop: '8px' }}
             maxLength={100}
             showCount
           />
         </div>
-        <div>
-          <Text>描述</Text>
-          <TextArea
-            placeholder="请输入Agentic描述（可选）"
-            value={newFlowDescription}
-            onChange={e => setNewFlowDescription(e.target.value)}
-            rows={3}
-            style={{ marginTop: '8px' }}
-            maxLength={500}
-            showCount
-          />
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ marginBottom: '8px' }}>
+            <Text>描述</Text>
+          </div>
+          <div style={{ position: 'relative' }}>
+            <TextArea
+              placeholder="请输入Agentic描述（可选）"
+              value={newFlowDescription}
+              onChange={e => setNewFlowDescription(e.target.value)}
+              rows={3}
+              maxLength={500}
+              style={{ padding: '8px 12px 24px 12px' }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '8px',
+                right: '12px',
+                fontSize: '14px',
+                color: 'rgba(0, 0, 0, 0.45)',
+                pointerEvents: 'none',
+              }}
+            >
+              {newFlowDescription.length} / 500
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

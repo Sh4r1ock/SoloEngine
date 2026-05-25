@@ -34,10 +34,9 @@
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Layout, Button, Typography, message, Modal, Dropdown, List, Tag, Empty, Spin, Tooltip } from 'antd';
+import { Layout, Button, Typography, Modal, Dropdown, List, Tag, Empty, Spin, Tooltip, App } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  RobotOutlined,
   FolderOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
@@ -50,62 +49,89 @@ import {
 import { useNavigate } from 'react-router-dom';
 
 import { useRunPanelStore, generateId } from './stores/runPanelStore';
+import type { FileSystemChange } from './types';
 import { useStreamingData } from './hooks/useStreamingData';
+import { WEBSOCKET_CONFIG } from '../../config/websocket';
 import { useRunWebSocket, ExecutionEvent } from '../../hooks/useRunWebSocket';
 import { useRunProjectStore } from '../../store/runProjectStore';
 import { runApi } from '../../services/runApi';
+import { loadMessages } from './utils/loadMessagesWithFileChanges';
+import { formatSmartTime } from '../../utils/timezone';
 import { agenticFlowApi } from '../../services/agenticFlowApi';
 import { runProjectApi, RecentProjectInfo, FileInfo } from '../../services/runProjectApi';
 
-import MessageList from './components/MessageList';
+import MessageList, { type MessageListHandle } from './components/MessageList';
 import MessageInput from './components/MessageInput';
+import ScrollNavigationButtons from './components/ScrollNavigationButtons';
 import SessionList from './components/SessionList';
 import AgenticPanel from './components/AgenticPanel';
 import FileExplorer from './FileExplorer';
-
-import type { LLMMessage, DataBlock, FileTab, CallRecord, SubagentOutput } from './types';
+import type { LLMMessage, DataBlock, FileTab, CallRecord, CallType, SubagentOutput } from './types';
 
 const { Header } = Layout;
 const { Text } = Typography;
+
+const getSessionStorageKey = (flowId: string, projectId: string) =>
+  `soloengine-session-${flowId}-${projectId}`;
 
 interface RunPanelProps {
   agenticFlowId?: string;
 }
 
+const ResizableDivider: React.FC<{
+  dividerIndex: number;
+  right?: number;
+  isDragging: number | null;
+  onMouseDown: (e: React.MouseEvent, index: number) => void;
+}> = ({ dividerIndex, right = -3, isDragging, onMouseDown }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const isActive = isDragging === dividerIndex;
+
+  return (
+    <div
+      onMouseDown={e => onMouseDown(e, dividerIndex)}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        right,
+        width: 6,
+        cursor: 'col-resize',
+        zIndex: 20,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: isActive ? 'var(--primary-300, rgba(63, 81, 181, 0.15))' : (isHovered ? 'var(--primary-300, rgba(63, 81, 181, 0.1))' : 'transparent'),
+        transition: 'background 0.2s',
+      }}
+    >
+      <div style={{
+        width: 2,
+        height: 40,
+        borderRadius: 1,
+        background: isActive ? 'var(--primary-100)' : (isHovered ? 'var(--primary-200)' : 'var(--bg-300)'),
+        transition: isActive ? 'none' : 'background 0.2s',
+      }} />
+    </div>
+  );
+};
+
 const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
+  const accumulateTokenUsage = (existing: any, delta: any) => {
+    if (!delta) return existing;
+    if (!existing) return delta;
+    return {
+      prompt_tokens: (existing.prompt_tokens || 0) + (delta.prompt_tokens || 0),
+      completion_tokens: (existing.completion_tokens || 0) + (delta.completion_tokens || 0),
+      total_tokens: (existing.total_tokens || 0) + (delta.total_tokens || 0),
+    };
+  };
   const navigate = useNavigate();
+  const { message } = App.useApp();
 
   // 统一格式：将 SessionMessage[] 转换为 LLMMessage[]
-  const convertToLLMMessages = (msgs: any[]): LLMMessage[] => {
-    return msgs.map((msg: any) => {
-      const data: DataBlock[] = msg.data || [];
-      let content = '';
-      let reasoningContent: string | undefined;
-      
-      for (const block of data) {
-        if (block.type === 'content') {
-          content = block.content || '';
-        } else if (block.type === 'reasoning_content') {
-          reasoningContent = block.reasoning_content;
-        }
-      }
-      
-      return {
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant' | 'system',
-        content: content || msg.content || '',
-        reasoning_content: reasoningContent,
-        data,
-        timestamp: msg.created_at || msg.timestamp || new Date().toISOString(),
-        tokens: msg.total_tokens || msg.tokens,
-        agent_id: msg.agent_id,
-        agent_name: msg.agent_name,
-        parent_agent_id: msg.parent_agent_id,
-        status: msg.status,
-      };
-    });
-  };
-
   const {
     sessions,
     currentSessionId,
@@ -120,13 +146,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     setIsWaitingReply,
     currentMsgId,
     setCurrentMsgId,
-    callRecords,
     setCallRecords,
-    addSubagentOutput,
-    updateSubagentOutput,
     setSubagentOutputs,
     clearSubagentOutputs,
-    streamingData,
     editorTabs,
     documentTabs,
     activeEditorTabId,
@@ -138,27 +160,27 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     openAgenticPanel,
     closeAgenticPanel,
     setActiveAgenticTab,
-    addEditorTab,
     updateEditorTab,
     closeEditorTab,
     setActiveEditorTabId,
-    addDocumentTab,
     updateDocumentTab,
     closeDocumentTab,
     setActiveDocumentTabId,
+    openOrNavigateFile,
     currentProject,
     recentProjects,
     canvasData,
     setCanvasData,
     setRecentProjects,
     setCurrentProject,
-    setExpandedReasoning,
-    setExpandedToolCalls,
-    setStreamingExpandedKeys,
-    clearStreamingData,
-    messages,
     setMessages,
-    addMessage,
+    setFileChangesMap,
+    incrementFileChangeRefreshKey,
+    createNewSession: storeCreateNewSession,
+    deleteSession: storeDeleteSession,
+    loadSessionsForProject: storeLoadSessionsForProject,
+    handleExternalFileChanges,
+    clearRecallPreview,
   } = useRunPanelStore();
 
   const {
@@ -171,12 +193,61 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   } = useRunProjectStore();
 
   const streamingDataHook = useStreamingData();
+  const streamingDataHookRef = useRef(streamingDataHook);
+  // 保持streamingDataHookRef最新
+  useEffect(() => {
+    streamingDataHookRef.current = streamingDataHook;
+  }, [streamingDataHook]);
+
   const isConnectedRef = useRef(false);
-  const streamingDataRef = useRef<DataBlock[]>([]);
   const messageAddedRef = useRef<boolean>(false);
   const currentMsgIdRef = useRef<string>('');
-  const fileExplorerActionsRef = useRef<{ refresh: () => void; openNewFileDialog: () => void; openNewFolderDialog: () => void } | null>(null);
-  const autoSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileExplorerActionsRef = useRef<{ refresh: () => void; applyIncrementalChanges: (changes: FileSystemChange[]) => void; openNewFileDialog: () => void; openNewFolderDialog: () => void; navigateToFile: (path: string) => Promise<void> } | null>(null);
+  const isStoppingRef = useRef(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const firstChunkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesLengthRef = useRef(0);
+  const lastStreamActivityRef = useRef<number>(0);
+  const streamActivityCheckRef = useRef<NodeJS.Timeout | null>(null);
+
+  const flowIdRef = useRef<string | null>(null);
+  const projectIdRef = useRef<string | null>(null);
+
+  flowIdRef.current = agenticFlowId || null;
+  projectIdRef.current = currentProject?.id || null;
+
+  useEffect(() => {
+    const unsub = useRunPanelStore.subscribe((state, prevState) => {
+      if (state.currentSessionId === prevState.currentSessionId) return;
+      const fid = flowIdRef.current;
+      const pid = projectIdRef.current;
+      if (!fid || !pid || !state.currentSessionId) return;
+      const key = `soloengine-session-${fid}-${pid}`;
+      localStorage.setItem(key, JSON.stringify({ currentSessionId: state.currentSessionId }));
+    });
+    return unsub;
+  }, []);
+
+  const clearTimeouts = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (firstChunkTimeoutRef.current) {
+      clearTimeout(firstChunkTimeoutRef.current);
+      firstChunkTimeoutRef.current = null;
+    }
+    if (streamActivityCheckRef.current) {
+      clearInterval(streamActivityCheckRef.current);
+      streamActivityCheckRef.current = null;
+    }
+    lastStreamActivityRef.current = 0;
+  }, []);
+
+  const messagesLength = useRunPanelStore(state => state.messages.length);
+  useEffect(() => {
+    messagesLengthRef.current = messagesLength;
+  }, [messagesLength]);
 
   const [recentModalVisible, setRecentModalVisible] = useState(false);
   const [switchingProjectId, setSwitchingProjectId] = useState<string | null>(null);
@@ -184,48 +255,26 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartRatios, setDragStartRatios] = useState<number[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    streamingDataRef.current = streamingData;
-  }, [streamingData]);
+  const messageScrollContainerRef = useRef<HTMLDivElement>(null);
+  const messageListRef = useRef<MessageListHandle>(null);
 
   useEffect(() => {
     currentMsgIdRef.current = currentMsgId;
   }, [currentMsgId]);
 
-  // 加载指定项目的sessions
   const loadSessionsForProject = useCallback(async (projectId: string) => {
     if (!agenticFlowId || !projectId) return;
-    
-    try {
-      const sessionsData = await runApi.getSessions({
-        agentic_flow_id: agenticFlowId,
-        run_project_id: projectId,
-        limit: 50,
-      });
-
-      const extendedSessions = sessionsData.map((s: any) => ({
-        ...s,
-        name: `会话 ${s.id.substring(0, 8)}`,
-        createdAt: s.created_at || new Date().toISOString(),
-        messages: [],
-      }));
-
-      extendedSessions.sort((a: any, b: any) => 
-        new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime()
-      );
-
-      setSessions(extendedSessions);
-    } catch (error) {
-      console.warn('Failed to load sessions:', error);
-    }
-  }, [agenticFlowId, setSessions]);
+    await storeLoadSessionsForProject(agenticFlowId, projectId);
+  }, [agenticFlowId, storeLoadSessionsForProject]);
 
   // 根据currentProject加载sessions（用于初始化）
   const loadSessionsFromBackend = useCallback(async () => {
     if (!agenticFlowId || !currentProject?.id) return;
     await loadSessionsForProject(currentProject.id);
   }, [agenticFlowId, currentProject?.id, loadSessionsForProject]);
+
+  const loadSessionsRef = useRef(loadSessionsFromBackend);
+  loadSessionsRef.current = loadSessionsFromBackend;
 
   useEffect(() => {
     loadCurrentProject(agenticFlowId);
@@ -236,15 +285,24 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   }, [agenticFlowId, loadCurrentProject, loadRecentProjects, setRecentProjects]);
 
+  const prevProjectRef = useRef<{id: string; name: string; folder_path: string} | null>(null);
   useEffect(() => {
     if (runProjectCurrentProject) {
-      setCurrentProject({
+      const newProject = {
         id: runProjectCurrentProject.id,
         name: runProjectCurrentProject.name,
         folder_path: runProjectCurrentProject.folder_path,
-      });
+      };
+      const prev = prevProjectRef.current;
+      if (!prev || prev.id !== newProject.id || prev.name !== newProject.name || prev.folder_path !== newProject.folder_path) {
+        prevProjectRef.current = newProject;
+        setCurrentProject(newProject);
+      }
     } else {
-      setCurrentProject(null);
+      if (prevProjectRef.current !== null) {
+        prevProjectRef.current = null;
+        setCurrentProject(null);
+      }
     }
   }, [runProjectCurrentProject, setCurrentProject]);
 
@@ -263,63 +321,158 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     loadCanvasData();
   }, [agenticFlowId, setCanvasData]);
 
+  const initCounterRef = useRef(0);
+
   useEffect(() => {
     if (!agenticFlowId || !currentProject?.id) return;
 
+    const initId = ++initCounterRef.current;
+
     const init = async () => {
-      await loadSessionsFromBackend();
-      
-      const storedState = localStorage.getItem('run-panel-store');
-      if (storedState) {
+      await loadSessionsRef.current();
+
+      if (initId !== initCounterRef.current) return;
+
+      const key = getSessionStorageKey(agenticFlowId, currentProject.id);
+      const storedData = localStorage.getItem(key);
+      if (storedData) {
         try {
-          const parsed = JSON.parse(storedState);
-          const storedSessionId = parsed.state?.currentSessionId;
-          
+          const { currentSessionId: storedSessionId } = JSON.parse(storedData);
           if (storedSessionId) {
-            try {
-              // API 返回 SessionMessage[] 格式（统一格式）
-              const msgs = await runApi.getSessionMessages(storedSessionId);
-              if (msgs && msgs.length > 0) {
-                setCurrentSessionId(storedSessionId);
-                setMessages(convertToLLMMessages(msgs));
+            const currentSessions = useRunPanelStore.getState().sessions;
+            const isValid = currentSessions.some(s => s.id === storedSessionId);
+            if (isValid) {
+              setCurrentSessionId(storedSessionId);
+              const { messages: restoredMessages, fileChangesMap } = await loadMessages(storedSessionId);
+              if (initId !== initCounterRef.current) return;
+              if (restoredMessages && restoredMessages.length > 0) {
+                setMessages(restoredMessages);
+                setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
               }
-            } catch {
-              setCurrentSessionId(null);
-              setMessages([]);
+            } else {
+              localStorage.removeItem(key);
             }
           }
         } catch (e) {
           console.error('Failed to parse stored session:', e);
+          localStorage.removeItem(key);
         }
       }
     };
 
     init();
-  }, [agenticFlowId, currentProject?.id, loadSessionsFromBackend, setCurrentSessionId, setMessages]);
+  }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setFileChangesMap]);
+
+  const handleExecutionEnd = useCallback((
+    streamingHook: any,
+    messageStatus: 'completed' | 'stopped' | 'error',
+    sessionStatus: string,
+    tokenData: any,
+    errorMessage?: string,
+  ) => {
+    setIsWaitingReply(false);
+    const finalData = streamingHook.finalizeStream();
+    const totalTokens = tokenData?.total_tokens ||
+      (tokenData?.prompt_tokens && tokenData?.completion_tokens
+        ? tokenData.prompt_tokens + tokenData.completion_tokens
+        : undefined);
+
+    if (!messageAddedRef.current) {
+      const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
+      const endMessage: LLMMessage = {
+        id: msgId,
+        role: 'assistant',
+        content: '',
+        data: finalData,
+        timestamp: new Date().toISOString(),
+        status: messageStatus,
+        tokens: totalTokens,
+        error: messageStatus === 'error' ? (errorMessage || '执行失败') : undefined,
+      };
+      setMessages(prev => [...prev, endMessage]);
+      messageAddedRef.current = true;
+
+      if (currentSessionId) {
+        const contentBlock = finalData.find((b: DataBlock) => b.type === 'content' && b.content);
+        const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
+        setSessions(sessionsState => {
+          const updated = sessionsState.map(s =>
+            s.id === currentSessionId
+              ? {
+                  ...s,
+                  status: sessionStatus,
+                  firstAssistantContent: s.firstAssistantContent || firstAssistantContent,
+                  token_usage: accumulateTokenUsage(s.token_usage, tokenData),
+                  updated_at: new Date().toISOString(),
+                  messages: [...(s.messages || []), {
+                    id: endMessage.id,
+                    role: endMessage.role,
+                    content: endMessage.content || '',
+                    reasoning_content: endMessage.reasoning_content,
+                    status: messageStatus,
+                    error: endMessage.error,
+                    data: endMessage.data || [],
+                    message_index: (s.messages?.length || 0),
+                    timestamp: endMessage.timestamp,
+                    created_at: endMessage.timestamp,
+                    tokens: totalTokens,
+                    prompt_tokens: tokenData?.prompt_tokens,
+                    completion_tokens: tokenData?.completion_tokens,
+                    total_tokens: tokenData?.total_tokens,
+                  }]
+                }
+              : s
+          );
+          updated.sort((a: any, b: any) =>
+            new Date(b.updated_at || b.createdAt || '').getTime() - new Date(a.updated_at || a.createdAt || '').getTime()
+          );
+          return updated;
+        });
+      }
+    } else if (currentSessionId) {
+      const contentBlock = finalData.find((b: DataBlock) => b.type === 'content' && b.content);
+      const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
+      setSessions(sessionsState => {
+        const updated = sessionsState.map(s =>
+          s.id === currentSessionId
+            ? { ...s, status: sessionStatus, firstAssistantContent: s.firstAssistantContent || firstAssistantContent, token_usage: accumulateTokenUsage(s.token_usage, tokenData), updated_at: new Date().toISOString() }
+            : s
+        );
+        updated.sort((a: any, b: any) =>
+          new Date(b.updated_at || b.createdAt || '').getTime() - new Date(a.updated_at || a.createdAt || '').getTime()
+        );
+        return updated;
+      });
+    }
+
+    stopRunning();
+    clearTimeouts();
+  }, [setIsWaitingReply, setMessages, setSessions, stopRunning, currentSessionId, clearTimeouts]);
 
   const handleExecutionEvent = useCallback((event: ExecutionEvent) => {
+    const streamingHook = streamingDataHookRef.current;
+
     switch (event.event_type) {
       case 'execution_start':
         setCallRecords([]);
         clearSubagentOutputs();
-        streamingDataHook.resetStream();
+        streamingHook.resetStream();
         messageAddedRef.current = false;
         startRunning();
         setIsWaitingReply(true);
         break;
 
       case 'agent_start':
-        console.log(`Agent started: ${event.agent_name} (${event.agent_id})`);
         break;
 
       case 'agent_complete':
-        console.log(`Agent completed: ${event.agent_name}`);
         break;
 
       case 'tool_call':
         setCallRecords((prev: CallRecord[]) => {
           const callId = event.tool_call_id || event.tool_name || generateId();
-          const existingIndex = prev.findIndex((r: CallRecord) => r.callId === callId && r.type === 'tool');
+          const callType = (event.tool_type || 'tool') as CallType;
+          const existingIndex = prev.findIndex((r: CallRecord) => r.callId === callId && r.type === callType);
           
           if (existingIndex >= 0) {
             const updated = [...prev];
@@ -327,7 +480,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               ...updated[existingIndex],
               status: 'running',
               startTime: updated[existingIndex].startTime || Date.now(),
-              metadata: (event as any).metadata,
+              metadata: event.metadata,
             };
             return updated;
           }
@@ -335,13 +488,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           return [...prev, {
             id: generateId(),
             callId,
-            type: 'tool',
+            type: callType,
             name: event.tool_name || 'unknown',
             status: 'running',
             arguments: event.tool_args,
             timestamp: event.timestamp,
             startTime: Date.now(),
-            metadata: (event as any).metadata,
+            metadata: event.metadata,
           }];
         });
         
@@ -360,118 +513,15 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'tool_result':
         setCallRecords((prev: CallRecord[]) => {
           const callId = event.tool_call_id || event.tool_name;
+          const callType = (event.tool_type || 'tool') as CallType;
           const endTime = Date.now();
           
           return prev.map((r: CallRecord) => {
-            if (r.callId === callId && r.type === 'tool') {
+            if (r.callId === callId && r.type === callType) {
               return {
                 ...r,
                 status: event.error ? 'error' : 'success',
                 result: event.tool_result,
-                error: event.error,
-                endTime,
-                duration: endTime - (r.startTime || endTime),
-              };
-            }
-            return r;
-          });
-        });
-        break;
-
-      case 'skill_call':
-        setCallRecords((prev: CallRecord[]) => {
-          const callId = (event as any).skill_call_id || (event as any).skill_name || generateId();
-          const existingIndex = prev.findIndex((r: CallRecord) => r.callId === callId && r.type === 'skill');
-          
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...updated[existingIndex],
-              status: 'running',
-              startTime: updated[existingIndex].startTime || Date.now(),
-              metadata: (event as any).metadata,
-            };
-            return updated;
-          }
-          
-          return [...prev, {
-            id: generateId(),
-            callId,
-            type: 'skill',
-            name: (event as any).skill_name || 'unknown',
-            status: 'running',
-            arguments: (event as any).skill_args,
-            result: (event as any).skill_result,
-            timestamp: event.timestamp,
-            startTime: Date.now(),
-            metadata: (event as any).metadata,
-          }];
-        });
-        break;
-
-      case 'skill_result':
-        setCallRecords((prev: CallRecord[]) => {
-          const callId = (event as any).skill_call_id || (event as any).skill_name;
-          const endTime = Date.now();
-          
-          return prev.map((r: CallRecord) => {
-            if (r.callId === callId && r.type === 'skill') {
-              return {
-                ...r,
-                status: event.error ? 'error' : 'success',
-                result: (event as any).skill_result,
-                error: event.error,
-                endTime,
-                duration: endTime - (r.startTime || endTime),
-              };
-            }
-            return r;
-          });
-        });
-        break;
-
-      case 'mcp_call':
-        setCallRecords((prev: CallRecord[]) => {
-          const callId = (event as any).mcp_call_id || (event as any).mcp_name || generateId();
-          const existingIndex = prev.findIndex((r: CallRecord) => r.callId === callId && r.type === 'mcp');
-          
-          if (existingIndex >= 0) {
-            const updated = [...prev];
-            updated[existingIndex] = {
-              ...updated[existingIndex],
-              status: 'running',
-              startTime: updated[existingIndex].startTime || Date.now(),
-              metadata: { ...(event as any).metadata, mcp_server: (event as any).mcp_server },
-            };
-            return updated;
-          }
-          
-          return [...prev, {
-            id: generateId(),
-            callId,
-            type: 'mcp',
-            name: (event as any).mcp_name || 'unknown',
-            status: 'running',
-            arguments: (event as any).mcp_args,
-            result: (event as any).mcp_result,
-            timestamp: event.timestamp,
-            startTime: Date.now(),
-            metadata: { ...(event as any).metadata, mcp_server: (event as any).mcp_server },
-          }];
-        });
-        break;
-
-      case 'mcp_result':
-        setCallRecords((prev: CallRecord[]) => {
-          const callId = (event as any).mcp_call_id || (event as any).mcp_name;
-          const endTime = Date.now();
-          
-          return prev.map((r: CallRecord) => {
-            if (r.callId === callId && r.type === 'mcp') {
-              return {
-                ...r,
-                status: event.error ? 'error' : 'success',
-                result: (event as any).mcp_result,
                 error: event.error,
                 endTime,
                 duration: endTime - (r.startTime || endTime),
@@ -532,39 +582,133 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         });
         break;
 
-      case 'stream':
-        const delta = event.delta || {} as any;
-        if ((delta as any).reasoning_content || (delta as any).tool_calls || (delta as any).content) {
-          setIsWaitingReply(false);
-          streamingDataHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name);
+      case 'file_change_preview': {
+        const previewChanges = (event as any).file_changes;
+        if (previewChanges && previewChanges.length > 0) {
+          streamingHook.addFileChangePreview(previewChanges, (event as any).agent_id, (event as any).agent_name);
         }
-        
-        if (event.content !== undefined && event.content_type !== undefined) {
-          setIsWaitingReply(false);
-          streamingDataHook.processLegacyStream(event.content, event.content_type);
+        break;
+      }
+
+      case 'file_changes_ready': {
+        incrementFileChangeRefreshKey();
+        const fcReadyMsgId = (event as any).message_id;
+
+        if (fcReadyMsgId && currentSessionId) {
+          (async () => {
+            try {
+              const { fileChangesApi } = await import('../../services/fileChangesApi');
+              const response = await fileChangesApi.getSessionFileChanges(currentSessionId, {
+                message_ids: [fcReadyMsgId],
+                diff_type: 'net',
+              });
+              const fcApiData = (response as any)?.data || response;
+              if (fcApiData?.changes && fcApiData.changes.length > 0) {
+                const changes = fcApiData.changes.map((c: any) => ({
+                  file_path: c.file_path,
+                  operation: c.operation,
+                  content_type: c.content_type || 'text',
+                  id: c.id,
+                  tool_call_id: c.tool_call_id,
+                  status: c.status,
+                  diff: (c.lines_added || c.lines_removed) ? {
+                    lines_added: c.lines_added ?? 0,
+                    lines_removed: c.lines_removed ?? 0,
+                  } : undefined,
+                }));
+                setFileChangesMap(prev => ({
+                  ...prev,
+                  [fcReadyMsgId]: changes,
+                }));
+              }
+            } catch (fcError) {
+              console.error('[RunPanel] file_changes_ready API call failed:', fcError);
+            }
+          })();
+        }
+        break;
+      }
+
+      case 'file_system_event': {
+        const changes: FileSystemChange[] = (event as any).changes || [];
+        if (changes.length > 0) {
+          fileExplorerActionsRef.current?.applyIncrementalChanges(changes);
+          handleExternalFileChanges(changes);
+        }
+        break;
+      }
+
+      case 'stream':
+        try {
+          const delta = event.delta || {} as any;
+          const hasContent = (delta as any).reasoning_content || (delta as any).tool_calls || (delta as any).content;
+          const hasLegacyContent = event.content !== undefined && event.content_type !== undefined;
+          if (hasContent) {
+            streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name);
+            setIsWaitingReply(false);
+          } else if (hasLegacyContent) {
+            streamingHook.processLegacyStream(event.content!, event.content_type!);
+            setIsWaitingReply(false);
+          }
+        } catch (err) {
+          console.error('[Stream] Error processing stream chunk:', err);
+        }
+        lastStreamActivityRef.current = Date.now();
+        if (firstChunkTimeoutRef.current) {
+          clearTimeout(firstChunkTimeoutRef.current);
+          firstChunkTimeoutRef.current = null;
         }
         break;
 
       case 'execution_complete': {
-        const finalData = streamingDataHook.finalizeStream();
-        if (!messageAddedRef.current && finalData.length > 0) {
-          const assistantMessage: LLMMessage = {
-            id: currentMsgIdRef.current || `msg_${Date.now()}`,
-            role: 'assistant',
-            content: '',
-            data: finalData,
-            timestamp: new Date().toISOString(),
-            status: 'completed',
-          };
+        const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
+
+        if (event.user_message_id) {
           setMessages(prev => {
-            const updatedMessages = [...prev, assistantMessage];
-            
+            const lastUserMsgIdx = prev.reduce((lastIdx, msg, idx) => {
+              if (msg.role === 'user') return idx;
+              return lastIdx;
+            }, -1);
+
+            return prev.map((m, idx) => {
+              if (m.role === 'user' && idx === lastUserMsgIdx && m.id.startsWith('msg_')) {
+                return { ...m, id: event.user_message_id! };
+              }
+              return m;
+            });
+          });
+        }
+
+        handleExecutionEnd(streamingHook, 'completed', 'completed', tokenData);
+        break;
+      }
+
+      case 'message_ids_updated': {
+        if (event.message_ids) {
+          setMessages(prev => {
+            const lastAssistantMsgIdx = prev.reduce((lastIdx, msg, idx) => {
+              if (msg.role === 'assistant') return idx;
+              return lastIdx;
+            }, -1);
+
+            if (lastAssistantMsgIdx === -1) return prev;
+
+            const updatedMessages = prev.map((m, idx) => {
+              if (m.role === 'assistant' && idx === lastAssistantMsgIdx && m.id.startsWith('msg_')) {
+                const mainAgentId = Object.keys(event.message_ids!)[0];
+                const newId = mainAgentId ? event.message_ids![mainAgentId] : undefined;
+                if (newId) {
+                  return { ...m, id: newId };
+                }
+              }
+              return m;
+            });
+
             if (currentSessionId) {
-              setSessions(sessionsState => sessionsState.map(s => 
-                s.id === currentSessionId 
-                  ? { 
-                      ...s, 
-                      status: 'completed',
+              setSessions(sessionsState => sessionsState.map(s =>
+                s.id === currentSessionId
+                  ? {
+                      ...s,
                       messages: updatedMessages.map((m, i): any => ({
                         id: m.id,
                         role: m.role,
@@ -580,80 +724,35 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
                   : s
               ));
             }
-            
+
             return updatedMessages;
           });
-          messageAddedRef.current = true;
-        } else if (currentSessionId) {
-          // 即使没有消息数据，也要更新session状态
-          setSessions(sessionsState => sessionsState.map(s => 
-            s.id === currentSessionId 
-              ? { ...s, status: 'completed' }
-              : s
-          ));
         }
-        stopRunning();
-        setIsWaitingReply(false);
+        break;
+      }
+
+      case 'execution_stopped': {
+        const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
+        handleExecutionEnd(streamingHook, 'stopped', 'cancelled', tokenData);
         break;
       }
 
       case 'execution_cancelled':
       case 'agent_error':
       case 'execution_error': {
-        const finalData = streamingDataHook.finalizeStream();
-        const isCancelled = event.event_type === 'execution_cancelled' || event.status === 'stopped';
+        const isCancelled = event.event_type === 'execution_cancelled';
         const messageStatus = isCancelled ? 'stopped' : 'error';
         const sessionStatus = isCancelled ? 'cancelled' : 'error';
-        
-        if (finalData.length > 0) {
-          const stoppedMessage: LLMMessage = {
-            id: currentMsgIdRef.current || `msg_${Date.now()}`,
-            role: 'assistant',
-            content: '',
-            data: finalData,
-            timestamp: new Date().toISOString(),
-            status: messageStatus,
-          };
-          setMessages(prev => [...prev, stoppedMessage]);
-          
-          if (currentSessionId) {
-            setSessions(sessionsState => sessionsState.map(s => 
-              s.id === currentSessionId 
-                ? { 
-                    ...s, 
-                    status: sessionStatus,
-                    messages: [...(s.messages || []), {
-                      id: stoppedMessage.id,
-                      role: stoppedMessage.role,
-                      content: stoppedMessage.content || '',
-                      reasoning_content: stoppedMessage.reasoning_content,
-                      data: stoppedMessage.data || [],
-                      message_index: (s.messages?.length || 0),
-                      timestamp: stoppedMessage.timestamp,
-                      created_at: stoppedMessage.timestamp,
-                      tokens: stoppedMessage.tokens,
-                    }]
-                  }
-                : s
-            ));
-          }
-        } else if (currentSessionId) {
-          // 即使没有消息数据，也要更新session状态
-          setSessions(sessionsState => sessionsState.map(s => 
-            s.id === currentSessionId 
-              ? { ...s, status: sessionStatus }
-              : s
-          ));
-        }
-        stopRunning();
-        setIsWaitingReply(false);
+        const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
+        const errorMessage = !isCancelled ? (event.error || '执行失败') : undefined;
+        handleExecutionEnd(streamingHook, messageStatus, sessionStatus, tokenData, errorMessage);
         if (!isCancelled) {
           message.error(event.error || '执行失败');
         }
         break;
       }
     }
-  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, streamingDataHook, clearSubagentOutputs, setSubagentOutputs]);
+  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, clearSubagentOutputs, setSubagentOutputs, currentSessionId, incrementFileChangeRefreshKey, clearTimeouts]);
 
   const handleWebSocketMessage = useCallback((msg: any) => {
     if (msg.type === 'execution_result') {
@@ -662,13 +761,19 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   }, [stopRunning, setIsWaitingReply]);
 
+  const handleWebSocketError = useCallback((_error?: any) => {
+    message.error('WebSocket连接错误');
+    stopRunning();
+    setIsWaitingReply(false);
+  }, [stopRunning, setIsWaitingReply]);
+
   const { isConnected, executeFlow, stopFlow } = useRunWebSocket({
     agenticFlowId: agenticFlowId || null,
     sessionId: currentSessionId,
     runProjectId: currentProject?.id || null,
     onMessage: handleWebSocketMessage,
     onEvent: handleExecutionEvent,
-    onError: () => message.error('WebSocket连接错误'),
+    onError: handleWebSocketError,
     autoReconnect: true,
   });
 
@@ -676,29 +781,92 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     isConnectedRef.current = isConnected;
   }, [isConnected]);
 
+  const prevIsConnectedRef = useRef(false);
+
+  const handleWebSocketReconnect = useCallback(async () => {
+    const { isRunning: running, isWaitingReply: waiting, currentSessionId: sessionId } = useRunPanelStore.getState();
+    if (!running && !waiting) return;
+    if (!sessionId) return;
+
+    try {
+      const sessionData = await runApi.getSession(sessionId);
+      const sessionStatus = sessionData?.status;
+
+      if (sessionStatus === 'completed' || sessionStatus === 'failed' || sessionStatus === 'stop') {
+        const finalData = streamingDataHookRef.current.finalizeStream();
+        const tokenData = sessionData?.token_usage;
+        const totalTokens = tokenData?.total_tokens ||
+          (tokenData?.prompt_tokens && tokenData?.completion_tokens
+            ? tokenData.prompt_tokens + tokenData.completion_tokens
+            : undefined);
+
+        if (!messageAddedRef.current) {
+          const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
+          const statusMap: Record<string, string> = {
+            completed: 'completed',
+            failed: 'error',
+            stop: 'stopped',
+          };
+          const assistantMessage: LLMMessage = {
+            id: msgId,
+            role: 'assistant',
+            content: '',
+            data: finalData,
+            timestamp: new Date().toISOString(),
+            status: (statusMap[sessionStatus] || 'completed') as any,
+            tokens: totalTokens,
+          };
+          setMessages(prev => [...prev, assistantMessage]);
+          messageAddedRef.current = true;
+        }
+
+        stopRunning();
+        setIsWaitingReply(false);
+        clearTimeouts();
+
+        try {
+          const { messages: restoredMessages, fileChangesMap } = await loadMessages(sessionId);
+          if (restoredMessages && restoredMessages.length > 0) {
+            setMessages(restoredMessages);
+            setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
+            incrementFileChangeRefreshKey();
+          }
+        } catch {}
+      }
+    } catch (error) {
+      console.warn('[ReconnectCheck] Failed to check session status:', error);
+      stopRunning();
+      setIsWaitingReply(false);
+      clearTimeouts();
+    }
+  }, [stopRunning, setIsWaitingReply, setMessages, setFileChangesMap, incrementFileChangeRefreshKey, clearTimeouts]);
+
+  useEffect(() => {
+    if (isConnected && !prevIsConnectedRef.current) {
+      handleWebSocketReconnect();
+    }
+    prevIsConnectedRef.current = isConnected;
+  }, [isConnected, handleWebSocketReconnect]);
+
   const createNewSession = useCallback(() => {
-    if (!agenticFlowId || !currentProject?.id) {
+    const newSessionId = storeCreateNewSession(agenticFlowId || null, currentProject?.id || null);
+    if (!newSessionId) {
       message.error('请先选择项目和流程');
       return null;
     }
-
-    const newSessionId = crypto.randomUUID();
-    setCurrentSessionId(newSessionId);
-    setMessages([]);
-    setCallRecords([]);
-    streamingDataHook.resetStream();
-
+    streamingDataHookRef.current.resetStream();
     return newSessionId;
-  }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setCallRecords, streamingDataHook]);
+  }, [agenticFlowId, currentProject?.id, storeCreateNewSession]);
 
   const handleSwitchSession = useCallback(async (sessionId: string) => {
     if (currentSessionId === sessionId) {
-      // 即使是当前会话，如果没有消息也需要加载
-      if (messages.length === 0) {
+      if (messagesLengthRef.current === 0) {
         try {
-          const msgs = await runApi.getSessionMessages(sessionId);
-          if (msgs && msgs.length > 0) {
-            setMessages(convertToLLMMessages(msgs));
+          const { messages: restoredMessages, fileChangesMap, rawMessages } = await loadMessages(sessionId);
+          if (restoredMessages && restoredMessages.length > 0) {
+            setMessages(restoredMessages);
+            setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
+            setSessions(sessions.map(s => s.id === sessionId ? { ...s, messages: rawMessages, fileChangesMap } : s));
           }
         } catch (error) {
           console.warn('Failed to load session messages:', error);
@@ -708,50 +876,32 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
 
     setCurrentSessionId(sessionId);
-    setMessages([]);
     setCallRecords([]);
-    streamingDataHook.resetStream();
+    streamingDataHookRef.current.resetStream();
+    setMessages([]);
+    clearRecallPreview();
 
-    const session = sessions.find(s => s.id === sessionId);
-    
-    if (session && session.messages && session.messages.length > 0) {
-      setMessages(convertToLLMMessages(session.messages));
-    } else {
-      try {
-        // API 返回 SessionMessage[] 格式（统一格式）
-        const msgs = await runApi.getSessionMessages(sessionId);
-        if (msgs && msgs.length > 0) {
-          const restoredMessages = convertToLLMMessages(msgs);
-          setMessages(restoredMessages);
-          
-          // 更新 session 缓存
-          setSessions(prev => prev.map(s => 
-            s.id === sessionId ? { ...s, messages: msgs } : s
-          ));
-        }
-      } catch (error) {
-        console.warn('Failed to load session messages:', error);
+    try {
+      const { messages: restoredMessages, fileChangesMap, rawMessages } = await loadMessages(sessionId);
+      if (restoredMessages && restoredMessages.length > 0) {
+        setMessages(restoredMessages);
+        setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
+        setSessions(sessions.map(s => s.id === sessionId ? { ...s, messages: rawMessages, fileChangesMap } : s));
+      } else {
+        setMessages([]);
       }
+    } catch (error) {
+      console.warn('Failed to load session messages:', error);
+      setMessages([]);
     }
-  }, [currentSessionId, setCurrentSessionId, setMessages, setCallRecords, streamingDataHook, sessions, setSessions, messages.length]);
+  }, [currentSessionId, setCurrentSessionId, setMessages, setCallRecords, sessions, setSessions, setFileChangesMap]);
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      await runApi.deleteSession(sessionId);
-      const newSessions = sessions.filter(s => s.id !== sessionId);
-      setSessions(newSessions);
-      
-      if (currentSessionId === sessionId) {
-        if (newSessions.length > 0) {
-          setCurrentSessionId(newSessions[0].id);
-        } else {
-          setCurrentSessionId(null);
-        }
-        setMessages([]);
-      }
+    const success = await storeDeleteSession(sessionId, agenticFlowId, currentProject?.id);
+    if (success) {
       message.success('会话已删除');
-    } catch (error) {
+    } else {
       message.error('删除会话失败');
     }
   };
@@ -769,9 +919,6 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
    * 5. 触发 WebSocket 重新连接（通过依赖项变化自动触发）
    */
   const resetSessionForNewProject = useCallback(async () => {
-    console.log('[RunPanel] Resetting session for new project...');
-
-    // 1. 重置 session ID（这会触发 useRunWebSocket 断开旧连接）
     setCurrentSessionId(null);
 
     // 2. 清空消息列表
@@ -785,16 +932,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     clearSubagentOutputs();
 
     // 5. 重置流式数据
-    streamingDataHook.resetStream();
-
-    console.log('[RunPanel] Session reset completed');
+    streamingDataHookRef.current.resetStream();
   }, [
     setCurrentSessionId,
     setMessages,
     setSessions,
     setCallRecords,
-    clearSubagentOutputs,
-    streamingDataHook
+    clearSubagentOutputs
   ]);
 
   const handleSelectFolder = async () => {
@@ -804,6 +948,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
     const result = await openNativeFolderDialog(agenticFlowId);
     if (result?.project_id) {
+      if (currentProject?.id === result.project_id) {
+        message.info('已在当前项目中');
+        return;
+      }
+
       message.success(`已选择项目: ${result.project_name}`);
 
       // ✅ 先更新currentProject，确保后续操作使用正确的项目
@@ -828,6 +977,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     try {
       const result = await selectOrCreateProject(agenticFlowId, project.folder_path);
       if (result) {
+        if (currentProject?.id === result.project_id) {
+          message.info(`当前已处于工作区: ${project.project_name}`);
+          return;
+        }
+
         message.success(`已切换到工作区: ${project.project_name}`);
         setRecentModalVisible(false);
 
@@ -856,6 +1010,15 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       return;
     }
 
+    // 添加运行状态检查
+    if (isRunning || isWaitingReply) {
+      message.warning('请等待当前对话完成后再发送新消息');
+      return;
+    }
+
+    // 保存输入文本，避免在异步操作中被清空
+    const currentInputText = inputText;
+
     let sessionId = currentSessionId;
     let needWaitConnection = false;
     const existingSession = sessions.find(s => s.id === sessionId);
@@ -867,22 +1030,23 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       setSessions(prev => [{
         id: sessionId!,
         status: 'pending',
-        name: `会话 ${prev.length + 1}`,
+        name: '新任务',
         createdAt: new Date().toISOString(),
         messages: [],
       }, ...prev]);
     }
 
     const userMessage: LLMMessage = {
-      id: `msg_${Date.now()}`,
+      id: `msg_user_${Date.now()}`,
       role: 'user',
-      content: inputText,
+      content: currentInputText,
       timestamp: new Date().toISOString(),
     };
 
-    const assistantMsgId = `msg_${Date.now()}`;
+    const assistantMsgId = `msg_asst_${Date.now()}`;
     setCurrentMsgId(assistantMsgId);
-    streamingDataHook.setCurrentMsgIdRef(assistantMsgId);
+    currentMsgIdRef.current = assistantMsgId;
+    streamingDataHookRef.current.setCurrentMsgIdRef(assistantMsgId);
     setMessages(prev => [...prev, userMessage]);
     
     setSessions(prev => prev.map(s => 
@@ -908,6 +1072,10 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     startRunning();
     setIsWaitingReply(true);
 
+    setTimeout(() => {
+      messageListRef.current?.scrollToBottom();
+    }, 100);
+
     try {
       let currentCanvasData = canvasData;
       if (!currentCanvasData?.nodes?.length) {
@@ -929,10 +1097,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         await new Promise<void>((resolve) => {
           const checkConnection = () => {
             if (isConnectedRef.current) {
-              console.log('WebSocket connected, proceeding with message send');
               resolve();
             } else if (Date.now() - startTime > maxWaitTime) {
-              console.log('WebSocket connection timeout, falling back');
               resolve();
             } else {
               setTimeout(checkConnection, 100);
@@ -943,92 +1109,151 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       }
 
       if (isConnectedRef.current) {
-        await executeFlow(currentCanvasData, inputText, agenticFlowId, sessionId, currentProject?.id);
+        // 从canvasData获取第一个agent节点的llm_config_id
+        await executeFlow(currentCanvasData, currentInputText, agenticFlowId, sessionId, currentProject?.id);
+
+        timeoutRef.current = setTimeout(() => {
+          const currentIsRunning = useRunPanelStore.getState().isRunning;
+          if (currentIsRunning) {
+            message.error('执行超时，请重试');
+            stopFlow();
+            stopRunning();
+          }
+        }, WEBSOCKET_CONFIG.EXECUTION_TIMEOUT * 1000);
+
+        firstChunkTimeoutRef.current = setTimeout(() => {
+          const currentIsWaiting = useRunPanelStore.getState().isWaitingReply;
+          if (currentIsWaiting) {
+            message.error('等待响应超时，请检查后端服务是否正常');
+            stopFlow();
+            stopRunning();
+          }
+        }, WEBSOCKET_CONFIG.RESPONSE_TIMEOUT * 1000);
+
+        lastStreamActivityRef.current = Date.now();
+        streamActivityCheckRef.current = setInterval(() => {
+          const { isRunning: checkRunning } = useRunPanelStore.getState();
+          if (checkRunning && lastStreamActivityRef.current > 0) {
+            const elapsed = Date.now() - lastStreamActivityRef.current;
+            if (elapsed > 60000) {
+              stopFlow();
+              handleWebSocketReconnect();
+            }
+          }
+        }, 30000);
       }
     } catch (error: any) {
       message.error('发送消息失败: ' + (error.response?.data?.detail || error.message));
       setMessages(prev => prev.filter(m => m.id !== userMessage.id));
-    } finally {
       stopRunning();
       setIsWaitingReply(false);
     }
   };
 
   const handleStopExecution = async () => {
-    await stopFlow();
-    stopRunning();
-    setIsWaitingReply(false);
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
+
+    const finalizeAndStop = () => {
+      const finalData = streamingDataHookRef.current.finalizeStream();
+      if (!messageAddedRef.current && finalData.length > 0) {
+        const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
+        const stoppedMessage: LLMMessage = {
+          id: msgId,
+          role: 'assistant',
+          content: '',
+          data: finalData,
+          timestamp: new Date().toISOString(),
+          status: 'stopped',
+        };
+        setMessages(prev => [...prev, stoppedMessage]);
+        messageAddedRef.current = true;
+      }
+      stopRunning();
+      setIsWaitingReply(false);
+      clearTimeouts();
+    };
+
+    try {
+      const sent = await stopFlow();
+      stopRunning();
+      setIsWaitingReply(false);
+      clearTimeouts();
+      if (sent) {
+        setTimeout(() => {
+          const stillRunning = useRunPanelStore.getState().isRunning || useRunPanelStore.getState().isWaitingReply;
+          if (stillRunning) {
+            finalizeAndStop();
+          }
+        }, 3000);
+      } else {
+        finalizeAndStop();
+      }
+    } catch {
+      finalizeAndStop();
+    } finally {
+      setTimeout(() => {
+        isStoppingRef.current = false;
+      }, 500);
+    }
   };
 
   const handleFileSelect = async (file: FileInfo) => {
     const isCode = isCodeFile(file.name);
     const isBinary = isBinaryFile(file.name);
-    const tabId = `tab_${file.path}`;
+    const projectFolder = currentProject?.folder_path;
+    const resolvedPath = resolveFilePath(file.path, projectFolder);
 
-    if (isCode) {
-      const existingTab = editorTabs.find(t => t.path === file.path);
-      if (existingTab) {
-        setActiveEditorTabId(existingTab.id);
-        openAgenticPanel('editor');
-        return;
-      }
+    const result = openOrNavigateFile({
+      filePath: resolvedPath,
+      fileName: file.name,
+      isCode,
+      isBinary,
+      projectFolderPath: projectFolder ?? null,
+    });
 
-      openAgenticPanel('editor');
-      
-      const loadingTab: FileTab = {
-        id: tabId,
-        name: file.name,
-        path: file.path,
-        content: '',
-        isModified: false,
-        isLoading: true,
-        isBinary,
-        type: 'editor',
-      };
-      addEditorTab(loadingTab);
-      setActiveEditorTabId(tabId);
+    if (result.existed) return;
 
-      try {
-        const response = await runProjectApi.readFile(file.path);
-        if (response.code === 200) {
-          updateEditorTab(tabId, { content: response.data.content, isLoading: false });
+    try {
+      const response = await runProjectApi.readFile(resolvedPath);
+      if (response.code === 200) {
+        if (isCode) {
+          updateEditorTab(result.tab.id, { content: response.data.content, isLoading: false });
+        } else {
+          updateDocumentTab(result.tab.id, { content: response.data.content, isLoading: false });
         }
-      } catch (error) {
-        updateEditorTab(tabId, { content: `无法加载文件: ${error}`, isLoading: false });
       }
-    } else {
-      const existingTab = documentTabs.find(t => t.path === file.path);
-      if (existingTab) {
-        setActiveDocumentTabId(existingTab.id);
-        openAgenticPanel('document');
-        return;
-      }
-
-      openAgenticPanel('document');
-      
-      const loadingTab: FileTab = {
-        id: tabId,
-        name: file.name,
-        path: file.path,
-        content: '',
-        isModified: false,
-        isLoading: true,
-        isBinary,
-        type: 'document',
-      };
-      addDocumentTab(loadingTab);
-      setActiveDocumentTabId(tabId);
-
-      try {
-        const response = await runProjectApi.readFile(file.path);
-        if (response.code === 200) {
-          updateDocumentTab(tabId, { content: response.data.content, isLoading: false });
-        }
-      } catch (error) {
-        updateDocumentTab(tabId, { content: `无法加载文件: ${error}`, isLoading: false });
+    } catch (error) {
+      if (isCode) {
+        updateEditorTab(result.tab.id, { content: `无法加载文件: ${error}`, isLoading: false });
+      } else {
+        updateDocumentTab(result.tab.id, { content: `无法加载文件: ${error}`, isLoading: false });
       }
     }
   };
+
+  const handleFileClickByPath = (filePath: string) => {
+    const name = filePath.split(/[\\/]/).pop() || filePath;
+    const projectFolder = currentProject?.folder_path;
+    const resolvedPath = resolveFilePath(filePath, projectFolder);
+    handleFileSelect({ name, path: resolvedPath, is_dir: false, size: 0, modified: new Date().toISOString() });
+  };
+
+  const toRelativePath = useCallback((absolutePath: string): string => {
+    const projectFolder = currentProject?.folder_path;
+    if (!projectFolder) return absolutePath;
+    const pf = projectFolder.replace(/\\/g, '/').replace(/\/+$/, '');
+    const tp = absolutePath.replace(/\\/g, '/');
+    if (tp.startsWith(pf + '/')) return tp.slice(pf.length + 1);
+    return absolutePath;
+  }, [currentProject?.folder_path]);
+
+  useEffect(() => {
+    const tab = editorTabs.find(t => t.id === activeEditorTabId);
+    if (tab && tab.path) {
+      fileExplorerActionsRef.current?.navigateToFile(toRelativePath(tab.path));
+    }
+  }, [activeEditorTabId, editorTabs]);
 
   const handleEditorContentChange = (tabId: string, content: string) => {
     updateEditorTab(tabId, { content, isModified: true });
@@ -1101,32 +1326,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   ];
 
   const totalRatio = panelRatios.reduce((a, b) => a + b, 0);
-  const dividerStyle: React.CSSProperties = {
-    position: 'absolute', top: 0, bottom: 0, width: 6, cursor: 'col-resize', zIndex: 20,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-  };
-  const dividerLineStyle: React.CSSProperties = {
-    width: 2, height: 40, borderRadius: 1,
-    background: isDragging !== null ? 'var(--primary-100)' : 'var(--bg-300)',
-    transition: isDragging !== null ? 'none' : 'background 0.2s',
-  };
 
   const truncatePath = (path: string, maxLength = 40) => {
     if (path.length <= maxLength) return path;
     const parts = path.split(/[/\\]/);
     return parts.length <= 2 ? '...' + path.slice(-(maxLength - 3)) : '.../' + parts.slice(-2).join('/');
-  };
-
-  const formatSmartTime = (dateStr?: string) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    if (date.toDateString() === now.toDateString()) return `${hours}:${minutes}`;
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
-    return date.getFullYear() === now.getFullYear() ? `${month}月${day}日 ${hours}:${minutes}` : `${date.getFullYear()}年${month}月${day}日 ${hours}:${minutes}`;
   };
 
   return (
@@ -1135,22 +1339,23 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       <Layout style={{ height: '100%', background: 'var(--bg-100)' }}>
         <Header style={{ 
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'linear-gradient(180deg, var(--sidebar-bg) 0%, rgba(15, 23, 42, 0.98) 100%)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.06)', padding: '0 20px', height: '52px', backdropFilter: 'blur(12px)',
+          background: 'var(--sidebar-bg)',
+          padding: '0 24px', height: 56,
+          position: 'sticky', top: 0, zIndex: 100,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div onClick={handleGoHome} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '6px 10px', borderRadius: 8 }}>
-              <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg, var(--primary-100) 0%, var(--primary-200) 100%)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)' }}>SE</div>
-              <div style={{ color: '#fff', fontSize: 15, fontWeight: 600 }}>SoloEngine</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 180 }}>
+            <div onClick={handleGoHome} style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+              <img src="/logo.png" alt="SoloEngine" style={{ width: 32, height: 32, backgroundColor: 'white', borderRadius: 8, padding: 2, objectFit: 'contain' }} />
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: 600 }}>SoloEngine</Text>
             </div>
             <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.1)', borderRadius: 1 }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
               <LockOutlined style={{ fontSize: 12, color: 'var(--success)' }} />
               <Text style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.6)' }}>安全沙箱</Text>
             </div>
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180, justifyContent: 'flex-end' }}>
             {currentProject ? (
               <Dropdown menu={{ items: projectMenuItems }} trigger={['click']} placement="bottomRight">
                 <Button type="text" icon={<FolderOpenOutlined style={{ color: 'rgba(255, 255, 255, 0.7)' }} />} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', height: 34, borderRadius: 8, background: 'rgba(255, 255, 255, 0.06)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.85)', fontWeight: 500 }}>
@@ -1174,18 +1379,20 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               onDeleteSession={handleDeleteSession}
               onCreateSession={createNewSession}
             />
-            <div onMouseDown={e => handleMouseDown(e, 0)} style={{ ...dividerStyle, right: -3 }}><div style={dividerLineStyle} /></div>
+            <ResizableDivider dividerIndex={0} isDragging={isDragging} onMouseDown={handleMouseDown} />
           </div>
 
-          <div style={{ width: `${(panelRatios[1] / totalRatio) * 100}%`, background: 'var(--bg-100)', display: 'flex', flexDirection: 'column', flexShrink: 0, borderRight: '1px solid var(--bg-300)' }}>
-            <div style={{ flex: 1, overflow: 'auto', overflowX: 'hidden', padding: 16, display: 'flex', flexDirection: 'column', background: 'var(--bg-100)', minHeight: 0 }}>
-              <MessageList
-                messages={messages}
-                streamingData={streamingData}
-                isWaitingReply={isWaitingReply}
-                currentMsgId={currentMsgId}
-                currentMsgIdRef={streamingDataHook.currentMsgIdRef}
-              />
+          <div style={{ width: `${(panelRatios[1] / totalRatio) * 100}%`, position: 'relative', background: 'var(--bg-100)', display: 'flex', flexDirection: 'column', flexShrink: 0, borderRight: '1px solid var(--bg-300)' }}>
+            <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', isolation: 'isolate' }}>
+              <div ref={messageScrollContainerRef} style={{ flex: 1, overflow: 'auto', overflowX: 'hidden', padding: 16, display: 'flex', flexDirection: 'column', background: 'var(--bg-100)', minHeight: 0 }}>
+                <MessageList
+                  ref={messageListRef}
+                  isWaitingReply={isWaitingReply}
+                  scrollContainerRef={messageScrollContainerRef}
+                  onFileClick={handleFileClickByPath}
+                />
+              </div>
+              <ScrollNavigationButtons containerRef={messageScrollContainerRef} messageListRef={messageListRef} />
             </div>
             <MessageInput
               value={inputText}
@@ -1195,7 +1402,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               isRunning={isRunning || isWaitingReply}
               disabled={!agenticFlowId || !currentProject?.id}
             />
-            <div onMouseDown={e => handleMouseDown(e, 1)} style={{ ...dividerStyle, right: -3 }}><div style={dividerLineStyle} /></div>
+            <ResizableDivider dividerIndex={1} isDragging={isDragging} onMouseDown={handleMouseDown} />
           </div>
 
           <div style={{ width: `${(panelRatios[2] / totalRatio) * 100}%`, position: 'relative', flexShrink: 0 }}>
@@ -1217,7 +1424,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               onDocumentContentChange={handleDocumentContentChange}
               onAutoSave={handleAutoSave}
             />
-            <div onMouseDown={e => handleMouseDown(e, 2)} style={{ ...dividerStyle, right: -3 }}><div style={dividerLineStyle} /></div>
+            <ResizableDivider dividerIndex={2} isDragging={isDragging} onMouseDown={handleMouseDown} />
           </div>
 
           <div style={{ width: `${(panelRatios[3] / totalRatio) * 100}%`, background: 'var(--bg-100)', display: 'flex', flexDirection: 'column', position: 'relative', flexShrink: 0 }}>
@@ -1233,7 +1440,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             </div>
             <div style={{ flex: 1, overflow: 'auto' }}>
               {currentProject ? (
-                <FileExplorer onFileSelect={handleFileSelect} onFileEdit={handleFileSelect} onActionsReady={actions => { fileExplorerActionsRef.current = actions; }} />
+                <FileExplorer onFileSelect={handleFileSelect} onFileEdit={handleFileSelect} onActionsReady={actions => { fileExplorerActionsRef.current = actions; const tab = editorTabs.find(t => t.id === activeEditorTabId); if (tab && tab.path) actions.navigateToFile(toRelativePath(tab.path)); }} />
               ) : (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}>
                   <div style={{ width: 48, height: 48, borderRadius: 12, background: 'var(--bg-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 10 }}><FolderOutlined style={{ fontSize: 20, color: 'var(--text-300)' }} /></div>
@@ -1258,6 +1465,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             )}
           </Spin>
         </Modal>
+
       </Layout>
     </>
   );
@@ -1272,5 +1480,34 @@ const isBinaryFile = (fileName: string): boolean => {
   const binaryExtensions = ['pyc', 'pyo', 'pyd', 'exe', 'dll', 'so', 'dylib', 'bin', 'dat', 'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'webp', 'mp3', 'mp4', 'wav', 'avi', 'mov', 'mkv', 'flv', 'wmv', 'zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'ttf', 'otf', 'woff', 'woff2', 'eot', 'class', 'jar', 'war', 'ear', 'node_modules', 'lock', 'sqlite', 'db'];
   return binaryExtensions.includes(fileName.split('.').pop()?.toLowerCase() || '');
 };
+
+function safeJoinPath(base: string, ...parts: string[]): string {
+  const segments = base.replace(/\\/g, '/').replace(/\/+$/, '').split('/');
+  for (const part of parts) {
+    const partSegments = part.replace(/\\/g, '/').replace(/\/+$/, '').split('/');
+    for (const seg of partSegments) {
+      if (seg === '..') {
+        if (segments.length > 0) segments.pop();
+      } else if (seg !== '.' && seg !== '') {
+        segments.push(seg);
+      }
+    }
+  }
+  return segments.join('/');
+}
+
+function resolveFilePath(filePath: string, projectFolderPath?: string | null): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (/^[a-zA-Z]:\//.test(normalized)) {
+    return normalized;
+  }
+  if (normalized.startsWith('/')) {
+    return normalized;
+  }
+  if (!projectFolderPath) {
+    return normalized;
+  }
+  return safeJoinPath(projectFolderPath, normalized);
+}
 
 export default RunPanel;

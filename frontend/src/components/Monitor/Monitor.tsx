@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal, List, Tag, Typography, Progress, Space } from 'antd';
 import { CheckCircleOutlined, SyncOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { WebSocketEvent } from '../../types/canvas';
+import { now } from '../../utils/timezone';
 
 const { Text } = Typography;
 
@@ -28,7 +29,7 @@ const Monitor: React.FC<MonitorProps> = ({ visible, onClose }) => {
       nodeType: event.node_id?.split('_')[0] || 'unknown',
       status: event.status === 'completed' ? 'completed' : 'running',
       message: event.message || '',
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: now('HH:mm:ss'),
     };
 
     setSteps((prev) => {

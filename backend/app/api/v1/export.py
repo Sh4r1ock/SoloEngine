@@ -36,13 +36,13 @@ SoloEngine : 项目导出/导入API模块
 """
 
 import json
-import uuid
 import zipfile
 import io
 import os
 import logging
 from datetime import datetime
-from typing import Optional, List
+from zoneinfo import ZoneInfo
+from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Response, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -50,6 +50,7 @@ from pydantic import BaseModel, Field
 from .auth import get_current_user
 from ...core.database import UserModel as User
 from ...core.data_paths import DataPaths
+from ...core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ async def export_project(
 
     metadata = ExportMetadata(
         project_name=project_name,
-        exported_at=datetime.now().isoformat(),
+        exported_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
         exported_by=current_user.username,
     )
 

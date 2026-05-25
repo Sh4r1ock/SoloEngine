@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Space, Typography, Empty, Spin, Modal, Input, message, Tag } from 'antd';
+import { Card, Button, Space, Typography, Empty, Spin, Modal, Input, App, Tag } from 'antd';
 import { PlusOutlined, FolderOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { localStorageService } from '../../services/localStorage';
+import { formatSmartTime } from '../../utils/timezone';
 
 const { Title, Text } = Typography;
 
@@ -15,6 +16,7 @@ interface Project {
 }
 
 const ProjectList: React.FC = () => {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -81,7 +83,7 @@ const ProjectList: React.FC = () => {
       cancelText: '取消',
       onOk: async () => {
         try {
-          await localStorageService.deleteFlow(projectName);
+          await localStorageService.deleteFlowFromServer(projectName);
           message.success('项目已删除');
           loadProjects();
         } catch (error) {
@@ -98,21 +100,6 @@ const ProjectList: React.FC = () => {
    * @param {string} dateString - ISO日期字符串
    * @returns {string} 格式化后的日期字符串
    */
-  const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '未知';
-    }
-  };
-
   return (
     <div style={{ padding: '24px' }}>
       <div style={{
@@ -163,7 +150,7 @@ const ProjectList: React.FC = () => {
                 borderRadius: '12px',
                 boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
               }}
-              bodyStyle={{ padding: '20px' }}
+              styles={{ body: { padding: '20px' } }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
@@ -185,7 +172,7 @@ const ProjectList: React.FC = () => {
                     fontSize: '12px'
                   }}>
                     <ClockCircleOutlined />
-                    <span>更新于 {formatDate(project.updatedAt)}</span>
+                    <span>更新于 {formatSmartTime(project.updatedAt)}</span>
                   </div>
                 </div>
                 

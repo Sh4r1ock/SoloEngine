@@ -100,9 +100,11 @@ class SoloAgentConfig:
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     temperature: float = 0.7
-    max_tokens: int = 4096
-    frequency_penalty: float = 0.5
-    presence_penalty: float = 0.5
+    max_tokens: int = 128000
+    top_p: float = 1.0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    timeout: int = 60
     
     agent_type: str = "custom"
     
@@ -141,9 +143,11 @@ class SoloAgentConfig:
             api_key=data.get("api_key"),
             base_url=data.get("base_url"),
             temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens", 4096),
-            frequency_penalty=data.get("frequency_penalty", 0.5),
-            presence_penalty=data.get("presence_penalty", 0.5),
+            max_tokens=data.get("max_tokens", 128000),
+            top_p=data.get("top_p", 1.0),
+            frequency_penalty=data.get("frequency_penalty", 0.0),
+            presence_penalty=data.get("presence_penalty", 0.0),
+            timeout=data.get("timeout", 60),
             agent_type=data.get("agentType", data.get("agent_type", "custom")),
             work_dir=data.get("work_dir"),
             extra=data.get("extra", {}),
@@ -173,8 +177,10 @@ class SoloAgentConfig:
             "base_url": self.base_url,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "top_p": self.top_p,
             "frequency_penalty": self.frequency_penalty,
             "presence_penalty": self.presence_penalty,
+            "timeout": self.timeout,
             "agent_type": self.agent_type,
             "work_dir": self.work_dir,
             "extra": self.extra,

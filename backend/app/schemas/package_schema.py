@@ -31,6 +31,8 @@ SoloEngine : 包格式定义模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from enum import Enum
 
 
@@ -88,7 +90,7 @@ class PackageManifest:
     runtime: RuntimeType = RuntimeType.PYTHON
     dependencies: List[PackageDependency] = field(default_factory=list)
     environment_vars: Dict[str, str] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -153,7 +155,7 @@ class PackageResult:
     files: List[PackageFile] = field(default_factory=list)
     manifest: Optional[PackageManifest] = None
     error: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {

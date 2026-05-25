@@ -1,0 +1,124 @@
+.session-list-container {
+  background: var(--bg-200);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  flex-shrink: 0;
+  border-right: 1px solid var(--bg-300);
+  height: 100%;
+}
+
+.session-list-count {
+  margin-top: 8px;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-list-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 0 6px 8px;
+  scrollbar-gutter: stable;
+}
+
+.session-list-empty {
+  padding: 32px 12px;
+  text-align: center;
+}
+
+.session-list-empty-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--bg-300), var(--bg-200));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 14px;
+  border: 1px solid var(--bg-300);
+}
+
+.session-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.session-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-100);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.1s ease;
+  border: 1px solid transparent;
+}
+
+.session-card:hover {
+  background: var(--bg-300);
+}
+
+.session-card-active {
+  background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+.session-card-active:hover {
+  background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
+}
+
+.session-card-content {
+  overflow: hidden;
+  flex: 1;
+}
+
+.session-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.session-card-title {
+  font-weight: 450;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card-title-active {
+  font-weight: 600;
+}
+
+.session-card-meta {
+  font-size: 11px;
+  opacity: 0.65;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-card-delete {
+  opacity: 0.5;
+  color: var(--text-300) !important;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  min-width: 22px;
+}
+
+.session-card-delete-active {
+  opacity: 0.9;
+  color: #fff !important;
+}

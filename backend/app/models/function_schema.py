@@ -195,7 +195,7 @@ class ToolCall:
     name: str
     arguments: Dict[str, Any]
     result: Optional[Any] = None
-    error: Optional[str] = None
+    error_message: Optional[str] = None
     status: Literal["pending", "running", "success", "error"] = "pending"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -205,7 +205,7 @@ class ToolCall:
             "name": self.name,
             "arguments": self.arguments,
             "result": self.result,
-            "error": self.error,
+            "error_message": self.error_message,
             "status": self.status,
         }
 

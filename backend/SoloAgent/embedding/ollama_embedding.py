@@ -30,6 +30,8 @@ SoloEngine : Ollama文本嵌入模型模块
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from typing import List, Any
 
 from .embedding_response import EmbeddingResponse
@@ -149,9 +151,9 @@ class OllamaTextEmbedding(EmbeddingModelBase):
                     source="cache",
                 )
 
-        start_time = datetime.now()
+        start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         response = await self.client.embed(**kwargs)
-        time = (datetime.now() - start_time).total_seconds()
+        time = (datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_time).total_seconds()
 
         if self.embedding_cache:
             await self.embedding_cache.store(

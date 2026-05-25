@@ -25,7 +25,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Typography, Space, message, Layout } from 'antd';
+import { Form, Input, Button, Typography, Space, App, Layout } from 'antd';
 import { UserOutlined, LockOutlined, LoginOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../store/authStore';
 
@@ -33,6 +33,7 @@ const { Title, Text } = Typography;
 const { Content } = Layout;
 
 const LoginPage: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuthStore();

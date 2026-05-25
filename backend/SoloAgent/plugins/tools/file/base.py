@@ -16,56 +16,31 @@ SoloEngine : 文件工具基类模块，提供文件操作工具的公共功能
 """
 
 import os
-from typing import Dict, Any, Optional
+from contextvars import ContextVar
 
 from ....exception import AgentOrientedExceptionBase
 
+_file_tool_working_dir: ContextVar[str] = ContextVar('_file_tool_working_dir', default='')
+
+
+def set_file_tool_working_dir(working_dir: str) -> None:
+    _file_tool_working_dir.set(working_dir)
+
+
+def get_file_tool_working_dir() -> str:
+    return _file_tool_working_dir.get()
+
 
 class FileToolError(AgentOrientedExceptionBase):
-    """文件工具错误基类"""
     pass
 
 
 class BaseFileTool:
-    """
-    文件工具基类。
-    
-    提供文件操作工具的公共功能，包括路径验证、目录创建等。
-    
-    核心功能：
-        1. 路径验证：确保路径为绝对路径
-        2. 目录创建：自动创建父目录
-        3. 错误处理：统一的异常处理
-    
-    Example:
-        >>> class MyFileTool(BaseFileTool):
-        ...     def execute(self, path: str):
-        ...         self.validate_absolute_path(path)
-        ...         self.ensure_directory_exists(path)
-        ...         # 执行文件操作
-    """
-    
+
     @staticmethod
     def validate_absolute_path(path: str) -> str:
-        """
-        验证路径，如果是相对路径则结合当前工作目录转换为绝对路径。
-        
-        Args:
-            path (str): 要验证的路径。
-        
-        Returns:
-            str: 绝对路径。
-        
-        Raises:
-            FileToolError: 当路径无效时抛出。
-        
-        Example:
-            >>> BaseFileTool.validate_absolute_path("/home/user/file.txt")  # Linux
-            >>> BaseFileTool.validate_absolute_path("C:\\Users\\file.txt")  # Windows
-            >>> BaseFileTool.validate_absolute_path("relative/path")  # 转换为绝对路径
-        """
         if not os.path.isabs(path):
-            work_dir = os.getcwd()
+            work_dir = get_file_tool_working_dir() or os.getcwd()
             path = os.path.join(work_dir, path)
             path = os.path.normpath(path)
         return path

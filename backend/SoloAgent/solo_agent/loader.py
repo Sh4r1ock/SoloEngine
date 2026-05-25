@@ -31,7 +31,7 @@ import json
 import logging
 import re
 import sys
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -72,33 +72,13 @@ class ConfigLoader:
         user_id: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 2048,
         temperature: float = 0.7,
-        frequency_penalty: float = 0.5,
-        presence_penalty: float = 0.5,
+        top_p: float = 1.0,
+        frequency_penalty: float = 0.0,
+        presence_penalty: float = 0.0,
+        timeout: int = 60,
     ) -> Dict[str, Any]:
-        """
-        加载LLM配置
-        
-        配置优先级（从高到低）：
-        1. 直接传入的参数
-        2. 数据库中的用户配置
-        3. 默认配置
-        
-        Args:
-            provider: LLM提供商名称
-            model: 模型名称
-            user_id: 用户ID，用于加载用户配置
-            api_key: API密钥
-            base_url: API基础URL
-            max_tokens: 最大token数
-            temperature: 温度参数
-            frequency_penalty: 频率惩罚
-            presence_penalty: 存在惩罚
-        
-        Returns:
-            Dict[str, Any]: 完整的LLM配置字典
-        """
         config = {
             "provider": provider,
             "model": model,
@@ -106,8 +86,10 @@ class ConfigLoader:
             "base_url": base_url,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            "top_p": top_p,
             "frequency_penalty": frequency_penalty,
             "presence_penalty": presence_penalty,
+            "timeout": timeout,
         }
         
         if api_key:
@@ -142,12 +124,30 @@ class ConfigLoader:
                     config["api_key"] = encryption_service.decrypt(llm_config.api_key)
                 if not config.get("base_url"):
                     config["base_url"] = llm_config.base_url
+                if llm_config.timeout:
+                    config["timeout"] = llm_config.timeout
+                if llm_config.max_tokens:
+                    config["max_tokens"] = llm_config.max_tokens
+                if llm_config.temperature is not None:
+                    config["temperature"] = llm_config.temperature
+                if llm_config.top_p is not None:
+                    config["top_p"] = llm_config.top_p
+                if llm_config.frequency_penalty is not None:
+                    config["frequency_penalty"] = llm_config.frequency_penalty
+                if llm_config.presence_penalty is not None:
+                    config["presence_penalty"] = llm_config.presence_penalty
 
                 cls._llm_configs[cache_key] = {
                     "provider": provider,
                     "model": model,
                     "api_key": config.get("api_key"),
                     "base_url": config.get("base_url"),
+                    "timeout": config.get("timeout"),
+                    "max_tokens": config.get("max_tokens"),
+                    "temperature": config.get("temperature"),
+                    "top_p": config.get("top_p"),
+                    "frequency_penalty": config.get("frequency_penalty"),
+                    "presence_penalty": config.get("presence_penalty"),
                 }
                 
         except Exception as e:
@@ -165,27 +165,7 @@ class ConfigLoader:
     
     @classmethod
     def _get_default_llm_configs(cls) -> Dict[str, Dict[str, Any]]:
-        """获取默认 LLM 配置"""
-        return {
-            "openai": {
-                "base_url": "https://api.openai.com/v1",
-            },
-            "anthropic": {
-                "base_url": "https://api.anthropic.com",
-            },
-            "deepseek": {
-                "base_url": "https://api.deepseek.com",
-            },
-            "qwen": {
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            },
-            "zhipu": {
-                "base_url": "https://open.bigmodel.cn/api/paas/v4",
-            },
-            "ollama": {
-                "base_url": "http://localhost:11434",
-            },
-        }
+        return {}
     
     @classmethod
     async def load_skill_config(cls, skill_name: str) -> Dict[str, Any]:
@@ -201,7 +181,6 @@ class ConfigLoader:
         config = {
             "name": skill_name,
             "system_prompt": "",
-            "instructions": "",
             "tools": [],
         }
         
@@ -225,7 +204,6 @@ class ConfigLoader:
                     content = f.read()
                     parsed = cls._parse_skill_md(content)
                     config.update(parsed)
-                    config["instructions"] = content
                     logger.info(f"Loaded skill '{skill_name}' from SKILL.md")
             except Exception as e:
                 logger.warning(f"Failed to load skill '{skill_name}' from SKILL.md: {e}")
@@ -241,7 +219,6 @@ class ConfigLoader:
             if skill:
                 config["name"] = skill.name
                 config["system_prompt"] = skill.system_prompt or config.get("system_prompt", "")
-                config["instructions"] = skill.instructions or config.get("instructions", "")
                 config["tools"] = skill.tools or config.get("tools", [])
                 
         except Exception as e:
@@ -288,24 +265,6 @@ class ConfigLoader:
             "args": [],
             "env": {},
         }
-        
-        mcp_config_paths = [
-            os.path.join(DataPaths.get_data_root(), "mcp_config.json"),
-        ]
-        
-        for mcp_config_path in mcp_config_paths:
-            if os.path.exists(mcp_config_path):
-                try:
-                    with open(mcp_config_path, "r", encoding="utf-8") as f:
-                        mcp_data = json.load(f)
-                        servers = mcp_data.get("mcpServers", {})
-                        if server_name in servers:
-                            server_config = servers[server_name]
-                            config.update(server_config)
-                            logger.info(f"Loaded MCP server '{server_name}' from {mcp_config_path}")
-                            break
-                except Exception as e:
-                    logger.warning(f"Failed to load MCP config from {mcp_config_path}: {e}")
         
         if not config.get("command"):
             server_main_path = os.path.join(

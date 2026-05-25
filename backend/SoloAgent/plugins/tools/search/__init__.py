@@ -18,17 +18,14 @@ SoloEngine : 搜索工具模块，提供代码搜索和文件匹配功能
 """
 
 from .base import BaseSearchTool, SearchToolError
-from .search_codebase import SearchCodebase, search_codebase
-from .grep import Grep, grep
-from .glob import Glob, glob_search
+from .search_codebase import SearchCodebase
+from .grep import Grep
+from .glob import Glob
 
 __all__ = [
     "BaseSearchTool",
     "SearchToolError",
     "SearchCodebase",
-    "search_codebase",
     "Grep",
-    "grep",
     "Glob",
-    "glob_search",
 ]

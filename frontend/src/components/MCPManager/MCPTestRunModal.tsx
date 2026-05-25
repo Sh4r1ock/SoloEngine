@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Select, Input, Button, Spin, Empty, message, Typography, Tag, Card, Switch, InputNumber } from 'antd';
+import { Modal, Select, Input, Button, Spin, Empty, App, Typography, Tag, Card, Switch, InputNumber } from 'antd';
 import { PlayCircleOutlined, LoadingOutlined, CheckCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { mcpApi, MCPServer, MCPTool } from '../../services/mcpApi';
 
@@ -19,6 +19,7 @@ interface ToolCallResult {
 }
 
 const MCPTestRunModal: React.FC<MCPTestRunModalProps> = ({ visible, server, onClose }) => {
+  const { message } = App.useApp();
   const [tools, setTools] = useState<MCPTool[]>([]);
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -63,7 +64,7 @@ const MCPTestRunModal: React.FC<MCPTestRunModalProps> = ({ visible, server, onCl
 
       const response = await mcpApi.getServerTools(server.id);
       if (response.code === 200 && response.data) {
-        const toolList = response.data.tools || [];
+        const toolList = Array.isArray(response.data) ? response.data : (response.data?.tools || []);
         setTools(toolList);
         if (toolList.length > 0) {
           setSelectedTool(toolList[0].name);
@@ -109,8 +110,9 @@ const MCPTestRunModal: React.FC<MCPTestRunModalProps> = ({ visible, server, onCl
       const properties = selectedToolData.input_schema.properties;
       const defaults: Record<string, any> = {};
       Object.entries(properties).forEach(([key, prop]) => {
-        defaults[key] = prop.default ??
-          (prop.type === 'integer' || prop.type === 'number' ? 0 : '');
+        const p = prop as Record<string, any>;
+        defaults[key] = p.default ??
+          (p.type === 'integer' || p.type === 'number' ? 0 : '');
       });
       setFormValues(defaults);
     }
@@ -125,7 +127,7 @@ const MCPTestRunModal: React.FC<MCPTestRunModalProps> = ({ visible, server, onCl
     const startTime = Date.now();
 
     try {
-      const response = await mcpApi.callServerTool(server.id, selectedTool, formValues);
+      const response = await mcpApi.callTool(server.id, selectedTool, formValues);
       const duration = Date.now() - startTime;
 
       if (response.code === 200) {

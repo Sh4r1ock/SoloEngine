@@ -1,0 +1,157 @@
+.sc-confirm-dialog .ant-modal-content {
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.sc-confirm-dialog .ant-modal-body {
+  padding: 0;
+}
+
+.sc-confirm-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 0;
+}
+
+.sc-confirm-dialog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sc-confirm-dialog-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-100);
+  line-height: 1.4;
+}
+
+.sc-confirm-dialog-body {
+  padding: 12px 20px 4px;
+}
+
+.sc-confirm-dialog-text {
+  font-size: 14px;
+  color: var(--text-200);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.sc-confirm-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 20px 12px;
+  border-top: 1px solid var(--border-color-lighter);
+}
+
+.sc-confirm-cancel-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-200);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sc-confirm-cancel-btn:hover {
+  border-color: var(--primary-100);
+  color: var(--primary-100);
+  background: var(--bg-100);
+}
+
+.sc-confirm-cancel-btn:active {
+  transform: scale(0.97);
+}
+
+.sc-confirm-cancel-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sc-confirm-primary-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: var(--primary-100);
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-confirm-primary-btn:hover {
+  background: #303f9f;
+}
+
+.sc-confirm-primary-btn:active {
+  transform: scale(0.97);
+}
+
+.sc-confirm-primary-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sc-confirm-danger-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-confirm-danger-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+
+.sc-confirm-danger-btn:active {
+  transform: scale(0.97);
+}
+
+.sc-confirm-danger-btn:disabled {
+  background: #f5f5f5;
+  border-color: var(--border-color);
+  color: var(--text-300);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sc-confirm-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: sc-confirm-spin 0.5s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes sc-confirm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

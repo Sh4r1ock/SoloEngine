@@ -56,7 +56,6 @@ SoloEngine : Agent组装器模块，提供灵活的Agent组装功能
 """
 
 from typing import Optional, List, Dict, Any, Union
-import inspect
 import logging
 
 from ..core.react_core import ReActCore
@@ -64,7 +63,7 @@ from ..core.interfaces import IMemory, IRAG, IToolExecutor, IMCPClient, IPlanNot
 from ..plugins.memory import VectorMemoryPlugin, BlackholeMemoryPlugin
 from ..plugins.rag import KnowledgeBaseRAGPlugin
 from ..plugins.tools import ToolkitExecutor
-from ..plugins.mcp import MCPClient, MCPServerConfig
+from ..plugins.mcp import MCPClient
 from ..plugins.plan import PlanNotebookPlugin
 from ..model import ChatModelBase
 from ..formatter import FormatterBase
@@ -527,60 +526,14 @@ class ReActAgent:
         return clients
     
     def _create_mcp_client(self, config: Dict[str, Any]) -> Optional[IMCPClient]:
-        """
-        根据配置创建 MCP 客户端。
-        
-        支持三种传输协议：
-        - stdio: 通过标准输入输出通信
-        - sse: 通过 Server-Sent Events 通信
-        - http: 通过 HTTP/Streamable HTTP 通信
-        
-        Args:
-            config (dict): MCP 客户端配置，包含：
-                - transport: 传输协议类型
-                - command: stdio 命令（stdio 协议）
-                - args: 命令参数（stdio 协议）
-                - url: 服务器 URL（sse/http 协议）
-                - headers: 请求头（sse/http 协议）
-                - timeout: 超时时间（http 协议）
-        
-        Returns:
-            Optional[IMCPClient]: MCP 客户端实例，创建失败返回 None。
-        """
         try:
             transport = config.get("transport", "stdio")
             
-            if transport == "stdio":
-                client = MCPClient(
-                    MCPServerConfig(
-                        transport="stdio",
-                        command=config.get("command"),
-                        args=config.get("args", []),
-                        env=config.get("env", {})
-                    )
-                )
-            elif transport == "sse":
-                client = MCPClient(
-                    MCPServerConfig(
-                        transport="sse",
-                        url=config.get("url"),
-                        headers=config.get("headers", {})
-                    )
-                )
-            elif transport == "http":
-                client = MCPClient(
-                    MCPServerConfig(
-                        transport="http",
-                        url=config.get("url"),
-                        headers=config.get("headers", {}),
-                        timeout=config.get("timeout", 30)
-                    )
-                )
+            if transport in ("stdio", "sse", "http"):
+                return MCPClient(config)
             else:
                 logger.warning(f"Unknown MCP transport type: {transport}")
                 return None
-            
-            return client
             
         except Exception as e:
             logger.error(f"Failed to create MCP client: {e}")

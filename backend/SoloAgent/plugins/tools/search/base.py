@@ -194,10 +194,8 @@ class BaseSearchTool:
             "success": success,
             "content": content,
             "error_message": error_message,
+            "metadata": metadata or {},
         }
-        
-        if metadata:
-            result["metadata"] = metadata
         
         return result
     

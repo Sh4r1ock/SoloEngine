@@ -58,7 +58,7 @@ SoloEngine : 工具系统模块入口，统一导出各类工具
 
 from .toolkit_executor import ToolkitExecutor, ToolResponse
 
-from .agent import Skill, Task
+from .agent import Skill, Task, MCP
 from .command import RunCommand, CheckCommandStatus, StopCommand, GetDiagnostics
 from .file import Read, Write, DeleteFile, LS, SearchReplace
 from .network import WebSearch, WebFetch
@@ -71,6 +71,7 @@ __all__ = [
     "ToolResponse",
     "Skill",
     "Task",
+    "MCP",
     "RunCommand",
     "CheckCommandStatus",
     "StopCommand",

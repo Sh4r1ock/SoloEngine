@@ -28,6 +28,8 @@ SoloEngine : 导出格式定义模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 
 
 @dataclass
@@ -113,8 +115,8 @@ class ExportProject:
     skills: List[ExportSkill] = field(default_factory=list)
     mcp_configs: List[ExportMCPConfig] = field(default_factory=list)
     settings: Dict[str, Any] = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    exported_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    exported_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {

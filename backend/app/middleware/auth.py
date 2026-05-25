@@ -31,9 +31,8 @@ SoloEngine : 认证中间件模块
 
 from typing import Optional
 from fastapi import Request, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer
 from starlette.middleware.base import BaseHTTPMiddleware
-import time
 
 from app.core.auth import auth_service
 

@@ -35,21 +35,22 @@ Task工具模块 - SubAgent架构实现。
 状态: ✅ 完整实现
 """
 
-import os
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 import logging
 
-from .base import BaseAgentTool, AgentToolError
+from .base import BaseAgentTool
+from app.core.config import settings
 
 if TYPE_CHECKING:
     from ....solo_agent.agent import SoloAgent
 
 logger = logging.getLogger(__name__)
 
-RETURN_INTERMEDIATE_STEPS = os.getenv("RETURN_INTERMEDIATE_STEPS", "false").lower() == "true"
+RETURN_INTERMEDIATE_STEPS = settings.RETURN_INTERMEDIATE_STEPS
 
 
 class TaskTool(BaseAgentTool):
+    needs_runtime_data = True
     """
     Task工具 - 调用SubAgent处理任务。
     
@@ -167,7 +168,7 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
         if not subagent_id:
             return {
                 "success": False,
-                "error": f"Subagent '{subagent_name}' not found"
+                "error_message": f"Subagent '{subagent_name}' not found"
             }
         
         subagent = self._parent_agent.get_subagent(subagent_id)
@@ -181,7 +182,7 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
         if not subagent:
             return {
                 "success": False,
-                "error": f"Subagent instance '{subagent_id}' not found"
+                "error_message": f"Subagent instance '{subagent_id}' not found"
             }
         
         if not subagent._initialized:
@@ -226,6 +227,7 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
                 "success": True,
                 "subagent_name": subagent_name,
                 "subagent_id": subagent.agent_id,
+                "error_message": None,
                 "content": final_content,
                 "intermediate_steps": intermediate_steps
             }
@@ -234,7 +236,7 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
             logger.error(f"SubAgent execution failed: {e}")
             return {
                 "success": False,
-                "error": f"SubAgent执行失败: {str(e)}"
+                "error_message": f"SubAgent执行失败: {str(e)}"
             }
     
     def _send_event(
@@ -266,15 +268,3 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
                 logger.warning(f"Failed to send {event_type} event: {e}")
 
 
-def get_task_tool_spec() -> Dict[str, Any]:
-    """
-    获取Task工具规范。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到ToolkitExecutor。
-    """
-    return {
-        "name": "Task",
-        "description": "Task tool for subagent delegation",
-        "parameters": {}
-    }

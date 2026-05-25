@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Form, Input, Select, Button, Space, message, Divider, Switch } from 'antd';
+import { Modal, Form, Input, Select, Button, Space, App, Divider, Switch } from 'antd';
 import { DownloadOutlined, UploadOutlined, FileZipOutlined } from '@ant-design/icons';
 import { api } from '../../services/api';
 
@@ -16,6 +16,7 @@ const ExportModal: React.FC<ExportModalProps> = ({
   onClose,
   onExport,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 

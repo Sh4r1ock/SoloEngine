@@ -79,7 +79,6 @@ class IMemory(ABC):
             - 消息添加后可能不会立即可检索，取决于具体实现
             - 部分实现可能有容量限制，会自动淘汰旧消息
         """
-        pass
     
     @abstractmethod
     async def retrieve(
@@ -105,7 +104,6 @@ class IMemory(ABC):
             - 相似度阈值由具体实现配置决定
             - 查询文本会被向量化后与存储的向量比较
         """
-        pass
     
     @abstractmethod
     async def clear(self) -> None:
@@ -118,7 +116,6 @@ class IMemory(ABC):
         Warning:
             此操作会永久删除所有记忆数据，无法恢复。
         """
-        pass
     
     @abstractmethod
     async def get_memory_state(self) -> dict:
@@ -138,7 +135,6 @@ class IMemory(ABC):
         Note:
             返回的状态可用于 set_memory_state 恢复状态。
         """
-        pass
     
     @abstractmethod
     async def set_memory_state(self, state: dict) -> None:
@@ -155,7 +151,6 @@ class IMemory(ABC):
             - 设置状态会覆盖当前状态
             - 状态格式应与 get_memory_state 返回的格式一致
         """
-        pass
 
 
 class IRAG(ABC):
@@ -209,7 +204,6 @@ class IRAG(ABC):
             - 相似度阈值由具体实现配置决定
             - 文档可能被分块存储，返回的是相关块
         """
-        pass
     
     @abstractmethod
     async def add_document(
@@ -238,7 +232,6 @@ class IRAG(ABC):
             - 长文档会自动分块存储
             - 元数据会关联到所有分块
         """
-        pass
     
     @abstractmethod
     async def clear(self) -> None:
@@ -251,7 +244,6 @@ class IRAG(ABC):
         Warning:
             此操作会永久删除所有知识库数据，无法恢复。
         """
-        pass
 
 
 class IToolExecutor(ABC):
@@ -314,7 +306,6 @@ class IToolExecutor(ABC):
             - 异步工具函数会被自动 await
             - 执行错误会被捕获并返回在结果中
         """
-        pass
     
     @abstractmethod
     def get_available_tools(self) -> List[dict]:
@@ -332,7 +323,6 @@ class IToolExecutor(ABC):
         Note:
             返回的规范格式兼容 OpenAI Function Calling 格式。
         """
-        pass
     
     @abstractmethod
     async def register_tool(self, tool_spec: dict) -> None:
@@ -355,7 +345,6 @@ class IToolExecutor(ABC):
             - 工具名称必须唯一
             - 工具函数可以是同步或异步函数
         """
-        pass
 
 
 class IMCPClient(ABC):
@@ -400,7 +389,6 @@ class IMCPClient(ABC):
             - 连接是幂等的，重复调用不会重新连接
             - 连接失败时会抛出异常
         """
-        pass
     
     @abstractmethod
     async def disconnect(self) -> None:
@@ -414,7 +402,6 @@ class IMCPClient(ABC):
             - 断开是幂等的，重复调用不会报错
             - 断开后应重新调用 connect 才能使用
         """
-        pass
     
     @abstractmethod
     async def get_tools(self) -> List[dict]:
@@ -432,7 +419,6 @@ class IMCPClient(ABC):
         Note:
             如果未连接，会自动尝试连接。
         """
-        pass
     
     @abstractmethod
     async def call_tool(
@@ -462,7 +448,6 @@ class IMCPClient(ABC):
         Note:
             如果未连接，会自动尝试连接。
         """
-        pass
 
 
 class IPlanNotebook(ABC):
@@ -513,7 +498,6 @@ class IPlanNotebook(ABC):
                 - status (str): 计划状态
                 - created_at (str): 创建时间
         """
-        pass
     
     @abstractmethod
     async def update_plan(
@@ -537,7 +521,6 @@ class IPlanNotebook(ABC):
         Raises:
             PlanNotFoundError: 当计划不存在时抛出
         """
-        pass
     
     @abstractmethod
     async def get_plan(self, plan_id: str) -> Optional[dict]:
@@ -552,7 +535,6 @@ class IPlanNotebook(ABC):
         Returns:
             Optional[dict]: 计划对象，如果不存在则返回 None。
         """
-        pass
     
     @abstractmethod
     async def delete_plan(self, plan_id: str) -> None:
@@ -570,7 +552,6 @@ class IPlanNotebook(ABC):
         Warning:
             删除操作不可逆，计划数据将永久丢失。
         """
-        pass
 
 
 class ITTSModel(ABC):
@@ -622,7 +603,6 @@ class ITTSModel(ABC):
             - 返回的音频格式取决于具体实现
             - 长文本可能需要分块处理
         """
-        pass
 
 
 __all__ = [

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { APP_CONFIG } from '../../../config/index';
 
 interface OfficeConfig {
   enabled: boolean;
@@ -15,7 +16,7 @@ interface OfficeConfigState {
   reset: () => void;
 }
 
-const ONLYOFFICE_CHECK_INTERVAL = 60000;
+const ONLYOFFICE_CHECK_INTERVAL = APP_CONFIG.ONLYOFFICE_CHECK_INTERVAL;
 
 const defaultConfig: OfficeConfig = {
   enabled: false,
@@ -38,7 +39,7 @@ export const useOfficeConfigStore = create<OfficeConfigState>((set, get) => ({
       config: { ...state.config, checkStatus: 'checking' }
     }));
 
-    const onlyOfficeUrl = config.url || 'http://localhost:8080';
+    const onlyOfficeUrl = config.url || APP_CONFIG.ONLYOFFICE_URL;
 
     try {
       const controller = new AbortController();

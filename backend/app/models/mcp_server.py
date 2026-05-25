@@ -29,7 +29,10 @@ SoloEngine : MCP服务器数据模型模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from enum import Enum
+
+from app.core.config import settings
 
 
 class MCPTransportType(Enum):
@@ -114,8 +117,8 @@ class MCPServerConfig:
     headers: Dict[str, str] = field(default_factory=dict)
     timeout: int = 30
     is_active: bool = True
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -146,8 +149,8 @@ class MCPServerConfig:
             headers=data.get("headers", {}),
             timeout=data.get("timeout", 30),
             is_active=data.get("is_active", True),
-            created_at=data.get("created_at", datetime.now().isoformat()),
-            updated_at=data.get("updated_at", datetime.now().isoformat()),
+            created_at=data.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            updated_at=data.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
         )
 
 

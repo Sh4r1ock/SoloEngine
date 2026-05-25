@@ -13,6 +13,7 @@ import {
   CopyOutlined,
 } from '@ant-design/icons';
 import type { SubagentOutput } from '../types';
+import { formatJson, copyToClipboard, formatDuration } from '../utils/messageUtils';
 
 const { Text, Paragraph } = Typography;
 
@@ -30,25 +31,6 @@ const SubagentOutputPanel: React.FC<SubagentOutputPanelProps> = ({
     const timeB = b.startTime || 0;
     return timeB - timeA;
   });
-
-  const formatDuration = (duration?: number) => {
-    if (!duration) return '';
-    if (duration < 1000) return `${duration}ms`;
-    if (duration < 60000) return `${(duration / 1000).toFixed(2)}s`;
-    return `${(duration / 60000).toFixed(2)}m`;
-  };
-
-  const formatJson = (obj: any) => {
-    try {
-      return JSON.stringify(obj, null, 2);
-    } catch {
-      return String(obj);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {

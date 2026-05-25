@@ -26,7 +26,6 @@
 状态: ✅ 模块初始化完成
 """
 
-import os
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
@@ -172,6 +171,7 @@ class GetDiagnostics:
         return {
             "content": content,
             "success": error_count == 0,
+            "error_message": None if error_count == 0 else f"Found {error_count} errors",
             "count": len(diagnostics),
             "error_count": error_count,
             "warning_count": warning_count,
@@ -297,10 +297,13 @@ class GetDiagnostics:
             "name": "GetDiagnostics",
             "description": "获取 VS Code 语言诊断信息。返回错误、警告、信息和提示。",
             "parameters": {
-                "uri": {
-                    "type": "string",
-                    "description": "文件 URI（可选）。如果指定，只返回该文件的诊断信息。",
-                    "required": False,
+                "type": "object",
+                "properties": {
+                    "uri": {
+                        "type": "string",
+                        "description": "文件 URI（可选）。如果指定，只返回该文件的诊断信息。",
+                    },
                 },
+                "required": [],
             },
         }

@@ -162,16 +162,16 @@ class EmbeddingService:
         if self._config.cache_enabled:
             cache_path = os.path.join(
                 os.path.dirname(__file__), 
-                "..", "..", "data", 
+                "..", "..", "..", "data", 
                 self._config.cache_dir
             )
             os.makedirs(cache_path, exist_ok=True)
             cache = FileEmbeddingCache(cache_path)
         
         if self._config.provider == "openai":
-            api_key = self._config.api_key or os.environ.get("OPENAI_API_KEY")
+            api_key = self._config.api_key
             if not api_key:
-                logger.warning("OpenAI API key not found, using simulated embedding")
+                logger.warning("OpenAI API key not provided for embedding service, using simulated embedding")
                 self._model = None
                 return
             

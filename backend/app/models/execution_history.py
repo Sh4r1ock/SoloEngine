@@ -28,7 +28,10 @@ SoloEngine : 执行历史数据模型模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from enum import Enum
+
+from app.core.config import settings
 
 
 class ExecutionStatus(Enum):
@@ -98,7 +101,7 @@ class ToolCallRecord:
     arguments: Dict[str, Any]
     result: Optional[Any] = None
     error: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     duration_ms: Optional[int] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -119,7 +122,7 @@ class ExecutionRecord:
     execution_id: str
     project_name: str
     status: ExecutionStatus = ExecutionStatus.PENDING
-    start_time: str = field(default_factory=lambda: datetime.now().isoformat())
+    start_time: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     end_time: Optional[str] = None
     duration_ms: Optional[int] = None
     input_message: Optional[str] = None
@@ -153,7 +156,7 @@ class ExecutionRecord:
             execution_id=data["execution_id"],
             project_name=data["project_name"],
             status=ExecutionStatus(data.get("status", "pending")),
-            start_time=data.get("start_time", datetime.now().isoformat()),
+            start_time=data.get("start_time", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
             end_time=data.get("end_time"),
             duration_ms=data.get("duration_ms"),
             input_message=data.get("input_message"),

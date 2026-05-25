@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import fnmatch
 
-from .base import BaseSearchTool, SearchToolError
+from .base import BaseSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -265,56 +265,31 @@ class Glob(BaseSearchTool):
             Dict[str, Any]: 工具规范
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "Glob",
-                "description": (
-                    "快速文件模式匹配工具，适用于任何规模的代码库。\n"
-                    "支持 glob 模式如 \"/*.js\" 或 \"src/**/*.ts\"\n"
-                    "返回按修改时间排序的匹配文件路径（最新优先）\n"
-                    "当需要按名称查找文件时使用此工具。\n"
-                    "对于需要多轮 glob 和 grep 的开放式搜索，请使用 Agent 工具代替。"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {
-                            "type": "string",
-                            "description": "要匹配的 glob 模式",
-                        },
-                        "path": {
-                            "type": "string",
-                            "description": (
-                                "搜索目录。如果未指定，使用当前工作目录。"
-                                "不要输入 \"undefined\" 或 \"null\" - 直接省略此字段使用默认行为。"
-                                "如果提供，必须是有效的绝对目录路径。"
-                            ),
-                        },
+            "name": "Glob",
+            "description": (
+                "快速文件模式匹配工具，适用于任何规模的代码库。\n"
+                "支持 glob 模式如 \"/*.js\" 或 \"src/**/*.ts\"\n"
+                "返回按修改时间排序的匹配文件路径（最新优先）\n"
+                "当需要按名称查找文件时使用此工具。\n"
+                "对于需要多轮 glob 和 grep 的开放式搜索，请使用 Agent 工具代替。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "要匹配的 glob 模式",
                     },
-                    "required": ["pattern"],
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "搜索目录。如果未指定，使用当前工作目录。"
+                            "不要输入 \"undefined\" 或 \"null\" - 直接省略此字段使用默认行为。"
+                            "如果提供，必须是有效的绝对目录路径。"
+                        ),
+                    },
                 },
+                "required": ["pattern"],
             },
         }
 
-
-async def glob_search(
-    pattern: str,
-    path: Optional[str] = None,
-    working_directory: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    文件模式匹配便捷函数。
-    
-    Args:
-        pattern (str): glob 模式
-        path (Optional[str], optional): 搜索路径。默认为 None
-        working_directory (Optional[str], optional): 工作目录。默认为 None
-    
-    Returns:
-        Dict[str, Any]: 匹配结果
-    """
-    tool = Glob(working_directory=working_directory)
-    return await tool.execute(
-        pattern=pattern,
-        path=path,
-    )

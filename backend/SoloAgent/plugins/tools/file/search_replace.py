@@ -15,7 +15,6 @@ SoloEngine : 搜索替换工具模块，提供文件内容搜索替换功能
 状态: ✅ 模块初始化完成
 """
 
-import os
 from typing import Dict, Any
 
 from .base import BaseFileTool, FileToolError
@@ -94,8 +93,8 @@ class SearchReplace(BaseFileTool):
             raise FileToolError("old_str 和 new_str 不能相同")
         
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
+            with open(file_path, "rb") as f:
+                content = f.read().decode("utf-8", errors="replace")
             
             occurrences = content.count(old_str)
             
@@ -113,8 +112,8 @@ class SearchReplace(BaseFileTool):
             
             new_content = content.replace(old_str, new_str, 1)
             
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
+            with open(file_path, "wb") as f:
+                f.write(new_content.encode("utf-8"))
             
             return {
                 "content": f"成功替换文件 {file_path} 中的内容",
@@ -132,12 +131,6 @@ class SearchReplace(BaseFileTool):
             raise FileToolError(f"搜索替换失败: {str(e)}")
     
     def get_tool_spec(self) -> Dict[str, Any]:
-        """
-        获取搜索替换工具的规范定义。
-        
-        Returns:
-            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-        """
         return {
             "name": "SearchReplace",
             "description": (
@@ -147,82 +140,22 @@ class SearchReplace(BaseFileTool):
                 "old_str 和 new_str 必须不同。"
             ),
             "parameters": {
-                "file_path": {
-                    "type": "string",
-                    "description": "要修改的文件的绝对路径。",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "要修改的文件的绝对路径。",
+                    },
+                    "old_str": {
+                        "type": "string",
+                        "description": "要搜索的文本（必须在文件中唯一）。",
+                    },
+                    "new_str": {
+                        "type": "string",
+                        "description": "替换后的文本。",
+                    },
                 },
-                "old_str": {
-                    "type": "string",
-                    "description": "要搜索的文本（必须在文件中唯一）。",
-                    "required": True,
-                },
-                "new_str": {
-                    "type": "string",
-                    "description": "替换后的文本。",
-                    "required": True,
-                },
+                "required": ["file_path", "old_str", "new_str"],
             },
         }
 
-
-def search_replace(
-    file_path: str,
-    old_str: str,
-    new_str: str,
-) -> Dict[str, Any]:
-    """
-    搜索替换文件内容的便捷函数。
-    
-    Args:
-        file_path (str): 文件的绝对路径。
-        old_str (str): 要查找的文本。
-        new_str (str): 替换后的文本。
-    
-    Returns:
-        Dict[str, Any]: 替换结果。
-    
-    Example:
-        >>> result = search_replace(
-        ...     "/path/to/file.py",
-        ...     "old_code",
-        ...     "new_code"
-        ... )
-    """
-    tool = SearchReplace()
-    return tool.execute(file_path=file_path, old_str=old_str, new_str=new_str)
-
-
-def get_search_replace_tool_spec() -> Dict[str, Any]:
-    """
-    获取搜索替换工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-    """
-    return {
-        "name": "SearchReplace",
-        "description": (
-            "在文件中搜索并替换文本。"
-            "old_str 必须在文件中唯一（只出现一次）。"
-            "只替换第一个匹配项。"
-            "old_str 和 new_str 必须不同。"
-        ),
-        "parameters": {
-            "file_path": {
-                "type": "string",
-                "description": "要修改的文件的绝对路径。",
-                "required": True,
-            },
-            "old_str": {
-                "type": "string",
-                "description": "要搜索的文本（必须在文件中唯一）。",
-                "required": True,
-            },
-            "new_str": {
-                "type": "string",
-                "description": "替换后的文本。",
-                "required": True,
-            },
-        },
-    }

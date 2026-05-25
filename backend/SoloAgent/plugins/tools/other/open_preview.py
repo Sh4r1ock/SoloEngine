@@ -38,7 +38,7 @@ from typing import Dict, Any, Optional
 import re
 import logging
 
-from .base import BaseOtherTool, OtherToolError, ToolAction
+from .base import BaseOtherTool
 
 logger = logging.getLogger(__name__)
 
@@ -227,55 +227,18 @@ class OpenPreviewTool(BaseOtherTool):
                 "需要提供command_id和preview_url参数。"
             ),
             "parameters": {
-                "command_id": {
-                    "type": "string",
-                    "description": "命令ID，用于关联启动服务的命令",
-                    "required": True
+                "type": "object",
+                "properties": {
+                    "command_id": {
+                        "type": "string",
+                        "description": "命令ID，用于关联启动服务的命令",
+                    },
+                    "preview_url": {
+                        "type": "string",
+                        "description": "预览URL，要展示给用户的预览地址",
+                    }
                 },
-                "preview_url": {
-                    "type": "string",
-                    "description": "预览URL，要展示给用户的预览地址",
-                    "required": True
-                }
+                "required": ["command_id", "preview_url"]
             }
         }
 
-
-async def open_preview_function(
-    command_id: str,
-    preview_url: str
-) -> Dict[str, Any]:
-    """
-    OpenPreview工具函数 - 直接调用入口。
-    
-    提供简化的函数式调用接口。
-    
-    Args:
-        command_id (str): 命令ID。
-        preview_url (str): 预览URL。
-    
-    Returns:
-        Dict[str, Any]: 执行结果。
-    
-    Example:
-        >>> result = await open_preview_function(
-        ...     command_id="cmd-123",
-        ...     preview_url="http://localhost:3000"
-        ... )
-    """
-    tool = OpenPreviewTool()
-    return await tool.execute(
-        command_id=command_id,
-        preview_url=preview_url
-    )
-
-
-def get_open_preview_tool_spec() -> Dict[str, Any]:
-    """
-    获取OpenPreview工具规范。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到ToolkitExecutor。
-    """
-    tool = OpenPreviewTool()
-    return tool.get_tool_spec()

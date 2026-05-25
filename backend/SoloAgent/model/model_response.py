@@ -168,6 +168,9 @@ class ChatResponse(DictMixin):
             if isinstance(block, dict):
                 if block.get("type") == "text":
                     texts.append(block.get("text", ""))
+                elif block.get("type") == "content":
+                    content = block.get("content", "")
+                    texts.append(content if isinstance(content, str) else str(content))
             elif hasattr(block, 'text'):
                 texts.append(block.text)
         return "".join(texts)
@@ -187,6 +190,9 @@ class ChatResponse(DictMixin):
             if isinstance(block, dict):
                 if block.get("type") == "thinking":
                     reasoning.append(block.get("thinking", ""))
+                elif block.get("type") == "reasoning_content":
+                    rc = block.get("reasoning_content", block.get("content", ""))
+                    reasoning.append(rc if isinstance(rc, str) else str(rc))
             elif hasattr(block, 'thinking'):
                 reasoning.append(block.thinking)
         return "".join(reasoning)
@@ -198,10 +204,16 @@ class ChatResponse(DictMixin):
         Returns:
             dict: OpenAI 格式的消息，包含 role, content, reasoning_content, tool_calls 字段
         """
+        reasoning = self.get_reasoning_content()
+        has_thinking_blocks = any(
+            (isinstance(b, dict) and b.get("type") in ("thinking", "reasoning_content"))
+            or hasattr(b, 'thinking')
+            for b in self.content
+        )
         msg = {
             "role": "assistant",
             "content": self.get_text_content(),
-            "reasoning_content": self.get_reasoning_content() or None
+            "reasoning_content": reasoning if reasoning else ("" if has_thinking_blocks else None)
         }
         
         tool_calls = []
@@ -242,22 +254,24 @@ class ChatResponse(DictMixin):
                     }
                 })
             elif block_type == "tool_calls":
-                # 流式格式的 tool_calls 块
                 if isinstance(block, dict):
                     tcs = block.get("tool_calls", [])
                 else:
                     tcs = block.get("tool_calls", []) if hasattr(block, "get") else (block["tool_calls"] if "tool_calls" in block else [])
                 for tc in tcs:
-                    # 验证并补全 tool_call 格式
                     if isinstance(tc, dict):
                         tc_id = tc.get("id", "")
-                        # 去重：如果 id 已存在，跳过
                         if tc_id and tc_id not in [t.get("id", "") for t in tool_calls]:
-                            # 确保 function.arguments 存在
-                            if "function" in tc and isinstance(tc["function"], dict):
-                                if "arguments" not in tc["function"]:
-                                    tc["function"]["arguments"] = ""
-                            tool_calls.append(tc)
+                            clean_tc = {
+                                "id": tc_id,
+                                "type": tc.get("type", "function"),
+                                "function": tc.get("function", {})
+                            }
+                            if not isinstance(clean_tc["function"], dict):
+                                clean_tc["function"] = {"name": str(clean_tc["function"]), "arguments": ""}
+                            if "arguments" not in clean_tc["function"]:
+                                clean_tc["function"]["arguments"] = ""
+                            tool_calls.append(clean_tc)
         
         if tool_calls:
             msg["tool_calls"] = tool_calls

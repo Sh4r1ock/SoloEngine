@@ -29,10 +29,24 @@ from .tool import (
     ToolInterruptedError,
     ToolInvalidArgumentsError,
 )
+from .exceptions import (
+    SoloEngineException,
+    WebSocketException,
+    WebSocketConnectionError,
+    WebSocketAuthenticationError,
+    DatabaseException,
+    DatabaseConnectionError,
+)
 
 __all__ = [
     "AgentOrientedExceptionBase",
     "ToolNotFoundError",
     "ToolInterruptedError",
     "ToolInvalidArgumentsError",
+    "SoloEngineException",
+    "WebSocketException",
+    "WebSocketConnectionError",
+    "WebSocketAuthenticationError",
+    "DatabaseException",
+    "DatabaseConnectionError",
 ]

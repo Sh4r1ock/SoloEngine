@@ -24,7 +24,7 @@
  * - 配置数据存储在节点数据的 llm_config_id 字段
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Form, Input, InputNumber, Select, Button, Typography, Divider, message, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
+import { Form, Input, InputNumber, Select, Button, Typography, Divider, App, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
 import { ReloadOutlined, ToolOutlined, FolderOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined, DatabaseOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { useCanvasStore } from '../../store/canvasStore';
@@ -37,6 +37,7 @@ import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
 import { toolsApi, ToolInfo, AgentPreset } from '../../services/toolsApi';
 import { getPresets } from '../../stores/presetsStore';
+import { LLM_DEFAULTS } from '../../config/llmDefaults';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
 
 const { TextArea } = Input;
@@ -192,6 +193,7 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
 ];
 
 const PropertyPanel: React.FC = () => {
+  const { message } = App.useApp();
   const { selectedNode, updateNode, nodes, edges, saveCanvas } = useCanvasStore();
   const [form] = Form.useForm();
   const { projectId } = useParams<{ projectId: string }>();
@@ -232,16 +234,15 @@ const PropertyPanel: React.FC = () => {
         agentType: selectedNode.data.agentType || 'executor',
         llm_config_id: selectedNode.data.llm_config_id || undefined,
         system_prompt: selectedNode.data.system_prompt || '',
-        user_prompt: selectedNode.data.user_prompt || '',
         assistant_prompt: selectedNode.data.assistant_prompt || '',
         skills: selectedNode.data.skills || [],
         mcp_servers: selectedNode.data.mcp_servers || [],
         tools: selectedNode.data.tools || [],
         memory: selectedNode.data.memory !== undefined ? selectedNode.data.memory : true,
-        temperature: nodeModelConfig.temperature ?? 0.7,
-        max_tokens: nodeModelConfig.max_tokens ?? 4096,
-        frequency_penalty: nodeModelConfig.frequency_penalty ?? 0.5,
-        presence_penalty: nodeModelConfig.presence_penalty ?? 0.5,
+        temperature: nodeModelConfig.temperature ?? LLM_DEFAULTS.TEMPERATURE,
+        max_tokens: nodeModelConfig.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
+        frequency_penalty: nodeModelConfig.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
+        presence_penalty: nodeModelConfig.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
       });
       
       if (selectedNode.data.llm_config_id) {
@@ -284,12 +285,12 @@ const PropertyPanel: React.FC = () => {
           name: mc.config_name || '',
           provider: mc.provider,
           model_name: mc.model,
-          temperature: mc.temperature ?? 0.7,
-          max_tokens: mc.max_tokens ?? 4096,
-          top_p: 1.0,
-          frequency_penalty: mc.frequency_penalty ?? 0.5,
-          presence_penalty: mc.presence_penalty ?? 0.5,
-          timeout: 60,
+          temperature: mc.temperature ?? LLM_DEFAULTS.TEMPERATURE,
+          max_tokens: mc.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
+          top_p: LLM_DEFAULTS.TOP_P,
+          frequency_penalty: mc.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
+          presence_penalty: mc.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
+          timeout: LLM_DEFAULTS.TIMEOUT,
           extra_params: {},
           is_default: false,
           is_active: true,
@@ -385,7 +386,6 @@ const PropertyPanel: React.FC = () => {
         desc: values.desc,
         agentType: values.agentType,
         system_prompt: values.system_prompt,
-        user_prompt: values.user_prompt,
         assistant_prompt: values.assistant_prompt,
         llm_config_id: values.llm_config_id,
         model_config: currentConfig ? {
@@ -499,10 +499,10 @@ const PropertyPanel: React.FC = () => {
 
     if (config) {
       form.setFieldsValue({
-        temperature: config.temperature ?? 0.7,
-        max_tokens: config.max_tokens ?? 4096,
-        frequency_penalty: config.frequency_penalty ?? 0.5,
-        presence_penalty: config.presence_penalty ?? 0.5,
+        temperature: config.temperature ?? LLM_DEFAULTS.TEMPERATURE,
+        max_tokens: config.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
+        frequency_penalty: config.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
+        presence_penalty: config.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
       });
     }
 
@@ -734,7 +734,7 @@ const PropertyPanel: React.FC = () => {
             </Form.Item>
 
             <Form.Item name="max_tokens" label="最大Token" style={{ marginBottom: 8 }}>
-              <InputNumber min={1} max={128000} style={{ width: '100%' }} />
+              <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
             </Form.Item>
 
             <Form.Item name="frequency_penalty" label="频率惩罚 (-2 到 2)" style={{ marginBottom: 8 }}>
@@ -804,19 +804,6 @@ const PropertyPanel: React.FC = () => {
             className="property-panel-textarea"
             rows={4} 
             placeholder="请输入系统提示词" 
-          />
-        </Form.Item>
-
-        <Form.Item
-          label="User Prompt"
-          name="user_prompt"
-          extra="支持变量插值，如 {user_input}"
-          className="property-panel-form-item"
-        >
-          <TextArea 
-            className="property-panel-textarea"
-            rows={3} 
-            placeholder="请输入用户提示词" 
           />
         </Form.Item>
 

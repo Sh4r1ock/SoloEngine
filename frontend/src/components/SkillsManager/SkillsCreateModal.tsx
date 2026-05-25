@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, Form, Input, message, Alert, Tag } from 'antd';
+import { Modal, Form, Input, App, Alert, Tag } from 'antd';
 import { skillsApi } from '../../services/skillsApi';
 import { useAuthStore } from '../../store/authStore';
 
@@ -9,21 +9,26 @@ interface SkillsCreateModalProps {
   onSave: () => void;
 }
 
-const defaultSkillTemplate = `# Skills 包说明
+const defaultSkillTemplate = `---
+name: your-skill-name
+description: This skill should be used when [describe conditions and triggers]. Examples: [provide concrete examples]
+---
 
-## 描述
-简要描述这个 Skills 包的功能和用途。
+# Your Skill Title
 
-## 使用场景
-- 场景1：描述
-- 场景2：描述
+## Overview
+Briefly describe what this skill accomplishes.
 
-## 最佳实践
-1. 实践建议1
-2. 实践建议2
+## When to Use
+- When the user asks for [specific request type]
+- When [triggering condition 2]
 
-## 示例
-提供一些使用示例...
+## Instructions
+1. Step one: [instruction]
+2. Step two: [instruction]
+
+## Examples
+Provide usage examples here...
 `;
 
 const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
@@ -31,6 +36,7 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
   onClose,
   onSave,
 }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const [creating, setCreating] = useState(false);
   const { user } = useAuthStore();

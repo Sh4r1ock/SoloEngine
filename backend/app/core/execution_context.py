@@ -39,6 +39,9 @@ import logging
 from typing import Dict, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
 from threading import Lock
 
 logger = logging.getLogger(__name__)
@@ -53,8 +56,14 @@ class ExecutionContext:
     user_id: str
     agentic_flow_id: str
     run_project_id: str
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     metadata: Dict[str, Any] = field(default_factory=dict)
+    collector: Any = None
+    run_context: Any = None
+    status: str = "running"
+    websocket_ref: Any = None
+    chunks_sent_count: int = 0
+    taken_over_event: Optional[asyncio.Event] = None
 
 
 class ExecutionContextManager:
@@ -104,8 +113,8 @@ class ExecutionContextManager:
         session_id: str, 
         run_project_id: str
     ) -> str:
-        """生成四参数缓存 key"""
-        return f"{user_id}:{agentic_flow_id}:{session_id}:{run_project_id}"
+        from app.utils.common_utils import make_cache_key
+        return make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
     
     def register(
         self,
@@ -115,7 +124,11 @@ class ExecutionContextManager:
         session_id: str,
         run_project_id: str,
         metadata: Dict[str, Any] = None,
-        cancel_event: asyncio.Event = None
+        cancel_event: asyncio.Event = None,
+        collector: Any = None,
+        run_context: Any = None,
+        websocket_ref: Any = None,
+        taken_over_event: asyncio.Event = None
     ) -> ExecutionContext:
         """
         注册一个运行中的任务。
@@ -128,6 +141,10 @@ class ExecutionContextManager:
             run_project_id: 项目 ID
             metadata: 额外的元数据
             cancel_event: 外部创建的取消事件（可选）
+            collector: ChunkCollector实例
+            run_context: AgenticFlowRunContext实例
+            websocket_ref: 当前活跃的WebSocket连接引用
+            taken_over_event: 接管信号事件
             
         Returns:
             ExecutionContext: 创建的执行上下文
@@ -144,7 +161,13 @@ class ExecutionContextManager:
             user_id=user_id,
             agentic_flow_id=agentic_flow_id,
             run_project_id=run_project_id,
-            metadata=metadata or {}
+            metadata=metadata or {},
+            collector=collector,
+            run_context=run_context,
+            status="running",
+            websocket_ref=websocket_ref,
+            chunks_sent_count=0,
+            taken_over_event=taken_over_event,
         )
         
         with self._context_lock:

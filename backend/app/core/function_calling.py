@@ -33,7 +33,7 @@ SoloEngine : Function Calling 适配器模块
 import json
 import uuid
 import logging
-from typing import Dict, List, Any, Optional, Callable, Union
+from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass
 
 from ..models.function_schema import (
@@ -48,35 +48,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FunctionCallResult:
-    """
-    函数调用结果数据类
-    
-    职责:
-        - 存储函数调用的结果信息
-        - 记录成功/失败状态和错误信息
-    
-    属性:
-        tool_call_id (str): 工具调用ID
-        name (str): 函数名称
-        arguments (Dict[str, Any]): 调用参数
-        result (Optional[Any]): 执行结果
-        error (Optional[str]): 错误信息
-        success (bool): 是否成功
-    
-    示例:
-        >>> result = FunctionCallResult(
-        ...     tool_call_id="call_123",
-        ...     name="search",
-        ...     arguments={"query": "python"},
-        ...     result={"hits": 10},
-        ...     success=True
-        ... )
-    """
     tool_call_id: str
     name: str
     arguments: Dict[str, Any]
     result: Optional[Any] = None
-    error: Optional[str] = None
+    error_message: Optional[str] = None
     success: bool = True
 
 
@@ -295,14 +271,14 @@ class FunctionCallingAdapter:
 
         except Exception as e:
             logger.error(f"Error executing tool call {tool_call.name}: {e}")
-            tool_call.error = str(e)
+            tool_call.error_message = str(e)
             tool_call.status = "error"
             
             call_result = FunctionCallResult(
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
                 arguments=tool_call.arguments,
-                error=str(e),
+                error_message=str(e),
                 success=False,
             )
 
@@ -432,14 +408,14 @@ class FunctionCallingAdapter:
             return {
                 "role": "tool",
                 "tool_call_id": result.tool_call_id,
-                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error}),
+                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error_message}),
             }
         
         elif provider == "anthropic":
             return {
                 "type": "tool_result",
                 "tool_use_id": result.tool_call_id,
-                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error}),
+                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error_message}),
                 "is_error": not result.success,
             }
         
@@ -447,7 +423,7 @@ class FunctionCallingAdapter:
             return {
                 "role": "tool",
                 "tool_call_id": result.tool_call_id,
-                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error}),
+                "content": json.dumps(result.result) if result.success else json.dumps({"error": result.error_message}),
             }
 
     def get_execution_history(self) -> List[FunctionCallResult]:

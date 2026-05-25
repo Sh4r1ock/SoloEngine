@@ -109,6 +109,8 @@ class ChatModelBase:
         """
         self.model_name = model_name
         self.stream = stream
+        self._active_response = None
+        self._was_cancelled = False
 
     @abstractmethod
     async def __call__(
@@ -149,7 +151,6 @@ class ChatModelBase:
             >>> async for chunk in model(messages, stream=True):
             ...     print(chunk.content)
         """
-        pass
 
     def _validate_tool_choice(
         self,
@@ -199,3 +200,19 @@ class ChatModelBase:
                 f"Invalid tool_choice '{tool_choice}'. "
                 f"Available options: {', '.join(sorted(all_options))}",
             )
+
+    async def cancel(self):
+        if self._active_response:
+            try:
+                await self._active_response.aclose()
+            except Exception:
+                pass
+            self._active_response = None
+        self._was_cancelled = True
+
+    def _save_response_ref(self, response):
+        self._active_response = response
+        self._was_cancelled = False
+
+    def _clear_response_ref(self):
+        self._active_response = None

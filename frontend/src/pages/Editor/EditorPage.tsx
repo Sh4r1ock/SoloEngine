@@ -36,14 +36,13 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layout, Button, Modal, Input, message } from 'antd';
+import { Layout, Button, Modal, Input, App } from 'antd';
 import { PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined, HomeOutlined } from '@ant-design/icons';
 import Canvas from '../../components/Canvas/Canvas';
 import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
 import Preview from '../../components/Preview/Preview';
 import { useCanvasStore } from '../../store/canvasStore';
 
-import { localStorageService } from '../../services/localStorage';
 import { agenticFlowApi } from '../../services/agenticFlowApi';
 
 const { Header, Content, Sider } = Layout;
@@ -55,6 +54,7 @@ const { Header, Content, Sider } = Layout;
  * @returns {JSX.Element} 编辑器主页面组件
  */
 const EditorPage: React.FC = () => {
+  const { message } = App.useApp();
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const {
@@ -272,20 +272,18 @@ const EditorPage: React.FC = () => {
           style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
           onClick={handleGoHome}
         >
-          <div style={{
-            width: '32px',
-            height: '32px',
-            background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
-            borderRadius: 'var(--radius-base)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontSize: '14px',
-            fontWeight: 'bold',
-          }}>
-            SE
-          </div>
+          <img
+            src="/logo.png"
+            alt="SoloEngine"
+            style={{
+              width: 32,
+              height: 32,
+              backgroundColor: 'white',
+              borderRadius: 8,
+              padding: 2,
+              objectFit: 'contain',
+            }}
+          />
           
           <div style={{ 
             color: '#fff', 
