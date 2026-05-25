@@ -59,7 +59,7 @@ The alternatives don't help: workflow platforms (Dify, n8n, etc.) run pre-script
 
 ### How It Works
 
-All Agents are the same primitive — just configured differently. The canvas compiles directly into executable Agent teams.
+All Agents share the same underlying architecture — just configured differently. The canvas compiles directly into executable Agentic AI.
 
 1. **Compilation** — Visual layout → Agent DAG via topological sort. One compiler, infinite teams.
 2. **One ReAct engine** — Every Agent runs the same Think → Act → Observe → Repeat loop.
