@@ -26,10 +26,10 @@
 
 <p align="center">
   简体中文 |
-  <a href="i18n/docs/README_EN.md">English</a> |
-  <a href="i18n/docs/README_ES.md">Español</a> |
-  <a href="i18n/docs/README_DE.md">Deutsch</a> |
-  <a href="i18n/docs/README_FR.md">Français</a>
+  <a href="i18n/readme/README_EN.md">English</a> |
+  <a href="i18n/readme/README_ES.md">Español</a> |
+  <a href="i18n/readme/README_DE.md">Deutsch</a> |
+  <a href="i18n/readme/README_FR.md">Français</a>
 </p>
 
 ***
