@@ -39,19 +39,24 @@ AI模型与外部工具、数据源之间的通信。
     - result = await client.call_tool("tool_name", {"arg": "value"})
 """
 
-import asyncio
-import json
-import uuid
 import os
-import sys
 import logging
-from typing import List, Dict, Any, Optional, Union
+import functools
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from contextlib import asynccontextmanager
 
 from ...core.interfaces import IMCPClient
 
 logger = logging.getLogger(__name__)
+
+
+def require_connected(func):
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        if not self._connected:
+            await self.connect()
+        return await func(self, *args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -182,9 +187,15 @@ class MCPClient(IMCPClient):
             logger.error(f"Failed to connect MCP client: {e}")
             raise
 
-    async def _connect_stdio(self) -> None:
-        """通过 stdio 连接 MCP 服务器。"""
+    async def _create_session(self, read_stream, write_stream):
         from mcp import ClientSession
+        
+        self._session = ClientSession(read_stream, write_stream)
+        await self._session.__aenter__()
+        await self._session.initialize()
+        await self._load_capabilities()
+
+    async def _connect_stdio(self) -> None:
         from mcp.client.stdio import stdio_client, StdioServerParameters
 
         command = self.config.get("command")
@@ -205,16 +216,9 @@ class MCPClient(IMCPClient):
 
         self._client_context = stdio_client(server_params)
         read_stream, write_stream = await self._client_context.__aenter__()
-        
-        self._session = ClientSession(read_stream, write_stream)
-        await self._session.__aenter__()
-        await self._session.initialize()
-
-        await self._load_capabilities()
+        await self._create_session(read_stream, write_stream)
 
     async def _connect_sse(self) -> None:
-        """通过 SSE 连接 MCP 服务器。"""
-        from mcp import ClientSession
         from mcp.client.sse import sse_client
 
         url = self.config.get("url")
@@ -225,16 +229,9 @@ class MCPClient(IMCPClient):
 
         self._client_context = sse_client(url, headers=headers)
         read_stream, write_stream = await self._client_context.__aenter__()
-        
-        self._session = ClientSession(read_stream, write_stream)
-        await self._session.__aenter__()
-        await self._session.initialize()
-
-        await self._load_capabilities()
+        await self._create_session(read_stream, write_stream)
 
     async def _connect_http(self) -> None:
-        """通过 Streamable HTTP 连接 MCP 服务器。"""
-        from mcp import ClientSession
         from mcp.client.streamable_http import streamablehttp_client
         import httpx
 
@@ -247,12 +244,7 @@ class MCPClient(IMCPClient):
         try:
             self._client_context = streamablehttp_client(url, headers=headers)
             read_stream, write_stream, _ = await self._client_context.__aenter__()
-            
-            self._session = ClientSession(read_stream, write_stream)
-            await self._session.__aenter__()
-            await self._session.initialize()
-
-            await self._load_capabilities()
+            await self._create_session(read_stream, write_stream)
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error connecting to MCP server: {e}")
             raise ConnectionError(f"Failed to connect to MCP server: HTTP {e.response.status_code}")
@@ -319,7 +311,6 @@ class MCPClient(IMCPClient):
             raise
 
     async def disconnect(self) -> None:
-        """断开与 MCP 服务器的连接。"""
         if not self._connected:
             return
 
@@ -340,29 +331,27 @@ class MCPClient(IMCPClient):
             self._resources = []
             self._prompts = []
 
+    async def __aenter__(self):
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        try:
+            await self.disconnect()
+        except Exception:
+            pass
+        return False
+
+    @require_connected
     async def get_tools(self) -> List[Dict[str, Any]]:
-        """获取 MCP 服务器的工具列表。"""
-        if not self._connected:
-            await self.connect()
         return self._tools
 
+    @require_connected
     async def call_tool(
         self,
         tool_name: str,
         arguments: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """调用 MCP 服务器上的工具。
-
-        Args:
-            tool_name: 工具名称
-            arguments: 工具参数
-
-        Returns:
-            工具执行结果
-        """
-        if not self._connected:
-            await self.connect()
-
         try:
             result = await self._session.call_tool(tool_name, arguments)
 
@@ -398,24 +387,12 @@ class MCPClient(IMCPClient):
                 "content": [],
             }
 
+    @require_connected
     async def get_resources(self) -> List[Dict[str, Any]]:
-        """获取 MCP 服务器的资源列表。"""
-        if not self._connected:
-            await self.connect()
         return self._resources
 
+    @require_connected
     async def read_resource(self, uri: str) -> Dict[str, Any]:
-        """读取 MCP 服务器的资源。
-
-        Args:
-            uri: 资源 URI
-
-        Returns:
-            资源内容
-        """
-        if not self._connected:
-            await self.connect()
-
         try:
             result = await self._session.read_resource(uri)
 
@@ -445,29 +422,16 @@ class MCPClient(IMCPClient):
                 "error_message": str(e),
             }
 
+    @require_connected
     async def get_prompts(self) -> List[Dict[str, Any]]:
-        """获取 MCP 服务器的提示词列表。"""
-        if not self._connected:
-            await self.connect()
         return self._prompts
 
+    @require_connected
     async def get_prompt(
         self,
         name: str,
         arguments: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """获取 MCP 服务器的提示词。
-
-        Args:
-            name: 提示词名称
-            arguments: 提示词参数
-
-        Returns:
-            提示词内容
-        """
-        if not self._connected:
-            await self.connect()
-
         try:
             result = await self._session.get_prompt(name, arguments or {})
 

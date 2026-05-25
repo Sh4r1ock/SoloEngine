@@ -35,8 +35,8 @@ AgenticFlow编译器机制-mcp_host_client_manager.py: MCP Host Client管理器
 """
 
 import logging
-from typing import Dict, Any, Optional, List
 import asyncio
+from typing import Dict, Any, Optional
 
 from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
@@ -61,6 +61,9 @@ class MCPHostClientManager:
     def __init__(self):
         self._clients: Dict[str, MCPClient] = {}
         self._server_configs: Dict[str, Dict] = {}
+        self._connection_events: Dict[str, asyncio.Event] = {}  # 连接完成事件
+        self._connection_tasks: Dict[str, asyncio.Task] = {}  # 连接任务跟踪
+        self._server_data: Dict[str, Dict] = {}  # 保存server_id和user_id用于重连
     
     async def register_servers(
         self, 
@@ -87,14 +90,25 @@ class MCPHostClientManager:
         registered = []
         failed = []
         
-        for server_name, server_data in all_mcp_servers.items():
+        async def _register_one(server_name, server_data):
             try:
                 await self._create_client(server_name, server_data, user_id)
-                registered.append(server_name)
-                logger.info(f"[MCPHost] Registered MCP server '{server_name}'")
+                return server_name, None
             except Exception as e:
                 logger.error(f"[MCPHost] Failed to register '{server_name}': {e}")
-                failed.append({"name": server_name, "error": str(e)})
+                return None, {"name": server_name, "error": str(e)}
+        
+        results = await asyncio.gather(*[
+            _register_one(name, data) for name, data in all_mcp_servers.items()
+        ], return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, Exception):
+                failed.append({"name": "unknown", "error": str(result)})
+            elif result[0]:
+                registered.append(result[0])
+            else:
+                failed.append(result[1])
         
         return {
             "success": len(failed) == 0,
@@ -105,13 +119,13 @@ class MCPHostClientManager:
         }
     
     async def _create_client(
-        self, 
-        server_name: str, 
+        self,
+        server_name: str,
         server_data: Dict,
         user_id: Optional[str] = None
     ):
         """创建单个MCPClient
-        
+
         Args:
             server_name: 服务器名称
             server_data: 服务器数据，包含id和config
@@ -119,66 +133,71 @@ class MCPHostClientManager:
         """
         from app.core.database import get_db_context, MCPServerModel
         from sqlalchemy.orm import joinedload
-        
+
         server_id = server_data.get("id")
-        
-        with get_db_context() as db:
-            server = db.query(MCPServerModel).options(
-                joinedload(MCPServerModel.sse_config),
-                joinedload(MCPServerModel.stdio_config),
-                joinedload(MCPServerModel.http_config)
-            ).filter(MCPServerModel.id == server_id).first()
-            
-            if not server:
-                raise ValueError(f"MCP server '{server_name}' not found in database")
-            
-            # 权限检查
-            if not server.is_public and str(server.user_id) != str(user_id):
-                raise PermissionError(f"No permission to access MCP server '{server_name}'")
-            
-            # 创建Client配置
-            client_config = self._build_client_config(server)
-            
-            # 创建并连接Client
-            client = MCPClient(client_config)
-            await client.connect()
-            
-            # 获取工具列表
-            tools = []
-            if hasattr(server, 'tools') and server.tools:
-                tools = server.tools
-            
-            # 保存
-            self._clients[server_name] = client
-            self._server_configs[server_name] = {
-                "id": server_id,
-                "name": server_name,
-                "description": getattr(server, 'description', ''),
-                "transport_type": getattr(server, 'transport_type', 'stdio'),
-                "tools": tools,
-                "resources": [],
-                "prompts": [],
-            }
-            
-            logger.info(
-                f"[MCPHost] Created client for '{server_name}' "
-                f"(transport={server.transport_type})"
-            )
+
+        # 保存server数据用于重连
+        self._server_data[server_name] = {
+            "id": server_id,
+            "user_id": user_id
+        }
+
+        # 创建连接事件
+        self._connection_events[server_name] = asyncio.Event()
+
+        try:
+            with get_db_context() as db:
+                server = db.query(MCPServerModel).options(
+                    joinedload(MCPServerModel.sse_config),
+                    joinedload(MCPServerModel.stdio_config),
+                    joinedload(MCPServerModel.http_config)
+                ).filter(MCPServerModel.id == server_id).first()
+
+                if not server:
+                    raise ValueError(f"MCP server '{server_name}' not found in database")
+
+                # 权限检查
+                if not server.is_public and str(server.user_id) != str(user_id):
+                    raise PermissionError(f"No permission to access MCP server '{server_name}'")
+
+                # 创建Client配置
+                client_config = self._build_client_config(server)
+
+                # 创建并连接Client
+                client = MCPClient(client_config)
+                await client.connect()
+
+                # 获取工具列表和资源（从连接后的client获取最新数据）
+                tools = await client.get_tools()
+                resources = await client.get_resources()
+
+                # 保存
+                self._clients[server_name] = client
+                self._server_configs[server_name] = {
+                    "id": server_id,
+                    "name": server_name,
+                    "description": getattr(server, 'description', ''),
+                    "transport_type": getattr(server, 'transport_type', 'stdio'),
+                    "tools": tools,  # 使用从client获取的最新tools
+                    "resources": resources,
+                    "prompts": [],
+                }
+
+                # 标记连接完成
+                self._connection_events[server_name].set()
+
+                logger.info(
+                    f"[MCPHost] Created client for '{server_name}' "
+                    f"(transport={server.transport_type}, tools={len(tools)})"
+                )
+        except Exception as e:
+            # 即使失败也标记事件，避免无限等待
+            self._connection_events[server_name].set()
+            raise
     
     def _build_client_config(self, server) -> Dict[str, Any]:
-        """构建Client配置"""
-        config = {"transport": server.transport_type}
-        
-        if server.transport_type == "stdio" and server.stdio_config:
-            config["command"] = server.stdio_config.command
-            config["args"] = server.stdio_config.args or []
-            config["env"] = server.stdio_config.env or {}
-        elif server.transport_type == "sse" and server.sse_config:
-            config["url"] = server.sse_config.url
-        elif server.transport_type == "http" and server.http_config:
-            config["url"] = server.http_config.url
-        
-        return config
+        from app.api.v1.mcp_servers import build_mcp_config
+        return build_mcp_config(server)
     
     def get_client(self, server_name: str) -> Optional[MCPClient]:
         """获取指定Server的Client
@@ -225,6 +244,8 @@ class MCPHostClientManager:
             server_name: 服务器名称
         """
         client = self._clients.pop(server_name, None)
+        # 同时清理server_configs
+        self._server_configs.pop(server_name, None)
         if client:
             try:
                 await client.disconnect()
@@ -250,6 +271,178 @@ class MCPHostClientManager:
         
         if errors:
             logger.warning(f"[MCPHost] Errors during close: {errors}")
+    
+    def load_server_configs(self, mcp_configs: Dict[str, Any]):
+        """加载MCP服务器配置（不连接）
+        
+        Args:
+            mcp_configs: MCP配置字典，key为server_id，value为MCPServerModel
+        """
+        for server_id, server in mcp_configs.items():
+            server_name = server.name
+            self._server_configs[server_name] = {
+                "id": server_id,
+                "name": server_name,
+                "description": getattr(server, 'description', ''),
+                "transport_type": getattr(server, 'transport_type', 'stdio'),
+                "tools": getattr(server, 'tools', []),
+                "resources": [],
+                "prompts": [],
+            }
+            logger.info(f"[MCPHost] Loaded config for '{server_name}'")
+    
+    async def connect_servers_async(
+        self,
+        all_mcp_servers: Dict[str, Dict],
+        user_id: Optional[str] = None
+    ):
+        """后台异步连接所有MCP服务器
+
+        Args:
+            all_mcp_servers: 所有Agent配置的mcp_servers的并集
+            user_id: 用户ID
+        """
+        logger.info(f"[MCPHost] Starting async connection for {len(all_mcp_servers)} servers...")
+
+        async def _connect_one(server_name, server_data):
+            try:
+                await self._create_client(server_name, server_data, user_id)
+                logger.info(f"[MCPHost] Async connected '{server_name}'")
+            except Exception as e:
+                logger.error(f"[MCPHost] Async connection failed for '{server_name}': {e}")
+
+        # 创建连接任务并保存
+        tasks = []
+        for name, data in all_mcp_servers.items():
+            task = asyncio.create_task(_connect_one(name, data))
+            self._connection_tasks[name] = task
+            tasks.append(task)
+
+        # 并发执行所有连接
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        logger.info(f"[MCPHost] Async connection completed. Connected: {len(self._clients)}/{len(all_mcp_servers)}")
+
+    async def wait_for_connection(self, server_name: str, timeout: float = 30.0) -> bool:
+        """等待指定服务器连接完成
+
+        Args:
+            server_name: 服务器名称
+            timeout: 超时时间（秒）
+
+        Returns:
+            bool: 是否在超时前连接成功
+        """
+        # 如果已经连接，直接返回True
+        if server_name in self._clients:
+            return True
+
+        # 如果有连接事件，等待它
+        if server_name in self._connection_events:
+            try:
+                await asyncio.wait_for(
+                    self._connection_events[server_name].wait(),
+                    timeout=timeout
+                )
+                return server_name in self._clients
+            except asyncio.TimeoutError:
+                logger.warning(f"[MCPHost] Timeout waiting for '{server_name}' connection")
+                return False
+
+        # 如果没有连接事件，说明连接从未启动
+        return False
+
+    async def connect_server_by_id(
+        self,
+        server_id: str,
+        server_name: str,
+        user_id: Optional[str] = None
+    ) -> bool:
+        """根据server_id主动连接MCP服务器
+
+        用于当异步连接失败或未启动时，工具调用端主动触发连接
+
+        Args:
+            server_id: 服务器ID
+            server_name: 服务器名称
+            user_id: 用户ID
+
+        Returns:
+            bool: 是否连接成功
+        """
+        # 如果已经连接，直接返回True
+        if server_name in self._clients:
+            return True
+
+        try:
+            logger.info(f"[MCPHost] Connecting server '{server_name}' by id...")
+            await self._create_client(
+                server_name=server_name,
+                server_data={"id": server_id},
+                user_id=user_id
+            )
+            return True
+        except Exception as e:
+            logger.error(f"[MCPHost] Failed to connect server '{server_name}': {e}")
+            return False
+
+    async def reconnect_server(
+        self,
+        server_name: str,
+        server_id: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> bool:
+        """重新连接MCP服务器
+
+        用于连接断开后的自动重连
+
+        Args:
+            server_name: 服务器名称
+            server_id: 服务器ID（可选，如果不提供则从_server_data获取）
+            user_id: 用户ID（可选，如果不提供则从_server_data获取）
+
+        Returns:
+            bool: 是否重连成功
+        """
+        # 关闭现有连接
+        if server_name in self._clients:
+            try:
+                old_client = self._clients[server_name]
+                await old_client.disconnect()
+            except Exception as e:
+                logger.warning(f"[MCPHost] Error disconnecting old client for '{server_name}': {e}")
+            finally:
+                self._clients.pop(server_name, None)
+
+        # 重置连接事件
+        if server_name in self._connection_events:
+            self._connection_events[server_name].clear()
+        else:
+            self._connection_events[server_name] = asyncio.Event()
+
+        # 获取保存的server数据
+        server_data = self._server_data.get(server_name, {})
+        actual_server_id = server_id or server_data.get("id")
+        actual_user_id = user_id or server_data.get("user_id")
+
+        if not actual_server_id:
+            logger.error(f"[MCPHost] Cannot reconnect '{server_name}': no server_id available")
+            return False
+
+        try:
+            logger.info(f"[MCPHost] Reconnecting server '{server_name}'...")
+            await self._create_client(
+                server_name=server_name,
+                server_data={"id": actual_server_id},
+                user_id=actual_user_id
+            )
+            logger.info(f"[MCPHost] Successfully reconnected '{server_name}'")
+            return True
+        except Exception as e:
+            logger.error(f"[MCPHost] Failed to reconnect '{server_name}': {e}")
+            # 标记事件，避免无限等待
+            self._connection_events[server_name].set()
+            return False
     
     async def __aenter__(self):
         """异步上下文管理器入口"""

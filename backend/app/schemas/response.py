@@ -27,7 +27,7 @@ SoloEngine : API响应Schema模块
 """
 
 from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 
 class NodeDataSchema(BaseModel):

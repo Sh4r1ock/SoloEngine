@@ -36,21 +36,23 @@ SoloEngine : 运行项目API模块
     - 文件系统沙箱隔离
 """
 import os
-import json
 import logging
 import shutil
+from send2trash import send2trash
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, RunProjectModel, RecentProjectModel
+from app.core.database import get_db, db_manager
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
-from app.core.data_paths import DataPaths
+from app.core.config import settings
+from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +147,7 @@ class SandboxedFileSystem:
                     "path": str(item.relative_to(self.base_path)),
                     "is_dir": item.is_dir(),
                     "size": stat.st_size if item.is_file() else 0,
-                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
                 })
             except Exception as e:
                 logger.warning(f"Failed to stat {item}: {e}")
@@ -171,7 +173,7 @@ class SandboxedFileSystem:
             "path": relative_path,
             "content": content,
             "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
         }
     
     def write_file(self, relative_path: str, content: str, encoding: str = "utf-8", 
@@ -192,25 +194,20 @@ class SandboxedFileSystem:
         return {
             "path": relative_path,
             "size": stat.st_size,
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
             "mode": mode,
         }
     
     def delete_file(self, relative_path: str) -> Dict[str, Any]:
-        """删除文件或目录。"""
+        """删除文件或目录（移入回收站）。"""
         absolute_path = self._resolve_path(relative_path)
         
         if not os.path.exists(absolute_path):
             raise FileNotFoundError(f"Path not found: {relative_path}")
         
-        if os.path.isfile(absolute_path):
-            os.remove(absolute_path)
-            return {"path": relative_path, "type": "file", "deleted": True}
-        elif os.path.isdir(absolute_path):
-            shutil.rmtree(absolute_path)
-            return {"path": relative_path, "type": "directory", "deleted": True}
-        
-        return {"path": relative_path, "deleted": False}
+        is_dir = os.path.isdir(absolute_path)
+        send2trash(absolute_path)
+        return {"path": relative_path, "type": "directory" if is_dir else "file", "deleted": True}
     
     def create_directory(self, relative_path: str) -> Dict[str, Any]:
         """创建目录。"""
@@ -241,8 +238,8 @@ class SandboxedFileSystem:
             "name": os.path.basename(absolute_path),
             "is_dir": os.path.isdir(absolute_path),
             "size": stat.st_size,
-            "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "created": format_iso(datetime.fromtimestamp(stat.st_ctime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
+            "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
         }
 
 
@@ -288,7 +285,7 @@ def _do_select_or_create_project(
     )
     
     if existing_project:
-        existing_project.last_accessed_at = datetime.now(timezone.utc)
+        existing_project.last_accessed_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         db.commit()
         db.refresh(existing_project)
         project = existing_project
@@ -327,7 +324,7 @@ def _do_select_or_create_project(
                 "project_id": rp.project_id,
                 "project_name": rp.project_name,
                 "folder_path": rp.folder_path,
-                "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
+                "accessed_at": format_iso(rp.accessed_at),
             }
             for rp in recent_projects
         ]
@@ -423,8 +420,8 @@ async def get_current_project(
                     "name": project.name,
                     "folder_path": project.folder_path,
                     "description": project.description,
-                    "last_accessed_at": project.last_accessed_at.isoformat() if project.last_accessed_at else None,
-                    "created_at": project.created_at.isoformat() if project.created_at else None,
+                    "last_accessed_at": format_iso(project.last_accessed_at),
+                    "created_at": format_iso(project.created_at),
                 }
             }
     
@@ -439,8 +436,8 @@ async def get_current_project(
                 "name": project.name,
                 "folder_path": project.folder_path,
                 "description": project.description,
-                "last_accessed_at": project.last_accessed_at.isoformat() if project.last_accessed_at else None,
-                "created_at": project.created_at.isoformat() if project.created_at else None,
+                "last_accessed_at": format_iso(project.last_accessed_at),
+                "created_at": format_iso(project.created_at),
             }
         }
     
@@ -483,7 +480,7 @@ async def get_recent_projects(
                 "project_id": rp.project_id,
                 "project_name": rp.project_name,
                 "folder_path": rp.folder_path,
-                "accessed_at": rp.accessed_at.isoformat() if rp.accessed_at else None,
+                "accessed_at": format_iso(rp.accessed_at),
             }
             for rp in filtered_projects
         ]
@@ -723,7 +720,6 @@ async def browse_directory(
     current_user: User = Depends(get_current_user)
 ):
     """浏览目录内容，返回子目录和文件列表。"""
-    import platform
     
     if not path:
         return await get_workspace_roots()
@@ -749,7 +745,7 @@ async def browse_directory(
                     "path": str(item),
                     "is_dir": item.is_dir(),
                     "size": stat.st_size if item.is_file() else 0,
-                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
                 })
             except PermissionError:
                 continue
@@ -921,8 +917,8 @@ async def get_onlyoffice_config(
         stat = os.stat(absolute_path)
         file_key = f"{generate_file_key(request.path)}_{int(stat.st_mtime)}"
         
-        backend_url = "http://localhost:8990"
-        onlyoffice_url = "http://localhost:8993"
+        backend_url = f"http://localhost:{settings.BACKEND_PORT}"
+        onlyoffice_url = settings.ONLYOFFICE_URL
         
         config = {
             "document": {
@@ -1008,7 +1004,6 @@ async def onlyoffice_save_file(
     current_user: User = Depends(get_current_user)
 ):
     """OnlyOffice 保存文件回调 API。"""
-    from fastapi import Request
     
     try:
         fs = get_sandboxed_fs(current_user.id, db)

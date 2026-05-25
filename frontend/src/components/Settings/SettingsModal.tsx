@@ -3,7 +3,6 @@ import { Modal, Form, Button, Space, Typography, Tabs, InputNumber } from 'antd'
 import { useCanvasStore } from '../../store/canvasStore';
 import { GlobalSettings } from '../../types/canvas';
 import LLMConfig from './LLMConfig';
-import TimezoneSettings from './TimezoneSettings';
 
 const { Text } = Typography;
 
@@ -73,14 +72,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
                   </Form.Item>
 
                   <Form.Item
-                    label="超时时间（毫秒）"
+                    label="超时时间（秒）"
                     name="timeout"
-                    rules={[{ required: true, type: 'number', min: 1000 }]}
+                    rules={[{ required: true, type: 'number', min: 1 }]}
                   >
-                    <InputNumber min={1000} max={600000} style={{ width: '100%' }} />
+                    <InputNumber min={1} max={600} style={{ width: '100%' }} />
                     <div style={{ marginTop: 4 }}>
                       <Text style={{ fontSize: 12, color: '#00000073' }}>
-                        单个 Agent 执行的超时时间（毫秒）
+                        单个 Agent 执行的超时时间（秒）
                       </Text>
                     </div>
                   </Form.Item>
@@ -101,15 +100,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ visible, onClose }) => {
             children: (
               <div style={{ padding: '16px 0' }}>
                 <LLMConfig />
-              </div>
-            ),
-          },
-          {
-            key: 'timezone',
-            label: '时区设置',
-            children: (
-              <div style={{ padding: '16px 0' }}>
-                <TimezoneSettings />
               </div>
             ),
           },

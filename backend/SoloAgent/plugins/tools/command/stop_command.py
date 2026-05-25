@@ -28,6 +28,7 @@
 
 import asyncio
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Any
 
 from .base import (
@@ -36,6 +37,7 @@ from .base import (
     CommandNotFoundError,
     CommandToolError,
 )
+from app.core.config import settings
 
 
 class StopCommand(BaseCommandTool):
@@ -103,6 +105,7 @@ class StopCommand(BaseCommandTool):
             return {
                 "content": f"Not running (status: {cmd_info.state.value})",
                 "success": False,
+                "error_message": f"Command is not running (status: {cmd_info.state.value})",
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "metadata": {}
@@ -111,10 +114,11 @@ class StopCommand(BaseCommandTool):
         process = cmd_info.process
         if not process:
             cmd_info.state = CommandState.STOPPED
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             return {
                 "content": "Stopped (no process)",
                 "success": True,
+                "error_message": None,
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "metadata": {}
@@ -133,12 +137,13 @@ class StopCommand(BaseCommandTool):
                 await process.wait()
             
             cmd_info.state = CommandState.STOPPED
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             cmd_info.exit_code = process.returncode
 
             return {
                 "content": "Stopped",
                 "success": True,
+                "error_message": None,
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "exit_code": cmd_info.exit_code,
@@ -147,17 +152,18 @@ class StopCommand(BaseCommandTool):
             
         except ProcessLookupError:
             cmd_info.state = CommandState.STOPPED
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             return {
                 "content": "Stopped (process already ended)",
                 "success": True,
+                "error_message": None,
                 "status": cmd_info.state.value,
                 "command_id": command_id,
                 "metadata": {}
             }
         except Exception as e:
             cmd_info.state = CommandState.ERROR
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             cmd_info.stderr_buffer = str(e)
             raise CommandToolError(f"停止命令失败: {e}", command_id=command_id)
     
@@ -173,10 +179,13 @@ class StopCommand(BaseCommandTool):
             "name": "StopCommand",
             "description": "停止运行中的命令。先尝试优雅终止，失败后强制终止。",
             "parameters": {
-                "command_id": {
-                    "type": "string",
-                    "description": "要停止的命令 ID",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "command_id": {
+                        "type": "string",
+                        "description": "要停止的命令 ID",
+                    },
                 },
+                "required": ["command_id"],
             },
         }

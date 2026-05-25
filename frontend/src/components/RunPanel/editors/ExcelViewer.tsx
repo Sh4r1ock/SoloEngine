@@ -209,7 +209,6 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ instanceId, tab }) => {
           pagination={{ pageSize: 50, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
           size="small"
           scroll={{ x: 'max-content', y: 'calc(100vh - 250px)' }}
-          variant="outlined"
         />
       </div>
     </div>

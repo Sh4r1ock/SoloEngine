@@ -25,8 +25,10 @@
 import axios, { AxiosResponse, AxiosError } from 'axios';
 import { ProjectData, CanvasData, ToolData } from '../types/canvas';
 
-const API_BASE_URL = '/api/v1';
-const API_REQUEST_TIMEOUT = 30000;
+import { APP_CONFIG } from '../config/index';
+
+const API_BASE_URL = APP_CONFIG.API_BASE_URL + '/api/v1';
+const API_REQUEST_TIMEOUT = APP_CONFIG.API_REQUEST_TIMEOUT;
 
 export interface ApiResponse<T = any> {
   code: number;

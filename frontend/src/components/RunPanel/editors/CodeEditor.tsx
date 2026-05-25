@@ -6,6 +6,7 @@ import type { FileTab } from '../types';
 import { useEditorInstanceManager, useEditorCleanup } from './index';
 import { getLanguage } from '../utils/fileTypeUtils';
 import { loadLanguage } from './lazyLanguageLoader';
+import { useDiffDecorations } from './DiffDecorations';
 
 import type { Extension } from '@codemirror/state';
 
@@ -30,6 +31,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   const [languageExtension, setLanguageExtension] = useState<Extension | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const { extensions: diffExtensions, hasPendingDiff } = useDiffDecorations(tab.path);
+
   useEffect(() => {
     const loadLangExtension = async () => {
       setLoading(true);
@@ -42,12 +45,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [language]);
 
   const extensions = useMemo(() => {
-    const exts: Extension[] = [history(), oneDark];
+    const exts: Extension[] = [history(), oneDark, ...diffExtensions];
     if (languageExtension) {
       exts.unshift(languageExtension);
     }
     return exts;
-  }, [languageExtension]);
+  }, [languageExtension, diffExtensions]);
 
   const handleChange = useCallback((value: string) => {
     onContentChange(tab.id, value);
@@ -93,7 +96,23 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   }
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', background: '#1e1e1e' }}>
+    <div className="doc-editor-wrapper" style={{ height: '100%', overflow: 'hidden', background: '#1e1e1e', display: 'flex', flexDirection: 'column' }}>
+      {hasPendingDiff && (
+        <div style={{
+          padding: '6px 12px',
+          background: 'rgba(33, 150, 243, 0.1)',
+          borderBottom: '1px solid rgba(33, 150, 243, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 12, color: '#64b5f6' }}>ℹ</span>
+          <span style={{ fontSize: 12, color: 'var(--text-200)' }}>
+            此文件有未确认的变更，请在消息区查看产物汇总并确认
+          </span>
+        </div>
+      )}
       <CodeMirror
         value={tab.content}
         height="100%"
@@ -102,7 +121,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         theme="dark"
         editable={canEdit}
         style={{ 
-          height: '100%', 
+          flex: 1,
+          minHeight: 0,
           fontSize: 13,
           fontFamily: 'Consolas, Monaco, "Courier New", monospace',
         }}

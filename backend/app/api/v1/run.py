@@ -23,36 +23,497 @@ SoloEngine : 运行API模块，提供工作流运行相关API端点
 """
 import asyncio
 import json
-import os
 import logging
+import os
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timezone
-import uuid
+from zoneinfo import ZoneInfo
 
-
-def format_datetime(dt: datetime) -> Optional[str]:
-    """格式化 datetime 为 ISO 格式字符串，确保包含 UTC 时区信息。"""
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        return dt.isoformat() + "Z"
-    return dt.isoformat()
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Query
+from fastapi import APIRouter, HTTPException, WebSocket, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func as sqlfunc
 
-from app.core.database import get_db, db_manager, AgenticFlowSessionModel, SessionMessageModel, get_db_context, get_db_context_async
-from SoloAgent.solo_agent.compiler import AgenticFlowCompiler, FlowRunner, CompiledFlowFactory
+from app.core.database import get_db, AgenticFlowSessionModel, SessionMessageModel
+from SoloAgent.solo_agent.compiler import FlowRunner, CompiledFlowFactory
 from app.api.v1.auth import get_current_user
 from app.core.auth import User, auth_service
 from app.core.config import settings
-from app.core.execution_context import execution_context_manager
+from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/run", tags=["run"])
+
+
+def aggregate_incremental_to_net_view(incremental_changes: List[Dict]):
+    from app.services.file_change.file_change_manager import FileChange
+
+    file_states = {}
+    for change in incremental_changes:
+        fp = change.get("file_path", "")
+        if not fp:
+            continue
+        if fp not in file_states:
+            file_states[fp] = {
+                "first_before_hash": change.get("before_content_hash"),
+                "content_type": change.get("content_type", "text"),
+            }
+        file_states[fp]["last_after_hash"] = change.get("after_content_hash")
+
+    result = []
+    for fp, state in file_states.items():
+        first_before = state["first_before_hash"]
+        last_after = state["last_after_hash"]
+        content_type = state.get("content_type", "text")
+        if first_before is None and last_after is None:
+            continue
+        elif first_before is None:
+            result.append(FileChange(file_path=fp, operation="created", new_hash=last_after, content_type=content_type))
+        elif last_after is None:
+            result.append(FileChange(file_path=fp, operation="deleted", old_hash=first_before, content_type=content_type))
+        elif first_before != last_after:
+            result.append(FileChange(file_path=fp, operation="modified", old_hash=first_before, new_hash=last_after, content_type=content_type))
+    return result
+
+
+class AgenticFlowRunContext:
+    
+    def __init__(self, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str):
+        self.user_id = user_id
+        self.agentic_flow_id = agentic_flow_id
+        self.session_id = session_id
+        self.run_project_id = run_project_id
+        self._agent_memories: Dict = {}
+        self._canvas_data: Dict = {}
+        self._last_execute_result: Optional[Dict] = None
+        self._last_user_message_id = None
+        self._working_dir: Optional[str] = None
+        self._last_working_dir: Optional[str] = None
+        self._pending_file_changes: List[Dict] = []
+        self._websocket = None
+        self._compiled_flow = None
+    
+    def set_websocket(self, websocket):
+        self._websocket = websocket
+    
+    def event_callback(self, event):
+        try:
+            if isinstance(event, dict):
+                event_type = event.get("event_type")
+                file_changes = event.get("file_changes", [])
+            else:
+                event_type = getattr(event, "event_type", None)
+                file_changes = getattr(event, "file_changes", None) or []
+            
+            if event_type == "file_change_preview" and file_changes:
+                self._pending_file_changes.extend(file_changes)
+                self._persist_incremental_changes(file_changes)
+            
+            if self._websocket:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self._send_websocket_event(event))
+        except Exception as e:
+            logger.warning(f"[RunContext] event_callback error: {e}")
+    
+    async def _send_websocket_event(self, event):
+        try:
+            if isinstance(event, dict):
+                await self._websocket.send_json({
+                    "type": "event",
+                    "event": event,
+                    "session_id": self.session_id
+                })
+            else:
+                await self._websocket.send_json({
+                    "type": "event",
+                    "event": event.to_dict() if hasattr(event, 'to_dict') else str(event),
+                    "session_id": self.session_id
+                })
+        except Exception as e:
+            logger.warning(f"[RunContext] Failed to send WebSocket event: {e}")
+
+    def _persist_incremental_changes(self, file_changes: List[Dict]) -> None:
+        from app.models.file_change import FileChangeModel
+        from app.core.database import get_db_context
+
+        try:
+            with get_db_context() as db:
+                for change in file_changes:
+                    if not change.get("tool_call_id"):
+                        continue
+                    existing = db.query(FileChangeModel).filter(
+                        FileChangeModel.session_id == self.session_id,
+                        FileChangeModel.tool_call_id == change.get("tool_call_id"),
+                        FileChangeModel.file_path == change.get("file_path", ""),
+                    ).first()
+                    if not existing:
+                        new_record = FileChangeModel(
+                            session_id=self.session_id,
+                            message_id=str(self._last_user_message_id or ""),
+                            agent_id=None,
+                            user_id=self.user_id,
+                            file_path=change.get("file_path", ""),
+                            operation=change.get("operation"),
+                            tool_call_id=change.get("tool_call_id"),
+                            before_content_hash=change.get("before_content_hash"),
+                            after_content_hash=change.get("after_content_hash"),
+                            content_type=change.get("content_type", "text"),
+                            diff_data=change.get("diff"),
+                            lines_added=change.get("diff", {}).get("lines_added", 0) if change.get("diff") else 0,
+                            lines_removed=change.get("diff", {}).get("lines_removed", 0) if change.get("diff") else 0,
+                            status="pending",
+                        )
+                        db.add(new_record)
+                db.commit()
+        except Exception as e:
+            logger.warning(f"[RunContext] Failed to persist incremental changes: {e}")
+    
+    async def load_memories(self):
+        from app.core.database import get_db_context
+        with get_db_context() as db:
+            self._agent_memories = await load_and_distribute_memories(
+                db, self.session_id, self.user_id
+            )
+    
+    async def execute(self, input_message: str, canvas_data: Dict, 
+                      cancel_event=None, event_callback=None, 
+                      stream_callback=None) -> Dict:
+        self._canvas_data = canvas_data
+        
+        def wrapped_event_callback(event):
+            self.event_callback(event)
+            if event_callback:
+                event_callback(event)
+        
+        def on_flow_created(compiled_flow):
+            self._compiled_flow = compiled_flow
+        
+        result = await FlowRunner.run_from_json(
+            json_data=canvas_data,
+            input_message=input_message,
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id,
+            event_callback=wrapped_event_callback,
+            stream_callback=stream_callback,
+            agent_memories=self._agent_memories,
+            cancel_event=cancel_event,
+            on_flow_created=on_flow_created,
+        )
+        
+        self._last_execute_result = result
+        
+        self._finalize_execution(result=result)
+        
+        return result
+    
+    async def execute_node(self, canvas_data: Dict, node_id: str, 
+                           input_message: str, context: Dict = None) -> Dict:
+        result = await FlowRunner.run_node(
+            canvas_data, node_id, input_message,
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id,
+            context=context or {},
+            agent_memories=self._agent_memories,
+        )
+        
+        self._last_execute_result = result
+        
+        self._finalize_execution(result=result)
+        
+        return result
+    
+    def _extract_token_usage(self, result: Dict) -> Optional[Dict]:
+        token_usage = result.get("token_usage")
+        if token_usage:
+            return token_usage
+        tokens = result.get("tokens")
+        return tokens
+    
+    def _finalize_execution(self, result: Dict = None, status_override: str = None,
+                            error_msg: str = None, tokens: Dict = None):
+        final_status = status_override
+        if final_status is None and result:
+            final_status = result.get("status", "completed")
+
+        if final_status == "error":
+            final_status = "failed"
+
+        update_data = {}
+        if final_status in ("completed", "failed", "stop"):
+            update_data["completed_at"] = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        if error_msg:
+            update_data["error"] = error_msg
+
+        final_tokens = tokens
+        if final_tokens is None and result:
+            final_tokens = self._extract_token_usage(result)
+        if final_tokens and (final_tokens.get("prompt_tokens") or final_tokens.get("completion_tokens")):
+            self._update_session_token_usage(final_tokens)
+
+        if result and result.get("duration_ms"):
+            update_data["duration_ms"] = result["duration_ms"]
+
+        self._update_session_status(final_status, **update_data)
+    
+    def handle_cleanup(self, status: str, error_msg: str = None, tokens: Dict = None):
+        self._finalize_execution(status_override=status, error_msg=error_msg, tokens=tokens)
+    
+    def _update_session_token_usage(self, token_usage: Dict):
+        from app.core.database import get_db_context, db_manager
+        with get_db_context() as db:
+            db_manager.update_session_token_usage(
+                db, self.session_id,
+                prompt_tokens=token_usage.get("prompt_tokens", 0) or 0,
+                completion_tokens=token_usage.get("completion_tokens", 0) or 0,
+            )
+    
+    def _update_session_status(self, status: str, **kwargs):
+        from app.core.database import get_db_context, db_manager
+        with get_db_context() as db:
+            update_data = {"status": status}
+            if status in ("completed", "failed", "stop"):
+                update_data["completed_at"] = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+            if kwargs.get("duration_ms"):
+                update_data["duration_ms"] = kwargs["duration_ms"]
+            if kwargs.get("error"):
+                update_data["error"] = kwargs["error"]
+            db_manager.update_session(db, self.session_id, **update_data)
+    
+    async def save_user_message(self, input_message: str) -> Optional[str]:
+        from app.core.database import get_db_context
+        try:
+            with get_db_context() as db:
+                message = await save_session_message(
+                    db=db, session_id=self.session_id, user_id=self.user_id,
+                    role="user", data=[{"type": "content", "content": input_message}],
+                    status="completed", agentic_flow_id=self.agentic_flow_id,
+                    run_project_id=self.run_project_id,
+                )
+                logger.info(f"[RunContext] Saved user message: session={self.session_id}, message_id={message.id if message else None}")
+                return str(message.id) if message else None
+        except Exception as e:
+            logger.error(f"[RunContext] Failed to save user message: {e}", exc_info=True)
+            return None
+    
+    async def save_assistant_message(self, collector=None, tokens=None,
+                               parent_message_id=None, execution_result=None,
+                               update_file_change_message_id=False,
+                               status: str = "completed", error: str = None):
+        saved_message_ids = {}
+        from app.core.database import get_db_context
+        try:
+            agent_data = collector.get_agent_data() if collector else None
+            if agent_data:
+                with get_db_context() as db:
+                    main_agent_id = None
+                    for agent_id_key, agent_info in agent_data.items():
+                        data_to_save = agent_info.get('data', [])
+                        if not data_to_save:
+                            data_to_save = []
+                        llm_config_id = self.get_agent_llm_config_id(agent_id_key)
+
+                        if main_agent_id is None:
+                            main_agent_id = agent_id_key
+                            current_parent_agent_id = None
+                        else:
+                            current_parent_agent_id = main_agent_id
+
+                        try:
+                            saved_message = await save_session_message(
+                                db=db, session_id=self.session_id, user_id=self.user_id,
+                                role="assistant", data=data_to_save, status=status,
+                                agent_id=agent_id_key, tokens=tokens,
+                                agentic_flow_id=self.agentic_flow_id,
+                                run_project_id=self.run_project_id,
+                                parent_message_id=parent_message_id,
+                                parent_agent_id=current_parent_agent_id,
+                                llm_config_id=llm_config_id,
+                                error=error,
+                            )
+                            if saved_message and update_file_change_message_id and parent_message_id:
+                                self._update_file_change_message_id(db, parent_message_id, saved_message.id)
+                            if saved_message:
+                                saved_message_ids[agent_id_key] = str(saved_message.id)
+                        except Exception as e:
+                            logger.error(f"[RunContext] Failed to save agent message: {e}", exc_info=True)
+            else:
+                content = ""
+                if execution_result and isinstance(execution_result, dict):
+                    content = execution_result.get("output", "") or execution_result.get("error", "")
+                
+                if not content and status != "error":
+                    status = "error"
+                    error = error or "LLM未返回有效内容"
+                
+                with get_db_context() as db:
+                    try:
+                        saved_message = await save_session_message(
+                            db=db, session_id=self.session_id, user_id=self.user_id,
+                            role="assistant",
+                            data=[{"type": "content", "content": content}] if content else [],
+                            status=status, agent_id="default", tokens=tokens,
+                            agentic_flow_id=self.agentic_flow_id,
+                            run_project_id=self.run_project_id,
+                            parent_message_id=parent_message_id,
+                            error=error,
+                        )
+                        if saved_message:
+                            saved_message_ids["default"] = str(saved_message.id)
+                            if update_file_change_message_id and parent_message_id:
+                                self._update_file_change_message_id(db, parent_message_id, saved_message.id)
+                    except Exception as e:
+                        logger.error(f"[RunContext] Failed to save empty assistant message: {e}", exc_info=True)
+        except Exception as e:
+            logger.error(f"[RunContext] Failed to save assistant message: {e}", exc_info=True)
+        return saved_message_ids
+    
+    def _update_file_change_message_id(self, db, old_message_id, new_message_id):
+        from app.models.file_change import FileChangeModel
+        
+        changes = db.query(FileChangeModel).filter(
+            FileChangeModel.session_id == self.session_id,
+            FileChangeModel.message_id == str(old_message_id)
+        ).all()
+        for ch in changes:
+            ch.message_id = new_message_id
+        
+        db.commit()
+    
+    def get_agent_llm_config_id(self, agent_id: str) -> Optional[str]:
+        compiled_flow = CompiledFlowFactory.get(
+            self.user_id, self.agentic_flow_id,
+            self.session_id, self.run_project_id
+        )
+        if compiled_flow and agent_id in compiled_flow.agents:
+            return compiled_flow.agents[agent_id].config._llm_config_id
+        return None
+    
+    def clear_cache(self):
+        CompiledFlowFactory.remove(
+            self.user_id, self.agentic_flow_id,
+            self.session_id, self.run_project_id
+        )
+    
+    def ensure_session(self):
+        from app.core.database import get_db_context, db_manager, AgenticFlowSessionModel
+        if self.session_id:
+            with get_db_context() as db:
+                session = db.query(AgenticFlowSessionModel).filter(
+                    AgenticFlowSessionModel.id == self.session_id
+                ).first()
+                
+                if not session:
+                    session = AgenticFlowSessionModel(
+                        id=self.session_id,
+                        user_id=self.user_id,
+                        agentic_flow_id=self.agentic_flow_id,
+                        run_project_id=self.run_project_id,
+                        status="running",
+                    )
+                    db.add(session)
+                    db.commit()
+        
+        return self.session_id
+    
+    async def get_working_dir(self, working_dir: str = None) -> str | None:
+        from app.core.database import get_db_context, db_manager
+        
+        if not working_dir:
+            with get_db_context() as db:
+                project = db_manager.get_active_run_project(db, self.user_id, self.agentic_flow_id)
+                if project:
+                    working_dir = project.folder_path
+        
+        if not working_dir or not self.user_id:
+            return None
+        
+        self._working_dir = working_dir
+        self._last_working_dir = working_dir
+        return working_dir
+    
+    async def save_file_changes(self, message_id: str = None) -> None:
+        from app.services.file_change import file_change_manager
+        from app.models.file_change import FileChangeModel
+        from app.core.database import get_db_context
+
+        working_dir = self._last_working_dir or getattr(self, '_working_dir', None)
+
+        if not working_dir or not self.user_id:
+            return
+
+        try:
+            incremental_changes = self._pending_file_changes or []
+            if not incremental_changes:
+                self._pending_file_changes = []
+                return
+
+            net_changes = aggregate_incremental_to_net_view(incremental_changes)
+
+            for change in net_changes:
+                if change.content_type == "text" and working_dir:
+                    change.diff_data = file_change_manager.compute_diff_for_change(
+                        change, working_dir
+                    )
+                    if change.diff_data:
+                        change.lines_added = change.diff_data.get("lines_added", 0)
+                        change.lines_removed = change.diff_data.get("lines_removed", 0)
+
+            file_change_message_id = message_id or (str(self._last_user_message_id) if self._last_user_message_id else "")
+
+            if net_changes:
+                with get_db_context() as db:
+                    for change in net_changes:
+                        existing = db.query(FileChangeModel).filter(
+                            FileChangeModel.session_id == self.session_id,
+                            FileChangeModel.file_path == change.file_path,
+                            FileChangeModel.message_id == file_change_message_id,
+                            FileChangeModel.tool_call_id == None
+                        ).first()
+
+                        if existing:
+                            existing.operation = change.operation
+                            existing.before_content_hash = change.old_hash
+                            existing.after_content_hash = change.new_hash
+                            existing.content_type = change.content_type
+                            if change.diff_data:
+                                existing.diff_data = change.diff_data
+                            existing.lines_added = change.lines_added
+                            existing.lines_removed = change.lines_removed
+                            existing.status = "pending"
+                        else:
+                            new_record = FileChangeModel(
+                                session_id=self.session_id,
+                                message_id=file_change_message_id,
+                                agent_id=None,
+                                user_id=self.user_id,
+                                file_path=change.file_path,
+                                operation=change.operation,
+                                tool_call_id=None,
+                                file_hash=change.new_hash or change.old_hash,
+                                content_type=change.content_type,
+                                before_content_hash=change.old_hash,
+                                after_content_hash=change.new_hash,
+                                diff_data=change.diff_data,
+                                lines_added=change.lines_added,
+                                lines_removed=change.lines_removed,
+                                status="pending",
+                            )
+                            db.add(new_record)
+                    db.commit()
+
+            self._pending_file_changes = []
+
+            logger.info(f"[RunContext] Net diff computed from incremental: {len(net_changes)} file changes")
+        except Exception as e:
+            logger.warning(f"Failed to compute net diff: {e}")
+    
 
 
 class ChunkCollector:
@@ -103,7 +564,7 @@ class ChunkCollector:
                     self._current_block['_added_to_agent_data'] = True
                 self._current_block = {chunk_type: content, 'type': chunk_type}
         
-        self._chunks.append({'delta': delta, 'agent_id': agent_id})
+        self._chunks.append({'delta': delta, 'agent_id': agent_id, 'agent_name': agent_name})
     
     def _process_tool_calls(self, tool_calls: list):
         """处理tool_calls，合并调用和result"""
@@ -287,8 +748,8 @@ class ChunkCollector:
                 block_type = block.get('type')
                 if block_type == 'content' and not block.get('content', '').strip():
                     continue
-                if block_type == 'reasoning_content' and not block.get('reasoning_content', '').strip():
-                    continue
+                if block_type == 'reasoning_content':
+                    pass
                 if block_type == 'tool_calls' and not block.get('tool_calls', []):
                     continue
                 cleaned_data.append(block)
@@ -305,6 +766,9 @@ class ChunkCollector:
     def get_chunk_count(self) -> int:
         return len(self._chunks)
     
+    def get_chunks_since(self, since_index: int) -> list:
+        return self._chunks[since_index:]
+    
     def get_agent_ids(self) -> list:
         return list(self._agent_data.keys())
 
@@ -316,25 +780,11 @@ async def save_session_message(
     agentic_flow_id: str = None,
     run_project_id: str = None,
     parent_message_id: str = None,
-    parent_agent_id: str = None
+    parent_agent_id: str = None,
+    llm_config_id: str = None,
+    error: str = None,
 ):
-    """保存session消息到数据库
-    
-    Args:
-        db: 数据库会话
-        session_id: 会话ID
-        user_id: 用户ID
-        role: 角色（user/assistant）
-        data: 消息数据列表，如果手动停止且没有chunk则为空列表[]
-        status: 消息状态（completed/stopped/error）
-        agent_id: Agent ID
-        tokens: token使用信息
-        agentic_flow_id: AgenticFlow ID（用于创建新session时）
-        run_project_id: Run Project ID（用于创建新session时）
-        parent_message_id: 父消息ID
-        parent_agent_id: 父Agent ID（用于关联SubAgent与MainAgent）
-    """
-    from app.core.database import SessionMessageModel, func, AgenticFlowSessionModel
+    from app.core.database import AgenticFlowSessionModel, db_manager
     
     if data is None:
         data = []
@@ -361,33 +811,20 @@ async def save_session_message(
             db.commit()
             logger.info(f"Created new session {session_id} when saving message")
         
-        max_index = db.query(func.max(SessionMessageModel.message_index)).filter(
-            SessionMessageModel.session_id == session_id
-        ).scalar()
+        prompt_tokens = tokens.get('prompt_tokens') if tokens else None
+        completion_tokens = tokens.get('completion_tokens') if tokens else None
+        total_tokens = tokens.get('total_tokens') if tokens else None
+        duration_ms = tokens.get('duration_ms') if tokens else None
         
-        if max_index is None:
-            max_index = -1
-        
-        message = SessionMessageModel(
-            session_id=session_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            parent_agent_id=parent_agent_id,
-            role=role,
-            data=data,
-            status=status,
-            message_index=max_index + 1,
-            parent_message_id=parent_message_id
+        message = db_manager.add_session_message(
+            db=db, session_id=session_id, user_id=user_id, role=role,
+            data=data, status=status, agent_id=agent_id,
+            parent_message_id=parent_message_id, parent_agent_id=parent_agent_id,
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+            total_tokens=total_tokens, duration_ms=duration_ms,
+            llm_config_id=llm_config_id,
+            error=error,
         )
-        
-        if tokens:
-            message.prompt_tokens = tokens.get('prompt_tokens')
-            message.completion_tokens = tokens.get('completion_tokens')
-            message.total_tokens = tokens.get('total_tokens')
-        
-        db.add(message)
-        db.commit()
-        db.refresh(message)
         logger.info(f"Saved {role} message to session {session_id}: message_id={message.id}, {len(data)} blocks, status={status}")
         return message
     except Exception as e:
@@ -414,7 +851,8 @@ async def load_and_distribute_memories(
 
     records = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
-        SessionMessageModel.user_id == user_id
+        SessionMessageModel.user_id == user_id,
+        SessionMessageModel.is_deleted == False
     ).order_by(SessionMessageModel.message_index).all()
 
     # 所有消息按时间顺序存储，每个agent维护自己的完整对话历史
@@ -573,16 +1011,16 @@ _cleanup_task: Optional[asyncio.Task] = None
 
 
 def _make_websocket_key(user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> str:
-    """生成 WebSocket 存储的 key - 四参数隔离"""
-    return f"{user_id}:{agentic_flow_id}:{session_id}:{run_project_id}"
+    from app.utils.common_utils import make_cache_key
+    return make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
 
 
 async def _cleanup_stale_connections():
     """定期清理超时的WebSocket连接。"""
     while True:
         try:
-            await asyncio.sleep(60)
-            current_time = datetime.now().timestamp()
+            await asyncio.sleep(settings.WEBSOCKET_CLEANUP_INTERVAL)
+            current_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).timestamp()
             stale_keys = []
             
             for ws_key, ws in list(_active_websockets.items()):
@@ -634,7 +1072,7 @@ async def shutdown_event():
 
 
 def _get_timestamp() -> float:
-    return datetime.now().timestamp()
+    return datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).timestamp()
 
 
 async def _broadcast_message(session_id: str, message: RunMessage):
@@ -652,16 +1090,24 @@ async def execute_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """执行JSON工作流。"""
     try:
-        result = await FlowRunner.run_from_json(
-            request.canvas_data,
-            request.input_message,
+        run_context = AgenticFlowRunContext(
             user_id=current_user.id,
             agentic_flow_id=request.agentic_flow_id,
             session_id=request.session_id,
             run_project_id=request.run_project_id,
-            context=request.context or {}
+        )
+        await run_context.load_memories()
+        
+        result = await run_context.execute(
+            input_message=request.input_message,
+            canvas_data=request.canvas_data,
+            context=request.context or {},
+        )
+        
+        await run_context.save_user_message(request.input_message)
+        await run_context.save_assistant_message(
+            execution_result=result,
         )
         
         return {
@@ -671,6 +1117,10 @@ async def execute_workflow(
         }
     except Exception as e:
         logger.error(f"Workflow execution failed: {e}")
+        try:
+            await run_context.save_assistant_message()
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -680,17 +1130,21 @@ async def execute_single_node(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """执行单个节点。"""
     try:
-        result = await FlowRunner.run_node(
-            request.canvas_data,
-            request.node_id,
-            request.input_message,
-            user_id=current_user.id,
+        user_id = request.user_id or current_user.id
+        run_context = AgenticFlowRunContext(
+            user_id=user_id,
             agentic_flow_id=request.agentic_flow_id,
             session_id=request.session_id,
             run_project_id=request.run_project_id,
-            context=request.context or {}
+        )
+        await run_context.load_memories()
+        
+        result = await run_context.execute_node(
+            canvas_data=request.canvas_data,
+            node_id=request.node_id,
+            input_message=request.input_message,
+            context=request.context or {},
         )
         
         return {
@@ -709,13 +1163,19 @@ async def stream_workflow(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """SSE流式执行工作流 - 作为WebSocket的降级方案。"""
     import asyncio
     
     stream_queue = asyncio.Queue()
     execution_result = None
     execution_error = None
     collector = ChunkCollector()
+    
+    run_context = AgenticFlowRunContext(
+        user_id=current_user.id,
+        agentic_flow_id=request.agentic_flow_id,
+        session_id=request.session_id,
+        run_project_id=request.run_project_id,
+    )
     
     def stream_callback(delta: dict):
         try:
@@ -729,15 +1189,13 @@ async def stream_workflow(
     async def run_execution():
         nonlocal execution_result, execution_error
         try:
-            result = await FlowRunner.run_from_json(
-                request.canvas_data,
-                request.input_message,
-                user_id=current_user.id,
-                agentic_flow_id=request.agentic_flow_id,
-                session_id=request.session_id,
-                run_project_id=request.run_project_id,
+            await run_context.load_memories()
+            
+            result = await run_context.execute(
+                input_message=request.input_message,
+                canvas_data=request.canvas_data,
                 context=request.context or {},
-                stream_callback=stream_callback
+                stream_callback=stream_callback,
             )
             execution_result = result
         except Exception as e:
@@ -758,7 +1216,7 @@ async def stream_workflow(
             
             while True:
                 try:
-                    delta = await asyncio.wait_for(stream_queue.get(), timeout=1.0)
+                    delta = await asyncio.wait_for(stream_queue.get(), timeout=settings.WEBSOCKET_STREAM_QUEUE_TIMEOUT)
                     if delta is None:
                         break
                     yield f"data: {json.dumps({'type': 'stream', 'delta': delta}, ensure_ascii=False)}\n\n"
@@ -775,41 +1233,30 @@ async def stream_workflow(
             else:
                 status = "completed"
                 openai_message = execution_result.get("message", {"role": "assistant", "content": execution_result.get("output", "")})
-                yield f"data: {json.dumps({'type': 'execution_complete', 'message': openai_message, 'data': execution_result}, ensure_ascii=False)}\n\n"
+                tokens = execution_result.get("tokens") or execution_result.get("token_usage")
+                yield f"data: {json.dumps({'type': 'execution_complete', 'message': openai_message, 'data': execution_result, 'tokens': tokens}, ensure_ascii=False)}\n\n"
             
             if request.session_id:
+                tokens = execution_result.get("tokens") or execution_result.get("token_usage") if execution_result else None
                 try:
-                    user_data = [{"type": "content", "content": request.input_message}]
-                    await save_session_message(
-                        db=db, session_id=request.session_id, user_id=current_user.id,
-                        role="user", data=user_data, agent_id="default",
-                        agentic_flow_id=request.agentic_flow_id, run_project_id=request.run_project_id
-                    )
+                    await run_context.save_user_message(request.input_message)
                     
-                    agent_data = collector.get_agent_data()
-                    if agent_data:
-                        for agent_id_key, agent_info in agent_data.items():
-                            data = agent_info['data']
-                            if not data:
-                                data = [{"type": "content", "content": f"Status: {status}"}]
-                            await save_session_message(
-                                db=db, session_id=request.session_id, user_id=current_user.id,
-                                role="assistant", data=data, status=status, agent_id=agent_id_key,
-                                agentic_flow_id=request.agentic_flow_id, run_project_id=request.run_project_id
-                            )
-                    else:
-                        await save_session_message(
-                            db=db, session_id=request.session_id, user_id=current_user.id,
-                            role="assistant", 
-                            data=[{"type": "content", "content": execution_result.get("output", "") if execution_result else ""}],
-                            status=status, agent_id="default",
-                            agentic_flow_id=request.agentic_flow_id, run_project_id=request.run_project_id
-                        )
+                    await run_context.save_assistant_message(
+                        collector=collector,
+                        tokens=tokens,
+                    )
                 except Exception as save_error:
                     logger.error(f"Failed to save session messages: {save_error}")
                 
         except Exception as e:
             logger.error(f"SSE stream error: {e}")
+            try:
+                await run_context.save_assistant_message(
+                    collector=collector if collector else None,
+                    tokens=execution_result.get("tokens") if execution_result else None,
+                )
+            except Exception:
+                pass
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(
@@ -845,22 +1292,37 @@ async def get_sessions(
     if status:
         query = query.filter(AgenticFlowSessionModel.status == status)
     
-    sessions = query.order_by(AgenticFlowSessionModel.created_at.desc()).limit(limit).all()
+    sessions = query.order_by(AgenticFlowSessionModel.updated_at.desc()).limit(limit).all()
     
+    first_content_map = {}
+    if sessions:
+        session_ids = [s.id for s in sessions]
+        min_index_subquery = db.query(
+            SessionMessageModel.session_id,
+            sqlfunc.min(SessionMessageModel.message_index).label('min_index')
+        ).filter(
+            SessionMessageModel.session_id.in_(session_ids),
+            SessionMessageModel.role == 'assistant',
+            SessionMessageModel.is_deleted == False
+        ).group_by(SessionMessageModel.session_id).subquery()
+
+        first_messages = db.query(SessionMessageModel).join(
+            min_index_subquery,
+            (SessionMessageModel.session_id == min_index_subquery.c.session_id) &
+            (SessionMessageModel.message_index == min_index_subquery.c.min_index)
+        ).filter(
+            SessionMessageModel.is_deleted == False
+        ).all()
+
+        for msg in first_messages:
+            if msg.data:
+                for block in msg.data:
+                    if block.get('type') == 'content' and block.get('content'):
+                        first_content_map[msg.session_id] = block['content'][:50]
+                        break
+
     result = []
     for s in sessions:
-        first_assistant_msg = db.query(SessionMessageModel).filter(
-            SessionMessageModel.session_id == s.id,
-            SessionMessageModel.role == 'assistant'
-        ).order_by(SessionMessageModel.message_index).first()
-        
-        first_assistant_content = None
-        if first_assistant_msg and first_assistant_msg.data:
-            for block in first_assistant_msg.data:
-                if block.get('type') == 'content' and block.get('content'):
-                    first_assistant_content = block['content'][:30]
-                    break
-        
         result.append({
             "id": s.id,
             "agentic_flow_id": s.agentic_flow_id,
@@ -868,12 +1330,12 @@ async def get_sessions(
             "status": s.status,
             "error": s.error,
             "token_usage": s.token_usage,
-            "started_at": format_datetime(s.started_at),
-            "completed_at": format_datetime(s.completed_at),
-            "created_at": format_datetime(s.created_at),
-            "updated_at": format_datetime(s.updated_at),
+            "started_at": format_iso(s.started_at),
+            "completed_at": format_iso(s.completed_at),
+            "created_at": format_iso(s.created_at),
+            "updated_at": format_iso(s.updated_at),
             "duration_ms": s.duration_ms,
-            "first_assistant_content": first_assistant_content,
+            "first_assistant_content": first_content_map.get(s.id),
         })
 
     return {
@@ -906,10 +1368,10 @@ async def get_session(
             "status": session.status,
             "error": session.error,
             "token_usage": session.token_usage,
-            "started_at": format_datetime(session.started_at),
-            "completed_at": format_datetime(session.completed_at),
-            "created_at": format_datetime(session.created_at),
-            "updated_at": format_datetime(session.updated_at),
+            "started_at": format_iso(session.started_at),
+            "completed_at": format_iso(session.completed_at),
+            "created_at": format_iso(session.created_at),
+            "updated_at": format_iso(session.updated_at),
             "duration_ms": session.duration_ms
         }
     }
@@ -922,6 +1384,9 @@ async def delete_session(
     current_user: User = Depends(get_current_user)
 ):
     """删除运行会话及其所有消息。"""
+    from app.models.file_change import FileChangeModel
+    from app.core.content_addressable_storage import cas
+
     session = db.query(AgenticFlowSessionModel).filter(
         AgenticFlowSessionModel.id == session_id,
         AgenticFlowSessionModel.user_id == current_user.id
@@ -930,8 +1395,12 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    db.query(FileChangeModel).filter(FileChangeModel.session_id == session_id).delete()
+
     db.delete(session)
     db.commit()
+
+    cas.cleanup_orphan_blobs()
     
     return {
         "code": 200,
@@ -968,7 +1437,8 @@ async def get_session_messages(
     # 查询所有消息
     messages = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
-        SessionMessageModel.user_id == current_user.id
+        SessionMessageModel.user_id == current_user.id,
+        SessionMessageModel.is_deleted == False
     ).order_by(SessionMessageModel.message_index).offset(offset).limit(limit).all()
     
     # 构建 parent_children_map 和 agent_levels（用于 assistant 消息处理）
@@ -982,12 +1452,13 @@ async def get_session_messages(
     }
     
     # 辅助函数：检查消息是否还在 available_children 中（未被使用）
+    available_msg_ids: Set[str] = set()
+    for children in available_children.values():
+        for child in children:
+            available_msg_ids.add(child.id)
+
     def is_message_available(msg_id: str) -> bool:
-        for children in available_children.values():
-            for child in children:
-                if child.id == msg_id:
-                    return True
-        return False
+        return msg_id in available_msg_ids
     
     # 处理每条消息
     result = []
@@ -1008,11 +1479,12 @@ async def get_session_messages(
                 "agent_id": m.agent_id,
                 "data": unified_data,
                 "status": m.status,
+                "error": m.error,
                 "message_index": m.message_index,
                 "prompt_tokens": m.prompt_tokens,
                 "completion_tokens": m.completion_tokens,
                 "total_tokens": m.total_tokens,
-                "created_at": format_datetime(m.created_at)
+                "created_at": format_iso(m.created_at)
             })
         else:
             # assistant 消息：检查是否还在 available_children 中
@@ -1030,11 +1502,12 @@ async def get_session_messages(
                 "agent_id": m.agent_id,
                 "data": flattened_blocks,
                 "status": m.status,
+                "error": m.error,
                 "message_index": m.message_index,
                 "prompt_tokens": m.prompt_tokens,
                 "completion_tokens": m.completion_tokens,
                 "total_tokens": m.total_tokens,
-                "created_at": format_datetime(m.created_at)
+                "created_at": format_iso(m.created_at)
             })
     
     return {
@@ -1065,7 +1538,8 @@ async def get_session_messages_by_agent(
     
     query = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
-        SessionMessageModel.user_id == current_user.id
+        SessionMessageModel.user_id == current_user.id,
+        SessionMessageModel.is_deleted == False
     )
     
     if agent_id:
@@ -1083,11 +1557,12 @@ async def get_session_messages_by_agent(
             "agent_id": m.agent_id,
             "data": m.data,
             "status": m.status,
+            "error": m.error,
             "message_index": m.message_index,
             "prompt_tokens": m.prompt_tokens,
             "completion_tokens": m.completion_tokens,
             "total_tokens": m.total_tokens,
-            "created_at": format_datetime(m.created_at)
+            "created_at": format_iso(m.created_at)
         })
     
     return {
@@ -1114,7 +1589,8 @@ async def export_session(
         raise HTTPException(status_code=404, detail="Session not found")
     
     messages = db.query(SessionMessageModel).filter(
-        SessionMessageModel.session_id == session_id
+        SessionMessageModel.session_id == session_id,
+        SessionMessageModel.is_deleted == False
     ).order_by(SessionMessageModel.message_index).all()
 
     if format == "json":
@@ -1123,14 +1599,15 @@ async def export_session(
             "status": session.status,
             "error": session.error,
             "token_usage": session.token_usage,
-            "started_at": session.started_at.isoformat() if session.started_at else None,
-            "completed_at": session.completed_at.isoformat() if session.completed_at else None,
-            "created_at": session.created_at.isoformat() if session.created_at else None,
+            "started_at": format_iso(session.started_at),
+            "completed_at": format_iso(session.completed_at),
+            "created_at": format_iso(session.created_at),
             "messages": [
                 {
                     "role": m.role,
                     "content": m.content,
-                    "timestamp": m.timestamp.isoformat() if m.timestamp else None
+                    "error": m.error,
+                    "timestamp": format_iso(m.timestamp)
                 }
                 for m in messages
             ]
@@ -1219,574 +1696,58 @@ async def run_websocket(
     """WebSocket端点用于实时运行消息。
     
     URL 格式: /ws/{agentic_flow_id}/{session_id}/{run_project_id}?token=xxx
-    
-    修复说明：
-    - 修复了 asyncio.wait 任务分发缺陷导致的1-2轮对话后断连问题
-    - 将数据库会话从长期持有改为按需创建的短期会话
-    - 增强了异常处理和错误通知机制
-    - 增加了消息接收器容错能力
     """
     if not token:
         await websocket.close(code=4001, reason="Missing authentication token")
         return
     
-    payload = auth_service.decode_token(token)
-    if not payload or payload.get("type") != "access":
+    from app.api.v1.websocket import verify_token
+    valid, user_id = await verify_token(token)
+    if not valid:
         await websocket.close(code=4001, reason="Invalid or expired token")
-        return
-    
-    user_id = payload.get("sub")
-    if not user_id:
-        await websocket.close(code=4001, reason="Invalid token payload")
-        return
-    
-    user = await auth_service.get_user(user_id)
-    if not user or not user.is_active:
-        await websocket.close(code=4001, reason="User not found or inactive")
         return
 
     await websocket.accept()
-    
-    ws_key = _make_websocket_key(user_id, agentic_flow_id, session_id, run_project_id)
-    _active_websockets[ws_key] = websocket
-    _websocket_keys[ws_key] = {
-        "agentic_flow_id": agentic_flow_id,
-        "session_id": session_id,
-        "run_project_id": run_project_id,
-        "user_id": user_id,
-    }
-    _websocket_timestamps[ws_key] = _get_timestamp()
 
-    stored_canvas_data: Dict = {}
-    
-    def event_callback(event):
-        """事件回调函数 - 在同步上下文中调度异步发送"""
-        try:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(_send_event(websocket, session_id, event))
-        except Exception as e:
-            logger.error(f"Event callback error: {e}")
+    from app.api.v1.websocket_handler import WebSocketRunContext
+    run_context = AgenticFlowRunContext(
+        user_id=user_id,
+        agentic_flow_id=agentic_flow_id,
+        session_id=session_id,
+        run_project_id=run_project_id,
+    )
+    ctx = WebSocketRunContext(
+        websocket=websocket,
+        agentic_flow_id=agentic_flow_id,
+        session_id=session_id,
+        run_project_id=run_project_id,
+        user_id=user_id,
+        active_websockets=_active_websockets,
+        websocket_keys=_websocket_keys,
+        websocket_timestamps=_websocket_timestamps,
+        send_event_func=_send_event,
+        timestamp_func=_get_timestamp,
+        make_key_func=_make_websocket_key,
+        chunk_collector_class=ChunkCollector,
+        run_context=run_context,
+    )
+    await ctx.initialize()
 
-    # 使用短期会话初始化数据（不再长期持有）
-    session = None
-    agent_memories = {}
-    
-    async with get_db_context_async() as init_db:
-        session = init_db.query(AgenticFlowSessionModel).filter(
-            AgenticFlowSessionModel.id == session_id
-        ).first()
-        
-        if session:
-            agent_memories = await load_and_distribute_memories(init_db, session_id, user_id)
-    
-    websocket_open = True
-    current_execution_task: Optional[asyncio.Task] = None
-    current_cancel_event: Optional[asyncio.Event] = None
-    current_collector: Optional[ChunkCollector] = None
-    status = "completed"
-    error_msg = None
-    last_user_message_id = None
-    
-    message_queue = asyncio.Queue()
-    
-    async def message_receiver():
-        """增强的消息接收器 - 支持容错和连续错误检测"""
-        consecutive_errors = 0
-        MAX_CONSECUTIVE_ERRORS = 5
-        
-        while websocket_open:
-            try:
-                data = await websocket.receive_json()
-                _websocket_timestamps[ws_key] = _get_timestamp()
-                await message_queue.put(data)
-                consecutive_errors = 0  # 重置错误计数
-                
-            except WebSocketDisconnect:
-                logger.info(f"[WebSocket] Client disconnected (receiver)")
-                await message_queue.put({"type": "__disconnect__"})
-                break
-                
-            except json.JSONDecodeError as e:
-                consecutive_errors += 1
-                logger.warning(f"[WebSocket] JSON decode error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
-                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                    logger.error(f"[WebSocket] Too many consecutive JSON errors, closing connection")
-                    await message_queue.put({"type": "__disconnect__"})
-                    break
-                # JSON错误不终止接收器，继续等待下一条消息
-                
-            except Exception as e:
-                consecutive_errors += 1
-                logger.error(f"[WebSocket] Receiver error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
-                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                    logger.error(f"[WebSocket] Too many consecutive errors, closing connection")
-                    await message_queue.put({"type": "__disconnect__"})
-                    break
-                # 短暂等待后重试
-                await asyncio.sleep(0.1 * min(consecutive_errors, 3))
-    
-    async def handle_execution_completion():
-        """处理执行任务完成后的所有逻辑"""
-        nonlocal status, error_msg, current_execution_task, current_cancel_event, current_collector
-        
-        execution_context_manager.unregister(
-            user_id=user_id,
-            agentic_flow_id=agentic_flow_id,
-            session_id=session_id,
-            run_project_id=run_project_id
-        )
-        
-        tokens = None
-        try:
-            if current_execution_task.cancelled():
-                status = "stop"
-                logger.info(f"[WebSocket] Execution stopped for session: {session_id}")
-                
-                await websocket.send_json({
-                    "type": "execution_stopped",
-                    "session_id": session_id,
-                    "timestamp": _get_timestamp()
-                })
-            else:
-                result = current_execution_task.result()
-                tokens = result.get("tokens")
-                
-                openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None})
-                
-                await websocket.send_json({
-                    "type": "execution_complete",
-                    "message": openai_message,
-                    "data": result,
-                    "session_id": session_id,
-                    "timestamp": _get_timestamp()
-                })
-        except asyncio.CancelledError:
-            status = "stop"
-            logger.info(f"[WebSocket] Execution stopped (CancelledError) for session: {session_id}")
-            
-            await websocket.send_json({
-                "type": "execution_stopped",
-                "session_id": session_id,
-                "timestamp": _get_timestamp()
-            })
-        except Exception as exec_error:
-            status = "error"
-            error_msg = str(exec_error)
-            logger.error(f"Execution error: {exec_error}", exc_info=True)
-            
-            try:
-                await websocket.send_json({
-                    "type": "execution_event",
-                    "data": {
-                        "event_type": "execution_error",
-                        "error": error_msg,
-                        "timestamp": datetime.now().isoformat()
-                    },
-                    "session_id": session_id,
-                    "timestamp": _get_timestamp()
-                })
-                
-                await websocket.send_json({
-                    "type": "execution_result",
-                    "data": {
-                        "status": "error",
-                        "error": error_msg
-                    },
-                    "session_id": session_id,
-                    "timestamp": _get_timestamp()
-                })
-            except Exception as send_error:
-                logger.error(f"Failed to send error to client: {send_error}")
-        
-        logger.info(f"[WebSocket] Task completed - status: {status}, collector has data: {current_collector.get_chunk_count() > 0 if current_collector else False}, tokens: {tokens}")
-        
-        # 使用独立的短期数据库会话保存结果
-        if current_collector:
-            agent_data = current_collector.get_agent_data()
-            logger.info(f"[WebSocket] Agent data: {agent_data}")
-            
-            if agent_data:
-                main_agent_id = None
-                
-                for agent_id_key, agent_info in agent_data.items():
-                    data_to_save = agent_info['data']
-                    if not data_to_save:
-                        data_to_save = []
-                    
-                    if main_agent_id is None:
-                        main_agent_id = agent_id_key
-                        current_parent_agent_id = None
-                    else:
-                        current_parent_agent_id = main_agent_id
-                    
-                    logger.info(f"[WebSocket] Saving message for agent {agent_id_key}, data: {data_to_save}, tokens: {tokens}, parent_message_id: {last_user_message_id}, parent_agent_id: {current_parent_agent_id}")
-                    
-                    try:
-                        with get_db_context() as save_db:
-                            await save_session_message(
-                                db=save_db, session_id=session_id, user_id=user_id,
-                                role="assistant", data=data_to_save, status=status, agent_id=agent_id_key,
-                                tokens=tokens,
-                                agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                parent_message_id=last_user_message_id,
-                                parent_agent_id=current_parent_agent_id
-                            )
-                    except Exception as save_error:
-                        logger.error(f"[WebSocket] Failed to save message: {save_error}")
-            else:
-                logger.info(f"[WebSocket] No agent data, saving empty message, tokens: {tokens}, parent_message_id: {last_user_message_id}")
-                try:
-                    with get_db_context() as save_db:
-                        await save_session_message(
-                            db=save_db, session_id=session_id, user_id=user_id,
-                            role="assistant",
-                            data=[],
-                            status=status, agent_id="default",
-                            tokens=tokens,
-                            agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                            parent_message_id=last_user_message_id
-                        )
-                except Exception as save_error:
-                    logger.error(f"[WebSocket] Failed to save empty message: {save_error}")
-        else:
-            logger.warning(f"[WebSocket] No collector available")
-        
-        # 更新会话状态
-        try:
-            with get_db_context() as update_db:
-                if status == "stop":
-                    db_manager.update_session(
-                        update_db, session_id,
-                        status="stop",
-                        completed_at=datetime.now(timezone.utc)
-                    )
-                elif status == "error":
-                    db_manager.update_session(
-                        update_db, session_id,
-                        status="failed",
-                        error=error_msg,
-                        completed_at=datetime.now(timezone.utc)
-                    )
-        except Exception as update_error:
-            logger.error(f"[WebSocket] Failed to update session: {update_error}")
-        
-        # 重置状态
-        current_execution_task = None
-        current_cancel_event = None
-        current_collector = None
-    
+    from app.services.file_system_push import ws_registry
+    from app.services.workspace_watcher import workspace_watcher
+
+    ws_key = ctx.ws_key
+    ws_registry.register(ws_key, session_id, websocket)
+
+    working_dir = await run_context.get_working_dir()
+    if working_dir and os.path.exists(working_dir):
+        workspace_watcher.start_watching(session_id, working_dir)
+
     try:
-        receiver_task = asyncio.create_task(message_receiver())
-        
-        while websocket_open:
-            try:
-                # 等待消息或执行任务完成
-                wait_coroutines = []
-                
-                # 消息等待任务
-                message_wait_task = asyncio.create_task(message_queue.get())
-                wait_coroutines.append(message_wait_task)
-                
-                # 如果有正在执行的任务，也加入等待
-                execution_wait_task = None
-                if current_execution_task and not current_execution_task.done():
-                    execution_wait_task = asyncio.ensure_future(current_execution_task)
-                    wait_coroutines.append(execution_wait_task)
-                
-                # 等待任意一个完成
-                done, pending = await asyncio.wait(
-                    wait_coroutines,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-                
-                # ====== 优先处理执行任务完成（避免状态泄漏）======
-                if execution_wait_task and execution_wait_task in done:
-                    logger.info(f"[WebSocket] Execution task completed, processing results")
-                    
-                    # 取消未完成的消息等待任务
-                    if message_wait_task not in done:
-                        message_wait_task.cancel()
-                        try:
-                            await message_wait_task
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                    
-                    # 处理执行结果
-                    await handle_execution_completion()
-                    
-                    continue  # 重新开始循环，等待下一个消息
-                
-                # ====== 处理新消息 ======
-                if message_wait_task in done:
-                    result = None
-                    try:
-                        result = message_wait_task.result()
-                    except Exception as e:
-                        logger.error(f"[WebSocket] Error getting message result: {e}")
-                        continue
-                    
-                    # 断连检测
-                    if isinstance(result, dict) and result.get("type") == "__disconnect__":
-                        logger.info(f"[WebSocket] Client disconnected")
-                        websocket_open = False
-                        break
-                    
-                    # 消息处理
-                    if isinstance(result, dict) and "type" in result:
-                        data = result
-                        
-                        if data.get("type") == "ping":
-                            await websocket.send_json({"type": "pong", "timestamp": _get_timestamp()})
-                            
-                        elif data.get("type") == "stop":
-                            if current_execution_task and not current_execution_task.done():
-                                logger.info(f"[WebSocket] Stop requested for session: {session_id}")
-                                
-                                if current_cancel_event:
-                                    current_cancel_event.set()
-                                
-                                current_execution_task.cancel()
-                                
-                                # 不在这里等待任务完成，让主循环的 execution_wait_task 分支处理
-                                # 这样可以避免重复调用 handle_execution_completion
-                                
-                                logger.info(f"[WebSocket] Stop requested, task cancelled, waiting for completion in main loop")
-                            else:
-                                await websocket.send_json({
-                                    "type": "execution_stopped",
-                                    "session_id": session_id,
-                                    "timestamp": _get_timestamp(),
-                                    "message": "No running task to stop"
-                                })
-                        
-                        elif data.get("type") == "execute" and (not current_execution_task or current_execution_task.done()):
-                            canvas_data = data.get("canvas_data", {}) or stored_canvas_data
-                            input_message = data.get("input_message", "")
-                            
-                            stored_canvas_data = canvas_data
-                            
-                            # 使用独立会话创建/更新session和保存用户消息
-                            with get_db_context() as op_db:
-                                op_session = op_db.query(AgenticFlowSessionModel).filter(
-                                    AgenticFlowSessionModel.id == session_id
-                                ).first()
-                                
-                                if not op_session:
-                                    op_session = AgenticFlowSessionModel(
-                                        id=session_id,
-                                        user_id=user_id,
-                                        agentic_flow_id=agentic_flow_id,
-                                        run_project_id=run_project_id,
-                                        status="running",
-                                        started_at=datetime.now(timezone.utc),
-                                        created_at=datetime.now(timezone.utc),
-                                        updated_at=datetime.now(timezone.utc),
-                                    )
-                                    op_db.add(op_session)
-                                    op_db.commit()
-                                    logger.info(f"Created new session on execute: {session_id}")
-                            
-                            user_data = [{"type": "content", "content": input_message}]
-                            
-                            with get_db_context() as msg_db:
-                                user_message = await save_session_message(
-                                    db=msg_db, session_id=session_id, user_id=user_id,
-                                    role="user", data=user_data, agent_id="default",
-                                    agentic_flow_id=agentic_flow_id, run_project_id=run_project_id
-                                )
-                                last_user_message_id = user_message.id
-                            
-                            status = "completed"
-                            current_collector = ChunkCollector()
-                            
-                            def stream_callback_with_collector(delta: dict, agent_id: str = None, agent_name: str = None):
-                                try:
-                                    current_collector.add_chunk(delta, agent_id, agent_name)
-                                    if websocket_open:
-                                        import asyncio
-                                        loop = asyncio.get_event_loop()
-                                        if loop.is_running():
-                                            async def safe_send():
-                                                try:
-                                                    await websocket.send_json({
-                                                        "type": "stream",
-                                                        "delta": delta,
-                                                        "agent_id": agent_id,
-                                                        "agent_name": agent_name,
-                                                        "timestamp": datetime.now().isoformat()
-                                                    })
-                                                except Exception:
-                                                    pass
-                                            asyncio.create_task(safe_send())
-                                except Exception as e:
-                                    logger.error(f"Stream callback error: {e}")
-                            
-                            current_cancel_event = asyncio.Event()
-
-                            async def run_execution():
-                                nonlocal status
-                                # 使用 WebSocket 连接时已经加载的 agent_memories
-                                # 不再每次执行都重新加载，依赖 ReActCore 的 _conversation_history 缓存
-                                result = await FlowRunner.run_from_json(
-                                    canvas_data,
-                                    input_message,
-                                    user_id=user_id,
-                                    agentic_flow_id=agentic_flow_id,
-                                    session_id=session_id,
-                                    run_project_id=run_project_id,
-                                    event_callback=event_callback,
-                                    stream_callback=stream_callback_with_collector,
-                                    agent_memories=agent_memories,
-                                    cancel_event=current_cancel_event
-                                )
-                                return result
-                            
-                            current_execution_task = asyncio.create_task(run_execution())
-                            
-                            await _send_event(websocket, session_id, {
-                                "event_type": "execution_start",
-                                "timestamp": datetime.now().isoformat()
-                            })
-                            
-                            execution_context_manager.register(
-                                task=current_execution_task,
-                                user_id=user_id,
-                                agentic_flow_id=agentic_flow_id,
-                                session_id=session_id,
-                                run_project_id=run_project_id,
-                                cancel_event=current_cancel_event
-                            )
-                        
-                        elif data.get("type") == "execute":
-                            # 有正在执行的任务，拒绝新请求
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": "Another execution is in progress",
-                                "session_id": session_id,
-                                "timestamp": _get_timestamp()
-                            })
-                            
-            except asyncio.CancelledError:
-                logger.info(f"[WebSocket] Main loop cancelled")
-                break
-            except Exception as e:
-                logger.error(f"[WebSocket] Main loop error: {e}", exc_info=True)
-                # 尝试通知前端
-                try:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Internal error: {str(e)}",
-                        "timestamp": _get_timestamp()
-                    })
-                except Exception:
-                    pass
-                # 根据错误类型决定是否继续
-                error_str = str(e).lower()
-                if "database" in error_str or "connection" in error_str or "websocket" in error_str:
-                    logger.error(f"[WebSocket] Fatal error, closing connection: {e}")
-                    websocket_open = False
-                else:
-                    logger.info(f"[WebSocket] Non-fatal error, continuing...")
-                    continue  # 非致命错误，继续运行
-                    
-    except WebSocketDisconnect:
-        logger.info(f"WebSocket disconnected: {ws_key}")
-        websocket_open = False
-    except Exception as e:
-        logger.error(f"WebSocket outer error: {e}", exc_info=True)
-        websocket_open = False
+        await ctx.run()
     finally:
-        websocket_open = False
-        
-        if current_execution_task and not current_execution_task.done():
-            logger.info(f"[WebSocket] Cancelling execution in finally: {session_id}")
-            
-            if current_cancel_event:
-                current_cancel_event.set()
-            
-            current_execution_task.cancel()
-            
-            try:
-                await asyncio.wait_for(current_execution_task, timeout=5.0)
-            except asyncio.CancelledError:
-                pass
-            except asyncio.TimeoutError:
-                logger.warning(f"[WebSocket] Task cancellation timeout in finally: {session_id}")
-            
-            if current_collector:
-                # 使用之前确定的status，如果没有则默认为stop
-                if not status:
-                    status = "stop"
-                logger.info(f"[WebSocket] Finally block - saving data, status: {status}, collector has data: {current_collector.get_chunk_count() > 0}, parent_message_id: {last_user_message_id}")
-                
-                agent_data = current_collector.get_agent_data()
-                logger.info(f"[WebSocket] Agent data (finally): {agent_data}")
-                
-                if agent_data:
-                    main_agent_id = None
-                    
-                    for agent_id_key, agent_info in agent_data.items():
-                        data_to_save = agent_info['data']
-                        if not data_to_save:
-                            data_to_save = []
-                        
-                        if main_agent_id is None:
-                            main_agent_id = agent_id_key
-                            current_parent_agent_id = None
-                        else:
-                            current_parent_agent_id = main_agent_id
-                        
-                        logger.info(f"[WebSocket] Saving message (finally) for agent {agent_id_key}, data: {data_to_save}, parent_message_id: {last_user_message_id}, parent_agent_id: {current_parent_agent_id}")
-                        try:
-                            with get_db_context() as finally_db:
-                                await save_session_message(
-                                    db=finally_db, session_id=session_id, user_id=user_id,
-                                    role="assistant", data=data_to_save, status=status, agent_id=agent_id_key,
-                                    agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                    parent_message_id=last_user_message_id,
-                                    parent_agent_id=current_parent_agent_id
-                                )
-                        except Exception as save_error:
-                            logger.error(f"[WebSocket] Failed to save message in finally: {save_error}")
-                else:
-                    logger.info(f"[WebSocket] No agent data (finally), saving empty message, parent_message_id: {last_user_message_id}")
-                    try:
-                        with get_db_context() as finally_db:
-                            await save_session_message(
-                                db=finally_db, session_id=session_id, user_id=user_id,
-                                role="assistant",
-                                data=[],
-                                status=status, agent_id="default",
-                                agentic_flow_id=agentic_flow_id, run_project_id=run_project_id,
-                                parent_message_id=last_user_message_id
-                            )
-                    except Exception as save_error:
-                        logger.error(f"[WebSocket] Failed to save empty message in finally: {save_error}")
-                
-                try:
-                    with get_db_context() as finally_update_db:
-                        # 根据status确定session的最终状态
-                        if status == "error":
-                            db_manager.update_session(
-                                finally_update_db, session_id,
-                                status="failed",
-                                error=error_msg,
-                                completed_at=datetime.now(timezone.utc)
-                            )
-                        else:
-                            db_manager.update_session(
-                                finally_update_db, session_id,
-                                status=status,
-                                completed_at=datetime.now(timezone.utc)
-                            )
-                except Exception as update_error:
-                    logger.error(f"[WebSocket] Failed to update session in finally: {update_error}")
-        
-        _active_websockets.pop(ws_key, None)
-        _websocket_timestamps.pop(ws_key, None)
-        _websocket_keys.pop(ws_key, None)
+        workspace_watcher.stop_watching(session_id)
+        ws_registry.unregister(ws_key)
 
 
 # =============================================================================
@@ -2006,7 +1967,8 @@ async def build_unified_blocks(
     # 1. 查询所有消息，按 message_index 排序
     messages = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == session_id,
-        SessionMessageModel.user_id == user_id
+        SessionMessageModel.user_id == user_id,
+        SessionMessageModel.is_deleted == False
     ).order_by(SessionMessageModel.message_index).all()
     
     # 2. 构建 parent_agent_id -> children 映射表

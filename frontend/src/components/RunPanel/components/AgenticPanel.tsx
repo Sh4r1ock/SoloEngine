@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Button, Typography, Dropdown, message } from 'antd';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Button, Typography, Dropdown, App, Tag, Spin, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
   EditOutlined,
@@ -10,13 +10,153 @@ import {
   DesktopOutlined,
   PlusOutlined,
   ClearOutlined,
+  UpOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import type { AgenticPanel as AgenticPanelType, FileTab } from '../types';
 import EditorLoader, { getEditorForFile } from '../editors';
 import { useOfficeConfigStore } from '../stores/officeConfigStore';
+import { useRunPanelStore } from '../stores/runPanelStore';
+import { fileChangesApi } from '../../../services/fileChangesApi';
+import FileDiffViewer from './FileDiffViewer';
 import { getFileCategory, getFileColor } from '../utils/fileTypeUtils';
+import '../styles/FileChangeStyles.css';
 
 const { Text } = Typography;
+
+const codeExtensions = new Set(['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'hpp', 'css', 'scss', 'less', 'html', 'vue', 'svelte', 'json', 'yaml', 'yml', 'xml', 'sql', 'sh', 'bash', 'zsh', 'ps1', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'm', 'mm', 'lua', 'pl', 'dart', 'md', 'toml', 'ini', 'cfg']);
+
+const ChangesTabContent: React.FC = () => {
+  const fileChangesMap = useRunPanelStore(s => s.fileChangesMap);
+  const activeChangesMessageId = useRunPanelStore(s => s.activeChangesMessageId);
+  const currentSessionId = useRunPanelStore(s => s.currentSessionId);
+  const fileChangeRefreshKey = useRunPanelStore(s => s.fileChangeRefreshKey);
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const [diffContents, setDiffContents] = useState<Record<string, { oldContent: string; newContent: string }>>({});
+  const [loadingFiles, setLoadingFiles] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setExpandedFiles(new Set());
+    setDiffContents({});
+    setLoadingFiles(new Set());
+  }, [activeChangesMessageId, fileChangeRefreshKey]);
+
+  const changes = activeChangesMessageId ? fileChangesMap[activeChangesMessageId] : undefined;
+
+  const toggleFile = (filePath: string) => {
+    setExpandedFiles(prev => {
+      const next = new Set(prev);
+      if (next.has(filePath)) {
+        next.delete(filePath);
+      } else {
+        next.add(filePath);
+        if (!diffContents[filePath] && currentSessionId && activeChangesMessageId) {
+          loadDiffContent(filePath);
+        }
+      }
+      return next;
+    });
+  };
+
+  const loadDiffContent = async (filePath: string) => {
+    if (!currentSessionId || !activeChangesMessageId) return;
+
+    setLoadingFiles(prev => new Set(prev).add(filePath));
+    try {
+      const response = await fileChangesApi.getMessageFileContent(currentSessionId, activeChangesMessageId);
+      const data = (response as any)?.data || response;
+      const targetChange = data?.changes?.find((c: any) => c.file_path === filePath);
+      if (targetChange) {
+        setDiffContents(prev => ({
+          ...prev,
+          [filePath]: {
+            oldContent: targetChange.before_content || '',
+            newContent: targetChange.after_content || '',
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[ChangesTabContent] Failed to load diff:', error);
+    } finally {
+      setLoadingFiles(prev => { const next = new Set(prev); next.delete(filePath); return next; });
+    }
+  };
+
+  if (!changes || changes.length === 0) {
+    return (
+      <div className="sc-changes-empty">
+        <FileOutlined className="sc-changes-empty-icon" />
+        <Text className="sc-changes-empty-text">暂无文件变更记录</Text>
+      </div>
+    );
+  }
+
+  return (
+    <div className="sc-changes-panel">
+      {changes.map((change, index) => {
+        const fileName = change.file_path.split(/[\\/]/).pop() || change.file_path;
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        const isExpanded = expandedFiles.has(change.file_path);
+        const isLoading = loadingFiles.has(change.file_path);
+        const diffContent = diffContents[change.file_path];
+
+        let opLabel = '修改';
+        let opColor = '#1565c0';
+        if (change.operation === 'created') { opLabel = '新建'; opColor = '#2e7d32'; }
+        else if (change.operation === 'deleted') { opLabel = '删除'; opColor = '#c62828'; }
+
+        const added = change.diff?.lines_added ?? 0;
+        const removed = change.diff?.lines_removed ?? 0;
+
+        return (
+          <div key={change.file_path || index} className="sc-changes-file-block">
+            <div
+              className="sc-changes-file-row"
+              onClick={() => toggleFile(change.file_path)}
+            >
+              <div className="sc-changes-file-row-left">
+                {codeExtensions.has(ext) ? (
+                  <CodeOutlined className="sc-changes-file-row-icon" />
+                ) : (
+                  <FileOutlined className="sc-changes-file-row-icon" />
+                )}
+                <Tag color={opColor} className="sc-changes-file-row-op">{opLabel}</Tag>
+                <span className="sc-changes-file-row-name">{fileName}</span>
+              </div>
+              <div className="sc-changes-file-row-right">
+                <span className="sc-changes-file-row-added">+{added}</span>
+                <span className="sc-changes-file-row-removed">-{removed}</span>
+                <span className="sc-changes-file-row-toggle">
+                  {isLoading ? <Spin size="small" /> : isExpanded ? <UpOutlined /> : <DownOutlined />}
+                </span>
+              </div>
+            </div>
+            {isExpanded && (
+              <div className="sc-changes-file-diff">
+                {isLoading ? (
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <Spin size="small" />
+                  </div>
+                ) : diffContent ? (
+                  <FileDiffViewer
+                    filePath={change.file_path}
+                    oldContent={diffContent.oldContent}
+                    newContent={diffContent.newContent}
+                    hideHeader
+                  />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                    <Text type="secondary" style={{ fontSize: 11 }}>无法加载差异内容</Text>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 interface AgenticPanelProps {
   panels: AgenticPanelType[];
@@ -55,6 +195,7 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
   onDocumentContentChange,
   onAutoSave,
 }) => {
+  const { message } = App.useApp();
   const [verticalSplitRatio, setVerticalSplitRatio] = useState(0.5);
   const [isVerticalDragging, setIsVerticalDragging] = useState(false);
   const [verticalDragStartY, setVerticalDragStartY] = useState(0);
@@ -79,14 +220,17 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
     }
   };
 
-  const openPanels = panels.filter(p => p.isOpen);
-  const unopenedPanels = panels.filter(p => !p.isOpen);
+  const openPanels = useMemo(() => panels.filter(p => p.isOpen), [panels]);
+  const unopenedPanels = useMemo(() => panels.filter(p => !p.isOpen), [panels]);
+
+  const onSetActiveTabRef = useRef(onSetActiveTab);
+  onSetActiveTabRef.current = onSetActiveTab;
 
   useEffect(() => {
     if (openPanels.length > 0 && !panels.find(p => p.type === activeTab && p.isOpen)) {
-      onSetActiveTab(openPanels[0].type);
+      onSetActiveTabRef.current(openPanels[0].type);
     }
-  }, [openPanels, activeTab, panels, onSetActiveTab]);
+  }, [openPanels.length, activeTab, panels]);
 
   const panelMenuItems: MenuProps['items'] = unopenedPanels.map(panel => ({
     key: panel.id,
@@ -177,6 +321,11 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
       }}>
         {tab.name}
       </Text>
+      {tab.hasExternalChange && (
+        <Tag color="warning" style={{ margin: '0 2px', fontSize: 9, padding: '0 4px', lineHeight: '14px' }}>
+          外部修改
+        </Tag>
+      )}
       {tab.isModified && <span style={{ color: 'var(--warning)', fontSize: 10 }}>●</span>}
       <ClearOutlined 
         style={{ fontSize: 9, color: 'var(--text-300)', marginLeft: 2 }}
@@ -214,6 +363,18 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
               (e) => onCloseEditorTab(tab.id, e),
               <EditOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />
             ))}
+            {activeEditorTab?.hasExternalChange && (
+              <Tooltip title="重新加载磁盘内容（放弃当前修改）">
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => useRunPanelStore.getState().resolveExternalChange(activeEditorTab.id)}
+                  style={{ color: 'var(--warning)', fontSize: 11, padding: '0 8px' }}
+                >
+                  重新加载
+                </Button>
+              </Tooltip>
+            )}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {activeEditorTab ? (
@@ -266,6 +427,18 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
               (e) => onCloseDocumentTab(tab.id, e),
               <FileTextOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />
             ))}
+            {activeDocumentTab?.hasExternalChange && (
+              <Tooltip title="重新加载磁盘内容（放弃当前修改）">
+                <Button
+                  type="text"
+                  size="small"
+                  onClick={() => useRunPanelStore.getState().resolveExternalChange(activeDocumentTab.id)}
+                  style={{ color: 'var(--warning)', fontSize: 11, padding: '0 8px' }}
+                >
+                  重新加载
+                </Button>
+              </Tooltip>
+            )}
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {activeDocumentTab ? (
@@ -516,24 +689,7 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
                 case 'document':
                   return renderDocumentPanel();
                 case 'changes':
-                  return (
-                    <>
-                      <div style={{ 
-                        padding: '8px 12px', 
-                        borderBottom: '1px solid var(--bg-300)',
-                        background: 'var(--bg-200)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}>
-                        <FileOutlined style={{ fontSize: 12, color: 'var(--primary-100)' }} />
-                        <Text style={{ fontSize: 11, fontWeight: 500 }}>文档变更</Text>
-                      </div>
-                      <div style={{ padding: 12 }}>
-                        <Text type="secondary" style={{ fontSize: 11 }}>文档变更记录</Text>
-                      </div>
-                    </>
-                  );
+                  return <ChangesTabContent />;
                 default:
                   return null;
               }

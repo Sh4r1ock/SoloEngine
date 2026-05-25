@@ -51,14 +51,12 @@ class SkillMetadata:
         description: str = "",
         author: str = "",
         tags: List[str] = None,
-        instructions: str = "",
     ):
         self.name = name
         self.version = version
         self.description = description
         self.author = author
         self.tags = tags or []
-        self.instructions = instructions
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典。"""
@@ -68,7 +66,6 @@ class SkillMetadata:
             "description": self.description,
             "author": self.author,
             "tags": self.tags,
-            "instructions": self.instructions,
         }
 
 
@@ -178,7 +175,6 @@ class SkillParser:
         match = self.FRONTMATTER_PATTERN.match(content)
         if match:
             frontmatter_str = match.group(1)
-            instructions = match.group(2)
 
             try:
                 frontmatter = yaml.safe_load(frontmatter_str)
@@ -187,7 +183,6 @@ class SkillParser:
                 frontmatter = {}
         else:
             frontmatter = {}
-            instructions = content
 
         return SkillMetadata(
             name=frontmatter.get("name", ""),
@@ -195,7 +190,6 @@ class SkillParser:
             description=frontmatter.get("description", ""),
             author=frontmatter.get("author", ""),
             tags=frontmatter.get("tags", []),
-            instructions=instructions,
         )
 
     def _parse_skills_dir(self, skills_dir: str, package: SkillsPackage):
@@ -278,32 +272,6 @@ class SkillParser:
                         type="reference",
                         content=content,
                     ))
-
-    def generate_prompt(
-        self,
-        package: SkillsPackage,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> str:
-        """生成包含 Skills 的提示词。
-
-        Args:
-            package: Skills 包
-            context: 上下文变量
-
-        Returns:
-            生成的提示词
-        """
-        if not package.metadata:
-            return ""
-
-        instructions = package.metadata.instructions
-        context = context or {}
-
-        # 替换上下文变量
-        for key, value in context.items():
-            instructions = instructions.replace(f"{{{{ {key} }}}}", str(value))
-
-        return instructions
 
     def list_packages(self) -> List[str]:
         """列出所有 Skills 包。"""

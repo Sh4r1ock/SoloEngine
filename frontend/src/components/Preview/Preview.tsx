@@ -32,7 +32,7 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
 
     try {
       const result = await agenticFlowApi.runFlow(currentProject.id, input);
-      const newSessionId = result.session_id;
+      const newSessionId = result.id;
 
       await wsService.connect(newSessionId);
 

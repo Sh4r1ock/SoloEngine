@@ -28,7 +28,6 @@ SoloEngine : 节点数据模型模块
 
 from abc import ABC, abstractmethod
 from typing import Literal, Dict, Any
-import json
 
 class AgentNode(ABC):
     def __init__(self, id: str, name: str, node_type: Literal["orchestrator", "planner", "executor", "custom"], config: Dict[str, Any]):
@@ -47,7 +46,6 @@ class OrchestratorNode(AgentNode):
     
     async def run(self, global_context: Dict[str, Any]) -> Dict[str, Any]:
         system_prompt = self.config.get("system_prompt", "")
-        user_prompt = self.config.get("user_prompt", "")
         
         result = {
             "node_id": self.id,
@@ -65,7 +63,6 @@ class PlannerNode(AgentNode):
     
     async def run(self, global_context: Dict[str, Any]) -> Dict[str, Any]:
         system_prompt = self.config.get("system_prompt", "")
-        user_prompt = self.config.get("user_prompt", "")
         
         plan = {
             "steps": [
@@ -92,7 +89,6 @@ class ExecutorNode(AgentNode):
     
     async def run(self, global_context: Dict[str, Any]) -> Dict[str, Any]:
         system_prompt = self.config.get("system_prompt", "")
-        user_prompt = self.config.get("user_prompt", "")
         skills = self.config.get("skills", [])
         
         execution_result = {

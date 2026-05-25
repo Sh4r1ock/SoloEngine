@@ -1,647 +1,121 @@
 <div align="center">
 
-<img src="icon/SoloEngine.png" alt="SoloEngine" width="300"/>
-
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
-
-**Languages**: English | [简体中文](i18n/docs/README_CN.md) | [Español](i18n/docs/README_ES.md) | [Deutsch](i18n/docs/README_DE.md) | [Français](i18n/docs/README_FR.md)
+<img src="icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
 </div>
 
 ***
 
-## Table of Contents
-
-- [What is SoloEngine?](#what-is-soloengine)
-- [Design Philosophy](#design-philosophy)
-- [Core Features](#core-features)
-- [Quick Start](#quick-start)
-- [System Architecture](#system-architecture)
-- [Core Concepts](#core-concepts)
-- [Project Structure](#project-structure)
-- [Tech Stack](#tech-stack)
-- [Roadmap](#roadmap)
-- [Partnerships & Investment](#partnerships--investment)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+<h2 align="center"><b>让 AI 驱动每一个行业。</b></h2>
 
 ***
 
-## What is SoloEngine?
+<p align="center"><b>SoloEngine</b> 是第一款低代码 Agentic AI 开发平台。你只需像组建一支创业团队那样：将所需的 Agent 拖入画布，连接协作关系，点击运行——此后的规划、执行与交付，全部由 Agent 自主完成。</p>
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
-SoloEngine is an **open-source low-code Agentic AI development framework** designed to empower developers to easily build, deploy, and manage complex AI Agent workflows. It features a visual canvas design with native support for multi-Agent collaboration, tool invocation, MCP protocol integration, and progressive Skill disclosure mechanisms.
+<div align="center">
 
-At its core, SoloEngine is powered by a **ReAct (Reasoning + Acting)** paradigm-based intelligent execution engine. Through its plugin-based architecture, it achieves high extensibility and supports multiple LLM providers and tool integrations.
+[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
 
-***
+</div>
 
-## Design Philosophy
-
-### Core Design Principles
-
-| Principle | Description |
-| --------- | ----------- |
-| **Visual Orchestration** | Drag-and-drop canvas based on React Flow for intuitive multi-Agent workflow design |
-| **Plugin Architecture** | Modular expansion through abstract interface definitions (IMemory, IToolExecutor, IMCPClient, etc.) |
-| **ReAct Paradigm** | Adopts Reasoning + Acting loops, enabling Agents to think, act, observe, and iterate |
-| **Multi-Model Unification** | Unified model adaptation layer that abstracts away API differences across LLM providers |
-| **Progressive Disclosure** | Skills and tools display lightweight metadata initially, with details loaded on-demand to optimize Token consumption |
-| **Secure Sandbox** | Project isolation, tool permission control, and command security checks ensure safe execution |
-
-***
-
-## Core Features
-
-### 🤖 Multi-Agent Orchestration
-
-- **Visual Canvas**: Drag-and-drop workflow design based on React Flow
-- **Flexible Agent Configuration**: Achieve different Agent roles through different prompts, tools, and skills
-  - **Four Preset Agent Types**:
-    - **Custom**: User-configured Agent, used as a blank template
-    - **Orchestrator**: Coordinates multiple SubAgents, assigns tasks, aggregates results
-    - **Planner**: Analyzes problems, formulates execution plans
-    - **Executor**: Executes specific tasks, invokes tools and skills
-- **Topological Sort Compilation**: Compiles from bottom to top, automatically resolves Agent dependencies
-- **Concurrent Execution**: Supports multi-Agent parallel execution and result aggregation
-- **SubAgent Delegation**: Delegates subtasks to specialized SubAgents via Task tool
-
-### 🔧 Rich Tool Ecosystem
-
-SoloEngine includes a complete toolset covering file operations, command execution, network access, and more:
-
-| Tool Category | Tool Name | Description |
-| ------------- | --------- | ----------- |
-| **File Operations** | Read | Read file content, supports line range |
-| | Write | Write files |
-| | DeleteFile | Delete files |
-| | LS | List directory contents |
-| | SearchReplace | Search and replace file content |
-| **Search** | Grep | Regex search file content |
-| | Glob | Pattern matching file search |
-| | SearchCodebase | Semantic code search |
-| **Commands** | RunCommand | Execute Shell commands, supports blocking/non-blocking modes |
-| | CheckCommandStatus | Check command execution status |
-| | StopCommand | Stop running commands |
-| | GetDiagnostics | Get code diagnostic information |
-| **Network** | WebSearch | Web search |
-| | WebFetch | Fetch web page content |
-| **Agent** | Skill | Invoke skills |
-| | Task | Launch SubAgent |
-| | MCP | Invoke MCP tools |
-| **Ask** | AskUserQuestion | Ask user questions |
-| | TodoWrite | Create todo items |
-
-**Tool Invocation Streaming Four-Event Mechanism**:
-
-SoloEngine implements a complete four-event lifecycle management for tool invocation, ensuring real-time display of tool invocation status on the frontend:
-
-| Event | Trigger Timing | Data Content |
-| ----- | -------------- | ------------ |
-| `TOOL_CALL_START` | New tool invocation ID detected | `{id, name, status: "start"}` |
-| `TOOL_CALL_ARGS` | Incremental parameter transmission (may occur multiple times) | `{id, arguments: "..."}` |
-| `TOOL_CALL_END` | Parameter transmission complete | `{id, status: "end"}` |
-| `TOOL_CALL_RESULT` | Tool execution result returned | `{id, result, error?}` |
-
-**Unified Frontend Format**: All events are converted to `{type: "tool_calls", tool_calls: [...]}` format and pushed in real-time via WebSocket.
-
-### 🎯 Skill System
-
-Skill is a reusable AI capability module with **progressive disclosure** design:
-
-```
-skill-name/
-├── SKILL.md          # Required: Skill definition and instructions
-├── references/       # Optional: Reference documents
-├── scripts/          # Optional: Helper scripts
-├── templates/        # Optional: Template files
-└── assets/           # Optional: Asset files
-```
-
-**Progressive Disclosure Mechanism**:
-
-| Level | Timing | Content | Token Consumption |
-| ----- | ------ | ------- | ----------------- |
-| Level 1 | Tool Spec | name + description | ~100 tokens |
-| Level 2 | Skill Invocation | Full SKILL.md content + folder_path | On-demand |
-| Level 3 | Model Autonomy | Nested resources (references/, templates/) | On-demand |
-
-**Skill Editing and Creation System**:
-
-SoloEngine provides complete Skill management functionality:
-
-- **Create Skill**: Create new Skill packages via API or interface
-- **Edit SKILL.md**: Online editing of skill definitions and instructions
-- **File Management**: Manage references/, scripts/, templates/, assets/ directories
-- **Import/Export**: Support ZIP format import/export of Skill packages
-- **System Skills**: Pre-installed system-level Skills for user reference
-
-### 🔌 MCP Protocol Support
-
-Full support for **Model Context Protocol** (proposed by Anthropic), adopting **Host-Client layered architecture** and **progressive discovery mode**:
-
-**Architecture Design**:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  CompiledFlow (Host Layer)                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │         MCPHostClientManager (Unified Management)   │   │
-│  │  - Collects union of mcp_servers from all Agents    │   │
-│  │    at compile time                                  │   │
-│  │  - Creates and registers MCPClient uniformly        │   │
-│  │  - Manages Client lifecycle (connect, disconnect)   │   │
-│  │  - Multiple Agents share the same Client            │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                   MCPTool (Tool Layer)                       │
-│  - Unified entry for invoking MCP server tools               │
-│  - Progressive discovery: Discovery → Schema → Execution     │
-│  - Only injects server list into System Prompt, not tools    │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  MCPClient (Client Layer)                    │
-│  - stdio: Communicates with local MCP servers via stdin/stdout |
-│  - SSE: Communicates with remote servers via Server-Sent Events |
-│  - HTTP: Bidirectional communication via Streamable HTTP     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Progressive Discovery Mode (Three-Tier Progression)**:
-
-| Tier | Invocation | Return Content | Token Savings |
-| ---- | ---------- | -------------- | ------------- |
-| **Tier 1 - Discovery** | `MCP(server_name="github")` | All tool list for the server (name + description) | Avoids injecting all tools |
-| **Tier 2 - Schema** | `MCP(server_name="github", tool_name="create_issue")` | Single/batch tool details (with parameter schema) | On-demand loading |
-| **Tier 3 - Execution** | `MCP(server_name="github", tool_name="create_issue", arguments={...})` | Tool execution result | Precise execution |
-
-**Token Savings**: Compared to traditional methods injecting all tool schemas, progressive discovery saves **85%+** Token consumption.
-
-**Writing MCP Services in Python**:
-
-SoloEngine supports users writing custom MCP servers in Python:
-
-```python
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("my-custom-server")
-
-@mcp.tool()
-def my_tool(param: str) -> str:
-    """Custom tool description"""
-    return f"Processing result: {param}"
-
-if __name__ == "__main__":
-    mcp.run(transport="stdio")
-```
-
-**MCP Service Management**:
-
-- Support for HTTP/SSE/Stdio transport protocols
-- Import open-source MCP Server configurations (GitHub, Filesystem, PostgreSQL, etc.)
-- Create and manage custom MCP Servers
-- Online editing of Python Function code, auto-compiled to MCP Server
-- Test MCP Server connections
-- Get MCP Server lists and resources
-
-### 💬 Run Panel
-
-- **Real-time Streaming Output**: WebSocket real-time push of execution status and LLM responses
-- **Session Management**: Support for multi-session switching and history
-- **File Browser**: Integrated project file management
-- **Code Editor**: Code editing experience based on Monaco Editor
-- **Invocation Records**: Real-time display of tool invocation, skill invocation, and MCP invocation status
-
-### 🔌 Plugin Architecture
-
-Highly extensible through abstract interfaces:
-
-```python
-class IToolExecutor(ABC):
-    """Tool executor interface"""
-    async def execute(self, tool_call: dict) -> dict: ...
-    def get_available_tools(self) -> List[dict]: ...
-
-class IMCPClient(ABC):
-    """MCP client interface"""
-    async def connect(self) -> None: ...
-    async def call_tool(self, tool_name: str, arguments: dict) -> dict: ...
-```
+<p align="center">
+  <a href="i18n/docs/README_EN.md">English</a> |
+  简体中文 |
+  <a href="i18n/docs/README_ES.md">Español</a> |
+  <a href="i18n/docs/README_DE.md">Deutsch</a> |
+  <a href="i18n/docs/README_FR.md">Français</a>
+</p>
 
 ***
 
-## Quick Start
+## 为什么选择 SoloEngine
 
-### Requirements
+Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成过去需要十人团队才能交付的工作量。然而，这场变革始终被局限在IDE之内。要构建一个真正意义上的 AI Agent，你不得不手写 LangChain 管线、反复调试 ReAct 循环、逐一定义工具 Schema。不懂编程？这一切便无从谈起。
 
-- Python 3.11+
-- Node.js 18+
-- npm or yarn
+现有的替代方案同样难以解决问题：工作流平台（Dify、n8n 等）执行的是预先编排的固定路径，其核心并非自主 Agent；代码框架（LangChain、CrewAI 等）则要求使用者必须具备 Python 编程能力。**SoloEngine** 的定位，正是填补这两者之间的空白。
 
-### Installation
+| <br />     | Dify、n8n、Zapier         | LangChain、CrewAI、LangGraph | **SoloEngine**    |
+| ---------- | ----------------------- | -------------------------- | ----------------- |
+| Agentic AI | ✗ 仅支持脚本化工作流             | ✓ ReAct / 多 Agent          | ✓ ReAct / 多 Agent |
+| 无需编码       | ✓                       | ✗ 必须掌握 Python              | ✓                 |
+| 可视化编排      | 部分支持                    | ✗                          | ✓ 完整的画布体验         |
+| 领域专家可独立构建  | ✓（但 Agent 并非真正 Agentic） | ✗                          | ✓                 |
+| 多 Agent 协作 | ✗                       | ✓                          | ✓                 |
 
-1. **Clone the repository**
+- **并非又一个工作流工具** —— Agent 的实际运行模式是「思考 → 行动 → 观察 → 重复」循环。所有决策都在运行时动态做出。当研究 Agent 遇到无法推进的情况，它会自动调整规划——不存在任何硬编码的兜底路径。
+- **领域专家可直接构建** —— 律师将合同审查 Agent 拖入画布，连接到研究 Agent，点击运行。全程无需程序员介入。
+- **工具、Skill、MCP——均可热插拔** —— 每个 Agent 在运行时按需加载所需的工具和 Skill。得益于渐进式披露机制，Token 消耗可降低 85% 以上。
+- **一个适配层，覆盖所有模型** —— OpenAI、Anthropic、Ollama、DeepSeek、通义千问、智谱——统一接口，无缝切换。
+
+### 工作原理
+
+所有 Agent 共享同一套底层原语，区别仅在于配置方式的不同。画布上的可视化设计经过编译，直接转化为可执行的 Agent 团队。
+
+1. **编译** —— 可视化布局经拓扑排序转化为 Agent 有向无环图（DAG）。同一套编译器，可生成无数种团队组合。
+2. **统一的 ReAct 引擎** —— 每个 Agent 均运行相同的「思考 → 行动 → 观察 → 重复」循环。
+3. **渐进式披露** —— Agent 仅在运行时加载实际需要的内容，这让低代码环境下的 Agentic AI 变得切实可行。
+
+## 快速开始
 
 ```bash
 git clone https://github.com/Sh4r1ock/SoloEngine.git
 cd SoloEngine
-```
 
-2. **Install backend dependencies**
-
-```bash
+# 后端 (Python 3.11+)
 cd backend
 pip install -r requirements.txt
-```
-
-3. **Install frontend dependencies**
-
-```bash
-cd frontend
-npm install
-```
-
-4. **Start services**
-
-```bash
-# Start backend (port 8990)
-cd backend
 python main.py
 
-# Start frontend (port 8991)
-cd frontend
+# 前端 (Node.js 18+) —— 在另一个终端中执行
+cd frontend 
+npm install
 npm run dev
 ```
 
-5. **Access the application**
+在浏览器中打开 \*\*<http://localhost:8991**，即可构建你的第一个> Agent 团队。
 
-Open browser and visit `http://localhost:8991`
+## 应用场景
 
-### Port Configuration
+- **VibeLawing** —— 律师将搜索 Agent、归档 Agent、排版 Agent 依次拖入画布，点击运行。AI 将自动拆解并规划法律工作：解析事实、定位法条、整理案例、论证与整理、格式化文档，您只需审核和微调即可交付——整个过程就像开发者在 Cursor 中进行 vibe coding 一样自然流畅。
+- **VibeMarketing** —— 营销人员将调研 Agent、文案 Agent、素材 Agent 拖入画布，点击运行。SoloEngine将自动对受众进行分析，并在此基础上查询相关产品方案，对标竞品编写营销策略，交付给您完美的营销方案。
+- **一键打包** —— 搭建好 Agent 团队后，点击一键打包，即可输出一个可供任何人直接使用的完整产品。
 
-| Service | Port | Description |
-| ------- | ---- | ----------- |
-| Main Backend | 8990 | FastAPI service |
-| Frontend | 8991 | React dev server |
+## Star 趋势
 
-***
+[![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine\&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine\&Date)
 
-## Core Concepts
+<p align="center">⭐ <b>如果你觉得 SoloEngine 有用，欢迎给我们点亮 Star——每一颗都是对我们莫大的鼓励！</b></p>
 
-### AgenticFlow
+## 致谢
 
-AgenticFlow is SoloEngine's core concept, representing a complete AI workflow. It is defined by canvas JSON, containing nodes (Agents) and edges (invocation relationships).
+特别感谢：
 
-```json
-{
-  "nodes": [
-    {
-      "id": "agent_1",
-      "type": "agent",
-      "data": {
-        "name": "Code Assistant",
-        "agentType": "executor",
-        "system_prompt": "You are a professional programming assistant...",
-        "tools": ["Read", "Write", "RunCommand", "Skill", "MCP"],
-        "skills": ["algorithmic-art"],
-        "mcp_tools": ["github"]
-      }
-    }
-  ],
-  "edges": [
-    { "source": "agent_1", "target": "agent_2" }
-  ]
-}
-```
+<p align="center">
+  <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
+</p>
 
-### Agent Configuration
+## 参与贡献
 
-Agents in SoloEngine have no essential difference—**all Agents are identical execution units**. The so-called "types" are just different preset configurations:
+我们非常期待你的加入。
 
-| Configuration | Description |
-| ------------- | ----------- |
-| **system_prompt** | System prompt, defines Agent's role and behavior |
-| **tools** | Available tool list, determines what operations Agent can perform |
-| **skills** | Skill list, provides professional domain capabilities |
-| **mcp_servers** | MCP server list, extends external tool capabilities |
-| **subagents** | Sub-Agent list, enables task delegation |
+无论是一个拼写修正、一个新工具插件、一处文档优化，还是一个完整的功能特性——每一点贡献都在让 SoloEngine 变得更好。无论 PR 大小，我们都同样欢迎。
 
-By combining different configurations, you can achieve:
+📝 [贡献指南](./CONTRIBUTING.md)  ·  🐛 [适合上手的问题](https://github.com/Sh4r1ock/SoloEngine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)  ·  📧 <sh4r1ock@qq.com>
 
-- **Orchestrator role**: Configure Task tool and coordination prompts
-- **Planner role**: Configure planning-related prompts
-- **Executor role**: Configure rich tools and skills
+## 许可证
 
-***
-
-## System Architecture
-
-### SoloAgent Architecture — Agentic Runtime Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     AgenticFlow Instance Layer                   │
-│                      (run.py)                                    │
-│    Model memory read/write, Session creation and isolation       │
-├─────────────────────────────────────────────────────────────────┤
-│                       Compiler Layer                             │
-│                   (flow_compiler.py)                             │
-│         Compile and execute Flow, coordinate multi-Agent         │
-├─────────────────────────────────────────────────────────────────┤
-│                      SoloAgent Layer                             │
-│                     (agent.py)                                   │
-│   Based on ReActCore, assembles various Plugins into full Agent  │
-├─────────────────────────────────────────────────────────────────┤
-│                      ReActCore Layer                             │
-│                    (react_core.py)                               │
-│      Receives data and executes, core ReAct execution engine     │
-├─────────────────────────────────────────────────────────────────┤
-│                      External Interfaces                         │
-│          LLM API (OpenAI / Anthropic / Ollama / Qwen)            │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Data Persistence
-
-SoloEngine uses SQLite database for complete session persistence:
-
-**Session Management**:
-
-- `AgenticFlowSessionModel`: Session metadata (status, Token usage, execution duration)
-- `SessionMessageModel`: Message records (grouped by agent_id, supports parent_agent_id for SubAgent hierarchy)
-
-**Memory Distribution Mechanism**:
-
-```python
-# Read memories from database and distribute by agent_id
-agent_memories = await load_and_distribute_memories(db, session_id, user_id)
-# Set to CompiledFlow
-compiled_flow.set_agent_memories(agent_memories)
-```
-
-### Compilation Cache Mechanism (Compiler Layer)
-
-`CompiledFlowFactory` implements LRU cache to avoid repeated compilation:
-
-| Configuration | Default | Description |
-| ------------- | ------- | ----------- |
-| `MAX_INSTANCES` | 100 | Maximum cached instances |
-| `CACHE_TIMEOUT` | 1800s | Cache timeout |
-
-**Cache Key Format**: `{user_id}:{agentic_flow_id}:{session_id}:{run_project_id}`
-
-**Cache Features**:
-
-- Automatic cleanup of expired instances
-- Concurrent execution lock (asyncio.Lock per Flow)
-- User registration tracking
-
-### Core Component Responsibilities
-
-| Component | File | Responsibility |
-| --------- | ---- | -------------- |
-| **ReActCore** | `core/react_core.py` | ReAct core engine, handles LLM call loops, tool invocation, message formatting |
-| **SoloAgent** | `solo_agent/agent.py` | Agent base class, assembles Memory, Tools, MCP, Skills plugins |
-| **AgenticFlowCompiler** | `solo_agent/compiler/flow_compiler.py` | Compiler, transforms canvas JSON into executable Agent instance trees |
-| **ToolkitExecutor** | `plugins/tools/toolkit_executor.py` | Tool executor, manages and executes Agent-available tools |
-| **MCPHostClientManager** | `solo_agent/compiler/mcp_host_client_manager.py` | MCP Host layer manager, unified management of all MCP Client connections |
-| **MCPClient** | `plugins/mcp/mcp_client.py` | MCP client, communicates with MCP servers |
-| **MCPTool** | `plugins/tools/agent/mcp.py` | MCP tool, implements progressive discovery (Discovery→Schema→Execution) |
-| **SkillTool** | `plugins/tools/agent/skill.py` | Skill tool, implements progressive skill disclosure |
-
-### Model Adaptation Layer
-
-SoloEngine supports multiple LLM providers through a unified model adaptation layer:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│              ReActCore (Unified Invocation)                  │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                  Model Adaptation Layer                      │
-│   OpenAIModel | AnthropicModel | OllamaModel | QwenModel    │
-│   DeepSeekModel | ZhipuModel                                 │
-└─────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────┐
-│                     LLM API                                  │
-│   OpenAI GPT-4 | Claude | Ollama Llama | Qwen               │
-│   DeepSeek | Zhipu GLM                                       │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Each model adapter is responsible for:
-
-- Unified message format conversion
-- Streaming/non-streaming response handling
-- Tool invocation (Function Calling) adaptation
-- Special feature support (e.g., Claude Extended Thinking)
-
-***
-
-## Project Structure
-
-```
-SoloEngine/
-├── backend/                    # Backend code
-│   ├── app/                    # FastAPI application
-│   │   ├── core/               # Core modules
-│   │   │   ├── database.py     # Database models
-│   │   │   ├── config.py       # Configuration management
-│   │   │   └── data_paths.py   # Path management
-│   │   └── routers/            # API routes
-│   ├── SoloAgent/              # Agent core
-│   │   ├── core/               # Core engine
-│   │   │   ├── react_core.py   # ReAct core implementation
-│   │   │   └── interfaces.py   # Plugin interface definitions
-│   │   ├── model/              # LLM model adapters
-│   │   │   ├── openai_model.py # OpenAI adapter
-│   │   │   ├── anthropic_model.py # Anthropic adapter
-│   │   │   ├── ollama_model.py # Ollama adapter
-│   │   │   └── qwen_model.py   # Qwen adapter
-│   │   ├── plugins/            # Plugin system
-│   │   │   ├── tools/          # Tool plugins
-│   │   │   │   ├── agent/      # Agent tools (Skill, MCP, Task)
-│   │   │   │   ├── file/       # File tools (Read, Write, Delete)
-│   │   │   │   ├── command/    # Command tools (RunCommand)
-│   │   │   │   ├── network/    # Network tools (WebSearch, WebFetch)
-│   │   │   │   └── search/     # Search tools (Grep, Glob, SearchCodebase)
-│   │   │   ├── mcp/            # MCP client
-│   │   │   │   └── mcp_client.py
-│   │   │   └── memory/         # Memory plugins
-│   │   └── solo_agent/         # SoloAgent configuration & compilation
-│   │       ├── agent.py        # Agent implementation
-│   │       ├── config.py       # Configuration definitions
-│   │       └── compiler/       # Compiler
-│   │           └── flow_compiler.py
-│   └── main.py                 # Entry point
-├── frontend/                   # Frontend code
-│   ├── src/
-│   │   ├── components/         # React components
-│   │   │   ├── Canvas/         # Canvas components
-│   │   │   ├── RunPanel/       # Run panel
-│   │   │   ├── Settings/       # Settings components
-│   │   │   ├── SkillsManager/  # Skill management
-│   │   │   └── MCPManager/     # MCP management
-│   │   ├── pages/              # Page components
-│   │   ├── services/           # API services
-│   │   ├── store/              # Zustand state
-│   │   └── hooks/              # React Hooks
-│   └── package.json
-├── data/                       # Data directory
-│   ├── database/               # SQLite database
-│   └── system/                 # System resources
-│       ├── mcp_servers/        # System MCP
-│       └── skills/             # System skills
-└── i18n/                       # Internationalization docs
-    └── docs/                   # Documentation
-```
-
-***
-
-## Tech Stack
-
-### Backend
-
-| Technology | Version | Purpose |
-| ---------- | ------- | ------- |
-| [Python](https://www.python.org/) | 3.11+ | Core runtime |
-| [FastAPI](https://fastapi.tiangolo.com/) | 0.115+ | Web framework, REST API |
-| [SQLAlchemy](https://www.sqlalchemy.org/) | 2.0+ | ORM database operations |
-| [SQLite](https://www.sqlite.org/) | 3.x | Embedded database |
-| [Pydantic](https://pydantic-docs.helpmanual.io/) | 2.0+ | Data validation |
-| [WebSockets](https://websockets.readthedocs.io/) | 12.0+ | Real-time communication |
-| [MCP Python SDK](https://modelcontextprotocol.io/) | latest | Model Context Protocol |
-
-### Frontend
-
-| Technology | Version | Purpose |
-| ---------- | ------- | ------- |
-| [React](https://reactjs.org/) | 18.2 | UI framework |
-| [TypeScript](https://www.typescriptlang.org/) | 5.3 | Type safety |
-| [Vite](https://vitejs.dev/) | 5.0+ | Build tool |
-| [React Flow](https://reactflow.dev/) | 11.x | Canvas visualization |
-| [Zustand](https://zustand-demo.pmnd.rs/) | 4.x | State management |
-| [Ant Design](https://ant.design/) | 5.x | UI component library |
-| [Tailwind CSS](https://tailwindcss.com/) | 3.x | Styling framework |
-| [Monaco Editor](https://microsoft.github.io/monaco-editor/) | 0.45+ | Code editor |
-
-### Supported LLM Providers
-
-SoloEngine adopts a unified model adaptation layer, supporting the following providers:
-
-| Provider | Adapter Mode | Feature Support |
-| -------- | ------------ | --------------- |
-| [OpenAI](https://openai.com/) | Native SDK | Function Calling, Streaming |
-| [Anthropic](https://www.anthropic.com/) | Native SDK | Extended Thinking, Tool Use |
-| [Ollama](https://ollama.ai/) | OpenAI-compatible API | Local deployment, No API Key |
-| [Alibaba Qwen](https://tongyi.aliyun.com/) | OpenAI-compatible API | Chinese optimization, Long context |
-| [DeepSeek](https://www.deepseek.com/) | OpenAI-compatible API | Reasoning enhancement, Code generation |
-| [Zhipu GLM](https://open.bigmodel.cn/) | OpenAI-compatible API | Chinese optimization, Multimodal |
-
-***
-
-## Roadmap
-
-- Export mechanism and one-click packaging
-- Integration with external APIs (Lark, Telegram, etc.)
-- Equal Agent mechanism
-- i18n multi-language support
-- Dark mode
-- Agentic AI operation following
-
-***
-
-## 🤝 Partnerships & Investment
-
-SoloEngine is in a rapid development phase. We are committed to building an open-source, open, and powerful low-code Agentic AI development platform. We believe that AI Agent technology will profoundly transform the future of work, and SoloEngine will be a significant driving force in this transformation.
-
-### What We Are Looking For
-
-| Partnership Direction | Description |
-| --------------------- | ----------- |
-| **Technical Partners** | Collaborate on core features, explore the boundaries of Agent technology |
-| **Product Partnerships** | Integrate SoloEngine into your products, co-create industry solutions |
-| **Ecosystem Building** | Develop plugins, skills, and MCP services to enrich the ecosystem |
-
-### Contact Us
-
-If you are interested in SoloEngine, please reach out to us:
-
-- 📧 **Email**: <sh4r1ock@qq.com>
-- 🐙 **GitHub Issues**: [Submit Issue](https://github.com/Sh4r1ock/SoloEngine/issues)
-
-> **We look forward to working with you to advance SoloEngine's development!**
-
-***
-
-## Contributing
-
-We welcome all forms of contributions!
-
-### Development Environment Setup
-
-1. Fork this repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Install dependencies: `pip install -r backend/requirements.txt`
-
-### Code Standards
-
-- Python: Follow PEP 8, use Black for formatting
-- TypeScript: Use ESLint + Prettier
-- Commit messages: Follow Conventional Commits
-
-### Submitting PRs
-
-1. Ensure all tests pass
-2. Update relevant documentation
-3. Submit Pull Request
-
-***
-
-## License
-
-Copyright 2026 Sh4rlock
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
-See the [LICENSE](./LICENSE) file for details.
-
-***
-
-## Acknowledgments
-
-SoloEngine's development benefits from the following open-source projects:
-
-- [FastAPI](https://fastapi.tiangolo.com/) - Modern, high-performance Python web framework
-- [React](https://reactjs.org/) - JavaScript library for building user interfaces
-- [React Flow](https://reactflow.dev/) - For building interactive diagrams and flowcharts
-- [Monaco Editor](https://microsoft.github.io/monaco-editor/) - VS Code's code editor
-- [Model Context Protocol](https://modelcontextprotocol.io/) - Anthropic's Model Context Protocol
-- [Tailwind CSS](https://tailwindcss.com/) - Utility-first CSS framework
+Apache License 2.0。详见 [LICENSE](./LICENSE)。
 
 ***
 
 <div align="center">
 
-**Made with ❤️ by SoloEngine Team**
+**SoloEngine 团队，用 ❤️ 倾心打造**
 
 </div>

@@ -33,13 +33,11 @@ SoloEngine : 开放市场API模块
     - 第三方工具发现
 """
 
-import os
-import json
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
-from app.core.cache import async_cached, global_cache
+from app.core.cache import global_cache
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 

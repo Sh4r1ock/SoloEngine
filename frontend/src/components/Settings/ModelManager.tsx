@@ -14,6 +14,7 @@ import {
   Form,
   Input,
   Select,
+  AutoComplete,
   InputNumber,
   Switch,
   message,
@@ -23,6 +24,7 @@ import {
   Row,
   Col,
   Alert,
+  Pagination,
 } from 'antd';
 import {
   PlusOutlined,
@@ -35,8 +37,12 @@ import {
 } from '@ant-design/icons';
 import { llmApi, LLMConfig, ProviderConfig, CreateLLMConfigRequest } from '../../services/llmApi';
 import { formatDateTime } from '../../utils/timezone';
+import { LLM_DEFAULTS } from '../../config/llmDefaults';
+import { getProviderDefaultBaseUrl } from '../../config/providerDefaults';
 
 const { Option } = Select;
+
+const MASKED_API_KEY = '••••••••';
 
 const ModelManager: React.FC = () => {
   const [configs, setConfigs] = useState<LLMConfig[]>([]);
@@ -49,6 +55,9 @@ const ModelManager: React.FC = () => {
     status: 'idle' | 'success' | 'error';
     message: string;
   }>({ status: 'idle', message: '' });
+  const [apiKeyModified, setApiKeyModified] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -79,14 +88,15 @@ const ModelManager: React.FC = () => {
 
   const handleCreate = () => {
     setEditingConfig(null);
+    setApiKeyModified(false);
     form.resetFields();
     form.setFieldsValue({
-      temperature: 0.7,
-      max_tokens: 2048,
-      top_p: 1.0,
-      frequency_penalty: 0.0,
-      presence_penalty: 0.0,
-      timeout: 60,
+      temperature: LLM_DEFAULTS.TEMPERATURE,
+      max_tokens: LLM_DEFAULTS.MAX_TOKENS,
+      top_p: LLM_DEFAULTS.TOP_P,
+      frequency_penalty: LLM_DEFAULTS.FREQUENCY_PENALTY,
+      presence_penalty: LLM_DEFAULTS.PRESENCE_PENALTY,
+      timeout: LLM_DEFAULTS.TIMEOUT,
       is_default: false,
     });
     setModalVisible(true);
@@ -95,11 +105,14 @@ const ModelManager: React.FC = () => {
 
   const handleEdit = (record: LLMConfig) => {
     setEditingConfig(record);
+    setApiKeyModified(false);
+    form.resetFields();
     form.setFieldsValue({
       name: record.name,
       provider: record.provider,
       model_name: record.model_name,
       base_url: record.base_url,
+      api_key: record.has_api_key ? MASKED_API_KEY : undefined,
       temperature: record.temperature,
       max_tokens: record.max_tokens,
       top_p: record.top_p,
@@ -156,6 +169,10 @@ const ModelManager: React.FC = () => {
   const handleTest = async () => {
     try {
       const values = await form.validateFields();
+      if (values.api_key === MASKED_API_KEY) {
+        message.warning('API密钥使用星号掩码显示，请输入实际的API密钥后再测试');
+        return;
+      }
       setTestLoading(true);
       const result = await llmApi.testConfig({
         name: values.name,
@@ -182,8 +199,12 @@ const ModelManager: React.FC = () => {
       const values = await form.validateFields();
       
       if (editingConfig) {
+        const submitValues = { ...values };
+        if (submitValues.api_key === MASKED_API_KEY) {
+          delete submitValues.api_key;
+        }
         await llmApi.updateConfig(editingConfig.id, {
-          ...values,
+          ...submitValues,
           version: editingConfig.version,
         });
         message.success('更新成功');
@@ -209,6 +230,7 @@ const ModelManager: React.FC = () => {
       title: '名称',
       dataIndex: 'name',
       key: 'name',
+      align: 'center',
       render: (text: string, record: LLMConfig) => (
         <Space>
           {text}
@@ -222,6 +244,7 @@ const ModelManager: React.FC = () => {
       title: '提供商',
       dataIndex: 'provider',
       key: 'provider',
+      align: 'center',
       render: (provider: string) => (
         <Tag color={
           provider === 'openai' ? 'blue' :
@@ -237,11 +260,13 @@ const ModelManager: React.FC = () => {
       title: '模型',
       dataIndex: 'model_name',
       key: 'model_name',
+      align: 'center',
     },
     {
       title: 'Base URL',
       dataIndex: 'base_url',
       key: 'base_url',
+      align: 'center',
       render: (url: string) => url ? (
         <Tooltip title={url}>
           <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
@@ -254,17 +279,20 @@ const ModelManager: React.FC = () => {
       title: '温度',
       dataIndex: 'temperature',
       key: 'temperature',
+      align: 'center',
       render: (v: number) => v.toFixed(2),
     },
     {
       title: '更新时间',
       dataIndex: 'updated_at',
       key: 'updated_at',
+      align: 'center',
       render: (date: string) => formatDateTime(date),
     },
     {
       title: '操作',
       key: 'actions',
+      align: 'center',
       render: (_: any, record: LLMConfig) => (
         <Space>
           <Tooltip title="编辑">
@@ -319,33 +347,55 @@ const ModelManager: React.FC = () => {
           </Space>
         }
         style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-        styles={{ body: { flex: 1, overflow: 'auto', padding: 0 } }}
+        styles={{ body: { flex: 1, padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}
       >
-        <Table
-          columns={columns}
-          dataSource={configs}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 10 }}
-          style={{ height: '100%' }}
-          locale={{
-            emptyText: (
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                height: '100%',
-                minHeight: 200,
-                color: 'rgba(0, 0, 0, 0.45)',
-              }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
-                  <div>暂无数据</div>
+        <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+          <Table
+            columns={columns}
+            dataSource={configs.slice((currentPage - 1) * pageSize, currentPage * pageSize)}
+            rowKey="id"
+            loading={loading}
+            sticky
+            pagination={false}
+            locale={{
+              emptyText: (
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  height: '100%',
+                  minHeight: 200,
+                  color: 'rgba(0, 0, 0, 0.45)',
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 48, marginBottom: 8 }}>📭</div>
+                    <div>暂无数据</div>
+                  </div>
                 </div>
-              </div>
-            )
-          }}
-        />
+              )
+            }}
+          />
+        </div>
+        <div style={{ 
+          padding: '8px 16px', 
+          borderTop: '1px solid #f0f0f0',
+          display: 'flex',
+          justifyContent: 'flex-end',
+          flexShrink: 0,
+        }}>
+          <Pagination
+            current={currentPage}
+            pageSize={pageSize}
+            total={configs.length}
+            showSizeChanger
+            pageSizeOptions={['5', '10', '20', '50']}
+            onChange={(page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            }}
+            showTotal={(total) => `共 ${total} 条`}
+          />
+        </div>
       </Card>
 
       <Modal
@@ -374,14 +424,24 @@ const ModelManager: React.FC = () => {
                 label="提供商"
                 rules={[{ required: true, message: '请选择提供商' }]}
               >
-                <Select placeholder="选择提供商">
-                  {providers.map(p => (
-                    <Option key={p.name} value={p.name}>
-                      {p.display_name}
-                      {!p.requires_api_key && ' (无需密钥)'}
-                    </Option>
-                  ))}
-                </Select>
+                <Select
+                placeholder="选择提供商"
+                onChange={(value: string) => {
+                  const provider = providers.find(p => p.name === value);
+                  if (provider) {
+                    form.setFieldsValue({
+                      base_url: getProviderDefaultBaseUrl(value),
+                      model_name: provider.default_model,
+                    });
+                  }
+                }}
+              >
+                {providers.map(p => (
+                  <Option key={p.name} value={p.name}>
+                    {p.display_name}
+                  </Option>
+                ))}
+              </Select>
               </Form.Item>
             </Col>
           </Row>
@@ -393,13 +453,12 @@ const ModelManager: React.FC = () => {
                 label="模型名称"
                 rules={[{ required: true, message: '请输入模型名称' }]}
               >
-                <Select
+                <AutoComplete
                   placeholder="选择或输入模型名称"
-                  showSearch
                   allowClear
-                  optionFilterProp="children"
-                  filterOption={(input, option) =>
-                    (option?.children as unknown as string)?.toLowerCase().includes(input.toLowerCase())
+                  options={(currentProvider?.models || []).map(m => ({ label: m, value: m }))}
+                  filterOption={(inputValue, option) =>
+                    (option?.value as string)?.toLowerCase().includes(inputValue.toLowerCase()) ?? false
                   }
                   dropdownRender={(menu) => (
                     <>
@@ -409,11 +468,7 @@ const ModelManager: React.FC = () => {
                       </div>
                     </>
                   )}
-                >
-                  {currentProvider?.models.map(m => (
-                    <Option key={m} value={m}>{m}</Option>
-                  ))}
-                </Select>
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -462,7 +517,7 @@ const ModelManager: React.FC = () => {
             </Col>
             <Col span={8}>
               <Form.Item name="max_tokens" label="最大Token">
-                <InputNumber min={1} max={128000} style={{ width: '100%' }} />
+                <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={8}>

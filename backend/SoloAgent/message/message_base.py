@@ -38,6 +38,7 @@
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Literal, List, overload, Sequence
 
 import shortuuid
@@ -53,6 +54,7 @@ from .message_block import (
     ThinkingBlock,
 )
 from ..types import JSONSerializableObject
+from app.core.config import settings
 
 
 class Msg:
@@ -169,7 +171,7 @@ class Msg:
         self.id = shortuuid.uuid()
         self.timestamp = (
             timestamp
-            or datetime.now().strftime(
+            or datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime(
                 "%Y-%m-%d %H:%M:%S.%f",
             )[:-3]
         )
@@ -250,6 +252,10 @@ class Msg:
             "text",
             "tool_use",
             "tool_result",
+            "tool_calls",
+            "thinking",
+            "reasoning_content",
+            "content",
             "image",
             "audio",
             "video",
@@ -260,8 +266,7 @@ class Msg:
         检查消息是否包含指定类型的内容块。
         
         Args:
-            block_type (Literal["text", "tool_use", "tool_result", "image", \
-            "audio", "video"] | None, optional): 要检查的块类型。
+            block_type: 要检查的块类型。
                 如果为 None，检查是否有任何内容块。默认为 None。
         
         Returns:
@@ -371,6 +376,9 @@ class Msg:
             "thinking",
             "tool_use",
             "tool_result",
+            "tool_calls",
+            "reasoning_content",
+            "content",
             "image",
             "audio",
             "video",

@@ -31,6 +31,7 @@ from .logging import logger
 from .common import _get_timestamp, _save_base64_data, _json_loads_with_repair
 from .mixin import DictMixin
 from .async_utils import AsyncNullContext
+from .message_utils import MessageBlockExtractor
 
 __all__ = [
     "logger",
@@ -39,4 +40,5 @@ __all__ = [
     "_json_loads_with_repair",
     "DictMixin",
     "AsyncNullContext",
+    "MessageBlockExtractor",
 ]

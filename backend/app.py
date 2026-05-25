@@ -31,16 +31,54 @@ SoloEngine : FastAPI主应用模块
     - CORS配置允许所有来源（生产环境应限制）
     - 支持热重载开发模式
 """
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers
+from app.api.v1 import tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers, file_changes
 import logging
 
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    from app.services.file_system_push import push_service, ws_registry
+    from app.services.workspace_watcher import workspace_watcher
 
-app = FastAPI(title="SoloEngine API", version="1.0.0", description="Agentic Builder API")
+    push_service.set_ws_registry(ws_registry)
+
+    change_queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    workspace_watcher.set_asyncio_queue(loop, change_queue)
+
+    flush_task = asyncio.create_task(push_service._flush_loop())
+    consumer_task = asyncio.create_task(_watchdog_consumer(change_queue))
+
+    yield
+
+    flush_task.cancel()
+    consumer_task.cancel()
+
+
+async def _watchdog_consumer(queue: asyncio.Queue):
+    from app.services.file_system_push import push_service
+    while True:
+        event = await queue.get()
+        push_service.push_change(
+            session_id=event["session_id"],
+            file_path=event["file_path"],
+            operation=event["operation"],
+            is_directory=event["is_directory"],
+        )
+
+
+app = FastAPI(
+    title="SoloEngine API",
+    version="1.0.0",
+    description="Agentic Builder API",
+    lifespan=app_lifespan,
+)
 
 from fastapi.exceptions import RequestValidationError
 from fastapi.requests import Request
@@ -50,6 +88,12 @@ from fastapi.responses import JSONResponse
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"[422 VALIDATION ERROR] path={request.url.path} errors={exc.errors()} body={exc.body}")
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+from app.core.database import OptimisticLockError
+
+@app.exception_handler(OptimisticLockError)
+async def optimistic_lock_handler(request: Request, exc: OptimisticLockError):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,7 +109,6 @@ async def startup_event():
     """应用启动时执行初始化操作。"""
     from app.core.database import SessionLocal
     from app.core.system_user import create_system_user
-    from app.api.v1.skills import sync_system_skills
     
     db = SessionLocal()
     try:
@@ -73,15 +116,6 @@ async def startup_event():
         logger.info("System user created/verified successfully")
     except Exception as e:
         logger.error(f"Failed to create system user: {e}")
-    finally:
-        db.close()
-    
-    db = SessionLocal()
-    try:
-        count = sync_system_skills(db)
-        logger.info(f"System skills synchronized successfully: {count} skills")
-    except Exception as e:
-        logger.error(f"Failed to sync system skills: {e}")
     finally:
         db.close()
 
@@ -107,3 +141,4 @@ app.include_router(agent_tools.router)
 app.include_router(run_project.router)
 app.include_router(settings.router)
 app.include_router(mcp_servers.router)
+app.include_router(file_changes.router)

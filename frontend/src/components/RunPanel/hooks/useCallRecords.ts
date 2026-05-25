@@ -76,6 +76,8 @@ export const useCallRecords = () => {
         id: event.agent_id || `agent_${Date.now()}`,
         name: event.agent_name,
         status: 'running',
+        output: '',
+        calls: [],
         input: event.input,
         startTime: Date.now(),
       };
@@ -84,7 +86,6 @@ export const useCallRecords = () => {
       updateSubagentOutput(event.agent_id, {
         status: event.error ? 'error' : 'completed',
         output: event.output,
-        error: event.error,
         duration: event.duration,
       });
     }

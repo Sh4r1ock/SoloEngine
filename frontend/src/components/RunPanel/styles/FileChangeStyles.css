@@ -1,0 +1,922 @@
+/* ===== 文件变更追踪与撤回机制 — 样式定义 ===== */
+/* 前缀 sc- = SoloEngine Change */
+
+/* ===== 新增 CSS 变量 ===== */
+:root {
+  --sc-danger: #F44336;
+  --sc-info: #2196F3;
+  --sc-border-color-light: #e2e8f0;
+  --sc-border-color-lighter: #f1f5f9;
+  --sc-radius: 8px;
+  --sc-radius-sm: 4px;
+  --sc-transition: 0.2s ease;
+}
+
+/* ===== 公共基础：图标 ===== */
+.sc-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sc-icon-sm {
+  width: 14px;
+  height: 14px;
+}
+
+.sc-icon-md {
+  width: 16px;
+  height: 16px;
+}
+
+/* ===== 公共基础：按钮 ===== */
+.sc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--sc-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all var(--sc-transition);
+  background: transparent;
+  color: var(--text-200);
+  line-height: 1.6;
+}
+
+.sc-btn:hover {
+  background: var(--bg-300);
+  color: var(--text-100);
+}
+
+.sc-btn-primary {
+  background: var(--primary-100);
+  color: #fff;
+  border-color: var(--primary-100);
+}
+
+.sc-btn-primary:hover {
+  background: var(--primary-200);
+}
+
+.sc-btn-danger {
+  color: var(--sc-danger);
+}
+
+.sc-btn-danger:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--sc-danger);
+}
+
+.sc-btn-success {
+  color: var(--success);
+}
+
+.sc-btn-success:hover {
+  background: rgba(63, 185, 80, 0.1);
+  color: var(--success);
+}
+
+.sc-btn-sm {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.sc-btn-ghost {
+  border-color: var(--bg-400);
+}
+
+.sc-btn-ghost:hover {
+  border-color: var(--text-400);
+}
+
+/* ===== 公共基础：标签 ===== */
+.sc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.sc-tag-success {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
+}
+
+.sc-tag-danger {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--sc-danger);
+}
+
+.sc-tag-warning {
+  background: rgba(210, 153, 34, 0.15);
+  color: var(--warning);
+}
+
+.sc-tag-info {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--sc-info);
+}
+
+.sc-tag-default {
+  background: var(--bg-300);
+  color: var(--text-200);
+}
+
+/* ================================================================ */
+/*  区域 A：FileDiffViewer — 左右分栏差异对比                       */
+/* ================================================================ */
+
+.sc-diff-viewer {
+  height: 400px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-100);
+  border-radius: var(--sc-radius);
+  overflow: hidden;
+  border: 1px solid var(--bg-300);
+}
+
+.sc-diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--sc-border-color-light);
+  background: var(--bg-surface);
+}
+
+.sc-diff-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-diff-header-file-icon {
+  color: var(--primary-100);
+}
+
+.sc-diff-header-path {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-100);
+}
+
+.sc-diff-header-stats {
+  display: flex;
+  gap: 6px;
+}
+
+.sc-diff-stat {
+  font-size: 12px;
+}
+
+.sc-diff-stat.added {
+  color: #2e7d32;
+}
+
+.sc-diff-stat.removed {
+  color: #c62828;
+}
+
+.sc-diff-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* 列头 */
+.sc-diff-col-header {
+  display: flex;
+  border-bottom: 1px solid var(--bg-300);
+  background: var(--bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.sc-diff-col-header-spacer {
+  flex-shrink: 0;
+  border-right: 1px solid var(--bg-300);
+}
+
+.sc-diff-col-header-cell {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-diff-col-header-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-200);
+}
+
+.sc-diff-col-header-count {
+  font-size: 11px;
+  color: var(--text-300);
+}
+
+/* 差异内容区 */
+.sc-diff-body {
+  flex: 1;
+  overflow: auto;
+}
+
+.sc-diff-row {
+  display: flex;
+  min-height: 22px;
+}
+
+.sc-diff-line-num {
+  padding: 2px 6px;
+  text-align: right;
+  background: var(--bg-surface);
+  color: var(--text-300);
+  font-size: 11px;
+  font-family: var(--font-family-code);
+  user-select: none;
+  border-right: 1px solid var(--bg-300);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.sc-diff-line-content {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 12px;
+  font-family: var(--font-family-code);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  color: var(--text-100);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.sc-diff-line-content::-webkit-scrollbar {
+  display: none;
+}
+
+/* ----- 行样式变体：行号左侧色条 + 内容区背景色 ----- */
+
+.sc-diff-line-num.removed {
+  background: rgba(244, 67, 54, 0.06);
+  border-left: 3px solid var(--sc-danger);
+}
+
+.sc-diff-line-content.removed {
+  background: rgba(244, 67, 54, 0.1);
+  color: #c62828;
+}
+
+.sc-diff-line-num.added {
+  background: rgba(76, 175, 80, 0.06);
+  border-left: 3px solid var(--success);
+}
+
+.sc-diff-line-content.added {
+  background: rgba(76, 175, 80, 0.1);
+  color: #2e7d32;
+}
+
+.sc-diff-line-num.modified-old {
+  background: rgba(244, 67, 54, 0.06);
+  border-left: 3px solid var(--sc-danger);
+}
+
+.sc-diff-line-content.modified-old {
+  background: rgba(244, 67, 54, 0.1);
+  color: #c62828;
+}
+
+.sc-diff-line-num.modified-new {
+  background: rgba(76, 175, 80, 0.06);
+  border-left: 3px solid var(--success);
+}
+
+.sc-diff-line-content.modified-new {
+  background: rgba(76, 175, 80, 0.1);
+  color: #2e7d32;
+}
+
+/* ================================================================ */
+/*  区域 B：FileChangePanel — 文件变更栏（Trae 风格一行式）         */
+/* ================================================================ */
+
+.sc-change-bar {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #fafbfc;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  flex-wrap: wrap;
+  animation: sc-bar-appear 0.25s ease-out;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+@keyframes sc-bar-appear {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.sc-change-bar-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, var(--primary-100), var(--primary-200));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(63, 81, 181, 0.18);
+}
+
+.sc-change-bar-text {
+  font-size: 13px;
+  color: var(--text-100);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sc-change-bar-added {
+  font-size: 12px;
+  font-family: var(--font-family-code);
+  font-weight: 600;
+  color: #2e7d32;
+  white-space: nowrap;
+}
+
+.sc-change-bar-removed {
+  font-size: 12px;
+  font-family: var(--font-family-code);
+  font-weight: 600;
+  color: #c62828;
+  white-space: nowrap;
+}
+
+.sc-change-bar-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-100);
+  background: transparent;
+  border: 1px solid #d0d7de;
+  transition: all 0.15s ease;
+}
+
+.sc-change-bar-btn:hover {
+  background: var(--bg-200) !important;
+  border-color: #9ca3af !important;
+  color: var(--text-100) !important;
+}
+
+.sc-change-bar-toggle {
+  width: 26px !important;
+  height: 26px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 5px !important;
+  color: var(--text-300) !important;
+  border: none !important;
+  flex-shrink: 0;
+}
+
+.sc-change-bar-toggle:hover {
+  background: var(--bg-300) !important;
+  color: var(--text-100) !important;
+}
+
+/* ---- File List (expanded) ---- */
+.sc-change-file-list {
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--border-color-lighter);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: sc-list-expand 0.2s ease-out;
+}
+
+@keyframes sc-list-expand {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 500px; }
+}
+
+.sc-change-file-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 5px;
+  transition: background 0.12s ease;
+}
+
+.sc-change-file-item:hover {
+  background: var(--bg-100);
+}
+
+.sc-change-file-item.reverted {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.sc-change-file-item.accepted {
+  border-left: 3px solid #2e7d32;
+  padding-left: 9px;
+  background: rgba(46, 125, 50, 0.04);
+}
+
+.sc-change-file-item.finalized {
+  transition: opacity 0.3s ease, border-color 0.3s ease, background 0.3s ease, padding 0.3s ease;
+}
+
+.sc-change-status-tag {
+  font-size: 11px;
+  padding: 0 5px;
+  line-height: 18px;
+  border-radius: 3px;
+  margin: 0;
+  animation: sc-status-appear 0.25s ease-out;
+}
+
+.sc-change-status-tag.status-accepted {
+  background: rgba(46, 125, 50, 0.1);
+  border: 1px solid rgba(46, 125, 50, 0.25);
+  color: #2e7d32;
+}
+
+.sc-change-status-tag.status-reverted {
+  background: rgba(158, 158, 158, 0.1);
+  border: 1px solid rgba(158, 158, 158, 0.25);
+  color: #757575;
+}
+
+@keyframes sc-status-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.sc-change-file-item .sc-change-file-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  width: 18px;
+}
+
+.sc-change-file-item .sc-change-file-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-100);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.sc-change-file-item .sc-change-file-name:hover {
+  color: var(--accent-100);
+  text-decoration: underline;
+}
+
+.sc-change-file-item .sc-change-file-dir {
+  font-size: 12px;
+  color: var(--text-400);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+  flex-shrink: 1;
+}
+
+.sc-change-op-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border: none !important;
+  margin: 0;
+}
+
+.sc-change-op-badge.created {
+  background: rgba(46, 125, 50, 0.1) !important;
+  color: #2e7d32 !important;
+}
+
+.sc-change-op-badge.modified {
+  background: rgba(21, 101, 192, 0.1) !important;
+  color: #1565c0 !important;
+}
+
+.sc-change-op-badge.deleted {
+  background: rgba(198, 40, 40, 0.1) !important;
+  color: #c62828 !important;
+}
+
+.sc-change-file-stats {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-family: var(--font-family-code);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sc-change-file-stats-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.sc-change-file-stats .added { color: #2e7d32; }
+.sc-change-file-stats .removed { color: #c62828; }
+
+.sc-change-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+  opacity: 1;
+}
+
+.sc-change-action-btn {
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 4px !important;
+  color: var(--text-300) !important;
+  transition: all 0.12s ease !important;
+}
+
+.sc-change-action-btn:hover {
+  background: var(--bg-300) !important;
+  color: var(--text-100) !important;
+}
+
+.sc-change-action-btn.accept:hover {
+  background: rgba(76, 175, 80, 0.12) !important;
+  color: #2e7d32 !important;
+}
+
+.sc-change-action-btn.reject:hover {
+  background: rgba(244, 67, 54, 0.12) !important;
+  color: #c62828 !important;
+}
+
+.sc-change-loading-icon {
+  font-size: 16px;
+  color: var(--text-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.doc-editor-wrapper [class*="cm-theme"] {
+  display: flex;
+  flex-direction: column;
+  height: 100% !important;
+}
+.doc-editor-wrapper .cm-editor {
+  height: 100% !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.doc-editor-wrapper .cm-scroller {
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+
+/* ================================================================ */
+/*  区域 E：AgenticPanel "文件变更" 标签页 — 统一单层架构            */
+/*  折叠/展开均由同一行 header 控制，diff 在下方条件渲染             */
+/* ================================================================ */
+
+.sc-changes-panel {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sc-changes-file-block {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--sc-border-color-light);
+}
+
+.sc-changes-file-block:last-child {
+  border-bottom: none;
+}
+
+.sc-changes-file-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sc-changes-file-row:hover {
+  background: var(--bg-200);
+}
+
+.sc-changes-file-row-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sc-changes-file-row-icon {
+  color: var(--primary-100);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.sc-changes-file-row-op {
+  font-size: 10px;
+  line-height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.sc-changes-file-row-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-100);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sc-changes-file-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.sc-changes-file-row-added {
+  font-size: 12px;
+  font-family: var(--font-family-code);
+  font-weight: 600;
+  color: #2e7d32;
+}
+
+.sc-changes-file-row-removed {
+  font-size: 12px;
+  font-family: var(--font-family-code);
+  font-weight: 600;
+  color: #c62828;
+}
+
+.sc-changes-file-row-toggle {
+  font-size: 11px;
+  color: var(--text-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.sc-changes-file-diff {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sc-changes-file-diff .sc-diff-viewer {
+  border: none;
+  border-radius: 0;
+  height: 400px;
+}
+
+.sc-changes-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 8px;
+}
+
+.sc-changes-empty-icon {
+  font-size: 32px;
+  color: var(--text-300);
+}
+
+.sc-changes-empty-text {
+  font-size: 12px;
+  color: var(--text-300);
+}
+
+/* ================================================================ */
+/*  编辑器 diff 装饰样式                                            */
+/* ================================================================ */
+
+.sc-diff-line-added {
+  background-color: rgba(46, 125, 50, 0.15);
+}
+
+.sc-diff-line-added.cm-activeLine {
+  background-color: rgba(46, 125, 50, 0.2);
+}
+
+.sc-diff-gutter {
+  width: 10px;
+  background: transparent;
+}
+
+.sc-tool-fc-name {
+  font-size: 11px;
+  color: var(--text-200);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-tool-fc-name:hover {
+  color: var(--accent-100);
+  text-decoration: underline;
+}
+
+/* ================================================================ */
+/*  区域 F：Recall 撤回预览面板 — 统一背景色，无三色分离             */
+/* ================================================================ */
+
+.sc-recall-preview-panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  border: 1px solid #d0d7de;
+  align-self: flex-end;
+  max-width: 90%;
+  min-width: 320px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.sc-recall-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+}
+
+.sc-recall-preview-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-100);
+}
+
+.sc-recall-preview-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-300);
+  font-size: 14px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.sc-recall-preview-close:hover {
+  background: var(--bg-200);
+  color: var(--text-100);
+}
+
+.sc-recall-preview-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border-color-lighter);
+}
+
+.sc-recall-preview-actions .sc-recall-cancel-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--text-200);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sc-recall-preview-actions .sc-recall-cancel-btn:hover {
+  border-color: var(--primary-100);
+  color: var(--primary-100);
+  background: var(--bg-100);
+}
+
+.sc-recall-preview-actions .sc-recall-confirm-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1.5px solid #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-recall-preview-actions .sc-recall-confirm-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+
+.sc-recall-preview-actions .sc-recall-confirm-btn:active {
+  transform: scale(0.97);
+}
+
+.sc-recall-preview-actions .sc-recall-confirm-btn:disabled {
+  background: #f5f5f5;
+  border-color: var(--border-color);
+  color: var(--text-300);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sc-recall-preview-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 8px 14px;
+  font-size: 13px;
+  color: var(--text-300);
+}
+
+/* ===== 消息操作栏按钮 hover 效果 ===== */
+.sc-message-action-btn:hover {
+  color: var(--primary-100) !important;
+  background: var(--bg-300) !important;
+}

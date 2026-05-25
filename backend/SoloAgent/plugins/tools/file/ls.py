@@ -168,67 +168,19 @@ class LS(BaseFileTool):
                 "结果按名称排序，目录在前，文件在后。"
             ),
             "parameters": {
-                "path": {
-                    "type": "string",
-                    "description": "要列出的目录的绝对路径。",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要列出的目录的绝对路径。",
+                    },
+                    "ignore": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "要忽略的 glob 模式列表，例如 ['*.pyc', '__pycache__']。",
+                    },
                 },
-                "ignore": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "要忽略的 glob 模式列表，例如 ['*.pyc', '__pycache__']。",
-                    "required": False,
-                },
+                "required": ["path"],
             },
         }
 
-
-def list_directory(
-    path: str,
-    ignore: Optional[List[str]] = None,
-) -> Dict[str, Any]:
-    """
-    列出目录内容的便捷函数。
-    
-    Args:
-        path (str): 目录的绝对路径。
-        ignore (Optional[List[str]], optional): 要忽略的 glob 模式列表。
-    
-    Returns:
-        Dict[str, Any]: 列表结果。
-    
-    Example:
-        >>> result = list_directory("/path/to/dir", ignore=["*.pyc"])
-    """
-    tool = LS()
-    return tool.execute(path=path, ignore=ignore)
-
-
-def get_ls_tool_spec() -> Dict[str, Any]:
-    """
-    获取目录列表工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-    """
-    return {
-        "name": "LS",
-        "description": (
-            "列出目录内容。"
-            "返回文件和子目录列表，支持 glob 模式过滤。"
-            "结果按名称排序，目录在前，文件在后。"
-        ),
-        "parameters": {
-            "path": {
-                "type": "string",
-                "description": "要列出的目录的绝对路径。",
-                "required": True,
-            },
-            "ignore": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "要忽略的 glob 模式列表，例如 ['*.pyc', '__pycache__']。",
-                "required": False,
-            },
-        },
-    }
