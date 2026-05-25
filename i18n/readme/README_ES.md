@@ -60,7 +60,7 @@ Las alternativas actuales tampoco resuelven el problema: las plataformas de work
 
 ### Cómo funciona
 
-Todos los Agents comparten las mismas primitivas subyacentes; la diferencia está solo en cómo se configuran. El diseño visual del lienzo se compila directamente en un equipo de Agents ejecutable.
+Todos los Agents comparten la misma arquitectura subyacente; la diferencia está solo en cómo se configuran. El diseño visual del lienzo se compila directamente en un Agentic AI ejecutable.
 
 1. **Compilar**: el diseño visual se transforma, mediante ordenamiento topológico, en un grafo acíclico dirigido (DAG) de Agents. Un mismo compilador genera infinitas combinaciones de equipos.
 2. **Motor ReAct unificado**: cada Agent ejecuta el mismo ciclo «pensar → actuar → observar → repetir».
