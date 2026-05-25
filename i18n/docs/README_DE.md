@@ -10,7 +10,11 @@
 
 ---
 
+<<<<<<< HEAD
 <p align="center"><b>SoloEngine</b> ist die erste Low-Code Agentic AI-Entwicklungsplattform. Stell es dir wie das Zusammenstellen eines Startup-Teams vor: Ziehe die benötigten Agents auf die Arbeitsfläche, verbinde ihre Zusammenarbeit, starte — ab diesem Moment planen, handeln und liefern sie eigenständig.</p>
+=======
+<p align="center"><b>SoloEngine</b> ist die erste Low-Code Agentic AI-Entwicklungsplattform. Stell es dir wie das Zusammenstellen eines Startup-Teams vor: Ziehe die benötigten Agents auf die Arbeitsfläche, verbinde ihre Zusammenarbeit, kompiliere — ab diesem Moment planen, handeln und liefern sie eigenständig.</p>
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -26,8 +30,13 @@
 </div>
 
 <p align="center">
+<<<<<<< HEAD
   <a href="../../README.md">简体中文</a> |
   <a href="./README_EN.md">English</a> |
+=======
+  <a href="../../README.md">English</a> |
+  <a href="./README_CN.md">简体中文</a> |
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
   <a href="./README_ES.md">Español</a> |
   Deutsch |
   <a href="./README_FR.md">Français</a>
@@ -37,7 +46,11 @@
 
 ## Warum SoloEngine
 
+<<<<<<< HEAD
 Agentic AI verändert die Softwareentwicklung grundlegend: Ein einzelner Entwickler liefert heute, wofür früher ein Zehnerteam nötig war. Doch diese Revolution blieb bislang auf die IDE beschränkt. Um einen wirklich autonomen AI-Agenten zu bauen, musste man LangChain-Pipelines von Hand schreiben, ReAct-Loops debuggen und Tool-Schemas einzeln definieren. Wer nicht programmieren kann, stand vor einer Wand.
+=======
+Agentic AI verändert die Softwareentwicklung grundlegend: Ein einzelner Entwickler liefert heute, wofür früher ein Zehnerteam nötig war. Doch diese Revolution blieb bislang auf den Code-Editor beschränkt. Um einen wirklich autonomen AI-Agenten zu bauen, musste man LangChain-Pipelines von Hand schreiben, ReAct-Loops debuggen und Tool-Schemas einzeln definieren. Wer nicht programmieren kann, stand vor einer Wand.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 Die verfügbaren Alternativen lösen das Problem kaum: Workflow-Plattformen (Dify, n8n, Zapier u. a.) folgen starr vordefinierten Pfaden — ihr Kern ist kein autonomer Agent. Code-Frameworks (LangChain, CrewAI, LangGraph u. a.) setzen zwingend Python-Kenntnisse voraus. **SoloEngine** schließt genau diese Lücke.
 
@@ -50,8 +63,13 @@ Die verfügbaren Alternativen lösen das Problem kaum: Workflow-Plattformen (Dif
 | Multi-Agent-Kollaboration | ✗ | ✓ | ✓ |
 
 - **Kein weiteres Workflow-Tool** — Agents arbeiten nach dem Muster „Denken → Handeln → Beobachten → Wiederholen". Jede Entscheidung fällt zur Laufzeit. Stößt ein Research-Agent an eine Grenze, passt er seinen Plan selbstständig an — ohne hartcodierte Fallback-Pfade.
+<<<<<<< HEAD
 - **Fachexperten bauen direkt** — Ein Anwalt zieht einen Vertragsprüfungs-Agenten auf die Arbeitsfläche, verbindet ihn mit einem Recherche-Agenten und startet. Kein Entwickler nötig.
 - **Tools, Skills, MCP — alles hot-plug-fähig** — Jeder Agent lädt zur Laufzeit nur die Werkzeuge und Skills, die er tatsächlich benötigt. Dank Progressive Disclosure sinkt der Token-Verbrauch um über 85 %.
+=======
+- **Fachexperten bauen direkt** — Ein Anwalt zieht einen Vertragsprüfungs-Agenten auf die Arbeitsfläche, verbindet ihn mit einem Recherche-Agenten und kompiliert. Kein Entwickler nötig.
+- **Tools, Skills, MCP — alles steckbar** — Jeder Agent lädt zur Laufzeit nur die Werkzeuge und Skills, die er tatsächlich benötigt. Dank Progressive Disclosure sinkt der Token-Verbrauch um über 85 %.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 - **Eine Adapterschicht für alle Modelle** — OpenAI, Anthropic, Ollama, DeepSeek, Tongyi Qianwen, Zhipu — einheitliche Schnittstelle, nahtloser Wechsel.
 
 ### So funktioniert es
@@ -83,8 +101,13 @@ npm run dev
 
 ## Anwendungsszenarien
 
+<<<<<<< HEAD
 - **VibeLawing** — Ein Anwalt zieht nacheinander einen Recherche-Agenten, einen Archivierungs-Agenten und einen Formatierungs-Agenten auf die Arbeitsfläche und startet. Die KI zerlegt und plant die juristische Arbeit automatisch: Sachverhalte werden analysiert, Gesetzestexte ermittelt, Fälle aufbereitet, Argumentationen strukturiert und Dokumente formatiert — Sie müssen nur noch prüfen und gegebenenfalls nachjustieren, bevor Sie abliefern. Der gesamte Ablauf verläuft so natürlich, als würde ein Entwickler in Cursor vibe coding betreiben.
 - **VibeMarketing** — Eine Marketingfachkraft zieht einen Recherche-Agenten, einen Texter-Agenten und einen Asset-Agenten auf die Arbeitsfläche und startet. SoloEngine analysiert automatisch die Zielgruppe, recherchiert darauf aufbauend passende Produktansätze und vergleicht mit der Konkurrenz, um Marketingstrategien zu erstellen — das Ergebnis ist ein ausgereifter Marketingplan, direkt zur Übergabe bereit.
+=======
+- **VibeLawing** — Ein Anwalt zieht nacheinander einen Recherche-Agenten, einen Archivierungs-Agenten und einen Formatierungs-Agenten auf die Arbeitsfläche und kompiliert. Die juristische Arbeit kommt in Fluss: Gesetzestexte werden ermittelt, Fälle werden aufbereitet, Dokumente werden formatiert — so selbstverständlich, wie ein Entwickler in Cursor vibe coding betreibt.
+- **VibeMarketing** — Eine Marketingfachkraft zieht einen Recherche-Agenten, einen Texter-Agenten und einen Asset-Agenten auf die Arbeitsfläche und kompiliert. Marketingkonzepte entstehen automatisch, Zielgruppenanalysen laufen eigenständig.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 - **Ein-Klick-Paketierung** — Sobald das Agent-Team steht, genügt ein Klick auf „Paketieren", um ein vollständiges Produkt auszugeben, das jeder sofort nutzen kann.
 
 ## Star-Verlauf

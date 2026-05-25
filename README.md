@@ -2,14 +2,50 @@
 
 <img src="icon/SoloEngine.png" alt="SoloEngine" width="420"/>
 
+<<<<<<< HEAD
+=======
 </div>
 
-***
+---
 
+<h2 align="center"><b>Let AI Run Every Industry.</b></h2>
+
+---
+
+<p align="center"><b>SoloEngine</b> is the first low-code platform that compiles Agentic AI. Staff a team of Agents like a startup — drag them onto the canvas, connect the org chart, compile — they plan, act, and deliver on their own.</p>
+<p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
+
+<div align="center">
+
+[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square&label=stars&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
+
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
+</div>
+
+<p align="center">
+  <a href="./README.md">English</a> |
+  <a href="i18n/docs/README_CN.md">简体中文</a> |
+  <a href="i18n/docs/README_ES.md">Español</a> |
+  <a href="i18n/docs/README_DE.md">Deutsch</a> |
+  <a href="i18n/docs/README_FR.md">Français</a>
+</p>
+
+<<<<<<< HEAD
 <h2 align="center"><b>让 AI 驱动每一个行业。</b></h2>
+=======
+---
 
-***
+## Why SoloEngine
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
+Agentic AI is transforming software — one developer now ships the work of ten. But that revolution never left the code editor. Building real AI Agents means writing LangChain pipelines, debugging ReAct loops, and hand-authoring tool schemas. If you can't code, you're locked out.
+
+<<<<<<< HEAD
 <p align="center"><b>SoloEngine</b> 是第一款低代码 Agentic AI 开发平台。你只需像组建一支创业团队那样：将所需的 Agent 拖入画布，连接协作关系，点击运行——此后的规划、执行与交付，全部由 Agent 自主完成。</p>
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -31,9 +67,26 @@
   <a href="i18n/docs/README_DE.md">Deutsch</a> |
   <a href="i18n/docs/README_FR.md">Français</a>
 </p>
+=======
+The alternatives don't help: workflow platforms (Dify, n8n, etc.) run pre-scripted paths, not autonomous agents. Code frameworks (LangChain, CrewAI, etc.) require Python. **SoloEngine** fills the gap.
 
-***
+| | Dify, n8n, Zapier | LangChain, CrewAI, LangGraph | **SoloEngine** |
+|---|---|---|---|
+| Agentic AI | ✗ Scripted workflows only | ✓ ReAct / multi-Agent | ✓ ReAct / multi-Agent |
+| No code required | ✓ | ✗ Python mandatory | ✓ |
+| Visual composition | Partial | ✗ | ✓ Full canvas |
+| Domain expert can build alone | ✓ (but Agent isn't truly Agentic) | ✗ | ✓ |
+| Multi-Agent collaboration | ✗ | ✓ | ✓ |
 
+- **Not another workflow tool** — Agents run Think → Act → Observe → Repeat loops. Decisions happen at runtime. When a research Agent hits a dead end, it re-plans — no hardcoded fallback.
+- **Domain experts build directly** — A lawyer drags a Contract Review Agent onto the canvas, wires it to a Research Agent, hits compile. No programmer in the loop.
+- **Tools, skills, MCP — pluggable** — Each Agent loads tools and skills at runtime. Progressive disclosure saves 85%+ on tokens.
+- **One adapter, any model** — OpenAI, Anthropic, Ollama, DeepSeek, Qwen, Zhipu — same interface, seamless switching.
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
+
+### How It Works
+
+<<<<<<< HEAD
 ## 为什么选择 SoloEngine
 
 Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成过去需要十人团队才能交付的工作量。然而，这场变革始终被局限在IDE之内。要构建一个真正意义上的 AI Agent，你不得不手写 LangChain 管线、反复调试 ReAct 循环、逐一定义工具 Schema。不懂编程？这一切便无从谈起。
@@ -62,22 +115,40 @@ Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成
 3. **渐进式披露** —— Agent 仅在运行时加载实际需要的内容，这让低代码环境下的 Agentic AI 变得切实可行。
 
 ## 快速开始
+=======
+All Agents are the same primitive — just configured differently. The canvas compiles directly into executable Agent teams.
+
+1. **Compilation** — Visual layout → Agent DAG via topological sort. One compiler, infinite teams.
+2. **One ReAct engine** — Every Agent runs the same Think → Act → Observe → Repeat loop.
+3. **Progressive disclosure** — Agents only load what they use at runtime, making low-code agentic AI practical.
+
+## Quick Start
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 ```bash
 git clone https://github.com/Sh4r1ock/SoloEngine.git
 cd SoloEngine
 
+<<<<<<< HEAD
 # 后端 (Python 3.11+)
+=======
+# Backend (Python 3.11+)
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 cd backend
 pip install -r requirements.txt
 python main.py
 
+<<<<<<< HEAD
 # 前端 (Node.js 18+) —— 在另一个终端中执行
+=======
+# Frontend (Node.js 18+) — open another terminal
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 cd frontend 
 npm install
 npm run dev
 ```
 
+<<<<<<< HEAD
 在浏览器中打开 \*\*<http://localhost:8991**，即可构建你的第一个> Agent 团队。
 
 ## 应用场景
@@ -95,10 +166,30 @@ npm run dev
 ## 致谢
 
 特别感谢：
+=======
+Open **http://localhost:8991** and build your first Agent team.
+
+## Use Cases
+
+- **VibeLawing** — A lawyer drags search, filing, and formatting Agents onto the canvas in sequence. Compiles. Now legal work flows — statutes located, cases organized, documents formatted — the same way developers vibe-code with Cursor.
+- **VibeMarketing** — A marketer drags research, copywriting, and asset Agents onto the canvas. Compiles. Campaigns write themselves, audiences get analyzed autonomously.
+- **One-click package** — Build your Agent team, hit package, one product ready for anyone.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
+
+<p align="center">⭐ <b>If you find this useful, give us a star — it helps a lot!</b></p>
+
+## Acknowledgments
+
+Special thanks to:
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 <p align="center">
   <a href="https://github.com/XiaomiMiMo"><img src="https://avatars.githubusercontent.com/u/208276378?v=4" alt="MiMo" height="200"/></a>
 </p>
+<<<<<<< HEAD
 
 ## 参与贡献
 
@@ -111,11 +202,29 @@ npm run dev
 ## 许可证
 
 Apache License 2.0。详见 [LICENSE](./LICENSE)。
+=======
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
-***
+## Contributing
+
+We are **so** excited to meet you.
+
+Every typo fix, new tool plugin, doc tweak, or full-on feature lands — all of it makes SoloEngine better. Big PRs and small ones, both welcome.
+
+📝 [Contributing guide](./CONTRIBUTING.md) &nbsp;·&nbsp; 🐛 [Good first issues](https://github.com/Sh4r1ock/SoloEngine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) &nbsp;·&nbsp; 📧 [sh4r1ock@qq.com](mailto:sh4r1ock@qq.com)
+
+## License
+
+Apache License 2.0. See [LICENSE](./LICENSE).
+
+---
 
 <div align="center">
 
+<<<<<<< HEAD
 **SoloEngine 团队，用 ❤️ 倾心打造**
+=======
+**Made with ❤️ by the SoloEngine Team**
+>>>>>>> 9c6c7d70ff7366ebb3817267a69604c9b55aeff8
 
 </div>
