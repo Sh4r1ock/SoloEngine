@@ -24,8 +24,8 @@
 import re
 from typing import Dict, Any, Optional
 from html.parser import HTMLParser
-
-from .base import BaseNetworkTool, NetworkResponse, NetworkToolError
+from app.core.config import settings
+from .base import BaseNetworkTool, NetworkToolError
 
 
 class HTMLToMarkdownConverter(HTMLParser):
@@ -293,8 +293,8 @@ class WebFetch(BaseNetworkTool):
     
     def __init__(
         self,
-        timeout: int = 30,
-        max_content_length: int = 10000,
+        timeout: int = None,
+        max_content_length: int = None,
     ) -> None:
         """
         初始化网页获取工具。
@@ -304,8 +304,8 @@ class WebFetch(BaseNetworkTool):
             max_content_length (int, optional): 最大内容长度（字符数）。
                 默认为 10000。
         """
-        super().__init__(timeout=timeout)
-        self.max_content_length = max_content_length
+        super().__init__(timeout=timeout or settings.NETWORK_TOOL_TIMEOUT)
+        self.max_content_length = max_content_length or settings.WEB_FETCH_MAX_CONTENT_LENGTH
         self._converter = HTMLToMarkdownConverter()
     
     async def fetch(
@@ -389,6 +389,7 @@ class WebFetch(BaseNetworkTool):
             return {
                 "content": content,
                 "success": True,
+                "error_message": None,
                 "url": url,
                 "metadata": {
                     "resources_used": [url]
@@ -423,95 +424,26 @@ class WebFetch(BaseNetworkTool):
             Dict[str, Any]: 工具规范，用于注册到工具执行器。
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "WebFetch",
-                "description": "获取 URL 内容并转换为 Markdown 格式。适用于获取网页详细内容进行分析。",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "要获取的完整 URL",
-                        },
-                        "max_length": {
-                            "type": "integer",
-                            "description": "最大内容长度（字符数），默认为 10000",
-                        },
+            "name": "WebFetch",
+            "description": "获取 URL 内容并转换为 Markdown 格式。适用于获取网页详细内容进行分析。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "要获取的完整 URL",
                     },
-                    "required": ["url"],
+                    "max_length": {
+                        "type": "integer",
+                        "description": "最大内容长度（字符数），默认为 10000",
+                    },
                 },
+                "required": ["url"],
             },
         }
-
-
-async def web_fetch(url: str) -> Dict[str, Any]:
-    """
-    网页获取工具函数。
-    
-    获取 URL 内容并转换为 Markdown 格式。
-    
-    Args:
-        url (str): 要获取的 URL。
-    
-    Returns:
-        Dict[str, Any]: 包含获取结果的字典。
-    
-    Example:
-        >>> result = await web_fetch("https://example.com")
-        >>> print(result["content"])
-    """
-    fetcher = WebFetch()
-    
-    try:
-        content = await fetcher.fetch(url)
-        
-        return {
-            "content": content,
-            "success": True,
-            "url": url,
-        }
-        
-    except NetworkToolError as e:
-        return {
-            "content": f"获取网页失败: {e.message}",
-            "success": False,
-            "error_message": e.message,
-            "url": url,
-        }
-    except Exception as e:
-        return {
-            "content": f"获取网页出错: {str(e)}",
-            "success": False,
-            "error_message": str(e),
-            "url": url,
-        }
-
-
-def get_web_fetch_tool_spec() -> Dict[str, Any]:
-    """
-    获取网页获取工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到工具执行器。
-    """
-    return {
-        "name": "web_fetch",
-        "function": web_fetch,
-        "description": "获取 URL 内容并转换为 Markdown 格式。适用于获取网页详细内容进行分析。",
-        "parameters": {
-            "url": {
-                "type": "string",
-                "required": True,
-                "description": "要获取的完整 URL",
-            },
-        },
-    }
 
 
 __all__ = [
     "WebFetch",
     "HTMLToMarkdownConverter",
-    "web_fetch",
-    "get_web_fetch_tool_spec",
 ]

@@ -25,19 +25,17 @@ SoloEngine : 系统用户管理模块
     - is_system = is_system_user(user_id)
 """
 
-import os
 from sqlalchemy.orm import Session
 from app.core.database import UserModel, hash_password
-from datetime import datetime, timezone
+from app.core.config import settings
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 SYSTEM_USER_ID = "system"
-"""系统用户ID常量"""
 
-DEFAULT_SYSTEM_USERNAME = os.getenv("SYSTEM_USERNAME", "system")
-"""默认系统用户名，从环境变量获取或使用默认值"""
+DEFAULT_SYSTEM_USERNAME = settings.SYSTEM_USERNAME
 
-DEFAULT_SYSTEM_PASSWORD = os.getenv("SYSTEM_PASSWORD", "system")
-"""默认系统密码，从环境变量获取或使用默认值"""
+DEFAULT_SYSTEM_PASSWORD = settings.SYSTEM_PASSWORD
 
 
 def create_system_user(db: Session) -> UserModel:
@@ -63,8 +61,8 @@ def create_system_user(db: Session) -> UserModel:
         username=DEFAULT_SYSTEM_USERNAME,
         hashed_password=hashed_password,
         is_active=True,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc)
+        created_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+        updated_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
     )
     db.add(system_user)
     db.commit()

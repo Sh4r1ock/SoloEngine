@@ -60,7 +60,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
           onPressEnter={(e) => {
             if (!e.shiftKey) {
               e.preventDefault();
-              onSend();
+              if (!isRunning) {
+                onSend();
+              }
             }
           }}
         />

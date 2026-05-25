@@ -35,6 +35,7 @@ API 差异：
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import json
 from typing import (
     Any,
@@ -42,7 +43,6 @@ from typing import (
     AsyncGenerator,
     Literal,
     Type,
-    Optional,
 )
 from collections import OrderedDict
 
@@ -68,15 +68,11 @@ from .model_usage import ChatUsage
 from ..message import (
     TextBlock as SoloTextBlock,
     ToolUseBlock as SoloToolUseBlock,
-    ToolResultBlock as SoloToolResultBlock,
     ThinkingBlock as SoloThinkingBlock,
-    ImageBlock as SoloImageBlock,
-    AudioBlock as SoloAudioBlock,
-    Base64Source as SoloBase64Source,
-    URLSource as SoloURLSource,
 )
 from ..utils.logging import logger
 from ..types import JSONSerializableObject
+from app.core.config import settings
 
 if TYPE_CHECKING:
     from anthropic import AsyncStream
@@ -221,38 +217,12 @@ class AnthropicChatModel(ChatModelBase):
     def __init__(
         self,
         model_name: str,
-        api_key: str | None = None,
+        api_key: str,
         stream: bool = True,
-        api_key_env_var: str = "ANTHROPIC_API_KEY",
         client_kwargs: dict[str, JSONSerializableObject] | None = None,
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
         **kwargs: Any,
     ) -> None:
-        """
-        初始化 Anthropic 客户端。
-        
-        Args:
-            model_name (str): 模型名称，如：
-                - 'claude-3-5-sonnet-20241022'
-                - 'claude-3-opus-20240229'
-                - 'claude-3-haiku-20240307'
-            api_key (str | None, optional): API 密钥。如果未指定，
-                从环境变量读取。默认为 None。
-            stream (bool, optional): 是否启用流式输出。默认为 True。
-            api_key_env_var (str, optional): API 密钥的环境变量名。
-                默认为 "ANTHROPIC_API_KEY"。
-            client_kwargs (dict | None, optional): 初始化 Anthropic 客户端的
-                额外参数。默认为 None。
-            generate_kwargs (dict | None, optional): API 调用时的额外参数，
-                如 temperature, max_tokens 等。默认为 None。
-            **kwargs: 额外的关键字参数。
-        
-        Raises:
-            ValueError: 当 API 密钥未提供且环境变量未设置时抛出。
-        
-        Note:
-            - client_args 参数已弃用，请使用 client_kwargs
-        """
         super().__init__(model_name, stream)
 
         client_args = kwargs.pop("client_args", None)
@@ -276,21 +246,18 @@ class AnthropicChatModel(ChatModelBase):
                 "These will be ignored."
             )
 
-        import os
-        key = api_key or os.environ.get(api_key_env_var)
-        if not key:
+        if not api_key:
             raise ValueError(
-                f"Anthropic API key not provided and not found in environment "
-                f"variable '{api_key_env_var}'"
+                "Anthropic API key not provided. "
+                "Please configure your API key in Settings > LLM Configuration."
             )
 
         self.client = anthropic.AsyncAnthropic(
-            api_key=key,
+            api_key=api_key,
             **(client_kwargs or {}),
         )
 
         self.generate_kwargs = generate_kwargs or {}
-        self.api_key_env_var = api_key_env_var
 
     async def __call__(
         self,
@@ -298,6 +265,7 @@ class AnthropicChatModel(ChatModelBase):
         tools: list[dict] | None = None,
         tool_choice: Literal["auto", "none", "any"] | str | None = None,
         structured_model: Type[object] | None = None,
+        cancel_event: asyncio.Event = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         """
@@ -357,13 +325,14 @@ class AnthropicChatModel(ChatModelBase):
 
         gen_kwargs = {
             "model": self.model_name,
-            "max_tokens": kwargs.get("max_tokens", 4096),
-            "temperature": kwargs.get("temperature", 0.7),
-            "top_p": kwargs.get("top_p", 1.0),
-            "top_k": kwargs.get("top_k"),
+            "max_tokens": kwargs.pop("max_tokens", None),
+            "temperature": kwargs.pop("temperature", None),
+            "top_p": kwargs.pop("top_p", None),
+            "top_k": kwargs.pop("top_k", None),
             **self.generate_kwargs,
             **kwargs,
         }
+        gen_kwargs = {k: v for k, v in gen_kwargs.items() if v is not None}
 
         if self.stream:
             gen_kwargs["stream"] = True
@@ -382,7 +351,7 @@ class AnthropicChatModel(ChatModelBase):
             gen_kwargs["tool_choice"] = {"type": "any", "name": "formatted_response"}
             gen_kwargs["betas"] = ["computer-use-2024-10-22"]
 
-        start_datetime = datetime.now()
+        start_datetime = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
 
         if self.stream:
             if system_message:
@@ -395,6 +364,7 @@ class AnthropicChatModel(ChatModelBase):
                     start_datetime,
                     response,
                     structured_model,
+                    cancel_event,
                 )
             else:
                 response = await self.client.messages.stream(
@@ -405,6 +375,7 @@ class AnthropicChatModel(ChatModelBase):
                     start_datetime,
                     response,
                     structured_model,
+                    cancel_event,
                 )
         else:
             if system_message:
@@ -434,6 +405,7 @@ class AnthropicChatModel(ChatModelBase):
         start_datetime: datetime,
         response: AsyncStream,
         structured_model: Type[object] | None = None,
+        cancel_event: asyncio.Event = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """
         解析 Anthropic 流式响应。
@@ -446,6 +418,7 @@ class AnthropicChatModel(ChatModelBase):
             response (AsyncStream): Anthropic 异步流对象。
             structured_model (Type[object] | None, optional):
                 结构化输出的模型类。默认为 None。
+            cancel_event (asyncio.Event, optional): 取消事件。默认为 None。
         
         Returns:
             AsyncGenerator[ChatResponse, None]: 异步生成器。
@@ -460,8 +433,15 @@ class AnthropicChatModel(ChatModelBase):
         last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
         stop_reason = None  # 记录停止原因
 
-        async with response as stream:
-            async for event in stream:
+        try:
+            async with response as stream:
+                self._save_response_ref(stream)
+                async for event in stream:
+                    if cancel_event and cancel_event.is_set():
+                        logger.info("[Anthropic] Cancel event detected, closing stream")
+                        await stream.aclose()
+                        self._was_cancelled = True
+                        raise asyncio.CancelledError()
                 if event.type == "message_start":
                     current_response_id = event.message.id
                     if hasattr(event.message, "stop_reason"):
@@ -623,8 +603,10 @@ class AnthropicChatModel(ChatModelBase):
                     usage = ChatUsage(
                         input_tokens=event.usage.input_tokens,
                         output_tokens=event.usage.output_tokens,
-                        time=(datetime.now() - start_datetime).total_seconds(),
+                        time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
                     )
+        finally:
+            self._clear_response_ref()
 
     async def _parse_anthropic_completion_response(
         self,
@@ -681,7 +663,7 @@ class AnthropicChatModel(ChatModelBase):
             usage = ChatUsage(
                 input_tokens=response.usage.input_tokens,
                 output_tokens=response.usage.output_tokens,
-                time=(datetime.now() - start_datetime).total_seconds(),
+                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
             )
 
         metadata: dict | None = None

@@ -1,41 +1,36 @@
-/**
- * SoloEngine : Vite环境类型声明模块
- *
- * @file vite-env.d.ts
- * @description Vite环境类型声明
- * @author Sh4rlock
- * @date 2026-04-09
- *
- * 功能描述：
- * 本模块定义Vite环境的类型声明，包括：
- *     - ImportMetaEnv: 导入元数据环境接口
- *     - ImportMeta: 导入元数据接口
- *
- * 依赖:
- *     - vite/client: Vite客户端类型
- *
- * 使用示例:
- *     - const apiUrl = import.meta.env.VITE_API_BASE_URL
- */
-
 /// <reference types="vite/client" />
 
-/**
- * 导入元数据环境接口
- *
- * 属性:
- *     - VITE_API_BASE_URL: API基础URL
- */
 interface ImportMetaEnv {
   readonly VITE_API_BASE_URL?: string;
+  readonly VITE_WEBSOCKET_RECONNECT_INTERVAL_MS?: string;
+  readonly VITE_WEBSOCKET_MAX_RECONNECT_ATTEMPTS?: string;
+  readonly VITE_WEBSOCKET_HEARTBEAT_INTERVAL_MS?: string;
+  readonly VITE_WEBSOCKET_HEARTBEAT_TIMEOUT_MS?: string;
+  readonly VITE_WEBSOCKET_HEARTBEAT_CHECK_INTERVAL_MS?: string;
+  readonly VITE_WEBSOCKET_MAX_RECONNECT_DELAY_MS?: string;
+  readonly VITE_WEBSOCKET_RESPONSE_TIMEOUT?: string;
+  readonly VITE_API_REQUEST_TIMEOUT?: string;
+  readonly VITE_MCP_REQUEST_TIMEOUT?: string;
+  readonly VITE_ONLYOFFICE_CHECK_INTERVAL?: string;
+  readonly VITE_ONLYOFFICE_URL?: string;
+  readonly VITE_DEFAULT_MAX_ITERATIONS?: string;
+  readonly VITE_DEFAULT_MAX_CONTEXT_LENGTH?: string;
+  readonly VITE_DEFAULT_TIMEOUT?: string;
+  readonly VITE_LLM_DEFAULT_TEMPERATURE?: string;
+  readonly VITE_LLM_DEFAULT_MAX_TOKENS?: string;
+  readonly VITE_LLM_MAX_TOKENS_LIMIT?: string;
+  readonly VITE_LLM_DEFAULT_TOP_P?: string;
+  readonly VITE_LLM_DEFAULT_FREQUENCY_PENALTY?: string;
+  readonly VITE_LLM_DEFAULT_PRESENCE_PENALTY?: string;
+  readonly VITE_LLM_DEFAULT_TIMEOUT?: string;
+  readonly VITE_LLM_PROVIDER_OPENAI_BASE_URL?: string;
+  readonly VITE_LLM_PROVIDER_ANTHROPIC_BASE_URL?: string;
+  readonly VITE_LLM_PROVIDER_QWEN_BASE_URL?: string;
+  readonly VITE_LLM_PROVIDER_OLLAMA_BASE_URL?: string;
+  readonly VITE_LLM_PROVIDER_DEEPSEEK_BASE_URL?: string;
+  readonly VITE_LLM_PROVIDER_ZHIPU_BASE_URL?: string;
 }
 
-/**
- * 导入元数据接口
- *
- * 属性:
- *     - env: 环境变量
- */
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }

@@ -22,7 +22,9 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8990';
+import { APP_CONFIG } from '../config/index';
+
+const API_BASE_URL = APP_CONFIG.API_BASE_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,

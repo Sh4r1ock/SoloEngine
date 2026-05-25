@@ -25,15 +25,11 @@ from .base import (
 from .web_search import (
     WebSearch,
     SearchResult,
-    web_search,
-    get_web_search_tool_spec,
 )
 
 from .web_fetch import (
     WebFetch,
     HTMLToMarkdownConverter,
-    web_fetch,
-    get_web_fetch_tool_spec,
 )
 
 __all__ = [
@@ -42,10 +38,6 @@ __all__ = [
     "NetworkResponse",
     "WebSearch",
     "SearchResult",
-    "web_search",
-    "get_web_search_tool_spec",
     "WebFetch",
     "HTMLToMarkdownConverter",
-    "web_fetch",
-    "get_web_fetch_tool_spec",
 ]

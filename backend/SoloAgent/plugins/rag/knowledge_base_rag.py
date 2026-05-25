@@ -37,7 +37,7 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 import numpy as np
 import uuid
-
+from app.core.config import settings
 from ...core.interfaces import IRAG
 from ...types import JSONSerializableObject
 from ...embedding import get_embedding_service, EmbeddingService
@@ -123,10 +123,10 @@ class KnowledgeBaseConfig:
     embedding_base_url: Optional[str] = None
     """嵌入服务基础URL"""
 
-    chunk_size: int = 500
+    chunk_size: int = field(default_factory=lambda: settings.CHUNK_SIZE)
     """文档分块大小"""
 
-    chunk_overlap: int = 50
+    chunk_overlap: int = field(default_factory=lambda: settings.CHUNK_OVERLAP)
     """分块之间的重叠大小"""
 
 

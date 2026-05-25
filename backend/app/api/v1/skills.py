@@ -27,22 +27,33 @@ SoloEngine : Skills管理API模块，提供Skills包管理相关API端点
 """
 
 import os
+import re
+import yaml
 import logging
 import shutil
+import uuid
+import tempfile
+import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
 
-from app.core.database import get_db, db_manager, SkillsPackageModel, OptimisticLockError
+from app.core.database import get_db, db_manager, SkillsPackageModel
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 from app.core.data_paths import DataPaths
+from app.utils.timezone_utils import format_iso
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/skills", tags=["skills"])
+
+# 临时文件管理器（内存存储，重启后清空）
+temp_files = {}  # temp_id -> {path, created_at, user_id}
 
 
 def get_user_skills_dir(user_id: str) -> str:
@@ -55,19 +66,24 @@ def get_user_skills_dir(user_id: str) -> str:
 def parse_skill_md(skill_md_path: str) -> Dict[str, Any]:
     """解析SKILL.md文件，提取元数据和内容。
     
+    遵循 Anthropic Agent Skills 标准规范（agentskills.io/specification）：
+    - YAML frontmatter 中 name 和 description 为必填字段
+    - Markdown body 为 L2 渐进式披露内容
+    
     Args:
         skill_md_path: SKILL.md文件路径
         
     Returns:
-        dict: 包含name, version, description, author, tags, instructions等字段
+        dict: 包含name, description, author, tags, version等字段
     """
+    FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
+    
     result = {
         "name": "",
-        "version": "1.0.0",
         "description": "",
-        "author": "Anthropic",
+        "author": "",
         "tags": [],
-        "instructions": ""
+        "version": "1.0.0",
     }
     
     if not os.path.exists(skill_md_path):
@@ -77,32 +93,19 @@ def parse_skill_md(skill_md_path: str) -> Dict[str, Any]:
         with open(skill_md_path, "r", encoding="utf-8") as f:
             content = f.read()
         
-        if content.startswith("---"):
-            parts = content.split("---", 2)
-            if len(parts) >= 3:
-                frontmatter = parts[1].strip()
-                body = parts[2].strip()
-                
-                for line in frontmatter.split("\n"):
-                    if ":" in line:
-                        key, value = line.split(":", 1)
-                        key = key.strip().lower()
-                        value = value.strip()
-                        
-                        if key == "name":
-                            result["name"] = value
-                        elif key == "version":
-                            result["version"] = value
-                        elif key == "description":
-                            result["description"] = value
-                        elif key == "author":
-                            result["author"] = value
-                        elif key == "tags":
-                            if value.startswith("[") and value.endswith("]"):
-                                tags_str = value[1:-1]
-                                result["tags"] = [t.strip().strip('"').strip("'") for t in tags_str.split(",") if t.strip()]
-                
-                result["instructions"] = body
+        match = FRONTMATTER_PATTERN.match(content)
+        if match:
+            frontmatter_str, _ = match.groups()
+            fm = yaml.safe_load(frontmatter_str) or {}
+            result["name"] = str(fm.get("name", "")).strip()
+            result["description"] = str(fm.get("description", "")).strip()
+            if "version" in fm:
+                result["version"] = str(fm["version"]).strip()
+            if "author" in fm:
+                result["author"] = str(fm["author"]).strip()
+            if "tags" in fm and isinstance(fm["tags"], list):
+                result["tags"] = [str(t).strip() for t in fm["tags"]]
+        
     except Exception as e:
         logger.error(f"Failed to parse SKILL.md: {e}")
     
@@ -218,12 +221,13 @@ def sync_system_skills(db: Session) -> int:
         
         if existing:
             existing.folder_path = DataPaths.to_relative_path(skill_path)
-            existing.description = skill_info.get("description", existing.description)
+            desc = skill_info.get("description", "")
+            if desc:
+                existing.description = desc
             tags = skill_info.get("tags", existing.tags or [])
             if "system" not in tags:
                 tags.append("system")
             existing.tags = tags
-            existing.instructions = skill_info.get("instructions", existing.instructions)
             existing.pkg_version = skill_info.get("version", existing.pkg_version)
             existing.version = (existing.version or 0) + 1
             logger.info(f"Updated system skill: {skill_name}")
@@ -238,12 +242,11 @@ def sync_system_skills(db: Session) -> int:
                 description=skill_info.get("description", ""),
                 user_id="system",
                 tags=tags,
-                instructions=skill_info.get("instructions", ""),
                 pkg_version=skill_info.get("version", "1.0.0"),
                 is_public=True,
                 is_active=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+                updated_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
             )
             db.add(skill)
             logger.info(f"Created system skill: {skill_name}")
@@ -274,11 +277,6 @@ class UpdateSkillPackageRequest(BaseModel):
     icon: Optional[str] = None
 
 
-class GeneratePromptRequest(BaseModel):
-    package_id: str = Field(..., description="Skills 包ID")
-    context: Optional[Dict[str, Any]] = Field(None, description="上下文变量")
-
-
 class SearchSkillsRequest(BaseModel):
     query: str = Field("", description="搜索查询")
     tags: Optional[List[str]] = Field(None, description="标签过滤")
@@ -305,15 +303,14 @@ async def list_packages(
             "description": pkg.description or "",
             "author": pkg.author,
             "tags": pkg.tags or [],
-            "instructions": pkg.instructions or "",
             "folder_path": pkg.folder_path,
             "is_active": pkg.is_active,
             "is_public": pkg.is_public,
             "is_system": is_system,
             "version": pkg.version,
             "icon": pkg.icon,
-            "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
-            "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
+            "created_at": format_iso(pkg.created_at),
+            "updated_at": format_iso(pkg.updated_at),
         })
     
     return {
@@ -350,15 +347,14 @@ async def get_package(
             "description": pkg.description or "",
             "author": pkg.author,
             "tags": pkg.tags or [],
-            "instructions": pkg.instructions or "",
             "folder_path": pkg.folder_path,
             "is_active": pkg.is_active,
             "is_public": pkg.is_public,
             "is_system": is_system,
             "version": pkg.version,
             "icon": pkg.icon,
-            "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
-            "updated_at": pkg.updated_at.isoformat() if pkg.updated_at else None,
+            "created_at": format_iso(pkg.created_at),
+            "updated_at": format_iso(pkg.updated_at),
         },
     }
 
@@ -433,7 +429,7 @@ tags:
             "folder_path": pkg.folder_path,
             "is_active": pkg.is_active,
             "icon": pkg.icon,
-            "created_at": pkg.created_at.isoformat() if pkg.created_at else None,
+            "created_at": format_iso(pkg.created_at),
         },
     }
 
@@ -505,12 +501,9 @@ async def update_package(
     if request.icon is not None:
         update_data["icon"] = request.icon
     
-    try:
-        pkg = db_manager.update_skills_package(
+    pkg = db_manager.update_skills_package(
             db, package_id, user_id, version=request.version, **update_data
         )
-    except OptimisticLockError as e:
-        raise HTTPException(status_code=409, detail=str(e))
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
@@ -566,109 +559,199 @@ async def delete_package(
     }
 
 
-MAX_FILE_SIZE = 50 * 1024 * 1024
+MAX_FILE_SIZE = settings.MAX_FILE_UPLOAD_SIZE
 ALLOWED_EXTENSIONS = {'.zip'}
 
 
-@router.post("/import")
-async def import_package(
+@router.post("/import/parse")
+async def parse_import_package(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """导入 Skills 包。"""
+    """解析上传的Skills包，返回元数据（不保存，仅创建临时文件）"""
     user_id = current_user.id
-    user_skills_dir = get_user_skills_dir(user_id)
     
     file_ext = os.path.splitext(file.filename)[1].lower()
     if file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"File type not allowed. Allowed types: {', '.join(ALLOWED_EXTENSIONS)}")
     
-    import tempfile
-    import zipfile
+    # 生成临时文件ID
+    temp_id = str(uuid.uuid4())
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_file:
-        total_size = 0
-        chunk_size = 1024 * 1024
-        while True:
-            chunk = await file.read(chunk_size)
-            if not chunk:
-                break
-            total_size += len(chunk)
-            if total_size > MAX_FILE_SIZE:
-                os.unlink(temp_file.name)
-                raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB")
-            temp_file.write(chunk)
-        temp_file_path = temp_file.name
+    # 保存临时文件
+    temp_dir = tempfile.mkdtemp()
+    temp_file_path = os.path.join(temp_dir, file.filename)
     
+    total_size = 0
+    chunk_size = 1024 * 1024
     try:
+        with open(temp_file_path, "wb") as f:
+            while True:
+                chunk = await file.read(chunk_size)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > MAX_FILE_SIZE:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    raise HTTPException(status_code=413, detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB")
+                f.write(chunk)
+        
+        # 解析ZIP
+        import zipfile
+        extract_dir = os.path.join(temp_dir, "extracted")
+        os.makedirs(extract_dir, exist_ok=True)
+        
         with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_dir)
+            
+            # 查找SKILL.md
+            skill_md_path = None
             package_name = None
             for file_info in zip_ref.filelist:
                 if file_info.filename.endswith('SKILL.md'):
                     path_parts = file_info.filename.split('/')
                     if len(path_parts) > 0:
                         package_name = path_parts[0]
+                        skill_md_path = os.path.join(extract_dir, file_info.filename)
                     break
             
-            if not package_name:
+            if not skill_md_path:
+                # 尝试根目录
+                skill_md_path = os.path.join(extract_dir, "SKILL.md")
                 package_name = os.path.splitext(file.filename)[0]
+        
+        # 解析SKILL.md
+        metadata = {
+            "name": package_name,
+            "version": "1.0.0",
+            "description": "",
+            "author": "",
+            "tags": [],
+            "temp_file_id": temp_id
+        }
+        
+        if os.path.exists(skill_md_path):
+            with open(skill_md_path, "r", encoding="utf-8") as f:
+                content = f.read()
             
-            extract_dir = os.path.join(user_skills_dir, package_name)
-            if os.path.exists(extract_dir):
-                shutil.rmtree(extract_dir)
-            os.makedirs(extract_dir, exist_ok=True)
-            
-            zip_ref.extractall(extract_dir)
-            
-            skill_md_path = os.path.join(extract_dir, "SKILL.md")
-            if os.path.exists(skill_md_path):
-                with open(skill_md_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                metadata = {"name": package_name, "version": "1.0.0", "description": "", "author": "", "tags": []}
-                if "---" in content:
-                    parts = content.split("---")
-                    if len(parts) >= 2:
-                        import yaml
-                        try:
-                            frontmatter = yaml.safe_load(parts[1])
-                            if frontmatter:
-                                metadata.update(frontmatter)
-                        except yaml.YAMLError as e:
-                            logger.warning(f"Failed to parse YAML frontmatter: {e}")
-                        except Exception as e:
-                            logger.error(f"Unexpected error parsing frontmatter: {e}")
-                
-                pkg = db_manager.create_skills_package(
-                    db=db,
-                    user_id=user_id,
-                    name=metadata.get("name", package_name),
-                    description=metadata.get("description", ""),
-                    folder_path=DataPaths.to_relative_path(extract_dir),
-                    pkg_version=metadata.get("version", "1.0.0"),
-                    author=metadata.get("author", ""),
-                    tags=metadata.get("tags", []),
-                )
-                
-                return {
-                    "code": 200,
-                    "message": "Skills package imported",
-                    "data": {
-                        "id": pkg.id,
-                        "name": pkg.name,
-                        "pkg_version": pkg.pkg_version,
-                        "description": pkg.description,
-                    },
-                }
-            else:
-                shutil.rmtree(extract_dir)
-                raise HTTPException(status_code=400, detail="Invalid Skills package: SKILL.md not found")
-    
+            if "---" in content:
+                parts = content.split("---")
+                if len(parts) >= 2:
+                    import yaml
+                    try:
+                        frontmatter = yaml.safe_load(parts[1])
+                        if frontmatter:
+                            metadata.update(frontmatter)
+                    except yaml.YAMLError:
+                        pass
+        
+        # 记录临时文件
+        temp_files[temp_id] = {
+            "path": temp_dir,
+            "created_at": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+            "user_id": user_id
+        }
+        
+        return {
+            "code": 200,
+            "message": "Package parsed",
+            "data": metadata
+        }
+        
     except zipfile.BadZipFile:
+        shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="Invalid ZIP file")
-    finally:
-        os.unlink(temp_file_path)
+    except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail=f"Parse failed: {str(e)}")
+
+
+@router.post("/import/cleanup")
+async def cleanup_temp_file(
+    temp_id: str = Form(...),
+    current_user: User = Depends(get_current_user)
+):
+    """清理临时文件"""
+    if temp_id in temp_files:
+        temp_info = temp_files[temp_id]
+        # 验证用户权限
+        if temp_info["user_id"] == current_user.id:
+            shutil.rmtree(temp_info["path"], ignore_errors=True)
+            del temp_files[temp_id]
+    
+    return {"code": 200, "message": "Cleaned up"}
+
+
+@router.post("/import")
+async def import_package(
+    temp_id: str = Form(...),
+    name: str = Form(...),
+    description: str = Form(""),
+    author: str = Form(""),
+    tags: str = Form("[]"),  # JSON字符串
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """确认导入Skills包（使用临时文件）"""
+    user_id = current_user.id
+    
+    if temp_id not in temp_files:
+        raise HTTPException(status_code=400, detail="Temp file not found or expired")
+    
+    temp_info = temp_files[temp_id]
+    if temp_info["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    temp_dir = temp_info["path"]
+    user_skills_dir = get_user_skills_dir(user_id)
+    
+    try:
+        # 查找解压后的目录
+        extract_dir = os.path.join(temp_dir, "extracted")
+        if not os.path.exists(extract_dir):
+            extract_dir = temp_dir
+        
+        # 移动到用户skills目录
+        package_dir = os.path.join(user_skills_dir, name)
+        if os.path.exists(package_dir):
+            shutil.rmtree(package_dir)
+        
+        # 复制文件
+        shutil.copytree(extract_dir, package_dir)
+        
+        # 解析tags
+        tags_list = json.loads(tags)
+        
+        # 创建数据库记录
+        pkg = db_manager.create_skills_package(
+            db=db,
+            user_id=user_id,
+            name=name,
+            description=description,
+            folder_path=DataPaths.to_relative_path(package_dir),
+            pkg_version="1.0.0",
+            author=author,
+            tags=tags_list,
+        )
+        
+        # 清理临时文件
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        del temp_files[temp_id]
+        
+        return {
+            "code": 200,
+            "message": "Skills package imported",
+            "data": {
+                "id": pkg.id,
+                "name": pkg.name,
+                "pkg_version": pkg.pkg_version,
+                "description": pkg.description,
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {str(e)}")
 
 
 @router.get("/packages/{package_id}/export")
@@ -865,44 +948,6 @@ async def get_skill_content(
             "skill_name": skill_name,
             "content": content,
             "path": skill_path,
-        },
-    }
-
-
-@router.post("/prompt")
-async def generate_prompt(
-    request: GeneratePromptRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """生成包含 Skills 的提示词。"""
-    user_id = current_user.id
-    pkg = db_manager.get_skills_package(db, request.package_id, user_id)
-    
-    if not pkg:
-        raise HTTPException(status_code=404, detail=f"Package '{request.package_id}' not found")
-    
-    if not pkg.instructions:
-        return {
-            "code": 200,
-            "message": "No instructions found",
-            "data": {
-                "package_id": request.package_id,
-                "prompt": "",
-            },
-        }
-    
-    prompt = pkg.instructions
-    if request.context:
-        for key, value in request.context.items():
-            prompt = prompt.replace(f"{{{{ {key} }}}}", str(value))
-    
-    return {
-        "code": 200,
-        "message": "Prompt generated",
-        "data": {
-            "package_id": request.package_id,
-            "prompt": prompt,
         },
     }
 

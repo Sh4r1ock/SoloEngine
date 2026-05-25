@@ -26,10 +26,13 @@ SoloEngine : LLM配置模型模块
     - config = LLMConfig(provider=LLMProvider.OPENAI, model="gpt-4")
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from enum import Enum
+
+from app.core.config import settings
 
 
 class LLMProvider(Enum):
@@ -77,7 +80,7 @@ class LLMConfig:
     api_key: str = ""
     api_base: str = ""
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 128000
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
@@ -110,7 +113,7 @@ class LLMUsageRecord:
     output_tokens: int
     total_tokens: int
     duration_ms: int
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     project_name: str = ""
     node_id: str = ""
     

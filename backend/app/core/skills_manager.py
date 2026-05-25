@@ -299,32 +299,6 @@ class SkillsManager:
             logger.error(f"导出包 {package_name} 失败: {e}")
             return None
 
-    def generate_prompt(
-        self,
-        package_name: str,
-        context: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
-        """生成包含 Skills 的提示词。
-
-        Args:
-            package_name: 包名称
-            context: 上下文变量
-
-        Returns:
-            生成的提示词
-        """
-        package = self.get_package(package_name)
-        if not package:
-            return None
-
-        # 使用 parser 生成提示词
-        package_obj = SkillsPackage(package["root_path"])
-        package_obj.metadata = self.parser.parse_skill_md(
-            os.path.join(package["root_path"], "SKILL.md")
-        )
-
-        return self.parser.generate_prompt(package_obj, context)
-
     def search_packages(
         self,
         query: str,

@@ -34,9 +34,10 @@ SoloEngine : Azure TTS模型实现
 import os
 import aiofiles
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import logging
-
+from app.core.config import settings
 from ...core.interfaces import ITTSModel
 
 logger = logging.getLogger(__name__)
@@ -69,24 +70,12 @@ class AzureTTSModel(ITTSModel):
 
     def __init__(
         self,
-        subscription_key: Optional[str] = None,
+        subscription_key: str,
         region: str = "eastus",
         voice: str = "en-US-JennyNeural",
         output_path: str = "./tts_output",
     ):
-        """
-        初始化Azure TTS模型
-
-        Args:
-            subscription_key: Azure订阅密钥，默认从环境变量AZURE_SPEECH_KEY读取
-            region: Azure区域，默认为"eastus"
-            voice: 默认语音，默认为"en-US-JennyNeural"
-            output_path: 输出路径，默认为"./tts_output"
-
-        示例:
-            >>> tts = AzureTTSModel(subscription_key="your_key")
-        """
-        self.subscription_key = subscription_key or os.getenv("AZURE_SPEECH_KEY")
+        self.subscription_key = subscription_key
         self.region = region
         self.voice = voice
         self.output_path = output_path
@@ -97,8 +86,7 @@ class AzureTTSModel(ITTSModel):
     
     async def _get_access_token(self) -> Optional[str]:
         if self._token and self._token_expires:
-            from datetime import datetime, timedelta
-            if datetime.now() < self._token_expires - timedelta(minutes=5):
+            if datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) < self._token_expires - timedelta(minutes=5):
                 return self._token
         
         try:
@@ -106,7 +94,7 @@ class AzureTTSModel(ITTSModel):
             
             token_url = f"https://{self.region}.api.cognitive.microsoft.com/sts/v1.0/issueToken"
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=float(settings.TTS_REQUEST_TIMEOUT)) as client:
                 response = await client.post(
                     token_url,
                     headers={
@@ -117,8 +105,7 @@ class AzureTTSModel(ITTSModel):
                 
                 if response.status_code == 200:
                     self._token = response.text
-                    from datetime import datetime, timedelta
-                    self._token_expires = datetime.now() + timedelta(minutes=10)
+                    self._token_expires = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) + timedelta(minutes=10)
                     return self._token
                 else:
                     logger.error(f"Failed to get Azure token: {response.status_code}")
@@ -161,7 +148,7 @@ class AzureTTSModel(ITTSModel):
             
             url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/v1"
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=float(settings.TTS_REQUEST_TIMEOUT)) as client:
                 response = await client.post(
                     url,
                     content=ssml.encode('utf-8'),
@@ -179,7 +166,7 @@ class AzureTTSModel(ITTSModel):
                     }
                 
                 if not output_file:
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
                     output_file = os.path.join(self.output_path, f"tts_{timestamp}.mp3")
                 
                 async with aiofiles.open(output_file, "wb") as f:
@@ -206,7 +193,7 @@ class AzureTTSModel(ITTSModel):
             
             url = f"https://{self.region}.tts.speech.microsoft.com/cognitiveservices/voices/list"
             
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=float(settings.TTS_REQUEST_TIMEOUT)) as client:
                 response = await client.get(
                     url,
                     headers={"Authorization": f"Bearer {token}"}

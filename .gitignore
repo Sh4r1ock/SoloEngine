@@ -214,18 +214,33 @@ npm_cache/
 
 # 自定义忽略文件夹
 备份文件/
+参考/
+待执行计划/
 技术文档/
 软件著作权/
+宣传文档/
 专利/
+流程图与架构图/
+软著与专利/
+提示词模板/
 .idea/
 .vscode/
 .trae/
 .vscode/
+.workbuddy/
 bat/
+docs/
 SoloEngine.zip
-node_modules/
-bat/
 .tokeignore
 
-# 数据目录
-data/packages/
+# 数据库临时文件
+*.db-wal
+*.db-shm
+*.db-journal
+
+# 加密密钥
+.encryption_key
+
+# 临时文件
+tmp_*
+

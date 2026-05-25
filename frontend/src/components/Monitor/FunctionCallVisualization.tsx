@@ -7,6 +7,7 @@ import {
   ThunderboltOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons';
+import { formatTimeShort } from '../../utils/timezone';
 
 const { Title, Text } = Typography;
 
@@ -128,7 +129,7 @@ const FunctionCallVisualization: React.FC<FunctionCallVisualizationProps> = ({
             extra={
               <Space>
                 {call.duration_ms && <Text type="secondary">{call.duration_ms}ms</Text>}
-                <Text type="secondary">{new Date(call.timestamp).toLocaleTimeString()}</Text>
+                <Text type="secondary">{formatTimeShort(call.timestamp)}</Text>
               </Space>
             }
           >

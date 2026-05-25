@@ -19,6 +19,7 @@ import {
   CodeSandboxOutlined,
 } from '@ant-design/icons';
 import type { CallRecord } from '../types';
+import { formatJson, copyToClipboard, formatDuration } from '../utils/messageUtils';
 
 const { Text, Paragraph } = Typography;
 const { Panel } = Collapse;
@@ -77,25 +78,6 @@ const getToolIcon = (name?: string) => {
     return <CodeSandboxOutlined style={{ color: '#fa8c16' }} />;
   }
   return <ToolOutlined style={{ color: '#8c8c8c' }} />;
-};
-
-const formatDuration = (duration?: number) => {
-  if (!duration) return '-';
-  if (duration < 1000) return `${duration}ms`;
-  if (duration < 60000) return `${(duration / 1000).toFixed(2)}s`;
-  return `${(duration / 60000).toFixed(2)}m`;
-};
-
-const formatJson = (obj: any) => {
-  try {
-    return JSON.stringify(obj, null, 2);
-  } catch {
-    return String(obj);
-  }
-};
-
-const copyToClipboard = (text: string) => {
-  navigator.clipboard.writeText(text);
 };
 
 interface CallRecordPanelProps {
@@ -170,7 +152,7 @@ const CallRecordPanel: React.FC<CallRecordPanelProps> = ({
                   ghost
                   items={[
                     {
-                      key: 'args',
+                      key: `args-${record.id}`,
                       label: <Text type="secondary" style={{ fontSize: 12 }}>参数</Text>,
                       children: record.arguments ? (
                         <div style={{ position: 'relative' }}>
@@ -203,7 +185,7 @@ const CallRecordPanel: React.FC<CallRecordPanelProps> = ({
                       ) : null,
                     },
                     {
-                      key: 'result',
+                      key: `result-${record.id}`,
                       label: <Text type="secondary" style={{ fontSize: 12 }}>结果</Text>,
                       children: record.result ? (
                         <div style={{ position: 'relative' }}>

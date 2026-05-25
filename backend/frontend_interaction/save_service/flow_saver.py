@@ -66,4 +66,6 @@ class FlowSaver:
 
     def _get_current_timestamp(self) -> str:
         from datetime import datetime
-        return datetime.now().isoformat()
+        from zoneinfo import ZoneInfo
+        from app.core.config import settings
+        return datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()

@@ -63,4 +63,3 @@ class TokenCounterBase:
         示例:
             >>> count = await counter.count(messages)
         """
-        pass

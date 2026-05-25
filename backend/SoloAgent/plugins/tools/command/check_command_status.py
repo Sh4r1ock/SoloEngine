@@ -33,8 +33,6 @@ from typing import Dict, Any, Optional
 
 from .base import (
     BaseCommandTool,
-    CommandInfo,
-    CommandState,
     CommandNotFoundError,
     CommandToolError,
 )
@@ -180,6 +178,7 @@ class CheckCommandStatus(BaseCommandTool):
         result = {
             "content": stdout_paginated,
             "success": cmd_info.state.value in ["done", "running"],
+            "error_message": None if cmd_info.state.value in ["done", "running"] else f"Command in {cmd_info.state.value} state",
             "status": cmd_info.state.value,
             "exit_code": cmd_info.exit_code,
             "command_id": cmd_info.command_id,
@@ -259,36 +258,34 @@ class CheckCommandStatus(BaseCommandTool):
             "name": "CheckCommandStatus",
             "description": "检查运行中命令的状态。返回状态、退出码和输出。",
             "parameters": {
-                "command_id": {
-                    "type": "string",
-                    "description": "命令 ID",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "command_id": {
+                        "type": "string",
+                        "description": "命令 ID",
+                    },
+                    "filter": {
+                        "type": "string",
+                        "description": "输出过滤正则表达式",
+                    },
+                    "output_character_count": {
+                        "type": "integer",
+                        "description": "返回的字符数",
+                    },
+                    "output_priority": {
+                        "type": "string",
+                        "description": "输出优先级：top, bottom, split",
+                        "enum": ["top", "bottom", "split"],
+                    },
+                    "skip_character_count": {
+                        "type": "integer",
+                        "description": "跳过的字符数",
+                    },
+                    "wait_ms_before_check": {
+                        "type": "integer",
+                        "description": "检查前等待时间（毫秒）",
+                    },
                 },
-                "filter": {
-                    "type": "string",
-                    "description": "输出过滤正则表达式",
-                    "required": False,
-                },
-                "output_character_count": {
-                    "type": "integer",
-                    "description": "返回的字符数",
-                    "required": False,
-                },
-                "output_priority": {
-                    "type": "string",
-                    "description": "输出优先级：top, bottom, split",
-                    "enum": ["top", "bottom", "split"],
-                    "required": False,
-                },
-                "skip_character_count": {
-                    "type": "integer",
-                    "description": "跳过的字符数",
-                    "required": False,
-                },
-                "wait_ms_before_check": {
-                    "type": "integer",
-                    "description": "检查前等待时间（毫秒）",
-                    "required": False,
-                },
+                "required": ["command_id"],
             },
         }

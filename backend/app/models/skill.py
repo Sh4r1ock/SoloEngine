@@ -27,6 +27,8 @@ SoloEngine : Skills数据模型模块
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 
 
 @dataclass
@@ -37,7 +39,6 @@ class SkillMetadata:
     description: str = ""
     author: str = ""
     tags: List[str] = field(default_factory=list)
-    instructions: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -46,7 +47,6 @@ class SkillMetadata:
             "description": self.description,
             "author": self.author,
             "tags": self.tags,
-            "instructions": self.instructions,
         }
     
     @classmethod
@@ -57,7 +57,6 @@ class SkillMetadata:
             description=data.get("description", ""),
             author=data.get("author", ""),
             tags=data.get("tags", []),
-            instructions=data.get("instructions", ""),
         )
 
 
@@ -90,8 +89,8 @@ class SkillsPackage:
     skills: List[SkillFile] = field(default_factory=list)
     common_files: List[SkillFile] = field(default_factory=list)
     is_active: bool = False
-    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -120,6 +119,6 @@ class SkillsPackage:
             skills=[SkillFile(**s) for s in data.get("skills", [])],
             common_files=[SkillFile(**f) for f in data.get("common_files", [])],
             is_active=data.get("is_active", False),
-            created_at=data.get("created_at", datetime.now().isoformat()),
-            updated_at=data.get("updated_at", datetime.now().isoformat()),
+            created_at=data.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            updated_at=data.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
         )

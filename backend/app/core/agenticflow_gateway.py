@@ -23,6 +23,9 @@ import logging
 import asyncio
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 import json
@@ -190,20 +193,7 @@ class AgenticFlowGateway:
         agentic_flow_id: str, 
         request: Request
     ) -> Response:
-        """
-        处理执行请求
-        
-        Args:
-            agentic_flow_id: AgenticFlow ID
-            request: FastAPI 请求对象
-        
-        Returns:
-            响应对象
-            
-        Example:
-            >>> response = await gateway._handle_execute_request("flow_id", request)
-        """
-        from SoloAgent.solo_agent.compiler import CompiledFlowFactory, FlowRunner
+        from app.api.v1.run import AgenticFlowRunContext
         
         try:
             body = await request.json()
@@ -219,26 +209,26 @@ class AgenticFlowGateway:
             context = body.get("context", {})
             canvas_data = body.get("canvas_data")
             
-            compiled_flow = self._compiled_flows.get(agentic_flow_id)
-            
-            if not compiled_flow and user_id and session_id and run_project_id:
-                compiled_flow = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
-            
-            if not compiled_flow and canvas_data:
-                result = await FlowRunner.run_from_json(
-                    canvas_data,
-                    input_message,
+            if canvas_data:
+                run_context = AgenticFlowRunContext(
                     user_id=user_id,
                     agentic_flow_id=agentic_flow_id,
                     session_id=session_id,
                     run_project_id=run_project_id,
-                    context=context
+                )
+                
+                result = await run_context.execute(
+                    input_message=input_message,
+                    canvas_data=canvas_data,
+                    context=context,
                 )
                 return JSONResponse(content={
                     "code": 200,
                     "message": "AgenticFlow executed",
                     "data": result
                 })
+            
+            compiled_flow = self._compiled_flows.get(agentic_flow_id)
             
             if not compiled_flow:
                 return JSONResponse(
@@ -271,20 +261,7 @@ class AgenticFlowGateway:
         agentic_flow_id: str, 
         request: Request
     ) -> Response:
-        """
-        处理流式执行请求
-        
-        Args:
-            agentic_flow_id: AgenticFlow ID
-            request: FastAPI 请求对象
-        
-        Returns:
-            StreamingResponse 对象
-            
-        Example:
-            >>> response = await gateway._handle_stream_request("flow_id", request)
-        """
-        from SoloAgent.solo_agent.compiler import CompiledFlowFactory, FlowRunner
+        from app.api.v1.run import AgenticFlowRunContext
         
         async def stream_generator():
             try:
@@ -299,26 +276,26 @@ class AgenticFlowGateway:
                 context = body.get("context", {})
                 canvas_data = body.get("canvas_data")
                 
-                compiled_flow = self._compiled_flows.get(agentic_flow_id)
-                
-                if not compiled_flow and user_id and session_id and run_project_id:
-                    compiled_flow = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
-                
-                if not compiled_flow and canvas_data:
+                if canvas_data:
                     yield f"data: {json.dumps({'type': 'status', 'message': 'Compiling...'})}\n\n"
                     
-                    result = await FlowRunner.run_from_json(
-                        canvas_data,
-                        input_message,
+                    run_context = AgenticFlowRunContext(
                         user_id=user_id,
                         agentic_flow_id=agentic_flow_id,
                         session_id=session_id,
                         run_project_id=run_project_id,
-                        context=context
+                    )
+                    
+                    result = await run_context.execute(
+                        input_message=input_message,
+                        canvas_data=canvas_data,
+                        context=context,
                     )
                     
                     yield f"data: {json.dumps({'type': 'result', 'data': result})}\n\n"
                     return
+                
+                compiled_flow = self._compiled_flows.get(agentic_flow_id)
                 
                 if not compiled_flow:
                     yield f"data: {json.dumps({'type': 'error', 'message': f'AgenticFlow {agentic_flow_id} not found'})}\n\n"
@@ -401,7 +378,7 @@ class AgenticFlowGateway:
             "agentic_flow_id": agentic_flow_id,
             "user_id": user_id,
             "session_id": session_id,
-            "created_at": datetime.now(),
+            "created_at": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
             "messages": []
         }
         return session_id
@@ -444,7 +421,7 @@ class AgenticFlowGateway:
             self._user_sessions[session_key]["messages"].append({
                 "role": role,
                 "content": content,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             })
     
     def get_session_messages(self, agentic_flow_id: str, user_id: str, session_id: str) -> list:

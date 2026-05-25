@@ -23,7 +23,6 @@ SoloEngine : 统一数据路径管理模块
 """
 
 import os
-from typing import Optional
 
 class DataPaths:
     """
@@ -163,35 +162,6 @@ class DataPaths:
             >>> system_skills = DataPaths.get_system_skills_dir()
         """
         return DataPaths.get_user_skills_dir("system")
-    
-    @staticmethod
-    def get_user_agenticflow_dir(user_id: str) -> str:
-        """
-        获取用户AgenticFlow目录
-        
-        Args:
-            user_id: 用户ID
-            
-        Returns:
-            用户AgenticFlow目录路径
-            
-        Example:
-            >>> flow_dir = DataPaths.get_user_agenticflow_dir("user_123")
-        """
-        return os.path.join(DataPaths.get_user_dir(user_id), "agenticflow")
-    
-    @staticmethod
-    def get_system_agenticflow_dir() -> str:
-        """
-        获取系统AgenticFlow目录
-        
-        Returns:
-            系统AgenticFlow目录路径
-            
-        Example:
-            >>> system_flow = DataPaths.get_system_agenticflow_dir()
-        """
-        return DataPaths.get_user_agenticflow_dir("system")
     
     @staticmethod
     def get_user_mcp_servers_dir(user_id: str) -> str:

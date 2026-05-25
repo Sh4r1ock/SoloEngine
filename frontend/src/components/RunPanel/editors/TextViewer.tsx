@@ -51,7 +51,7 @@ const TextViewer: React.FC<TextViewerProps> = ({
   useEditorCleanup(instanceId, cleanup);
 
   return (
-    <div style={{ height: '100%', overflow: 'auto', background: '#1e1e1e' }}>
+    <div className="doc-editor-wrapper" style={{ height: '100%', overflow: 'hidden', background: '#1e1e1e' }}>
       <CodeMirror
         value={tab.content}
         height="100%"

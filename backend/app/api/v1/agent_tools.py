@@ -25,9 +25,12 @@ SoloEngine : Agent工具API模块，提供LLM调用、浏览器操作、文档�
 """
 import os
 import logging
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from zoneinfo import ZoneInfo
+from fastapi import APIRouter, HTTPException, Depends
+from app.core.config import settings
+from app.utils.timezone_utils import format_iso
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -191,7 +194,7 @@ async def browser_navigate(
             page = await browser.new_page()
             
             try:
-                response = await page.goto(request.url, wait_until="networkidle", timeout=30000)
+                response = await page.goto(request.url, wait_until="networkidle", timeout=settings.PLAYWRIGHT_PAGE_TIMEOUT)
                 
                 title = await page.title()
                 url = page.url
@@ -325,7 +328,7 @@ async def document_read(
                 "filename": request.filename,
                 "content": content,
                 "size": file_stat.st_size,
-                "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                "modified": format_iso(datetime.fromtimestamp(file_stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE)))
             }
         }
     
@@ -366,10 +369,16 @@ async def document_write(
                 "status": "completed",
                 "filename": request.filename,
                 "size": file_stat.st_size,
-                "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                "modified": format_iso(datetime.fromtimestamp(file_stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE)))
             }
         }
     
+    except UnicodeDecodeError:
+        return {
+            "code": 400,
+            "message": f"Failed to decode file with encoding: {request.encoding}",
+            "data": {"status": "error", "error": "Encoding error"}
+        }
     except Exception as e:
         logger.error(f"Document write failed: {e}")
         return {
@@ -401,7 +410,7 @@ async def document_search(
                         "path": full_path,
                         "relative_path": rel_path,
                         "size": file_stat.st_size,
-                        "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                        "modified": format_iso(datetime.fromtimestamp(file_stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE)))
                     })
         else:
             for filename in os.listdir(search_path):
@@ -413,7 +422,7 @@ async def document_search(
                             "path": full_path,
                             "relative_path": filename,
                             "size": file_stat.st_size,
-                            "modified": datetime.fromtimestamp(file_stat.st_mtime).isoformat()
+                            "modified": format_iso(datetime.fromtimestamp(file_stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE)))
                         })
         
         return {

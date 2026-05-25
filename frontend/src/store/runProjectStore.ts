@@ -22,6 +22,8 @@ import {
   FileInfo, 
   SelectOrCreateProjectResponse
 } from '../services/runProjectApi';
+import { insertTreeNode, removeTreeNode, moveTreeNode } from '../components/RunPanel/utils/treePatchUtils';
+import type { FileSystemChange } from '../components/RunPanel/types';
 
 interface RunProjectState {
   currentProject: ProjectInfo | null;
@@ -41,6 +43,7 @@ interface RunProjectState {
   setCurrentPath: (path: string) => void;
   clearProject: () => void;
   clearError: () => void;
+  applyIncrementalChanges: (changes: FileSystemChange[]) => void;
 }
 
 export const useRunProjectStore = create<RunProjectState>((set, get) => ({
@@ -188,5 +191,21 @@ export const useRunProjectStore = create<RunProjectState>((set, get) => ({
 
   clearError: () => {
     set({ error: null });
+  },
+
+  applyIncrementalChanges: (changes) => {
+    set((state) => {
+      let newTree: any[] = state.files as any;
+      for (const change of changes) {
+        if (change.operation === 'created') {
+          newTree = insertTreeNode(newTree, change.file_path, change.is_directory);
+        } else if (change.operation === 'deleted') {
+          newTree = removeTreeNode(newTree, change.file_path);
+        } else if (change.operation === 'moved' && change.dest_path) {
+          newTree = moveTreeNode(newTree, change.file_path, change.dest_path, change.is_directory);
+        }
+      }
+      return { files: newTree as FileInfo[] };
+    });
   },
 }));

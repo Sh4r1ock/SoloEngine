@@ -33,17 +33,17 @@
 状态: ✅ 完整实现
 """
 
-from typing import List, Dict, Any, Optional, Callable, Union, Awaitable
-from datetime import datetime, timezone
+from typing import List, Dict, Any, Optional, Callable, Union
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import inspect
-import asyncio
 
 from ...core.interfaces import IToolExecutor
 from ...exception import (
     ToolNotFoundError,
     ToolInvalidArgumentsError,
 )
-from ...types import ToolFunction
+from app.core.config import settings
 
 
 class ToolResponse:
@@ -99,20 +99,12 @@ class ToolResponse:
         self.metadata = metadata or {}
     
     def to_dict(self) -> Dict[str, Any]:
-        """
-        转换为字典格式。
-        
-        Returns:
-            Dict[str, Any]: 包含 content、success、error_message、metadata 的字典。
-        """
         result = {
             "content": self.content,
             "success": self.success,
+            "error_message": self.error_message,
+            "metadata": self.metadata or {},
         }
-        if self.error_message:
-            result["error_message"] = self.error_message
-        if self.metadata:
-            result["metadata"] = self.metadata
         return result
 
 
@@ -233,7 +225,7 @@ class ToolkitExecutor(IToolExecutor):
             else:
                 result = tool_func(**arguments)
             
-            execution_time = datetime.now(timezone.utc).isoformat()
+            execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             
             if isinstance(result, ToolResponse):
                 result_dict = result.to_dict()
@@ -249,13 +241,14 @@ class ToolkitExecutor(IToolExecutor):
             return result_dict
                 
         except Exception as e:
-            execution_time = datetime.now(timezone.utc).isoformat()
+            execution_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             return {
                 "content": str(e),
                 "success": False,
                 "error_message": str(e),
                 "metadata": {
                     "execution_time": execution_time,
+                    "resources_used": [],
                 }
             }
     
@@ -275,36 +268,24 @@ class ToolkitExecutor(IToolExecutor):
         """
         tools = []
         for tool_name, tool_info in self._tools.items():
-            raw_params = tool_info.get("parameters", {})
+            parameters = tool_info.get("parameters", {})
             
-            if raw_params and "properties" in raw_params:
-                parameters = raw_params
-            else:
+            if not parameters.get("type"):
                 properties = {}
                 required = []
-                
-                for param_name, param_def in raw_params.items():
-                    if isinstance(param_def, dict):
-                        prop = {}
-                        if "type" in param_def:
-                            prop["type"] = param_def["type"]
-                        if "description" in param_def:
-                            prop["description"] = param_def["description"]
-                        if "default" in param_def:
-                            prop["default"] = param_def["default"]
-                        if "enum" in param_def:
-                            prop["enum"] = param_def["enum"]
-                        if param_def.get("required", False):
+                for param_name, param_spec in parameters.items():
+                    if isinstance(param_spec, dict) and "type" in param_spec:
+                        prop = {"type": param_spec["type"], "description": param_spec.get("description", "")}
+                        if "enum" in param_spec:
+                            prop["enum"] = param_spec["enum"]
+                        if "default" in param_spec:
+                            prop["default"] = param_spec["default"]
+                        properties[param_name] = prop
+                        if param_spec.get("required", False):
                             required.append(param_name)
-                        properties[param_name] = prop if prop else {"type": "string"}
-                    else:
-                        properties[param_name] = {"type": "string"}
-                
-                parameters = {
-                    "type": "object",
-                    "properties": properties,
-                    "required": required
-                }
+                parameters = {"type": "object", "properties": properties}
+                if required:
+                    parameters["required"] = required
             
             tools.append({
                 "type": "function",

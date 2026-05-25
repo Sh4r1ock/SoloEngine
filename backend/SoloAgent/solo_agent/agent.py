@@ -28,20 +28,20 @@ SoloAgent机制-agent.py: SoloAgent基础类，简洁的Agent配置类，支持�
 - async for chunk in agent.run("用户输入"): process(chunk)
 """
 import asyncio
-import json
 import logging
+import os
 from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
 
 from .config import SoloAgentConfig
+from ..utils.message_utils import MessageBlockExtractor
 
 if TYPE_CHECKING:
     from ..core.react_core import ReActCore
     from ..model.model_base import BaseLLM
-    from ..plugins.memory.database_memory import DatabaseMemoryPlugin
     from ..plugins.mcp.mcp_client import MCPClient
     from ..plugins.tools.agent.mcp import MCPServerInfo
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SoloEngine")
 
 
 class SoloAgent:
@@ -90,6 +90,9 @@ class SoloAgent:
         self._last_tool_calls: List[Dict[str, Any]] = []
         self._last_response: Optional[Any] = None
         self._stream_callback: Optional[callable] = None
+        self._event_callback: Optional[callable] = None
+        self._working_dir: str = ""
+        self._pre_tool_hashes: Dict[str, str] = {}
         
     @property
     def name(self) -> str:
@@ -113,6 +116,251 @@ class SoloAgent:
     
     def set_last_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> None:
         self._last_tool_calls = tool_calls or []
+
+    def set_file_change_context(self, working_dir: str) -> None:
+        self._working_dir = working_dir or ""
+        self._pre_tool_hashes = {}
+        from ..plugins.tools.file.base import set_file_tool_working_dir
+        set_file_tool_working_dir(self._working_dir)
+        logger.info(f"[set_file_change_context] working_dir={working_dir}")
+
+    FILE_OP_TOOLS = {"Write", "SearchReplace", "DeleteFile", "write_file", "search_replace", "delete_file", "create_file", "edit_file"}
+
+    MCP_FILE_PATH_PARAMS = {
+        "path", "file_path", "filePath", "filepath",
+        "source_path", "target_path", "output_path", "destination",
+        "notebook_path", "image_path", "document_path",
+        "directory", "dir_path", "folder_path",
+    }
+
+    MCP_FILE_PATH_ARRAY_PARAMS = {
+        "paths", "files", "file_paths", "filePaths",
+    }
+
+    async def _on_tool_executing(self, tool_call: Dict) -> None:
+        tool_name = tool_call.get("name")
+
+        if tool_name in self.FILE_OP_TOOLS:
+            file_paths = self._extract_all_file_paths(tool_call)
+            for fp in file_paths:
+                abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
+                if os.path.exists(abs_path):
+                    from app.core.content_addressable_storage import cas
+                    from app.utils.file_utils import normalize_file_path
+                    before_hash = cas.store_file(abs_path)
+                    rel_path = normalize_file_path(abs_path, self._working_dir)
+                    self._pre_tool_hashes[rel_path] = before_hash
+
+        elif self._is_mcp_tool(tool_name):
+            file_paths = self._extract_mcp_file_paths(tool_call)
+            for fp in file_paths:
+                abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
+                if os.path.exists(abs_path):
+                    from app.core.content_addressable_storage import cas
+                    from app.utils.file_utils import normalize_file_path
+                    before_hash = cas.store_file(abs_path)
+                    rel_path = normalize_file_path(abs_path, self._working_dir)
+                    self._pre_tool_hashes[rel_path] = before_hash
+
+    def _extract_file_path(self, tool_call: Dict) -> Optional[str]:
+        args = tool_call.get("arguments", {}) or tool_call.get("function", {}).get("arguments", {})
+        if isinstance(args, str):
+            import json
+            try:
+                args = json.loads(args)
+            except Exception:
+                return None
+        return args.get("path") or args.get("file_path") or args.get("filePath")
+
+    def _extract_all_file_paths(self, tool_call: Dict) -> List[str]:
+        args = tool_call.get("arguments", {}) or tool_call.get("function", {}).get("arguments", {})
+        if isinstance(args, str):
+            import json
+            try:
+                args = json.loads(args)
+            except Exception:
+                return []
+
+        paths = []
+        single = args.get("path") or args.get("file_path") or args.get("filePath")
+        if single and isinstance(single, str):
+            paths.append(single)
+
+        multi = args.get("file_paths") or args.get("filePaths")
+        if multi and isinstance(multi, list):
+            paths.extend([p for p in multi if isinstance(p, str)])
+
+        return paths
+
+    def _is_mcp_tool(self, tool_name: str) -> bool:
+        return tool_name not in self.FILE_OP_TOOLS and tool_name not in {"RunCommand", "Task"}
+
+    def _extract_mcp_file_paths(self, tool_call: Dict) -> List[str]:
+        args = tool_call.get("arguments", {}) or {}
+        if isinstance(args, str):
+            import json
+            try:
+                args = json.loads(args)
+            except Exception:
+                return []
+
+        file_paths = []
+
+        for param_name in self.MCP_FILE_PATH_PARAMS:
+            if param_name in args and isinstance(args[param_name], str):
+                val = args[param_name]
+                if self._looks_like_file_path(val):
+                    file_paths.append(val)
+
+        for param_name, val in args.items():
+            if param_name in self.MCP_FILE_PATH_PARAMS:
+                continue
+            if isinstance(val, str) and self._looks_like_file_path(val):
+                param_lower = param_name.lower()
+                if any(kw in param_lower for kw in ("path", "file", "dir", "output", "dest", "source", "target", "folder", "location", "uri")):
+                    file_paths.append(val)
+
+        for param_name in self.MCP_FILE_PATH_ARRAY_PARAMS:
+            if param_name in args and isinstance(args[param_name], list):
+                file_paths.extend([p for p in args[param_name] if isinstance(p, str) and self._looks_like_file_path(p)])
+
+        if "uri" in args and isinstance(args["uri"], str) and args["uri"].startswith("file://"):
+            from urllib.parse import urlparse
+            parsed = urlparse(args["uri"])
+            if parsed.path:
+                file_paths.append(parsed.path)
+
+        return list(set(file_paths))
+
+    def _looks_like_file_path(self, val: str) -> bool:
+        if not val or len(val) < 2:
+            return False
+        return (
+            val.startswith("/") or
+            val.startswith("./") or
+            val.startswith("..") or
+            val.startswith("~") or
+            (len(val) > 2 and val[1] == ":") or
+            "." in os.path.basename(val)
+        )
+
+    async def _on_tool_executed(self, tool_call: Dict, result: Any):
+        if not self._working_dir:
+            return
+
+        tool_name = tool_call.get("name")
+        change_list = []
+
+        try:
+            if tool_name in self.FILE_OP_TOOLS:
+                from app.services.file_change import file_change_manager
+                changes = file_change_manager.compute_incremental_change(
+                    tool_call=tool_call,
+                    working_dir=self._working_dir
+                )
+                change_list = changes if isinstance(changes, list) else ([changes] if changes else [])
+                for change in change_list:
+                    if change:
+                        fp = change.get("file_path", "")
+                        abs_path = os.path.join(self._working_dir, fp)
+
+                        if fp in self._pre_tool_hashes and change.get("operation") == "created":
+                            change["operation"] = "modified"
+
+                        if change.get("operation") == "deleted":
+                            change["before_content_hash"] = self._pre_tool_hashes.pop(fp, None)
+                            change["after_content_hash"] = None
+                        elif os.path.exists(abs_path):
+                            from app.core.content_addressable_storage import cas
+                            after_hash = cas.store_file(abs_path)
+                            change["before_content_hash"] = self._pre_tool_hashes.get(fp)
+                            change["after_content_hash"] = after_hash
+                            self._pre_tool_hashes[fp] = after_hash
+
+                        if change.get("content_type", "text") == "text":
+                            if change.get("operation") == "deleted":
+                                if change.get("before_content_hash"):
+                                    try:
+                                        from app.core.content_addressable_storage import cas
+                                        from app.utils.file_utils import compute_text_diff
+                                        old_bytes = cas.get_content(change["before_content_hash"])
+                                        old_content = old_bytes.decode('utf-8', errors='replace') if old_bytes else ""
+                                        diff_data = compute_text_diff(old_content, "", fp)
+                                        change["diff"] = diff_data
+                                    except Exception as e:
+                                        logger.warning(f"Failed to compute diff for deleted {fp}: {e}")
+                            elif os.path.exists(abs_path):
+                                try:
+                                    from app.core.content_addressable_storage import cas
+                                    from app.utils.file_utils import compute_text_diff
+                                    if change.get("before_content_hash"):
+                                        old_bytes = cas.get_content(change["before_content_hash"])
+                                        old_content = old_bytes.decode('utf-8', errors='replace') if old_bytes else ""
+                                    else:
+                                        old_content = ""
+                                    with open(abs_path, 'rb') as f:
+                                        new_content = f.read().decode('utf-8', errors='replace')
+                                    diff_data = compute_text_diff(old_content, new_content, fp)
+                                    change["diff"] = diff_data
+                                except Exception as e:
+                                    logger.warning(f"Failed to compute diff for {fp}: {e}")
+
+                        if "content_type" not in change:
+                            from app.utils.file_utils import get_content_type
+                            change["content_type"] = get_content_type(fp)
+
+            elif self._is_mcp_tool(tool_name):
+                file_paths = self._extract_mcp_file_paths(tool_call)
+                from app.core.content_addressable_storage import cas
+                from app.utils.file_utils import get_content_type, normalize_file_path
+                for fp in file_paths:
+                    abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
+                    rel_path = normalize_file_path(abs_path, self._working_dir)
+                    before_hash = self._pre_tool_hashes.get(rel_path)
+                    content_type = get_content_type(rel_path)
+
+                    if os.path.exists(abs_path):
+                        after_hash = cas.store_file(abs_path)
+                        if before_hash and before_hash != after_hash:
+                            change_list.append({
+                                "file_path": rel_path,
+                                "operation": "modified",
+                                "tool_call_id": tool_call.get("id"),
+                                "before_content_hash": before_hash,
+                                "after_content_hash": after_hash,
+                                "content_type": content_type,
+                            })
+                        elif not before_hash:
+                            change_list.append({
+                                "file_path": rel_path,
+                                "operation": "created",
+                                "tool_call_id": tool_call.get("id"),
+                                "before_content_hash": None,
+                                "after_content_hash": after_hash,
+                                "content_type": content_type,
+                            })
+                    elif before_hash:
+                        change_list.append({
+                            "file_path": rel_path,
+                            "operation": "deleted",
+                            "tool_call_id": tool_call.get("id"),
+                            "before_content_hash": before_hash,
+                            "after_content_hash": None,
+                            "content_type": content_type,
+                        })
+
+            if change_list and self._event_callback:
+                from ..solo_agent.compiler.flow_compiler import ExecutionEvent
+                event = ExecutionEvent(
+                    event_type="file_change_preview",
+                    agent_id=self.agent_id,
+                    agent_name=self.name,
+                    file_changes=change_list,
+                )
+                self._event_callback(event)
+
+        except Exception as e:
+            logger.warning(f"Failed to compute change: {e}", exc_info=True)
     
     def set_subagents(self, agents: Dict[str, "SoloAgent"], subagents_info: List[Dict[str, Any]] = None) -> None:
         self._subagents = agents
@@ -212,82 +460,74 @@ class SoloAgent:
             data = record.get("data", [])
 
             if role == "tool":
-                # tool 消息：查找 tool_result 类型的块
-                tool_call_id = None
-                content = ""
+                tool_call_id = record.get("tool_call_id")
+                if not tool_call_id:
+                    tool_result = MessageBlockExtractor.extract_tool_result(data)
+                    if tool_result:
+                        tool_call_id = tool_result.get("id")
 
-                for block in data:
-                    if block.get("type") == "tool_result":
-                        tool_call_id = block.get("id")
-                        output = block.get("output", "")
-                        content = output if isinstance(output, str) else str(output)
-                        break
-
-                # 特殊情况处理：如果没有找到 tool_call_id，尝试从 metadata 中获取
-                if not tool_call_id and record.get("metadata"):
-                    tool_call_id = record["metadata"].get("tool_call_id")
-                
-                # 如果仍然没有 tool_call_id，跳过这条消息
-                # 因为 OpenAI API 要求 tool 消息必须有 tool_call_id
                 if not tool_call_id:
                     logger.warning(f"[_convert_history_to_msgs] Skipping tool message without tool_call_id. Data: {data}")
                     continue
 
+                content = record.get("content", "")
+                if not content:
+                    tool_result = MessageBlockExtractor.extract_tool_result(data)
+                    if tool_result:
+                        output = tool_result.get("output", "")
+                        content = output if isinstance(output, str) else str(output)
+
+                tool_name = record.get("name", "tool")
+
                 msgs.append(Msg(
-                    name="tool",
+                    name=tool_name,
                     content=content,
                     role="tool",
                     tool_call_id=tool_call_id,
-                    metadata={"original_data": data}
                 ))
 
             elif role == "assistant":
-                # assistant 消息：处理 thinking, tool_calls, content
-                content_blocks = []
-                tool_calls = []
-                thinking_content = []
-
-                for block in data:
-                    block_type = block.get("type")
-
-                    if block_type == "text":
-                        content_blocks.append(block)
-                    elif block_type == "thinking":
-                        thinking_content.append(block.get("thinking", ""))
-                    elif block_type == "tool_calls":
-                        tool_calls.extend(block.get("tool_calls", []))
-                    elif block_type == "content":
-                        content_blocks.append({"type": "text", "text": block.get("content", "")})
-
-                # 构建 content：优先使用 content_blocks，否则使用原始 data
-                if content_blocks:
-                    content = content_blocks
-                else:
+                content = record.get("content")
+                if content is None:
                     content = data
 
+                content_list = []
+                if isinstance(data, list):
+                    for block in data:
+                        if not isinstance(block, dict):
+                            content_list.append(block)
+                            continue
+                        block_type = block.get("type")
+                        if block_type == "thinking":
+                            content_list.append({"type": "thinking", "thinking": block.get("thinking", "")})
+                        elif block_type == "reasoning_content":
+                            rc = block.get("reasoning_content", block.get("content", ""))
+                            content_list.append({"type": "reasoning_content", "reasoning_content": rc if isinstance(rc, str) else str(rc)})
+                        else:
+                            content_list.append(block)
+
                 metadata = {}
-                if thinking_content:
-                    metadata["thinking"] = "\n".join(thinking_content)
-                if tool_calls:
-                    metadata["tool_calls"] = tool_calls
+                if isinstance(data, list):
+                    thinking_parts = []
+                    for block in data:
+                        if isinstance(block, dict):
+                            if block.get("type") == "thinking":
+                                thinking_parts.append(block.get("thinking", ""))
+                            elif block.get("type") == "reasoning_content":
+                                rc = block.get("reasoning_content", block.get("content", ""))
+                                thinking_parts.append(rc if isinstance(rc, str) else str(rc or ""))
+                    if thinking_parts:
+                        metadata["thinking"] = "\n".join(thinking_parts)
 
                 msgs.append(Msg(
                     name="assistant",
-                    content=content,
+                    content=content_list if content_list else content,
                     role="assistant",
                     metadata=metadata if metadata else None
                 ))
 
             elif role == "user":
-                # user 消息：提取文本内容
-                content_parts = []
-                for block in data:
-                    if block.get("type") == "text":
-                        content_parts.append(block.get("text", ""))
-                    elif block.get("type") == "content":
-                        content_parts.append(block.get("content", ""))
-
-                content = "\n".join(content_parts) if content_parts else ""
+                content = MessageBlockExtractor.extract_text_content(data, include_content_type=True)
 
                 msgs.append(Msg(
                     name="user",
@@ -296,13 +536,7 @@ class SoloAgent:
                 ))
 
             elif role == "system":
-                # system 消息：提取文本内容
-                content_parts = []
-                for block in data:
-                    if block.get("type") == "text":
-                        content_parts.append(block.get("text", ""))
-
-                content = "\n".join(content_parts) if content_parts else ""
+                content = MessageBlockExtractor.extract_text_content(data, include_content_type=False)
 
                 msgs.append(Msg(
                     name="system",
@@ -352,6 +586,7 @@ class SoloAgent:
             temperature=self.config.temperature,
             frequency_penalty=self.config.frequency_penalty,
             presence_penalty=self.config.presence_penalty,
+            timeout=self.config.timeout if hasattr(self.config, 'timeout') and self.config.timeout else 60,
         )
         
         provider = llm_config.get("provider", self.config.provider).lower()
@@ -361,50 +596,108 @@ class SoloAgent:
         if provider in openai_compatible_providers:
             self._llm = self._create_openai_compatible_model(llm_config, stream=True)
         else:
+            factory_kwargs = {}
+            if llm_config.get("base_url"):
+                factory_kwargs["base_url"] = llm_config.get("base_url")
+            if llm_config.get("timeout"):
+                import httpx
+                factory_kwargs["client_kwargs"] = {"timeout": httpx.Timeout(float(llm_config["timeout"]), connect=10.0)}
+            if llm_config.get("max_tokens"):
+                factory_kwargs["generate_kwargs"] = {"max_tokens": llm_config["max_tokens"]}
+            if llm_config.get("temperature") is not None:
+                factory_kwargs.setdefault("generate_kwargs", {})["temperature"] = llm_config["temperature"]
+            
             self._llm = LLMFactory.create_model(
                 provider=provider,
                 model_name=llm_config.get("model", self.config.model),
                 api_key=llm_config.get("api_key"),
                 stream=True,
-                base_url=llm_config.get("base_url"),
+                **factory_kwargs,
             )
         
         tool_configs = []
         for tool_name in self.config.tools:
+            tool_class = ToolRegistry.get_tool_class(tool_name)
+            if not tool_class:
+                continue
+            
+            if getattr(tool_class, 'needs_runtime_data', False):
+                continue
+            
             tool_config = ToolRegistry.get_tool_config(tool_name)
             if tool_config:
                 tool_configs.append(tool_config)
         
         if self.config.skills:
-            skill_tool_configs = await self._load_skills(self.config.skills)
-            tool_configs.extend(skill_tool_configs)
+            skill_class = ToolRegistry.get_tool_class("Skill")
+            if skill_class:
+                skill_tool = skill_class(skills_info=self.config.skills)
+                tool_configs.append({
+                    "name": "Skill",
+                    "function": skill_tool.execute,
+                    "description": skill_tool.get_tool_spec()["description"],
+                    "parameters": skill_tool.get_tool_spec()["parameters"],
+                })
+                for skill in self.config.skills:
+                    if isinstance(skill, dict):
+                        skill_tools = skill.get("tools", [])
+                        for tool_name in skill_tools:
+                            tool_config = ToolRegistry.get_tool_config(tool_name)
+                            if tool_config:
+                                tool_configs.append(tool_config)
+                        
+                        skill_name = skill.get("name", skill.get("id", "unknown"))
+                        logger.info(f"Loaded skill '{skill_name}' with {len(skill_tools)} tools")
         
         logger.info(f"[Agent Initialize] Checking MCP servers info: hasattr={hasattr(self, '_mcp_servers_info')}, value={getattr(self, '_mcp_servers_info', None)}")
         if hasattr(self, '_mcp_servers_info') and self._mcp_servers_info:
             logger.info(f"[Agent Initialize] Loading MCP tools with {len(self._mcp_servers_info)} servers")
-            mcp_tool_configs = await self._load_mcp_tools(self._mcp_servers_info)
-            tool_configs.extend(mcp_tool_configs)
+            mcp_class = ToolRegistry.get_tool_class("MCP")
+            if mcp_class:
+                mcp_tool = mcp_class(mcp_servers_info=self._mcp_servers_info)
+                tool_configs.append({
+                    "name": "MCP",
+                    "function": mcp_tool.execute,
+                    "description": mcp_tool.get_tool_spec()["description"],
+                    "parameters": mcp_tool.get_tool_spec()["parameters"],
+                })
+                for server_name, server_info in self._mcp_servers_info.items():
+                    from ..plugins.tools.agent.mcp import MCPServerInfo
+                    if isinstance(server_info, MCPServerInfo):
+                        logger.info(
+                            f"[MCP] Agent '{self.name}' using MCP server '{server_name}' "
+                            f"with {len(server_info.tools)} tools, "
+                            f"connected={server_info.is_connected}"
+                        )
         elif self.config.mcp_servers:
             if isinstance(self.config.mcp_servers, dict) and any(
                 isinstance(v, dict) and 'client' in v 
                 for v in self.config.mcp_servers.values()
             ):
-                mcp_tool_configs = await self._load_mcp_tools(self.config.mcp_servers)
-                tool_configs.extend(mcp_tool_configs)
+                mcp_class = ToolRegistry.get_tool_class("MCP")
+                if mcp_class:
+                    mcp_tool = mcp_class(mcp_servers_info=self.config.mcp_servers)
+                    tool_configs.append({
+                        "name": "MCP",
+                        "function": mcp_tool.execute,
+                        "description": mcp_tool.get_tool_spec()["description"],
+                        "parameters": mcp_tool.get_tool_spec()["parameters"],
+                    })
         
         if self.config.subagents:
-            from ..plugins.tools.agent.task import TaskTool
-            task_tool = TaskTool(
-                parent_agent=self,
-                subagents_info=self.config.subagents
-            )
-            tool_configs.append({
-                "name": "Task",
-                "function": task_tool.execute,
-                "description": task_tool.get_tool_spec()["description"],
-                "parameters": task_tool.get_tool_spec()["parameters"],
-            })
-            logger.info(f"[SubAgents] Added Task tool for subagents: {[s.get('subagent_name') for s in self.config.subagents]}")
+            task_class = ToolRegistry.get_tool_class("Task")
+            if task_class:
+                task_tool = task_class(
+                    parent_agent=self,
+                    subagents_info=self.config.subagents
+                )
+                tool_configs.append({
+                    "name": "Task",
+                    "function": task_tool.execute,
+                    "description": task_tool.get_tool_spec()["description"],
+                    "parameters": task_tool.get_tool_spec()["parameters"],
+                })
+                logger.info(f"[SubAgents] Added Task tool for subagents: {[s.get('subagent_name') for s in self.config.subagents]}")
         
         toolkit_executor = ToolkitExecutor(tool_configs) if tool_configs else None
         
@@ -426,7 +719,15 @@ class SoloAgent:
         
         if toolkit_executor:
             self._core.tool_executor = toolkit_executor
-        
+
+        if hasattr(self._core, '_on_tool_executed') and hasattr(self._core, '_on_tool_executing'):
+            self._core._on_tool_executed = self._on_tool_executed
+            self._core._on_tool_executing = self._on_tool_executing
+            logger.info(f"[SoloAgent] Set _on_tool_executed callback, pre_tool_hashes={len(self._pre_tool_hashes)}, working_dir={self._working_dir}")
+            logger.info(f"[SoloAgent] _core._on_tool_executed is now: {self._core._on_tool_executed is not None}")
+        else:
+            logger.warning(f"[SoloAgent] _core does not have _on_tool_executed attribute")
+
         if self._message_history:
             # SoloAgent 层负责将原始格式转换为 Msg 对象
             history_msgs = self._convert_history_to_msgs(self._message_history)
@@ -435,91 +736,7 @@ class SoloAgent:
         self._initialized = True
         logger.info(f"SoloAgent '{self.name}' initialized with {len(tool_configs)} tools")
     
-    async def _load_skills(self, skills: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """加载技能工具配置
-        
-        Args:
-            skills: 已在编译阶段组装的 Skills 信息列表
-                [{"id": "...", "name": "...", "folder_path": "...", "description": "...", ...}]
-        """
-        tool_configs = []
-        
-        from ..plugins.tools.agent.skill import SkillTool
-        
-        skill_tool = SkillTool(skills_info=skills)
-        
-        tool_configs.append({
-            "name": "Skill",
-            "function": skill_tool.execute,
-            "description": skill_tool.get_tool_spec()["description"],
-            "parameters": skill_tool.get_tool_spec()["parameters"],
-        })
-        
-        for skill in skills:
-            if isinstance(skill, dict):
-                skill_tools = skill.get("tools", [])
-                for tool_name in skill_tools:
-                    tool_config = ToolRegistry.get_tool_config(tool_name)
-                    if tool_config:
-                        tool_configs.append(tool_config)
-                
-                instructions = skill.get("instructions")
-                if instructions:
-                    self.config.system_prompt = f"{self.config.system_prompt}\n\n{instructions}"
-                
-                skill_name = skill.get("name", skill.get("id", "unknown"))
-                logger.info(f"Loaded skill '{skill_name}' with {len(skill_tools)} tools")
-        
-        return tool_configs
-    
-    async def _load_mcp_tools(
-        self, 
-        mcp_servers_info: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """加载MCP工具配置 - 只注册MCPTool，不管理Client
-        
-        Client由Host(CompiledFlow)统一管理，Agent只负责使用。
-        
-        Args:
-            mcp_servers_info: MCP服务器信息字典(包含Host层Client的引用)
-                {"server_name": MCPServerInfo(...), ...}
-        
-        Returns:
-            List[Dict[str, Any]]: 工具配置列表
-        """
-        tool_configs = []
-        
-        from ..plugins.tools.agent.mcp import MCPTool, MCPServerInfo
-        
-        # 只创建MCPTool，Client由Host(CompiledFlow)统一管理
-        mcp_tool = MCPTool(mcp_servers_info=mcp_servers_info)
-        
-        tool_configs.append({
-            "name": "MCP",
-            "function": mcp_tool.execute,
-            "description": mcp_tool.get_tool_spec()["description"],
-            "parameters": mcp_tool.get_tool_spec()["parameters"],
-        })
-        
-        # 记录日志，Client由Host管理，Agent不再管理
-        for server_name, server_info in mcp_servers_info.items():
-            if isinstance(server_info, MCPServerInfo):
-                logger.info(
-                    f"[MCP] Agent '{self.name}' using MCP server '{server_name}' "
-                    f"with {len(server_info.tools)} tools, "
-                    f"connected={server_info.is_connected}"
-                )
-        
-        return tool_configs
-    
     def _create_openai_compatible_model(self, llm_config: Dict[str, Any], stream: bool = False):
-        """创建 OpenAI 兼容模型（DeepSeek, Zhipu, Qwen 等）
-        
-        Args:
-            llm_config: LLM 配置字典
-            stream: 是否启用流式输出。对于 reply 方法应该使用 False，
-                    对于 stream 方法应该使用 True。
-        """
         from ..model.openai_model import OpenAIChatModel
         
         generate_kwargs = {}
@@ -532,13 +749,18 @@ class SoloAgent:
         if "presence_penalty" in llm_config:
             generate_kwargs["presence_penalty"] = llm_config["presence_penalty"]
         
+        client_kwargs = {}
+        if llm_config.get("base_url"):
+            client_kwargs["base_url"] = llm_config.get("base_url")
+        if llm_config.get("timeout"):
+            import httpx
+            client_kwargs["timeout"] = httpx.Timeout(float(llm_config["timeout"]), connect=10.0)
+        
         return OpenAIChatModel(
             model_name=llm_config.get("model", self.config.model),
             api_key=llm_config.get("api_key"),
             stream=stream,
-            client_kwargs={
-                "base_url": llm_config.get("base_url"),
-            } if llm_config.get("base_url") else None,
+            client_kwargs=client_kwargs if client_kwargs else None,
             generate_kwargs=generate_kwargs if generate_kwargs else None,
         )
     
@@ -585,12 +807,6 @@ class SoloAgent:
             raise
     
     def get_last_openai_message(self) -> dict:
-        """
-        获取最后一次响应的 OpenAI 格式消息。
-        
-        Returns:
-            dict: OpenAI 格式的消息，包含 role, content, reasoning_content 字段
-        """
         if self._last_response is None:
             return {"role": "assistant", "content": "", "reasoning_content": None}
         
@@ -603,6 +819,21 @@ class SoloAgent:
             return {"role": "assistant", "content": content, "reasoning_content": reasoning}
         
         return {"role": "assistant", "content": str(self._last_response), "reasoning_content": None}
+    
+    def get_token_usage(self) -> Optional[Dict]:
+        if self._core:
+            result = self._core.get_accumulated_usage()
+            if result:
+                return result
+        if self._last_response and hasattr(self._last_response, 'usage') and self._last_response.usage:
+            usage = self._last_response.usage
+            return {
+                "prompt_tokens": getattr(usage, 'input_tokens', None),
+                "completion_tokens": getattr(usage, 'output_tokens', None),
+                "total_tokens": (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0),
+                "duration_ms": int(getattr(usage, 'time', 0) * 1000) if hasattr(usage, 'time') else 0,
+            }
+        return None
     
     async def stream(self, message: str) -> AsyncGenerator[str, None]:
         """

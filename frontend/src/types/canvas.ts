@@ -39,7 +39,6 @@ export interface NodeData {
     desc?: string;
     agentType?: 'orchestrator' | 'planner' | 'executor' | 'custom';
     system_prompt?: string;
-    user_prompt?: string;
     assistant_prompt?: string;
     llm_config_id?: string;
     model_config?: {

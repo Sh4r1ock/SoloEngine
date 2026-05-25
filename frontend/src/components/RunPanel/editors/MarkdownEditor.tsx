@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Button, Tooltip, Spin } from 'antd';
-import { EditOutlined, EyeOutlined, ColumnWidthOutlined } from '@ant-design/icons';
+import { EditOutlined, EyeOutlined, ColumnWidthOutlined, CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
 import { useEditorInstanceManager, useEditorCleanup } from './index';
 
@@ -10,6 +10,7 @@ interface MarkdownEditorProps {
   canEdit?: boolean;
   onContentChange: (tabId: string, content: string) => void;
   onSave: (tab: FileTab) => void;
+  theme?: 'dark' | 'light';
 }
 
 type ViewMode = 'edit' | 'split' | 'preview';
@@ -20,13 +21,19 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   canEdit = true,
   onContentChange,
   onSave,
+  theme = 'dark',
 }) => {
+  // 将instanceId中的特殊字符替换为安全字符，用于CSS类名
+  const safeInstanceId = instanceId.replace(/[^a-zA-Z0-9-_]/g, '_');
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [depsLoaded, setDepsLoaded] = useState(false);
   const [CodeMirrorComp, setCodeMirrorComp] = useState<React.ComponentType<any> | null>(null);
   const [ReactMarkdownComp, setReactMarkdownComp] = useState<React.ComponentType<any> | null>(null);
   const [oneDark, setOneDark] = useState<any>(null);
-  const [plugins, setPlugins] = useState<{ remarkGfm: any; rehypeHighlight: any; rehypeRaw: any } | null>(null);
+  const [SyntaxHighlighterModule, setSyntaxHighlighterModule] = useState<any>(null);
+  const [vscDarkPlusStyle, setVscDarkPlusStyle] = useState<any>(null);
+  const [prismStyle, setPrismStyle] = useState<any>(null);
+  const [plugins, setPlugins] = useState<{ remarkGfm: any; remarkBreaks: any; rehypeRaw: any } | null>(null);
   
   const { addTimer, removeTimer, cleanup } = useEditorInstanceManager(instanceId);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,15 +49,19 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           mdModule,
           odModule,
           gfmModule,
-          hlModule,
+          breaksModule,
           rawModule,
+          shModule,
+          prismStyleModule,
         ] = await Promise.all([
           import('@uiw/react-codemirror'),
           import('react-markdown'),
           import('@codemirror/theme-one-dark'),
           import('remark-gfm'),
-          import('rehype-highlight'),
+          import('remark-breaks'),
           import('rehype-raw'),
+          import('react-syntax-highlighter'),
+          import('react-syntax-highlighter/dist/esm/styles/prism'),
         ]);
         
         if (!mounted) return;
@@ -60,9 +71,13 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
         setOneDark(odModule.oneDark);
         setPlugins({
           remarkGfm: gfmModule.default,
-          rehypeHighlight: hlModule.default,
+          remarkBreaks: breaksModule.default,
           rehypeRaw: rawModule.default,
         });
+        setSyntaxHighlighterModule(shModule);
+        const { vscDarkPlus, prism } = prismStyleModule;
+        setVscDarkPlusStyle(vscDarkPlus);
+        setPrismStyle(prism);
         setDepsLoaded(true);
       } catch (err) {
         console.error('Failed to load markdown editor dependencies:', err);
@@ -123,171 +138,304 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   const content = tab.content || '';
 
-  if (!depsLoaded || !CodeMirrorComp || !ReactMarkdownComp || !oneDark || !plugins) {
+  const isDark = theme === 'dark';
+  const bgColor = isDark ? '#1e1e1e' : '#ffffff';
+  const headerBgColor = isDark ? '#252526' : '#fafafa';
+  const borderColor = isDark ? '#333' : '#e8e8e8';
+  const textColor = isDark ? '#e6e6e6' : '#333333';
+  const previewTextColor = isDark ? '#e6e6e6' : '#333333';
+  const previewBgColor = isDark ? '#1e1e1e' : '#ffffff';
+  const codeBgColor = isDark ? '#2d333b' : '#f5f5f5';
+  const blockquoteBorderColor = isDark ? '#444c56' : '#e8e8e8';
+  const blockquoteColor = isDark ? '#8b949e' : '#666666';
+  const tableBorderColor = isDark ? '#444c56' : '#e8e8e8';
+  const tableHeaderBgColor = isDark ? '#21262d' : '#f5f5f5';
+  const tableRowEvenBgColor = isDark ? '#161b22' : '#fafafa';
+  const linkColor = isDark ? '#58a6ff' : '#1890ff';
+  const hrColor = isDark ? '#444' : '#e8e8e8';
+
+  if (!depsLoaded || !CodeMirrorComp || !ReactMarkdownComp || !oneDark || !plugins || !SyntaxHighlighterModule || !vscDarkPlusStyle || !prismStyle) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#1e1e1e' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: bgColor }}>
         <Spin size="large" tip="加载Markdown编辑器..." />
       </div>
     );
   }
 
+  const SyntaxHighlighter = SyntaxHighlighterModule.Prism;
+
+  const CodeBlockComponent: React.FC<{ language: string; value: string }> = ({ language, value }) => {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = () => {
+      navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    };
+    return (
+      <div style={{
+        position: 'relative',
+        marginBottom: '0.75rem',
+        borderRadius: '6px',
+        overflow: 'hidden',
+        border: `1px solid ${borderColor}`
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0.4rem 0.75rem',
+          backgroundColor: isDark ? '#21262d' : '#f0f0f0',
+          borderBottom: `1px solid ${borderColor}`
+        }}>
+          <span style={{
+            fontSize: '0.75rem',
+            fontWeight: 500,
+            color: isDark ? '#8b949e' : '#666',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}>
+            {language || 'text'}
+          </span>
+          <Tooltip title={copied ? '已复制!' : '复制代码'}>
+            <Button
+              type="text"
+              size="small"
+              icon={copied ? <CheckOutlined /> : <CopyOutlined />}
+              onClick={handleCopy}
+              style={{ color: isDark ? '#8b949e' : '#666', fontSize: 12 }}
+            >
+              {copied ? '已复制' : '复制'}
+            </Button>
+          </Tooltip>
+        </div>
+        <SyntaxHighlighter
+          style={isDark ? vscDarkPlusStyle : prismStyle}
+          language={language}
+          PreTag="div"
+          codeTagProps={{ style: { backgroundColor: 'inherit', padding: 0 } }}
+          customStyle={{
+            margin: 0,
+            padding: '0.75rem',
+            fontSize: '0.85em',
+            lineHeight: '1.5',
+            borderRadius: 0
+          }}
+        >
+          {value.replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      </div>
+    );
+  };
+
+  const EDITOR_MARKDOWN_COMPONENTS = {
+    h1: ({ ...props }: any) => (
+      <h1 style={{
+        fontSize: '2em',
+        fontWeight: 600,
+        borderBottom: `1px solid ${isDark ? '#444' : '#e8e8e8'}`,
+        paddingBottom: '0.3em',
+        margin: '1em 0 0.5em',
+        color: isDark ? '#ffffff' : '#333333'
+      }} {...props} />
+    ),
+    h2: ({ ...props }: any) => (
+      <h2 style={{
+        fontSize: '1.5em',
+        fontWeight: 600,
+        borderBottom: `1px solid ${isDark ? '#444' : '#e8e8e8'}`,
+        paddingBottom: '0.3em',
+        margin: '1em 0 0.5em',
+        color: isDark ? '#ffffff' : '#333333'
+      }} {...props} />
+    ),
+    h3: ({ ...props }: any) => (
+      <h3 style={{
+        fontSize: '1.25em',
+        fontWeight: 600,
+        margin: '1em 0 0.5em',
+        color: isDark ? '#ffffff' : '#333333'
+      }} {...props} />
+    ),
+    h4: ({ ...props }: any) => (
+      <h4 style={{
+        fontSize: '1em',
+        fontWeight: 600,
+        margin: '1em 0 0.5em',
+        color: isDark ? '#ffffff' : '#333333'
+      }} {...props} />
+    ),
+    h5: ({ ...props }: any) => (
+      <h5 style={{
+        fontSize: '0.875em',
+        fontWeight: 600,
+        margin: '1em 0 0.5em',
+        color: isDark ? '#dddddd' : '#555555'
+      }} {...props} />
+    ),
+    h6: ({ ...props }: any) => (
+      <h6 style={{
+        fontSize: '0.85em',
+        fontWeight: 600,
+        color: isDark ? '#aaaaaa' : '#666666',
+        margin: '1em 0 0.5em'
+      }} {...props} />
+    ),
+    p: ({ ...props }: any) => (
+      <p style={{
+        marginBottom: '0.75em',
+        lineHeight: 1.7,
+        color: previewTextColor
+      }} {...props} />
+    ),
+    a: ({ ...props }: any) => (
+      <a style={{
+        color: linkColor,
+        textDecoration: 'none'
+      }} target="_blank" rel="noopener noreferrer" {...props} />
+    ),
+    strong: ({ ...props }: any) => (
+      <strong style={{ fontWeight: 600 }} {...props} />
+    ),
+    em: ({ ...props }: any) => (
+      <em style={{ fontStyle: 'italic' }} {...props} />
+    ),
+    del: ({ ...props }: any) => (
+      <del style={{ textDecoration: 'line-through' }} {...props} />
+    ),
+    ul: ({ ...props }: any) => (
+      <ul style={{
+        paddingLeft: '1.5em',
+        marginBottom: '0.75em',
+        listStyleType: 'disc',
+        color: previewTextColor
+      }} {...props} />
+    ),
+    ol: ({ ...props }: any) => (
+      <ol style={{
+        paddingLeft: '1.5em',
+        marginBottom: '0.75em',
+        listStyleType: 'decimal',
+        color: previewTextColor
+      }} {...props} />
+    ),
+    li: ({ ...props }: any) => (
+      <li style={{
+        marginBottom: '0.25em',
+        lineHeight: 1.6,
+        color: previewTextColor
+      }} {...props} />
+    ),
+    blockquote: ({ ...props }: any) => (
+      <blockquote style={{
+        borderLeft: `4px solid ${blockquoteBorderColor}`,
+        paddingLeft: '1em',
+        margin: '0 0 1em',
+        color: blockquoteColor
+      }} {...props} />
+    ),
+    table: ({ ...props }: any) => (
+      <div style={{ overflowX: 'auto', marginBottom: '0.75em' }}>
+        <table style={{
+          width: '100%',
+          borderCollapse: 'collapse',
+          fontSize: '0.95em'
+        }} {...props} />
+      </div>
+    ),
+    thead: ({ ...props }: any) => (
+      <thead style={{ backgroundColor: tableHeaderBgColor }} {...props} />
+    ),
+    th: ({ ...props }: any) => (
+      <th style={{
+        padding: '0.5em 0.75em',
+        textAlign: 'left',
+        borderBottom: `2px solid ${borderColor}`,
+        fontWeight: 600,
+        color: isDark ? '#ffffff' : '#333333'
+      }} {...props} />
+    ),
+    td: ({ ...props }: any) => (
+      <td style={{
+        padding: '0.5em 0.75em',
+        borderBottom: `1px solid ${borderColor}`,
+        color: previewTextColor
+      }} {...props} />
+    ),
+    hr: ({ ...props }: any) => (
+      <hr style={{
+        border: 'none',
+        borderTop: `1px solid ${hrColor}`,
+        margin: '1.5em 0'
+      }} {...props} />
+    ),
+    img: ({ ...props }: any) => (
+      <img style={{
+        maxWidth: '100%',
+        height: 'auto',
+        borderRadius: '8px',
+        margin: 0
+      }} {...props} />
+    ),
+    code: ({ className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || '');
+      const content = String(children);
+      const isInline = !match && !content.includes('\n');
+      return isInline ? (
+        <code style={{
+          backgroundColor: codeBgColor,
+          padding: '0.2em 0.4em',
+          borderRadius: '3px',
+          fontSize: '85%',
+          fontFamily: 'Consolas, Monaco, monospace',
+          color: previewTextColor
+        }} className={className} {...props}>
+          {children}
+        </code>
+      ) : match ? (
+        <CodeBlockComponent
+          language={match[1]}
+          value={content.replace(/\n$/, '')}
+        />
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    pre: ({ ...props }: any) => (
+      <pre style={{
+        margin: '0 0 1em',
+        padding: 0,
+        backgroundColor: 'transparent',
+        borderRadius: 0,
+        border: 'none',
+        overflowX: 'visible'
+      }} {...props} />
+    ),
+    source: ({ ...props }: any) => (
+      <source {...props} />
+    ),
+  };
+
   return (
-    <div style={{ display: 'flex', height: '100%', flexDirection: 'column', background: '#1e1e1e' }}>
+    <div style={{ display: 'flex', height: '100%', flexDirection: 'column', background: bgColor }}>
       <style>{`
-        .markdown-preview-wrapper {
-          color: #e6e6e6 !important;
+        .markdown-preview-wrapper-${safeInstanceId} {
+          color: ${previewTextColor};
           line-height: 1.6;
           font-size: 14px;
-          background: #1e1e1e !important;
+          background: ${previewBgColor};
         }
-        .markdown-preview-wrapper * {
-          color: #e6e6e6 !important;
-        }
-        .markdown-preview-wrapper h1 { 
-          font-size: 2em; 
-          border-bottom: 1px solid #444; 
-          padding-bottom: 0.3em; 
-          margin: 1em 0 0.5em; 
-          color: #ffffff !important; 
-        }
-        .markdown-preview-wrapper h2 { 
-          font-size: 1.5em; 
-          border-bottom: 1px solid #444; 
-          padding-bottom: 0.3em; 
-          margin: 1em 0 0.5em; 
-          color: #ffffff !important; 
-        }
-        .markdown-preview-wrapper h3 { 
-          font-size: 1.25em; 
-          margin: 1em 0 0.5em; 
-          color: #ffffff !important; 
-        }
-        .markdown-preview-wrapper h4 { 
-          font-size: 1em; 
-          margin: 1em 0 0.5em; 
-          color: #ffffff !important; 
-        }
-        .markdown-preview-wrapper h5 { 
-          font-size: 0.875em; 
-          margin: 1em 0 0.5em; 
-          color: #dddddd !important; 
-        }
-        .markdown-preview-wrapper h6 { 
-          font-size: 0.85em; 
-          color: #aaaaaa !important; 
-          margin: 1em 0 0.5em; 
-        }
-        .markdown-preview-wrapper p { 
-          margin: 0 0 1em; 
-          color: #e6e6e6 !important; 
-        }
-        .markdown-preview-wrapper a { 
-          color: #58a6ff !important; 
-          text-decoration: none; 
-        }
-        .markdown-preview-wrapper a:hover { 
-          text-decoration: underline; 
-        }
-        .markdown-preview-wrapper code:not(.hljs) { 
-          background: #2d333b !important; 
-          padding: 0.2em 0.4em; 
-          border-radius: 3px; 
-          font-size: 85%;
-          font-family: Consolas, Monaco, monospace;
-          color: #e6e6e6 !important;
-        }
-        .markdown-preview-wrapper pre { 
-          background: #161b22 !important; 
-          padding: 16px; 
-          border-radius: 6px; 
-          overflow-x: auto;
-          margin: 0 0 1em;
-        }
-        .markdown-preview-wrapper pre code {
-          background: transparent !important;
-          padding: 0;
-          font-size: 85%;
-          color: #e6e6e6 !important;
-        }
-        .markdown-preview-wrapper .hljs {
-          background: #161b22 !important;
-          color: #e6e6e6 !important;
-        }
-        .markdown-preview-wrapper .hljs-keyword,
-        .markdown-preview-wrapper .hljs-selector-tag,
-        .markdown-preview-wrapper .hljs-built_in,
-        .markdown-preview-wrapper .hljs-name,
-        .markdown-preview-wrapper .hljs-tag {
-          color: #ff7b72 !important;
-        }
-        .markdown-preview-wrapper .hljs-string,
-        .markdown-preview-wrapper .hljs-title,
-        .markdown-preview-wrapper .hljs-section,
-        .markdown-preview-wrapper .hljs-attribute,
-        .markdown-preview-wrapper .hljs-literal,
-        .markdown-preview-wrapper .hljs-template-tag,
-        .markdown-preview-wrapper .hljs-template-variable,
-        .markdown-preview-wrapper .hljs-type {
-          color: #a5d6ff !important;
-        }
-        .markdown-preview-wrapper .hljs-comment,
-        .markdown-preview-wrapper .hljs-deletion {
-          color: #8b949e !important;
-        }
-        .markdown-preview-wrapper .hljs-number,
-        .markdown-preview-wrapper .hljs-regexp,
-        .markdown-preview-wrapper .hljs-addition {
-          color: #79c0ff !important;
-        }
-        .markdown-preview-wrapper blockquote { 
-          border-left: 4px solid #444c56; 
-          padding-left: 1em; 
-          margin: 0 0 1em;
-          color: #8b949e !important;
-        }
-        .markdown-preview-wrapper blockquote * {
-          color: #8b949e !important;
-        }
-        .markdown-preview-wrapper ul, .markdown-preview-wrapper ol { 
-          padding-left: 2em; 
-          margin: 0 0 1em;
-        }
-        .markdown-preview-wrapper li { 
-          margin: 0.25em 0; 
-          color: #e6e6e6 !important; 
-        }
-        .markdown-preview-wrapper table { 
-          border-collapse: collapse; 
-          width: 100%;
-          margin: 0 0 1em;
-        }
-        .markdown-preview-wrapper th, .markdown-preview-wrapper td { 
-          border: 1px solid #444c56; 
-          padding: 8px 12px;
-          color: #e6e6e6 !important;
-        }
-        .markdown-preview-wrapper th { 
-          background: #21262d !important; 
-          color: #ffffff !important; 
-        }
-        .markdown-preview-wrapper tr:nth-child(even) { 
-          background: #161b22 !important; 
-        }
-        .markdown-preview-wrapper img { 
-          max-width: 100%; 
-        }
-        .markdown-preview-wrapper hr { 
-          border: none; 
-          border-top: 1px solid #444; 
-          margin: 1.5em 0; 
+        .markdown-preview-wrapper-${safeInstanceId} p a + br {
+          display: none;
         }
       `}</style>
       <div style={{ 
         display: 'flex', 
         gap: 4, 
         padding: '8px 12px',
-        borderBottom: '1px solid #333',
-        background: '#252526',
+        borderBottom: `1px solid ${borderColor}`,
+        background: headerBgColor,
         alignItems: 'center',
       }}>
         {renderViewModeButton('edit', <EditOutlined />, '编辑模式')}
@@ -301,15 +449,15 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           <div style={{ 
             flex: viewMode === 'split' ? 1 : 2, 
             overflow: 'auto',
-            borderRight: viewMode === 'split' ? '1px solid #333' : 'none',
+            borderRight: viewMode === 'split' ? `1px solid ${borderColor}` : 'none',
           }}>
             <CodeMirrorComp
               value={content}
               height="100%"
               onChange={handleChange}
-              theme="dark"
+              theme={isDark ? 'dark' : 'light'}
               editable={canEdit}
-              extensions={[oneDark]}
+              extensions={isDark ? [oneDark] : []}
               style={{ fontSize: 13 }}
               basicSetup={{
                 lineNumbers: true,
@@ -334,25 +482,26 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
           </div>
         )}
         {(viewMode === 'preview' || viewMode === 'split') && (
-          <div 
+          <div
             ref={containerRef}
-            className="markdown-preview-wrapper"
+            className={`markdown-preview-wrapper-${safeInstanceId}`}
             style={{ 
               flex: viewMode === 'split' ? 1 : 2, 
               overflow: 'auto',
               padding: 16,
-              background: '#1e1e1e',
+              background: previewBgColor,
             }}
           >
             {content ? (
               <ReactMarkdownComp
-                remarkPlugins={[plugins.remarkGfm]}
-                rehypePlugins={[plugins.rehypeHighlight, plugins.rehypeRaw]}
+                remarkPlugins={[plugins.remarkGfm, plugins.remarkBreaks]}
+                rehypePlugins={[plugins.rehypeRaw]}
+                components={EDITOR_MARKDOWN_COMPONENTS}
               >
                 {content}
               </ReactMarkdownComp>
             ) : (
-              <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>
+              <div style={{ color: isDark ? '#888' : '#999', textAlign: 'center', padding: 40 }}>
                 文件内容为空
               </div>
             )}

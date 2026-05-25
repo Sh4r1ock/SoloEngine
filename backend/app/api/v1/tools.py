@@ -26,9 +26,8 @@ SoloEngine : 工具管理API模块
     - POST /api/v1/tools/{tool_id}/call - 调用工具
 """
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
-import uuid
 
 from app.core.tool_registry import tool_registry
 from app.api.v1.auth import get_current_user

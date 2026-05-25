@@ -30,6 +30,7 @@ export interface ProviderConfig {
   display_name: string;
   requires_api_key: boolean;
   default_model: string;
+  default_base_url: string;
   models: string[];
 }
 
@@ -49,6 +50,7 @@ export interface LLMConfig {
   extra_params: Record<string, any>;
   is_default: boolean;
   is_active: boolean;
+  has_api_key: boolean;
   version: number;
   created_at?: string;
   updated_at?: string;
@@ -154,40 +156,7 @@ class LLMApi {
     return response.data;
   }
 
-  async getUsage(params?: {
-    time_range_hours?: number;
-    provider?: string;
-    model_name?: string;
-  }): Promise<{
-    total_requests: number;
-    total_tokens: number;
-    avg_tokens_per_request: number;
-    avg_time_per_request: number;
-  }> {
-    const response = await api.get('/llm/usage', { params });
-    return response.data;
-  }
-
-  async getRecentUsage(limit?: number, provider?: string): Promise<any[]> {
-    const response = await api.get('/llm/usage/recent', {
-      params: { limit, provider },
-    });
-    return response.data;
-  }
-
-  async exportUsage(format?: 'json' | 'csv'): Promise<{ path: string; format: string }> {
-    const response = await api.get('/llm/usage/export', {
-      params: { format },
-    });
-    return response.data;
-  }
-
-  async clearUsage(daysToKeep?: number): Promise<{ removed_count: number }> {
-    const response = await api.delete('/llm/usage', {
-      params: { days_to_keep: daysToKeep },
-    });
-    return response.data;
-  }
 }
+
 
 export const llmApi = new LLMApi();
