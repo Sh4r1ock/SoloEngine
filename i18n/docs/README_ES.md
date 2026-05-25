@@ -41,17 +41,21 @@ La Agentic AI está transformando el desarrollo de software: un solo desarrollad
 
 Las alternativas actuales tampoco resuelven el problema: las plataformas de workflow (Dify, n8n, etc.) ejecutan rutas fijas preorquestadas, sin Agents autónomos en su núcleo; los frameworks de código (LangChain, CrewAI, etc.) exigen dominar Python. **SoloEngine** existe precisamente para cerrar esa brecha.
 
+<div align="center">
+
 | | Dify, n8n, Zapier | LangChain, CrewAI, LangGraph | **SoloEngine** |
-|---|---|---|---|
+| :---: | :---: | :---: | :---: |
 | Agentic AI | ✗ Solo workflows con scripts | ✓ ReAct / Multi-Agent | ✓ ReAct / Multi-Agent |
 | Sin programación | ✓ | ✗ Requiere Python | ✓ |
 | Orquestación visual | Parcial | ✗ | ✓ Experiencia completa en lienzo |
 | Expertos de dominio autónomos | ✓ (pero el Agent no es realmente Agentic) | ✗ | ✓ |
 | Colaboración Multi-Agent | ✗ | ✓ | ✓ |
 
+</div>
+
 - **No es una herramienta de workflow más.** Los Agents operan con el ciclo «pensar → actuar → observar → repetir». Todas las decisiones se toman en tiempo de ejecución. Si un Agent de investigación se atasca, ajusta su plan sobre la marcha, sin rutas de respaldo predefinidas.
 - **Los expertos de dominio construyen directamente.** Un abogado arrastra un Agent de revisión de contratos al lienzo, lo conecta a un Agent de investigación y ejecuta. Sin intervención de programadores.
-- **Herramientas, Skills, MCP: todo es conectable en caliente.** Cada Agent carga solo lo que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
+- **Herramientas, Skills, MCP — Divulgación progresiva y conectable en caliente.** Cada Agent carga solo lo que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
 - **Una sola capa de adaptación para todos los modelos.** OpenAI, Anthropic, Ollama, DeepSeek, Qwen, Zhipu: una interfaz unificada, cambio transparente.
 
 ### Cómo funciona
@@ -60,7 +64,7 @@ Todos los Agents comparten las mismas primitivas subyacentes; la diferencia est�
 
 1. **Compilar**: el diseño visual se transforma, mediante ordenamiento topológico, en un grafo acíclico dirigido (DAG) de Agents. Un mismo compilador genera infinitas combinaciones de equipos.
 2. **Motor ReAct unificado**: cada Agent ejecuta el mismo ciclo «pensar → actuar → observar → repetir».
-3. **Divulgación progresiva**: los Agents solo cargan lo que realmente necesitan en tiempo de ejecución. Es lo que hace viable la Agentic AI en entornos de bajo código.
+3. **Carga bajo demanda** — Gracias al mecanismo de compilación, los Agents solo cargan en tiempo de ejecución el modelo, la configuración y las herramientas especificados. Es lo que hace viable la Agentic AI en entornos de bajo código.
 
 ## Inicio rápido
 
@@ -79,7 +83,7 @@ npm install
 npm run dev
 ```
 
-Abre **http://localhost:8991** en el navegador y construye tu primer equipo de Agents.
+Abre [**http://localhost:8991**](http://localhost:8991) en el navegador y construye tu primer equipo de Agents.
 
 ## Casos de uso
 
@@ -103,20 +107,20 @@ Un agradecimiento especial a:
 
 ## Contribuciones
 
-Nos encantaría contar contigo.
+<p align="center">Nos encantaría contar contigo.</p>
 
-Ya sea una corrección ortográfica, un nuevo plugin de herramientas, una mejora en la documentación o una funcionalidad completa: cada contribución hace mejor a SoloEngine. Todos los PR son bienvenidos, sin importar su tamaño.
+<p align="center">Ya sea una corrección ortográfica, un nuevo plugin de herramientas, una mejora en la documentación o una funcionalidad completa: cada contribución hace mejor a SoloEngine. Todos los PR son bienvenidos, sin importar su tamaño.</p>
 
-📝 [Guía de contribución](../../CONTRIBUTING.md) &nbsp;·&nbsp; 🐛 [Issues para empezar](https://github.com/Sh4r1ock/SoloEngine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) &nbsp;·&nbsp; 📧 [sh4r1ock@qq.com](mailto:sh4r1ock@qq.com)
+<p align="center">📝 <a href="../../CONTRIBUTING.md">Guía de contribución</a> &nbsp;·&nbsp; 🐛 <a href="https://github.com/Sh4r1ock/SoloEngine/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">Issues para empezar</a> &nbsp;·&nbsp; 📧 <a href="mailto:sh4r1ock@qq.com">sh4r1ock@qq.com</a></p>
 
 ## Licencia
 
-Apache License 2.0. Consulta la [LICENCIA](../../LICENSE).
+<p align="center">Apache License 2.0. Consulta la <a href="../../LICENSE">LICENCIA</a>.</p>
 
 ---
 
 <div align="center">
 
-**El equipo de SoloEngine, creado con ❤️**
+**SoloEngine — AI for Every Industry ❤️**
 
 </div>
