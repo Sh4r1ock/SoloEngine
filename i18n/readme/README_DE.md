@@ -60,7 +60,7 @@ Die verfügbaren Alternativen lösen das Problem kaum: Workflow-Plattformen (Dif
 
 ### So funktioniert es
 
-Alle Agents teilen sich dieselben systemnahen Primitive; sie unterscheiden sich nur in ihrer Konfiguration. Das visuelle Design auf der Arbeitsfläche wird kompiliert und direkt in ein ausführbares Agent-Team überführt.
+Alle Agents teilen sich dieselbe zugrunde liegende Architektur; sie unterscheiden sich nur in ihrer Konfiguration. Das visuelle Design auf der Arbeitsfläche wird kompiliert und direkt in ein ausführbares Agentic AI überführt.
 
 1. **Kompilierung** — Das visuelle Layout wird per topologischer Sortierung in einen gerichteten azyklischen Graphen (DAG) der Agents überführt. Ein und derselbe Compiler erzeugt beliebig viele Teamkonstellationen.
 2. **Einheitliche ReAct-Engine** — Jeder Agent durchläuft denselben Zyklus: „Denken → Handeln → Beobachten → Wiederholen".
