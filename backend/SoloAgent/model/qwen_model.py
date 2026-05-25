@@ -31,6 +31,7 @@ SoloEngine : 通义千问(Qwen)模型实现，支持阿里DashScope API
     - response = await model(messages)
 """
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import (
     Any,
     TYPE_CHECKING,
@@ -39,6 +40,8 @@ from typing import (
     Type,
 )
 from collections import OrderedDict
+
+from app.core.config import settings
 
 from dashscope import Generation
 
@@ -69,11 +72,7 @@ from .model_usage import ChatUsage
 from ..message import (
     TextBlock as SoloTextBlock,
     ToolUseBlock as SoloToolUseBlock,
-    ToolResultBlock as SoloToolResultBlock,
     ThinkingBlock as SoloThinkingBlock,
-    ImageBlock as SoloImageBlock,
-    Base64Source as SoloBase64Source,
-    URLSource as SoloURLSource,
 )
 from ..utils.logging import logger
 from ..types import JSONSerializableObject
@@ -115,37 +114,14 @@ class QwenChatModel(ChatModelBase):
     def __init__(
         self,
         model_name: str,
-        api_key: str | None = None,
+        api_key: str,
         stream: bool = True,
-        api_key_env_var: str = "DASHSCOPE_API_KEY",
         client_kwargs: dict[str, JSONSerializableObject] | None = None,
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
         **kwargs: Any,
     ) -> None:
-        """
-        初始化通义千问客户端
-        
-        Args:
-            model_name: 模型名称，如 "qwen-plus", "qwen-turbo", "qwen-max"
-            api_key: API密钥，None则从环境变量读取
-            stream: 是否使用流式输出
-            api_key_env_var: API密钥环境变量名
-            client_kwargs: 客户端额外参数
-            generate_kwargs: 生成参数
-            **kwargs: 其他参数
-        
-        Returns:
-            None
-        
-        Raises:
-            ValueError: 当API密钥无效时抛出
-        
-        Example:
-            >>> model = QwenChatModel(model_name="qwen-plus")
-        """
         super().__init__(model_name, stream)
 
-        # Handle deprecated client_args parameter from kwargs
         client_args = kwargs.pop("client_args", None)
         if client_args is not None and client_kwargs is not None:
             raise ValueError(
@@ -167,23 +143,19 @@ class QwenChatModel(ChatModelBase):
                 "These will be ignored."
             )
 
-        # Initialize Qwen client
-        import os
-        key = api_key or os.environ.get(api_key_env_var)
-        if not key:
+        if not api_key:
             raise ValueError(
-                f"Qwen API key not provided and not found in environment "
-                f"variable '{api_key_env_var}'"
+                "Qwen API key not provided. "
+                "Please configure your API key in Settings > LLM Configuration."
             )
 
         from dashscope import AsyncDashScope
         self.client = AsyncDashScope(
-            api_key=key,
+            api_key=api_key,
             **(client_kwargs or {}),
         )
 
         self.generate_kwargs = generate_kwargs or {}
-        self.api_key_env_var = api_key_env_var
 
     @property
     def _tools_param_key(self) -> str:
@@ -198,6 +170,7 @@ class QwenChatModel(ChatModelBase):
         tools: list[dict] | None = None,
         tool_choice: Literal["auto", "none", "any"] | str | None = None,
         structured_model: Type[object] | None = None,
+        cancel_event: asyncio.Event = None,
         **kwargs: Any,
     ) -> ChatResponse | AsyncGenerator[ChatResponse, None]:
         """Get response from Qwen messages API by given arguments.
@@ -246,7 +219,18 @@ class QwenChatModel(ChatModelBase):
         qwen_messages: list[dict] = []
         for msg in messages:
             role = msg["role"].upper()
-            if role not in ["SYSTEM", "USER", "ASSISTANT"]:
+            if role == "TOOL":
+                tool_call_id = msg.get("tool_call_id", "")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                    content = "\n".join(text_parts) if text_parts else str(content)
+                qwen_messages.append({"role": "tool", "content": content, "tool_call_id": tool_call_id})
+                continue
+            elif role not in ["SYSTEM", "USER", "ASSISTANT"]:
                 role = "USER" if role == "SYSTEM" else role
             content = msg.get("content", "")
             if isinstance(content, str):
@@ -349,6 +333,7 @@ class QwenChatModel(ChatModelBase):
                 return self._parse_qwen_stream_response(
                     start_datetime,
                     response,
+                    cancel_event,
                 )
             else:
                 response = await self.client.calls.call(qwen_messages, **gen_kwargs)
@@ -362,12 +347,14 @@ class QwenChatModel(ChatModelBase):
         self,
         start_datetime: datetime,
         response: Any,
+        cancel_event: asyncio.Event = None,
     ) -> AsyncGenerator[ChatResponse, None]:
         """Parse Qwen streaming response and yield ChatResponse objects.
 
         Args:
             start_datetime (datetime): The start datetime of response generation.
             response: Qwen AsyncGeneration object.
+            cancel_event (asyncio.Event, optional): Cancel event. Defaults to None.
 
         Returns:
             AsyncGenerator[ChatResponse, None]: Generator yielding ChatResponse objects.
@@ -384,8 +371,14 @@ class QwenChatModel(ChatModelBase):
         total_input_tokens = None
         total_output_tokens = None
 
-        async with response as stream:
-            async for chunk in stream:
+        self._save_response_ref(response)
+        try:
+            async for chunk in response:
+                if cancel_event and cancel_event.is_set():
+                    logger.info("[Qwen] Cancel event detected, closing stream")
+                    await response.aclose()
+                    self._was_cancelled = True
+                    raise asyncio.CancelledError()
                 if hasattr(chunk, "usage") and chunk.usage:
                     total_input_tokens = getattr(chunk.usage, 'input_tokens', None) or getattr(chunk.usage, 'prompt_tokens', None)
                     total_output_tokens = getattr(chunk.usage, 'output_tokens', None) or getattr(chunk.usage, 'completion_tokens', None)
@@ -396,19 +389,17 @@ class QwenChatModel(ChatModelBase):
                         finish_reason = chunk.finish_reason
                         if finish_reason == "stop":
                             stop_reason = "end_turn"
-                            # 流结束时设置usage
                             if total_input_tokens is not None or total_output_tokens is not None:
                                 usage = ChatUsage(
                                     input_tokens=total_input_tokens,
                                     output_tokens=total_output_tokens,
-                                    time=(datetime.now() - start_datetime).total_seconds(),
+                                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
                                 )
                                 logger.info(f"[Qwen Stream] usage at end: input={total_input_tokens}, output={total_output_tokens}")
                         elif finish_reason == "tool_calls":
                             stop_reason = "tool_use"
                         logger.info(f"[Qwen Stream] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
                     
-                    # Qwen streaming format is a list of Message objects
                     if isinstance(output, list) and output:
                         for msg in output:
                             if hasattr(msg, "text") and msg.text:
@@ -431,7 +422,6 @@ class QwenChatModel(ChatModelBase):
                                         }
                                     tool_calls[tool_id]["input"].update(arguments)
                             elif hasattr(msg, "content") and msg.content:
-                                # Handle content blocks in streaming
                                 for block in msg.content:
                                     if isinstance(block, str):
                                         text += block
@@ -441,7 +431,6 @@ class QwenChatModel(ChatModelBase):
                                         elif block.get("type") == "thinking":
                                             thinking += block.get("text", "")
 
-                # 增量输出
                 contents = []
                 if thinking and len(thinking) > len(last_thinking):
                     delta_thinking_content = thinking[len(last_thinking):]
@@ -462,16 +451,12 @@ class QwenChatModel(ChatModelBase):
                     )
                     last_text = text
                 
-                # 工具调用输出增量格式，而非完整 ToolUseBlock
-                # 由 ReActCore 的 ToolCallEventManager 管理状态
                 for tool_id, tool_call in tool_calls.items():
                     index = list(tool_calls.keys()).index(tool_id)
                     last_call = last_tool_calls.get(tool_id)
                     tool_call_chunks = []
                     
                     if last_call is None:
-                        # 新工具调用开始
-                        # 第一个 chunk：包含 id 和 name，arguments 可能为空
                         tool_call_chunks.append({
                             "index": index,
                             "id": tool_id,
@@ -483,7 +468,6 @@ class QwenChatModel(ChatModelBase):
                         })
                         logger.info(f"[Qwen] Tool call start: index={index}, id={tool_id}, name={tool_call.get('name')}")
                         
-                        # 如果有 arguments，单独发送
                         if tool_call.get("input"):
                             args_str = json.dumps(tool_call["input"], ensure_ascii=False)
                             tool_call_chunks.append({
@@ -497,7 +481,6 @@ class QwenChatModel(ChatModelBase):
                             })
                             logger.info(f"[Qwen] Tool call initial args: index={index}, args={args_str[:50]}...")
                     else:
-                        # 后续增量：只包含 arguments 增量
                         current_input = tool_call.get("input", {})
                         last_input = last_call.get("input", {})
                         current_args = json.dumps(current_input, ensure_ascii=False)
@@ -533,6 +516,8 @@ class QwenChatModel(ChatModelBase):
                         finish_reason=finish_reason,
                     )
                     yield res
+        finally:
+            self._clear_response_ref()
 
     async def _parse_qwen_completion_response(
         self,
@@ -624,7 +609,7 @@ class QwenChatModel(ChatModelBase):
                 usage = ChatUsage(
                     input_tokens=input_tok,
                     output_tokens=output_tok,
-                    time=(datetime.now() - start_datetime).total_seconds(),
+                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
                 )
                 logger.info(f"[Qwen Completion] usage: input={input_tok}, output={output_tok}")
 

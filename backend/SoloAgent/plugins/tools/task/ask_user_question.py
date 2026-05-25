@@ -244,10 +244,12 @@ class AskUserQuestion(BaseTaskTool):
             formatted_texts.append(self.format_question(question))
         
         result = {
+            "content": "\n\n".join(formatted_texts),
             "questions": formatted_questions,
             "formatted_text": "\n\n".join(formatted_texts),
             "question_count": len(formatted_questions),
             "success": True,
+            "error_message": None,
             "metadata": {}
         }
         
@@ -263,89 +265,60 @@ class AskUserQuestion(BaseTaskTool):
             Dict[str, Any]: 工具规范
         """
         return {
-            "type": "function",
-            "function": {
-                "name": "AskUserQuestion",
-                "description": (
-                    "在执行过程中向用户提问，获取用户反馈。"
-                    "支持单选和多选模式，每个问题可以有2-4个选项。"
-                    "问题标题最多12个字符。"
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "questions": {
-                            "type": "array",
-                            "description": "问题列表",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "header": {
-                                        "type": "string",
-                                        "maxLength": 12,
-                                        "description": "问题标题（最多12个字符）"
-                                    },
-                                    "question": {
-                                        "type": "string",
-                                        "description": "问题内容"
-                                    },
-                                    "options": {
-                                        "type": "array",
-                                        "description": "选项列表（2-4个选项）",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "label": {
-                                                    "type": "string",
-                                                    "description": "选项标签"
-                                                },
-                                                "description": {
-                                                    "type": "string",
-                                                    "description": "选项描述"
-                                                }
-                                            },
-                                            "required": ["label", "description"]
-                                        },
-                                        "minItems": 2,
-                                        "maxItems": 4
-                                    },
-                                    "multiSelect": {
-                                        "type": "boolean",
-                                        "description": "是否多选（默认为false）"
-                                    }
+            "name": "AskUserQuestion",
+            "description": (
+                "在执行过程中向用户提问，获取用户反馈。"
+                "支持单选和多选模式，每个问题可以有2-4个选项。"
+                "问题标题最多12个字符。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "description": "问题列表",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "header": {
+                                    "type": "string",
+                                    "maxLength": 12,
+                                    "description": "问题标题（最多12个字符）"
                                 },
-                                "required": ["header", "question", "options"]
-                            }
+                                "question": {
+                                    "type": "string",
+                                    "description": "问题内容"
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "description": "选项列表（2-4个选项）",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "label": {
+                                                "type": "string",
+                                                "description": "选项标签"
+                                            },
+                                            "description": {
+                                                "type": "string",
+                                                "description": "选项描述"
+                                            }
+                                        },
+                                        "required": ["label", "description"]
+                                    },
+                                    "minItems": 2,
+                                    "maxItems": 4
+                                },
+                                "multiSelect": {
+                                    "type": "boolean",
+                                    "description": "是否多选（默认为false）"
+                                }
+                            },
+                            "required": ["header", "question", "options"]
                         }
-                    },
-                    "required": ["questions"]
-                }
+                    }
+                },
+                "required": ["questions"]
             }
         }
 
-
-def get_ask_user_question_tool_spec() -> Dict[str, Any]:
-    """
-    获取 AskUserQuestion 工具规范。
-    
-    Returns:
-        Dict[str, Any]: 工具规范
-    """
-    tool = AskUserQuestion()
-    return tool.get_tool_spec()
-
-
-async def ask_user_question(questions: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    AskUserQuestion 工具函数。
-    
-    异步包装器，用于注册到工具执行器。
-    
-    Args:
-        questions (List[Dict[str, Any]]): 问题列表
-    
-    Returns:
-        Dict[str, Any]: 执行结果
-    """
-    tool = AskUserQuestion()
-    return tool.execute(questions=questions)

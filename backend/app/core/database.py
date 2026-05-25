@@ -35,7 +35,6 @@ SoloEngine : SQLite数据库管理模块
 """
 
 import os
-import json
 import logging
 import uuid
 import hashlib
@@ -43,12 +42,11 @@ import base64
 import secrets
 from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict, Any
-from pathlib import Path
 
 try:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    from cryptography.hazmat.backends import default_backend
     HAS_CRYPTOGRAPHY = True
 except ImportError:
     HAS_CRYPTOGRAPHY = False
@@ -59,21 +57,37 @@ try:
 except ImportError:
     HAS_PWDLIB = False
 
-from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, or_, Index, func, PrimaryKeyConstraint, text
+from sqlalchemy import create_engine, Column, String, Text, Integer, DateTime, Boolean, ForeignKey, JSON, Float, and_, or_, Index, func, PrimaryKeyConstraint, text, event
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session
 
 from app.core.data_paths import DataPaths
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 Base = declarative_base()
+
+# 导入文件变更模型以确保表被正确注册
+# 必须在Base定义之后、init_db()调用之前导入
+try:
+    from app.models.file_change import FileChangeModel, FileContentBlobModel
+except ImportError as e:
+    logger.warning(f"Failed to import file change models: {e}")
 
 DATABASE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "database", "soloengine.db")
 os.makedirs(os.path.dirname(DATABASE_PATH), exist_ok=True)
 
 engine = create_engine(f"sqlite:///{DATABASE_PATH}", echo=False, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA temp_store=MEMORY")
+    cursor.close()
 
 
 class UserModel(Base):
@@ -86,8 +100,8 @@ class UserModel(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     last_login = Column(DateTime, nullable=True)
     version = Column(Integer, nullable=False, default=1)
 
@@ -105,10 +119,11 @@ class AgenticFlowModel(Base):
     description = Column(Text, nullable=True)
     icon = Column(String(100), nullable=True)
     folder_path = Column(String(500), nullable=True)
+    canvas_data = Column(Text, nullable=True)
     is_template = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="agentic_flows")
@@ -142,10 +157,10 @@ class AgenticFlowSessionModel(Base):
     token_usage = Column(JSON, nullable=True)
     duration_ms = Column(Integer, nullable=True)
     
-    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     
     version = Column(Integer, nullable=False, default=1)
 
@@ -184,16 +199,20 @@ class SessionMessageModel(Base):
     role = Column(String(50), nullable=False, index=True)
     data = Column(JSON, nullable=False, default=[])
     status = Column(String(50), nullable=True, default="completed", index=True)
-    
+    error = Column(Text, nullable=True)
+
     message_index = Column(Integer, nullable=False)
     parent_message_id = Column(String(36), nullable=True)
     
     prompt_tokens = Column(Integer, nullable=True)
     completion_tokens = Column(Integer, nullable=True)
     total_tokens = Column(Integer, nullable=True)
+    duration_ms = Column(Integer, nullable=True)
+    llm_config_id = Column(String(36), nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False, index=True)
     
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
     
     session = relationship("AgenticFlowSessionModel", back_populates="messages")
@@ -217,12 +236,12 @@ class SkillsPackageModel(Base):
     icon = Column(String(100), nullable=True)
     author = Column(String(255), nullable=False, default="system", index=True)
     tags = Column(JSON, nullable=True)
-    instructions = Column(Text, nullable=True)
     folder_path = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True)
     is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    source = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", back_populates="skills_packages")
@@ -240,7 +259,7 @@ class LLMConfigModel(Base):
     api_key = Column(Text, nullable=True)
     base_url = Column(String(500), nullable=True)
     temperature = Column(Float, default=0.7)
-    max_tokens = Column(Integer, default=2048)
+    max_tokens = Column(Integer, default=128000)
     top_p = Column(Float, default=1.0)
     frequency_penalty = Column(Float, default=0.0)
     presence_penalty = Column(Float, default=0.0)
@@ -248,8 +267,8 @@ class LLMConfigModel(Base):
     extra_params = Column(JSON, nullable=True)
     is_default = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="llm_configs")
@@ -270,9 +289,9 @@ class RunProjectModel(Base):
     folder_path = Column(String(1000), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
-    last_accessed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    last_accessed_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="run_projects")
@@ -291,7 +310,7 @@ class RecentProjectModel(Base):
     project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=False, index=True)
     folder_path = Column(String(1000), nullable=False)
     project_name = Column(String(255), nullable=False)
-    accessed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    accessed_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="recent_projects")
@@ -299,9 +318,19 @@ class RecentProjectModel(Base):
 
 
 def init_db():
-    """初始化数据库。"""
     Base.metadata.create_all(bind=engine)
+    _ensure_column_exists(engine, 'session_messages', 'error', 'TEXT')
+    _ensure_column_exists(engine, 'session_messages', 'duration_ms', 'INTEGER')
     logger.info(f"Database initialized at {DATABASE_PATH}")
+
+def _ensure_column_exists(engine, table_name, column_name, column_type):
+    with engine.connect() as conn:
+        result = conn.execute(text(f"PRAGMA table_info({table_name})"))
+        columns = [row[1] for row in result]
+        if column_name not in columns:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+            conn.commit()
+            logger.info(f"Added column {column_name} to table {table_name}")
 
 
 def get_db() -> Session:
@@ -389,7 +418,7 @@ class EncryptionService:
 
     def _get_or_create_key(self) -> Optional[bytes]:
         """获取或创建加密密钥。"""
-        key_env = os.getenv("ENCRYPTION_KEY")
+        key_env = settings.ENCRYPTION_KEY
         if key_env:
             try:
                 return base64.urlsafe_b64decode(key_env)
@@ -449,7 +478,17 @@ encryption_service = EncryptionService()
 
 class OptimisticLockError(Exception):
     """乐观锁冲突异常。"""
-    pass
+
+
+def check_optimistic_lock(model, version: Optional[int]) -> None:
+    if version is not None and model.version != version:
+        raise OptimisticLockError(
+            f"Optimistic lock conflict: expected version {version}, but current version is {model.version}"
+        )
+
+
+def increment_version(model) -> None:
+    model.version = (model.version or 0) + 1
 
 
 class DatabaseManager:
@@ -488,14 +527,14 @@ class DatabaseManager:
             return None
         if not verify_password(password, user.hashed_password):
             return None
-        user.last_login = datetime.now(timezone.utc)
+        user.last_login = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         db.commit()
         return user
 
     def create_agentic_flow(self, db: Session, user_id: str, name: str, 
-                            description: str = None, folder_path: str = None, icon: str = None) -> AgenticFlowModel:
+                            description: str = None, folder_path: str = None, icon: str = None,
+                            canvas_data: str = None) -> AgenticFlowModel:
         """创建AgenticFlow。"""
-        # 转换为相对路径
         rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
         
         flow = AgenticFlowModel(
@@ -504,6 +543,7 @@ class DatabaseManager:
             description=description,
             folder_path=rel_folder_path,
             icon=icon,
+            canvas_data=canvas_data,
         )
         db.add(flow)
         db.commit()
@@ -513,6 +553,7 @@ class DatabaseManager:
         if flow.folder_path:
             flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
         
+        db.expunge(flow)
         return flow
 
     def get_agentic_flows(self, db: Session, user_id: str) -> List[AgenticFlowModel]:
@@ -527,6 +568,7 @@ class DatabaseManager:
             if flow.folder_path:
                 flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
         
+        db.expunge_all()
         return flows
 
     def get_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str = None) -> Optional[AgenticFlowModel]:
@@ -540,6 +582,7 @@ class DatabaseManager:
         if flow and flow.folder_path:
             flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
         
+        db.expunge(flow) if flow else None
         return flow
 
     def update_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str, 
@@ -554,20 +597,16 @@ class DatabaseManager:
         if not flow:
             return None
         
-        if version is not None and flow.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {flow.version}"
-            )
+        check_optimistic_lock(flow, version)
         
         for key, value in kwargs.items():
             if key == 'folder_path' and value:
-                # 转换为相对路径
                 value = DataPaths.to_relative_path(value)
             
             if hasattr(flow, key):
                 setattr(flow, key, value)
         
-        flow.version = (flow.version or 0) + 1
+        increment_version(flow)
         db.commit()
         db.refresh(flow)
         
@@ -575,6 +614,7 @@ class DatabaseManager:
         if flow.folder_path:
             flow.folder_path = DataPaths.to_absolute_path(flow.folder_path)
         
+        db.expunge(flow)
         return flow
 
     def delete_agentic_flow(self, db: Session, agentic_flow_id: str, user_id: str) -> bool:
@@ -609,16 +649,13 @@ class DatabaseManager:
         if not session:
             return None
         
-        if version is not None and session.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {session.version}"
-            )
+        check_optimistic_lock(session, version)
         
         for key, value in kwargs.items():
             if hasattr(session, key):
                 setattr(session, key, value)
-        session.version = (session.version or 0) + 1
-        session.updated_at = datetime.now(timezone.utc)
+        increment_version(session)
+        session.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         db.commit()
         db.refresh(session)
         return session
@@ -642,17 +679,20 @@ class DatabaseManager:
         return query.order_by(AgenticFlowSessionModel.updated_at.desc()).limit(limit).all()
 
     def add_session_message(self, db: Session, session_id: str, user_id: str,
-                            role: str, data: dict = None, agent_id: str = "default",
-                            parent_message_id: str = None,
+                            role: str, data: list = None, agent_id: str = "default",
+                            parent_message_id: str = None, parent_agent_id: str = None,
                             prompt_tokens: int = None, completion_tokens: int = None,
-                            total_tokens: int = None,
-                            status: str = "completed") -> SessionMessageModel:
-        """添加会话消息。"""
+                            total_tokens: int = None, duration_ms: int = None,
+                            llm_config_id: str = None,
+                            status: str = "completed", error: str = None) -> SessionMessageModel:
         if not agent_id:
             agent_id = "default"
+        if data is None:
+            data = []
         
         max_index = db.query(func.max(SessionMessageModel.message_index)).filter(
-            SessionMessageModel.session_id == session_id
+            SessionMessageModel.session_id == session_id,
+            SessionMessageModel.is_deleted == False
         ).scalar()
         if max_index is None:
             max_index = -1
@@ -661,15 +701,19 @@ class DatabaseManager:
             session_id=session_id,
             user_id=user_id,
             agent_id=agent_id,
+            parent_agent_id=parent_agent_id,
             role=role,
             data=data,
             status=status,
+            error=error,
             message_index=max_index + 1,
             parent_message_id=parent_message_id,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
-            timestamp=datetime.now(timezone.utc),
+            duration_ms=duration_ms,
+            llm_config_id=llm_config_id,
+            timestamp=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
         )
         db.add(message)
         db.commit()
@@ -680,7 +724,8 @@ class DatabaseManager:
                              limit: int = None, offset: int = 0) -> List[SessionMessageModel]:
         """获取会话消息列表。"""
         query = db.query(SessionMessageModel).filter(
-            SessionMessageModel.session_id == session_id
+            SessionMessageModel.session_id == session_id,
+            SessionMessageModel.is_deleted == False
         ).order_by(SessionMessageModel.message_index)
         if offset:
             query = query.offset(offset)
@@ -692,7 +737,8 @@ class DatabaseManager:
                                        agent_id: str = None) -> List[SessionMessageModel]:
         """获取会话消息列表，按 agent_id 分组返回。"""
         query = db.query(SessionMessageModel).filter(
-            SessionMessageModel.session_id == session_id
+            SessionMessageModel.session_id == session_id,
+            SessionMessageModel.is_deleted == False
         )
         if agent_id:
             query = query.filter(SessionMessageModel.agent_id == agent_id)
@@ -706,12 +752,18 @@ class DatabaseManager:
             return None
         
         current_usage = session.token_usage or {}
-        current_usage["prompt_tokens"] = current_usage.get("prompt_tokens", 0) + prompt_tokens
-        current_usage["completion_tokens"] = current_usage.get("completion_tokens", 0) + completion_tokens
-        current_usage["total_tokens"] = current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens
+        new_usage = {
+            "prompt_tokens": current_usage.get("prompt_tokens", 0) + prompt_tokens,
+            "completion_tokens": current_usage.get("completion_tokens", 0) + completion_tokens,
+            "total_tokens": current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens,
+        }
         
-        session.token_usage = current_usage
-        session.updated_at = datetime.now(timezone.utc)
+        session.token_usage = new_usage
+        session.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(session, "token_usage")
+        
         db.commit()
         db.refresh(session)
         return session
@@ -733,8 +785,8 @@ class DatabaseManager:
             author=author,
             tags=tags or [],
             icon=icon,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            created_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+            updated_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
         )
         db.add(package)
         db.commit()
@@ -744,6 +796,7 @@ class DatabaseManager:
         if package.folder_path:
             package.folder_path = DataPaths.to_absolute_path(package.folder_path)
         
+        db.expunge(package)
         return package
 
     def get_skills_packages(self, db: Session, user_id: str) -> List[SkillsPackageModel]:
@@ -757,6 +810,7 @@ class DatabaseManager:
             if package.folder_path:
                 package.folder_path = DataPaths.to_absolute_path(package.folder_path)
         
+        db.expunge_all()
         return packages
 
     def get_skills_package(self, db: Session, package_id: str, user_id: str = None) -> Optional[SkillsPackageModel]:
@@ -776,6 +830,7 @@ class DatabaseManager:
         if package and package.folder_path:
             package.folder_path = DataPaths.to_absolute_path(package.folder_path)
         
+        db.expunge(package) if package else None
         return package
 
     def update_skills_package(self, db: Session, package_id: str, user_id: str,
@@ -790,20 +845,16 @@ class DatabaseManager:
         if not package:
             return None
         
-        if version is not None and package.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {package.version}"
-            )
+        check_optimistic_lock(package, version)
         
         for key, value in kwargs.items():
             if key == 'folder_path' and value:
-                # 转换为相对路径
                 value = DataPaths.to_relative_path(value)
             
             if hasattr(package, key):
                 setattr(package, key, value)
         
-        package.version = (package.version or 0) + 1
+        increment_version(package)
         db.commit()
         db.refresh(package)
         
@@ -811,6 +862,7 @@ class DatabaseManager:
         if package.folder_path:
             package.folder_path = DataPaths.to_absolute_path(package.folder_path)
         
+        db.expunge(package)
         return package
 
     def delete_skills_package(self, db: Session, package_id: str, user_id: str) -> bool:
@@ -890,10 +942,7 @@ class DatabaseManager:
         if not config:
             return None
         
-        if version is not None and config.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {config.version}"
-            )
+        check_optimistic_lock(config, version)
         
         if kwargs.get("is_default") == True:
             db.query(LLMConfigModel).filter(
@@ -906,7 +955,7 @@ class DatabaseManager:
         for key, value in kwargs.items():
             if hasattr(config, key) and key != "version":
                 setattr(config, key, value)
-        config.version = (config.version or 0) + 1
+        increment_version(config)
         db.commit()
         db.refresh(config)
         return config
@@ -990,16 +1039,13 @@ class DatabaseManager:
         if not project:
             return None
         
-        if version is not None and project.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {project.version}"
-            )
+        check_optimistic_lock(project, version)
         
         for key, value in kwargs.items():
             if hasattr(project, key) and key != "version":
                 setattr(project, key, value)
         
-        project.version = (project.version or 0) + 1
+        increment_version(project)
         db.commit()
         db.refresh(project)
         
@@ -1025,7 +1071,7 @@ class DatabaseManager:
         ).first()
         
         if existing:
-            existing.accessed_at = datetime.now(timezone.utc)
+            existing.accessed_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             existing.folder_path = folder_path
             existing.project_name = project_name
             db.commit()
@@ -1098,11 +1144,12 @@ class DatabaseManager:
             if package.folder_path:
                 package.folder_path = DataPaths.to_absolute_path(package.folder_path)
         
+        db.expunge_all()
         return packages
 
     def create_system_skill(self, db: Session, name: str, folder_path: str,
                             description: str = None, tags: List[str] = None,
-                            instructions: str = None, pkg_version: str = "1.0.0") -> SkillsPackageModel:
+                            pkg_version: str = "1.0.0") -> SkillsPackageModel:
         """创建系统skill。"""
         # 转换为相对路径
         rel_folder_path = DataPaths.to_relative_path(folder_path) if folder_path else None
@@ -1113,7 +1160,6 @@ class DatabaseManager:
             description=description,
             user_id="system",
             tags=tags or [],
-            instructions=instructions,
             pkg_version=pkg_version,
             is_public=True,
         )
@@ -1125,6 +1171,7 @@ class DatabaseManager:
         if skill.folder_path:
             skill.folder_path = DataPaths.to_absolute_path(skill.folder_path)
         
+        db.expunge(skill)
         return skill
 
 class MCPServerModel(Base):
@@ -1142,9 +1189,10 @@ class MCPServerModel(Base):
     is_public = Column(Boolean, default=False)
     author = Column(String(255))
     tags = Column(JSON)
-    tools = Column(JSON, default=list)  # 工具列表 [{"name": "", "description": "", "input_schema": {}, "is_enabled": true}]
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    tools = Column(JSON, default=list)
+    source = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
+    updated_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), onupdate=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     version = Column(Integer, nullable=False, default=1)
 
     user = relationship("UserModel", backref="mcp_servers")
@@ -1292,10 +1340,7 @@ class MCPDatabaseManager:
         if not server:
             return None
         
-        if version is not None and server.version != version:
-            raise OptimisticLockError(
-                f"Optimistic lock conflict: expected version {version}, but current version is {server.version}"
-            )
+        check_optimistic_lock(server, version)
         
         for key, value in kwargs.items():
             if key == 'tags' and value is not None:
@@ -1305,7 +1350,7 @@ class MCPDatabaseManager:
                 setattr(server, key, value)
             elif hasattr(server, key):
                 setattr(server, key, value)
-        server.version = (server.version or 0) + 1
+        increment_version(server)
         db.commit()
         db.refresh(server)
         return server
@@ -1365,6 +1410,7 @@ class MCPDatabaseManager:
             if config.working_dir:
                 config.working_dir = DataPaths.to_absolute_path(config.working_dir)
         
+        db.expunge(config) if config else None
         return config
 
     def update_stdio_config(self, db: Session, mcp_server_id: str, **kwargs) -> Optional[MCPStdioConfigModel]:
@@ -1388,8 +1434,9 @@ class MCPDatabaseManager:
                 config.folder_path = DataPaths.to_absolute_path(config.folder_path)
             if config.working_dir:
                 config.working_dir = DataPaths.to_absolute_path(config.working_dir)
-        
-        return config
+            
+            db.expunge(config)
+            return config
 
     def create_sse_config(
         self,
@@ -1499,7 +1546,7 @@ class MCPDatabaseManager:
             tools_with_enabled.append(tool_data)
 
         server.tools = tools_with_enabled
-        server.updated_at = datetime.now(timezone.utc)
+        server.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         db.commit()
         db.refresh(server)
         return server
@@ -1522,7 +1569,7 @@ class MCPDatabaseManager:
                 tool["is_enabled"] = is_enabled
                 break
 
-        server.updated_at = datetime.now(timezone.utc)
+        server.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         db.commit()
         db.refresh(server)
         return server

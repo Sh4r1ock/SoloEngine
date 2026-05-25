@@ -107,28 +107,6 @@ const SkillsPackageDetail: React.FC<SkillsPackageDetailProps> = ({
         </>
       )}
 
-      {(pkg.instructions || pkg.metadata?.instructions) && (
-        <>
-          <Divider>指令内容</Divider>
-          <div style={{
-            background: 'var(--bg-200)',
-            padding: '16px',
-            borderRadius: 'var(--radius-md)',
-            maxHeight: '300px',
-            overflow: 'auto',
-          }}>
-            <pre style={{ 
-              whiteSpace: 'pre-wrap', 
-              wordBreak: 'break-word',
-              margin: 0,
-              fontFamily: '"Fira Code", "Consolas", monospace',
-              fontSize: 13,
-            }}>
-              {pkg.instructions || pkg.metadata?.instructions}
-            </pre>
-          </div>
-        </>
-      )}
     </Modal>
   );
 };

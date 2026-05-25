@@ -22,7 +22,6 @@ SoloEngine : 简单TTS模型，提供占位符实现
     - audio = await tts.synthesize("Hello World")
 """
 
-from typing import Any
 from ..core.interfaces import ITTSModel
 
 

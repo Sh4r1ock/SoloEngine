@@ -34,9 +34,11 @@ import os
 import aiofiles
 from typing import Optional, Dict, Any
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import logging
 
 from ...core.interfaces import ITTSModel
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -67,30 +69,17 @@ class OpenAITTSModel(ITTSModel):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str,
         model: str = "tts-1",
         voice: str = "alloy",
         output_path: str = "./tts_output",
         base_url: Optional[str] = None,
     ):
-        """
-        初始化OpenAI TTS模型
-
-        Args:
-            api_key: OpenAI API密钥，默认从环境变量读取
-            model: TTS模型名称，默认为"tts-1"
-            voice: 默认语音，默认为"alloy"
-            output_path: 输出路径，默认为"./tts_output"
-            base_url: API基础URL，默认为OpenAI官方API
-
-        示例:
-            >>> tts = OpenAITTSModel(api_key="your_key")
-        """
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key
         self.model = model
         self.voice = voice
         self.output_path = output_path
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        self.base_url = base_url or "https://api.openai.com/v1"
         self._client = None
 
         os.makedirs(output_path, exist_ok=True)
@@ -98,6 +87,7 @@ class OpenAITTSModel(ITTSModel):
     def _get_client(self):
         if self._client is None:
             try:
+                from app.core.config import settings
                 import httpx
                 self._client = httpx.AsyncClient(
                     base_url=self.base_url,
@@ -105,7 +95,7 @@ class OpenAITTSModel(ITTSModel):
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json"
                     },
-                    timeout=60.0
+                    timeout=float(settings.TTS_REQUEST_TIMEOUT)
                 )
             except ImportError:
                 raise ImportError("httpx is required for OpenAI TTS. Install with: pip install httpx")
@@ -147,7 +137,7 @@ class OpenAITTSModel(ITTSModel):
                 }
             
             if not output_file:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y%m%d_%H%M%S")
                 output_file = os.path.join(
                     self.output_path,
                     f"tts_{timestamp}.{response_format}"

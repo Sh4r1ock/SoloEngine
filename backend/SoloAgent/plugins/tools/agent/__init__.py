@@ -33,7 +33,7 @@ SoloEngine : Agent工具模块，提供Agent相关功能
 使用示例：
     from SoloAgent.tools.agent import Task, Skill, MCP
     from SoloAgent.tools.agent import TaskTool, SkillTool, MCPTool
-    from SoloAgent.tools.agent import get_task_tool_spec, get_skill_tool_spec, get_mcp_tool_spec
+    from SoloAgent.tools.agent import TaskTool, SkillTool, MCPTool
 
 状态: ✅ 模块初始化完成
 """
@@ -45,25 +45,11 @@ from .base import (
     ToolPermission,
 )
 
-from .task import (
-    TaskTool,
-    get_task_tool_spec,
-)
+from .task import TaskTool
 
-from .skill import (
-    SkillTool,
-    SkillContext,
-    skill_tool_function,
-    get_skill_tool_spec,
-)
+from .skill import SkillTool, SkillContext
 
-from .mcp import (
-    MCPTool,
-    MCPServerInfo,
-    MCPConnectionConfig,
-    mcp_tool_function,
-    get_mcp_tool_spec,
-)
+from .mcp import MCPTool, MCPServerInfo, MCPConnectionConfig
 
 
 Task = TaskTool
@@ -84,9 +70,4 @@ __all__ = [
     "SkillContext",
     "MCPServerInfo",
     "MCPConnectionConfig",
-    "skill_tool_function",
-    "mcp_tool_function",
-    "get_task_tool_spec",
-    "get_skill_tool_spec",
-    "get_mcp_tool_spec",
 ]

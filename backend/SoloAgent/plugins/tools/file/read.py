@@ -17,7 +17,6 @@ SoloEngine : 文件读取工具模块，提供文件读取功能
 状态: ✅ 模块初始化完成
 """
 
-import os
 from typing import Dict, Any, Optional
 
 from .base import BaseFileTool, FileToolError
@@ -104,8 +103,13 @@ class Read(BaseFileTool):
             raise FileToolError(f"文件不存在: {file_path}")
         
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                all_lines = f.readlines()
+            with open(file_path, "rb") as f:
+                raw_content = f.read().decode("utf-8", errors="replace")
+            
+            all_lines = raw_content.split("\n")
+            if all_lines and all_lines[-1] == "":
+                all_lines = all_lines[:-1]
+            all_lines = [line + "\n" for line in all_lines[:-1]] + ([all_lines[-1]] if all_lines else [])
             
             total_lines = len(all_lines)
             
@@ -147,12 +151,6 @@ class Read(BaseFileTool):
             raise FileToolError(f"读取文件失败: {str(e)}")
     
     def get_tool_spec(self) -> Dict[str, Any]:
-        """
-        获取读取工具的规范定义。
-        
-        Returns:
-            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-        """
         return {
             "name": "Read",
             "description": (
@@ -161,81 +159,22 @@ class Read(BaseFileTool):
                 "默认读取最多 2000 行，超过 2000 字符的行会被截断。"
             ),
             "parameters": {
-                "file_path": {
-                    "type": "string",
-                    "description": "要读取的文件的绝对路径。",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "要读取的文件的绝对路径。",
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "起始行号偏移量（从 0 开始）。默认为 0。",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "读取行数限制。默认为 2000。",
+                    },
                 },
-                "offset": {
-                    "type": "integer",
-                    "description": "起始行号偏移量（从 0 开始）。默认为 0。",
-                    "required": False,
-                    "default": 0,
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "读取行数限制。默认为 2000。",
-                    "required": False,
-                    "default": 2000,
-                },
+                "required": ["file_path"],
             },
         }
 
-
-def read_file(
-    file_path: str,
-    offset: int = 0,
-    limit: Optional[int] = None,
-) -> Dict[str, Any]:
-    """
-    读取文件内容的便捷函数。
-    
-    Args:
-        file_path (str): 文件的绝对路径。
-        offset (int, optional): 起始行号偏移量。默认为 0。
-        limit (Optional[int], optional): 读取行数限制。默认为 2000。
-    
-    Returns:
-        Dict[str, Any]: 读取结果。
-    
-    Example:
-        >>> result = read_file("/path/to/file.py", limit=100)
-    """
-    tool = Read()
-    return tool.execute(file_path=file_path, offset=offset, limit=limit)
-
-
-def get_read_tool_spec() -> Dict[str, Any]:
-    """
-    获取读取工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
-    """
-    return {
-        "name": "Read",
-        "description": (
-            "读取文件内容。"
-            "支持指定行号范围读取，返回带行号的格式化输出。"
-            "默认读取最多 2000 行，超过 2000 字符的行会被截断。"
-        ),
-        "parameters": {
-            "file_path": {
-                "type": "string",
-                "description": "要读取的文件的绝对路径。",
-                "required": True,
-            },
-            "offset": {
-                "type": "integer",
-                "description": "起始行号偏移量（从 0 开始）。默认为 0。",
-                "required": False,
-                "default": 0,
-            },
-            "limit": {
-                "type": "integer",
-                "description": "读取行数限制。默认为 2000。",
-                "required": False,
-                "default": 2000,
-            },
-        },
-    }

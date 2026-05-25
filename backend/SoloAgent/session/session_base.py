@@ -65,7 +65,6 @@ class SessionBase:
         示例:
             >>> await session.save_session_state("session-123", memory=memory_module)
         """
-        pass
 
     @abstractmethod
     async def load_session_state(
@@ -85,4 +84,3 @@ class SessionBase:
         示例:
             >>> await session.load_session_state("session-123", memory=memory_module)
         """
-        pass

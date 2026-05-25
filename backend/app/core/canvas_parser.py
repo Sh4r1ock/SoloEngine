@@ -31,8 +31,8 @@ SoloEngine : 画布解析器模块
 """
 import logging
 from typing import Dict, Any, List
-from pydantic import BaseModel, Field
-from app.models.node import AgentNode, OrchestratorNode, PlannerNode, ExecutorNode
+from pydantic import BaseModel
+from app.models.node import OrchestratorNode, PlannerNode, ExecutorNode
 
 logger = logging.getLogger(__name__)
 

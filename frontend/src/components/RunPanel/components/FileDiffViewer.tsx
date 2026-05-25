@@ -3,15 +3,14 @@
  * @description 文件差异对比组件 - 显示文件修改前后的差异
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useCallback } from 'react';
 import { Button, Space, Typography, Tooltip } from 'antd';
 import {
-  CheckOutlined,
-  UndoOutlined,
   FileOutlined,
   ArrowRightOutlined,
   ArrowLeftOutlined,
 } from '@ant-design/icons';
+import '../styles/FileChangeStyles.css';
 
 const { Text } = Typography;
 
@@ -23,6 +22,14 @@ interface DiffLine {
   type: 'unchanged' | 'added' | 'removed' | 'modified';
 }
 
+interface DiffRow {
+  type: 'unchanged' | 'removed-only' | 'added-only' | 'modified';
+  oldLineNumber: number | null;
+  newLineNumber: number | null;
+  oldContent: string;
+  newContent: string;
+}
+
 interface FileDiffViewerProps {
   filePath: string;
   oldContent: string;
@@ -31,12 +38,12 @@ interface FileDiffViewerProps {
   onRevert?: () => void;
   onApplyLine?: (lineNumber: number, content: string) => void;
   onRevertLine?: (lineNumber: number, content: string) => void;
+  hideHeader?: boolean;
 }
 
 const computeDiff = (oldText: string, newText: string): DiffLine[] => {
-  const oldLines = oldText.split('\n');
-  const newLines = newText.split('\n');
-  const result: DiffLine[] = [];
+  const oldLines = oldText ? oldText.split('\n') : [];
+  const newLines = newText ? newText.split('\n') : [];
 
   const oldLen = oldLines.length;
   const newLen = newLines.length;
@@ -94,166 +101,68 @@ const computeDiff = (oldText: string, newText: string): DiffLine[] => {
   return diffLines;
 };
 
-const DiffLineComponent: React.FC<{
-  diffLine: DiffLine;
-  side: 'old' | 'new';
-  onApplyLine?: () => void;
-  onRevertLine?: () => void;
-}> = ({ diffLine, side, onApplyLine, onRevertLine }) => {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const isOld = side === 'old';
-  const lineNumber = isOld ? diffLine.oldLineNumber : diffLine.newLineNumber;
-  const content = isOld ? diffLine.oldContent : diffLine.newContent;
-  const isDiff = diffLine.type !== 'unchanged';
-
-  const getBgColor = () => {
-    if (diffLine.type === 'removed' && isOld) {
-      return 'rgba(255, 85, 85, 0.15)';
+const pairDiffLines = (diffLines: DiffLine[]): DiffRow[] => {
+  const rows: DiffRow[] = [];
+  let i = 0;
+  while (i < diffLines.length) {
+    if (diffLines[i].type === 'unchanged') {
+      rows.push({
+        type: 'unchanged',
+        oldLineNumber: diffLines[i].oldLineNumber,
+        newLineNumber: diffLines[i].newLineNumber,
+        oldContent: diffLines[i].oldContent,
+        newContent: diffLines[i].newContent,
+      });
+      i++;
+    } else {
+      const removedLines: DiffLine[] = [];
+      const addedLines: DiffLine[] = [];
+      while (i < diffLines.length && diffLines[i].type !== 'unchanged') {
+        if (diffLines[i].type === 'removed') {
+          removedLines.push(diffLines[i]);
+        } else if (diffLines[i].type === 'added') {
+          addedLines.push(diffLines[i]);
+        }
+        i++;
+      }
+      const maxLen = Math.max(removedLines.length, addedLines.length);
+      for (let j = 0; j < maxLen; j++) {
+        const removed = removedLines[j];
+        const added = addedLines[j];
+        if (removed && added) {
+          rows.push({
+            type: 'modified',
+            oldLineNumber: removed.oldLineNumber,
+            newLineNumber: added.newLineNumber,
+            oldContent: removed.oldContent,
+            newContent: added.newContent,
+          });
+        } else if (removed) {
+          rows.push({
+            type: 'removed-only',
+            oldLineNumber: removed.oldLineNumber,
+            newLineNumber: null,
+            oldContent: removed.oldContent,
+            newContent: '',
+          });
+        } else if (added) {
+          rows.push({
+            type: 'added-only',
+            oldLineNumber: null,
+            newLineNumber: added.newLineNumber,
+            oldContent: '',
+            newContent: added.newContent,
+          });
+        }
+      }
     }
-    if (diffLine.type === 'added' && !isOld) {
-      return 'rgba(82, 196, 26, 0.15)';
-    }
-    return 'transparent';
-  };
+  }
+  return rows;
+};
 
-  const getBorderColor = () => {
-    if (diffLine.type === 'removed' && isOld) {
-      return '2px solid rgba(255, 85, 85, 0.5)';
-    }
-    if (diffLine.type === 'added' && !isOld) {
-      return '2px solid rgba(82, 196, 26, 0.5)';
-    }
-    return 'none';
-  };
-
-  const getTextColor = () => {
-    if (diffLine.type === 'removed' && isOld) {
-      return '#ff4d4f';
-    }
-    if (diffLine.type === 'added' && !isOld) {
-      return '#52c41a';
-    }
-    return 'var(--text-100)';
-  };
-
-  const showActionButtons = isHovered && isDiff && (
-    (isOld && diffLine.type === 'removed') || 
-    (!isOld && diffLine.type === 'added')
-  );
-
-  return (
-    <div
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'stretch',
-        background: getBgColor(),
-        borderLeft: getBorderColor(),
-        minHeight: 22,
-        position: 'relative',
-      }}
-    >
-      <div
-        style={{
-          width: 50,
-          minWidth: 50,
-          padding: '2px 8px',
-          textAlign: 'right',
-          background: 'var(--bg-200)',
-          color: 'var(--text-300)',
-          fontSize: 12,
-          fontFamily: 'var(--font-family-code)',
-          userSelect: 'none',
-          borderRight: '1px solid var(--bg-300)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-        }}
-      >
-        {lineNumber || ''}
-      </div>
-      <div
-        style={{
-          flex: 1,
-          padding: '2px 12px',
-          fontFamily: 'var(--font-family-code)',
-          fontSize: 13,
-          lineHeight: 1.6,
-          whiteSpace: 'pre',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          color: getTextColor(),
-          position: 'relative',
-        }}
-      >
-        {diffLine.type === 'removed' && isOld && (
-          <span style={{ marginRight: 8, color: '#ff4d4f' }}>-</span>
-        )}
-        {diffLine.type === 'added' && !isOld && (
-          <span style={{ marginRight: 8, color: '#52c41a' }}>+</span>
-        )}
-        {content || ' '}
-        
-        {showActionButtons && (
-          <div
-            style={{
-              position: 'absolute',
-              right: 8,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              display: 'flex',
-              gap: 4,
-              background: 'var(--bg-100)',
-              borderRadius: 4,
-              padding: '2px 4px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
-            }}
-          >
-            {isOld && diffLine.type === 'removed' && onRevertLine && (
-              <Tooltip title="撤销此行删除（恢复此行）">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<UndoOutlined />}
-                  onClick={onRevertLine}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#ff4d4f',
-                  }}
-                />
-              </Tooltip>
-            )}
-            {!isOld && diffLine.type === 'added' && onApplyLine && (
-              <Tooltip title="应用此行新增">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CheckOutlined />}
-                  onClick={onApplyLine}
-                  style={{
-                    width: 22,
-                    height: 22,
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#52c41a',
-                  }}
-                />
-              </Tooltip>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+const calcNumWidth = (lineCount: number): number => {
+  const digits = Math.max(String(Math.max(lineCount, 1)).length, 2);
+  return digits * 9 + 10;
 };
 
 const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
@@ -264,8 +173,10 @@ const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
   onRevert,
   onApplyLine,
   onRevertLine,
+  hideHeader,
 }) => {
   const diffLines = useMemo(() => computeDiff(oldContent, newContent), [oldContent, newContent]);
+  const diffRows = useMemo(() => pairDiffLines(diffLines), [diffLines]);
 
   const stats = useMemo(() => {
     const added = diffLines.filter(l => l.type === 'added').length;
@@ -285,167 +196,162 @@ const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
     }
   };
 
+  const oldLineCount = oldContent ? oldContent.split('\n').length : 0;
+  const newLineCount = newContent ? newContent.split('\n').length : 0;
+  const oldNumWidth = calcNumWidth(oldLineCount);
+  const newNumWidth = calcNumWidth(newLineCount);
+
+  const leftContentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const rightContentRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const isSyncingLeft = useRef(false);
+  const isSyncingRight = useRef(false);
+
+  const syncLeftContentScroll = useCallback((sourceIndex: number, scrollLeft: number) => {
+    if (isSyncingLeft.current) return;
+    isSyncingLeft.current = true;
+    leftContentRefs.current.forEach((el, i) => {
+      if (i !== sourceIndex && el) {
+        el.scrollLeft = scrollLeft;
+      }
+    });
+    requestAnimationFrame(() => { isSyncingLeft.current = false; });
+  }, []);
+
+  const syncRightContentScroll = useCallback((sourceIndex: number, scrollLeft: number) => {
+    if (isSyncingRight.current) return;
+    isSyncingRight.current = true;
+    rightContentRefs.current.forEach((el, i) => {
+      if (i !== sourceIndex && el) {
+        el.scrollLeft = scrollLeft;
+      }
+    });
+    requestAnimationFrame(() => { isSyncingRight.current = false; });
+  }, []);
+
   return (
-    <div
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--bg-100)',
-        borderRadius: 8,
-        overflow: 'hidden',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '8px 12px',
-          borderBottom: '1px solid var(--bg-300)',
-          background: 'var(--bg-200)',
-        }}
-      >
-        <Space size={8}>
-          <FileOutlined style={{ color: 'var(--primary-100)' }} />
-          <Text strong style={{ fontSize: 13 }}>
+    <div className="sc-diff-viewer">
+      {!hideHeader && (
+      <div className="sc-diff-header">
+        <div className="sc-diff-header-left">
+          <FileOutlined className="sc-diff-header-file-icon" />
+          <Text className="sc-diff-header-path">
             {filePath}
           </Text>
-          {stats.added > 0 && (
-            <Text style={{ fontSize: 12, color: '#52c41a' }}>
-              +{stats.added}
-            </Text>
-          )}
-          {stats.removed > 0 && (
-            <Text style={{ fontSize: 12, color: '#ff4d4f' }}>
-              -{stats.removed}
-            </Text>
-          )}
-        </Space>
-        <Space size={4}>
-          <Tooltip title="一键应用所有更改（覆盖旧内容）">
-            <Button
-              type="primary"
-              size="small"
-              icon={<ArrowRightOutlined />}
-              onClick={handleApplyAll}
-              disabled={!onApply}
-              style={{
-                borderRadius: 4,
-                fontSize: 12,
-                height: 26,
-              }}
-            >
-              应用全部
-            </Button>
-          </Tooltip>
-          <Tooltip title="一键撤销所有更改（恢复旧内容）">
-            <Button
-              size="small"
-              icon={<ArrowLeftOutlined />}
-              onClick={handleRevertAll}
-              disabled={!onRevert}
-              style={{
-                borderRadius: 4,
-                fontSize: 12,
-                height: 26,
-              }}
-            >
-              撤销全部
-            </Button>
-          </Tooltip>
-        </Space>
+          <div className="sc-diff-header-stats">
+            <span className="sc-diff-stat added">+{stats.added}</span>
+            <span className="sc-diff-stat removed">-{stats.removed}</span>
+          </div>
+        </div>
+        <div className="sc-diff-actions">
+          <Space size={4}>
+            <Tooltip title="一键应用所有更改（覆盖旧内容）">
+              <Button
+                type="primary"
+                size="small"
+                icon={<ArrowRightOutlined />}
+                onClick={handleApplyAll}
+                disabled={!onApply}
+                style={{
+                  borderRadius: 4,
+                  fontSize: 12,
+                  height: 26,
+                }}
+              >
+                应用全部
+              </Button>
+            </Tooltip>
+            <Tooltip title="一键撤销所有更改（恢复旧内容）">
+              <Button
+                size="small"
+                icon={<ArrowLeftOutlined />}
+                onClick={handleRevertAll}
+                disabled={!onRevert}
+                style={{
+                  borderRadius: 4,
+                  fontSize: 12,
+                  height: 26,
+                }}
+              >
+                撤销全部
+              </Button>
+            </Tooltip>
+          </Space>
+        </div>
+      </div>
+      )}
+
+      <div className="sc-diff-col-header">
+        <div className="sc-diff-col-header-spacer" style={{ width: oldNumWidth, minWidth: oldNumWidth }} />
+        <div className="sc-diff-col-header-cell">
+          <Text className="sc-diff-col-header-label">原始内容</Text>
+          <Text className="sc-diff-col-header-count">({oldLineCount} 行)</Text>
+        </div>
+        <div className="sc-diff-col-header-spacer" style={{ width: newNumWidth, minWidth: newNumWidth }} />
+        <div className="sc-diff-col-header-cell">
+          <Text className="sc-diff-col-header-label">新内容</Text>
+          <Text className="sc-diff-col-header-count">({newLineCount} 行)</Text>
+        </div>
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--bg-300)',
-            background: 'var(--bg-200)',
-            position: 'sticky',
-            top: 0,
-            zIndex: 10,
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              padding: '6px 12px',
-              borderRight: '1px solid var(--bg-300)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <Text strong style={{ fontSize: 12, color: 'var(--text-200)' }}>
-              原始内容
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              ({oldContent.split('\n').length} 行)
-            </Text>
-          </div>
-          <div
-            style={{
-              flex: 1,
-              padding: '6px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <Text strong style={{ fontSize: 12, color: 'var(--text-200)' }}>
-              新内容
-            </Text>
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              ({newContent.split('\n').length} 行)
-            </Text>
-          </div>
-        </div>
+      <div className="sc-diff-body">
+        {diffRows.map((row, index) => {
+          const oldNumClass = [
+            row.type === 'removed-only' ? 'removed' : '',
+            row.type === 'modified' ? 'modified-old' : '',
+          ].filter(Boolean).join(' ');
 
-        <div style={{ display: 'flex', flex: 1 }}>
-          <div
-            style={{
-              flex: 1,
-              borderRight: '1px solid var(--bg-300)',
-              overflow: 'hidden',
-            }}
-          >
-            {diffLines.map((line, index) => (
-              <DiffLineComponent
-                key={`old-${index}`}
-                diffLine={line}
-                side="old"
-                onRevertLine={
-                  line.type === 'removed' && onRevertLine
-                    ? () => onRevertLine(line.oldLineNumber!, line.oldContent)
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-          <div style={{ flex: 1, overflow: 'hidden' }}>
-            {diffLines.map((line, index) => (
-              <DiffLineComponent
-                key={`new-${index}`}
-                diffLine={line}
-                side="new"
-                onApplyLine={
-                  line.type === 'added' && onApplyLine
-                    ? () => onApplyLine(line.newLineNumber!, line.newContent)
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </div>
+          const oldContentClass = [
+            row.type === 'removed-only' ? 'removed' : '',
+            row.type === 'modified' ? 'modified-old' : '',
+          ].filter(Boolean).join(' ');
+
+          const newNumClass = [
+            row.type === 'added-only' ? 'added' : '',
+            row.type === 'modified' ? 'modified-new' : '',
+          ].filter(Boolean).join(' ');
+
+          const newContentClass = [
+            row.type === 'added-only' ? 'added' : '',
+            row.type === 'modified' ? 'modified-new' : '',
+          ].filter(Boolean).join(' ');
+
+          return (
+            <div key={index} className="sc-diff-row">
+              <div
+                className={`sc-diff-line-num ${oldNumClass}`}
+                style={{ width: oldNumWidth, minWidth: oldNumWidth }}
+              >
+                {row.oldLineNumber || ''}
+              </div>
+              <div
+                className={`sc-diff-line-content ${oldContentClass}`}
+                ref={(el) => {
+                  if (el) leftContentRefs.current.set(index, el);
+                  else leftContentRefs.current.delete(index);
+                }}
+                onScroll={(e) => syncLeftContentScroll(index, e.currentTarget.scrollLeft)}
+              >
+                {row.oldContent || '\u00A0'}
+              </div>
+              <div
+                className={`sc-diff-line-num ${newNumClass}`}
+                style={{ width: newNumWidth, minWidth: newNumWidth }}
+              >
+                {row.newLineNumber || ''}
+              </div>
+              <div
+                className={`sc-diff-line-content ${newContentClass}`}
+                ref={(el) => {
+                  if (el) rightContentRefs.current.set(index, el);
+                  else rightContentRefs.current.delete(index);
+                }}
+                onScroll={(e) => syncRightContentScroll(index, e.currentTarget.scrollLeft)}
+              >
+                {row.newContent || '\u00A0'}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

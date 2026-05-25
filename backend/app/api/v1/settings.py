@@ -35,11 +35,11 @@ from pydantic import BaseModel
 from typing import List
 import logging
 
-from app.utils.timezone_utils import TimezoneManager
+from app.utils.timezone_utils import TimezoneManager, format_iso
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/settings", tags=["settings"])
+router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 
 class TimezoneSetting(BaseModel):
@@ -121,20 +121,19 @@ async def list_timezones():
 
 @router.get("/time")
 async def get_current_time():
-    """获取当前时间信息。"""
     try:
-        from datetime import datetime
-        from app.utils.timezone_utils import utc_now
-        
-        now_utc = utc_now()
-        now_user = TimezoneManager.to_user_timezone(now_utc)
-        
+        from datetime import datetime as dt, timezone
+        from zoneinfo import ZoneInfo
+
+        now_user = TimezoneManager.now()
+        now_utc = now_user.astimezone(timezone.utc)
+
         return {
-            "utc_time": now_utc.isoformat(),
-            "user_time": now_user.isoformat(),
+            "utc_time": format_iso(now_utc),
+            "user_time": format_iso(now_user),
             "user_timezone": TimezoneManager.get_user_timezone(),
-            "formatted_utc": TimezoneManager.format_for_user(now_utc, "%Y-%m-%d %H:%M:%S"),
-            "formatted_user": TimezoneManager.format_for_user(now_user, "%Y-%m-%d %H:%M:%S"),
+            "formatted_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
+            "formatted_user": now_user.strftime("%Y-%m-%d %H:%M:%S"),
         }
     except Exception as e:
         logger.error(f"Failed to get current time: {e}")

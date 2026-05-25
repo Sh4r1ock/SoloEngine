@@ -30,7 +30,7 @@ SoloEngine : LLM工厂模块，统一创建各类模型实例
 状态: ✅ 完整实现
 """
 
-from typing import Literal, Dict, Any, Type
+from typing import Dict, Any, Type
 
 from .model_base import ChatModelBase
 from .openai_model import OpenAIChatModel
@@ -275,7 +275,12 @@ class LLMFactory:
             provider_kwargs["api_key"] = api_key
 
         elif provider_lower == LLMProvider.OLLAMA:
-            provider_kwargs["base_url"] = kwargs.get("base_url", "http://localhost:11434")
+            provider_kwargs["base_url"] = kwargs.get("base_url")
+            if not provider_kwargs["base_url"]:
+                raise ValueError(
+                    "Ollama base_url is required. "
+                    "Please configure the base URL in Settings > LLM Configuration."
+                )
 
         elif provider_lower in [LLMProvider.DEEPSEEK, LLMProvider.ZHIPU]:
             provider_kwargs["api_key"] = api_key

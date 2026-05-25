@@ -6,7 +6,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { Layout, Tree, Input, Button, message, Modal, Empty, Typography, Spin, Dropdown, Tooltip } from 'antd';
+import { Layout, Tree, Input, Button, App, Modal, Empty, Typography, Spin, Dropdown, Tooltip } from 'antd';
 import type { MenuProps, TreeProps } from 'antd';
 import {
   FileOutlined,
@@ -25,6 +25,7 @@ import {
   RedoOutlined,
 } from '@ant-design/icons';
 import { skillsApi } from '../../services/skillsApi';
+import MarkdownEditor from '../../components/RunPanel/editors/MarkdownEditor';
 
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
@@ -56,6 +57,7 @@ interface HistoryState {
 const MAX_HISTORY_SIZE = 100;
 
 const SkillsEditorPage: React.FC = () => {
+  const { message } = App.useApp();
   const { packageId } = useParams<{ packageId: string }>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,6 +80,50 @@ const SkillsEditorPage: React.FC = () => {
   const [history, setHistory] = useState<HistoryState[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const isUndoRedoAction = useRef(false);
+
+  // 侧边栏宽度拖拽相关状态
+  const [siderWidth, setSiderWidth] = useState(280);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(280);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    setIsResizing(true);
+    resizeStartX.current = e.clientX;
+    resizeStartWidth.current = siderWidth;
+    e.preventDefault();
+  }, [siderWidth]);
+
+  const handleResizeMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    const delta = e.clientX - resizeStartX.current;
+    const newWidth = Math.max(200, Math.min(500, resizeStartWidth.current + delta));
+    setSiderWidth(newWidth);
+  }, [isResizing]);
+
+  const handleResizeEnd = useCallback(() => {
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleResizeMove);
+      document.addEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+    return () => {
+      document.removeEventListener('mousemove', handleResizeMove);
+      document.removeEventListener('mouseup', handleResizeEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
 
   const loadPackageData = useCallback(async () => {
     if (!packageId) return;
@@ -109,7 +155,7 @@ const SkillsEditorPage: React.FC = () => {
     }
   }, [packageId]);
 
-  const getAllFolderKeys = (nodes: FileNode[], parentKey: string = ''): string[] => {
+  const getAllFolderKeys = (nodes: FileNode[], _parentKey: string = ''): string[] => {
     const keys: string[] = [];
     for (const node of nodes) {
       if (!node.isLeaf) {
@@ -362,13 +408,17 @@ const SkillsEditorPage: React.FC = () => {
           menu={{ items: getContextMenuItems(node) }}
           trigger={['contextMenu']}
         >
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
             {node.isLeaf ? (
-              node.key.endsWith('.md') ? <FileMarkdownOutlined style={{ color: '#1890ff' }} /> : <FileTextOutlined />
+              node.key.endsWith('.md') ? <FileMarkdownOutlined style={{ color: '#1890ff', flexShrink: 0 }} /> : <FileTextOutlined style={{ flexShrink: 0 }} />
             ) : (
-              <FolderOutlined style={{ color: '#faad14' }} />
+              <FolderOutlined style={{ color: '#faad14', flexShrink: 0 }} />
             )}
-            <span>{node.title}</span>
+            <span style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>{node.title}</span>
           </span>
         </Dropdown>
       ),
@@ -473,12 +523,14 @@ const SkillsEditorPage: React.FC = () => {
         </Button>
       </div>
       
-      <Layout>
+      <Layout style={{ flex: 1, overflow: 'hidden' }}>
         <Sider
-          width={280}
+          width={siderWidth}
           style={{
             background: '#fff',
             borderRight: '1px solid #e8e8e8',
+            overflow: 'hidden',
+            position: 'relative',
           }}
         >
           <div style={{ 
@@ -486,37 +538,35 @@ const SkillsEditorPage: React.FC = () => {
             display: 'flex', 
             flexDirection: 'column',
           }}>
-            <div style={{ padding: '12px', borderBottom: '1px solid #e8e8e8', flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <Text strong style={{ fontSize: 13 }}>资源管理器</Text>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<FileAddOutlined />}
-                    onClick={() => { 
-                      setNewItemType('file'); 
-                      setNewItemParent('');
-                      setNewItemModalVisible(true); 
-                    }}
-                    title="新建文件"
-                  />
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<FolderAddOutlined />}
-                    onClick={() => { 
-                      setNewItemType('folder'); 
-                      setNewItemParent('');
-                      setNewItemModalVisible(true); 
-                    }}
-                    title="新建文件夹"
-                  />
-                </div>
+            <div style={{ padding: '0 12px', borderBottom: '1px solid #e8e8e8', flexShrink: 0, height: 45, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text strong style={{ fontSize: 13 }}>资源管理器</Text>
+              <div style={{ display: 'flex', gap: 4 }}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<FileAddOutlined />}
+                  onClick={() => { 
+                    setNewItemType('file'); 
+                    setNewItemParent('');
+                    setNewItemModalVisible(true); 
+                  }}
+                  title="新建文件"
+                />
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<FolderAddOutlined />}
+                  onClick={() => { 
+                    setNewItemType('folder'); 
+                    setNewItemParent('');
+                    setNewItemModalVisible(true); 
+                  }}
+                  title="新建文件夹"
+                />
               </div>
             </div>
             
-            <div style={{ padding: '8px', overflow: 'auto', flex: 1 }}>
+            <div style={{ padding: '12px', overflow: 'auto', flex: 1 }}>
             {fileTree.length > 0 ? (
               <Tree
                 showLine
@@ -532,18 +582,55 @@ const SkillsEditorPage: React.FC = () => {
             )}
             </div>
           </div>
+          {/* 拖拽调整宽度的边框 */}
+          <div
+            onMouseDown={handleResizeStart}
+            style={{
+              position: 'absolute',
+              right: -3,
+              top: 0,
+              bottom: 0,
+              width: 6,
+              cursor: 'col-resize',
+              background: 'transparent',
+              transition: 'background 0.2s',
+              zIndex: 5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+            onMouseEnter={(e) => {
+              if (!isResizing) {
+                e.currentTarget.style.background = 'var(--primary-300, #dedeff)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isResizing) {
+                e.currentTarget.style.background = 'transparent';
+              }
+            }}
+          >
+            <div style={{
+              width: 2,
+              height: 40,
+              background: isResizing ? 'var(--primary-100, #3F51B5)' : 'var(--border-color-lighter, #e2e8f0)',
+              borderRadius: 2,
+              transition: 'background 0.2s',
+            }} />
+          </div>
         </Sider>
         
         <Content style={{ display: 'flex', flexDirection: 'column', background: '#fff' }}>
           {selectedFile ? (
             <>
               <div style={{
-                padding: '8px 16px',
+                padding: '0 16px',
                 borderBottom: '1px solid #e8e8e8',
                 background: '#fafafa',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                height: 45,
               }}>
                 <Text style={{ fontSize: 13 }}>
                   <FileOutlined style={{ marginRight: 8 }} />
@@ -567,25 +654,46 @@ const SkillsEditorPage: React.FC = () => {
                 </Dropdown>
               </div>
               
-              <TextArea
-                ref={textAreaRef}
-                value={fileContent}
-                onChange={(e) => handleContentChange(e.target.value)}
-                style={{
-                  flex: 1,
-                  border: 'none',
-                  borderRadius: 0,
-                  fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  padding: 16,
-                  resize: 'none',
-                  backgroundColor: '#ffffff',
-                  color: '#333',
-                }}
-                placeholder={selectedFile.endsWith('.md') ? "在此输入Markdown内容..." : "在此输入代码..."}
-                spellCheck={false}
-              />
+              {selectedFile.endsWith('.md') ? (
+                <MarkdownEditor
+                  instanceId={`skill-editor-${selectedFile}`}
+                  tab={{
+                    id: selectedFile,
+                    name: selectedFile.split('/').pop() || selectedFile,
+                    path: selectedFile,
+                    content: fileContent,
+                    isModified: hasUnsavedChanges,
+                    isLoading: false,
+                    isBinary: false,
+                    hasExternalChange: false,
+                    type: 'markdown',
+                  }}
+                  canEdit={true}
+                  onContentChange={(_tabId, content) => handleContentChange(content)}
+                  onSave={(_tab) => handleSave(false)}
+                  theme="light"
+                />
+              ) : (
+                <TextArea
+                  ref={textAreaRef}
+                  value={fileContent}
+                  onChange={(e) => handleContentChange(e.target.value)}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    borderRadius: 0,
+                    fontFamily: '"Fira Code", "JetBrains Mono", "Consolas", monospace',
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    padding: 16,
+                    resize: 'none',
+                    backgroundColor: '#ffffff',
+                    color: '#333',
+                  }}
+                  placeholder="在此输入代码..."
+                  spellCheck={false}
+                />
+              )}
             </>
           ) : (
             <div style={{

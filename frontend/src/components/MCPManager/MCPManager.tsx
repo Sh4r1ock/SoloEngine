@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, message, Empty, Spin, Modal } from 'antd';
+import { Typography, App, Empty, Spin, Modal } from 'antd';
 import { ApiOutlined } from '@ant-design/icons';
 import { mcpApi, MCPServer } from '../../services/mcpApi';
 import MCPAddServerModal from './MCPAddServerModal';
@@ -11,6 +11,7 @@ import MCPTestRunModal from './MCPTestRunModal';
 const { Text } = Typography;
 
 const MCPManager: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [filteredServers, setFilteredServers] = useState<MCPServer[]>([]);
@@ -135,7 +136,7 @@ const MCPManager: React.FC = () => {
   }, [searchQuery, selectedTags, servers]);
 
   return (
-    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100vh' }}>
+    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100%' }}>
       <PageHeader
         icon={<ApiOutlined />}
         title="MCP 工具"
@@ -205,7 +206,7 @@ const MCPManager: React.FC = () => {
                 showSwitch={true}
                 meta1={{ 
                   label: '超时', 
-                  value: `${server.timeout || server.stdio_config?.timeout || 30}s` 
+                  value: `${server.timeout || 30}s` 
                 }}
                 meta2={{ 
                   label: '传输', 

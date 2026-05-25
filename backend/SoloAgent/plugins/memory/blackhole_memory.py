@@ -61,7 +61,6 @@ class BlackholeMemoryPlugin(IMemory):
         示例:
             >>> await memory.add(msg)  # 无操作
         """
-        pass
 
     async def retrieve(self, query: str, limit: int = 5) -> List[Msg]:
         """
@@ -87,7 +86,6 @@ class BlackholeMemoryPlugin(IMemory):
         示例:
             >>> await memory.clear()  # 无操作
         """
-        pass
 
     async def get_memory_state(self) -> dict:
         """
@@ -112,4 +110,3 @@ class BlackholeMemoryPlugin(IMemory):
         示例:
             >>> await memory.set_memory_state({})  # 无操作
         """
-        pass

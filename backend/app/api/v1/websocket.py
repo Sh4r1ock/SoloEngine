@@ -41,18 +41,14 @@ WebSocket API 端点模块。
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from typing import Dict, Any
-import json
-import uuid
 import logging
 from SoloAgent.solo_agent.compiler import (
     AgenticFlowCompiler, 
-    FlowRunner, 
-    CompiledFlowFactory,
+    CompiledFlowFactory, 
     ExecutionEvent
 )
 from app.core.auth import auth_service
-from app.core.database import db_manager, get_db_context_async
-from app.core.agenticflow_storage import AgenticFlowStorage
+from app.core.database import get_db_context, AgenticFlowModel
 
 logger = logging.getLogger(__name__)
 
@@ -188,8 +184,16 @@ async def execute_workflow(task_id: str, project_id: str, user_input: str, user_
     """
     执行工作流。
     """
-    storage = AgenticFlowStorage(user_id)
-    canvas_data = storage.load_canvas(project_id)
+    import json as json_module
+    
+    canvas_data = None
+    with get_db_context() as db:
+        flow = db.query(AgenticFlowModel).filter(AgenticFlowModel.id == project_id).first()
+        if flow and flow.canvas_data:
+            try:
+                canvas_data = json_module.loads(flow.canvas_data)
+            except (json_module.JSONDecodeError, TypeError):
+                pass
     
     if not canvas_data:
         await manager.send_event(task_id, {
@@ -221,30 +225,7 @@ async def execute_canvas(
     执行画布工作流，支持流式事件推送。
     """
     def event_callback(event: ExecutionEvent):
-        event_data = {
-            "type": event.event_type,
-            "data": {
-                "agent_id": event.agent_id,
-                "agent_name": event.agent_name,
-                "agent_type": event.metadata.get("agent_type") if event.metadata else None,
-                "content": event.content,
-                "tool_name": event.tool_name,
-                "tool_args": event.tool_args,
-                "tool_result": event.tool_result,
-                "skill_name": event.skill_name,
-                "skill_args": event.skill_args,
-                "skill_result": event.skill_result,
-                "mcp_name": event.mcp_name,
-                "mcp_args": event.mcp_args,
-                "mcp_result": event.mcp_result,
-                "subagent_id": event.subagent_id,
-                "subagent_name": event.subagent_name,
-                "status": event.status,
-                "error": event.error,
-                "timestamp": event.timestamp,
-                "metadata": event.metadata
-            }
-        }
+        event_data = event.to_dict()
         
         import asyncio
         try:

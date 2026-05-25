@@ -37,23 +37,23 @@ AgenticFlow编译器机制-flow_compiler.py: AgenticFlow编译器，将画布JSO
 - compiled = await compiler.compile(canvas_config)
 - async for event in compiled.run(user_input): process(event)
 """
-import os
-import uuid
 import logging
 import time
 import asyncio
+import hashlib
 import json
 from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
 from collections import OrderedDict
 from threading import Lock
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 
 from ..config import SoloAgentConfig
 from ..agent import SoloAgent
 from app.core.config import settings
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SoloEngine")
 
 
 @dataclass
@@ -63,7 +63,7 @@ class ExecutionEvent:
     
     职责:
     - 封装流程执行过程中的各类事件
-    - 支持多种事件类型：消息、工具调用、Skill调用、MCP调用等
+    - 支持多种事件类型：消息、工具调用、Skill调用、MCP调用、文件变更等
     - 提供时间戳和元数据支持
     
     属性:
@@ -77,6 +77,7 @@ class ExecutionEvent:
         tool_result (Optional[str]): 工具结果
         timestamp (str): 时间戳
         metadata (Dict[str, Any]): 元数据
+        file_changes (Optional[List[Dict]]): 文件变更列表
     """
     event_type: str
     agent_id: Optional[str] = None
@@ -85,20 +86,39 @@ class ExecutionEvent:
     content: Optional[str] = None
     message: Optional[Dict[str, Any]] = None
     tool_name: Optional[str] = None
+    tool_type: Optional[str] = None
     tool_args: Optional[Dict[str, Any]] = None
-    tool_result: Optional[str] = None
-    skill_name: Optional[str] = None
-    skill_args: Optional[Dict[str, Any]] = None
-    skill_result: Optional[str] = None
-    mcp_name: Optional[str] = None
-    mcp_args: Optional[Dict[str, Any]] = None
-    mcp_result: Optional[str] = None
+    tool_result: Optional[Any] = None
+    tool_call_id: Optional[str] = None
     subagent_id: Optional[str] = None
     subagent_name: Optional[str] = None
     status: Optional[str] = None
     error: Optional[str] = None
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    file_changes: Optional[List[Dict]] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "type": self.event_type,
+            "data": {
+                "agent_id": self.agent_id,
+                "agent_name": self.agent_name,
+                "agent_type": self.metadata.get("agent_type") if self.metadata else None,
+                "content": self.content,
+                "tool_name": self.tool_name,
+                "tool_type": self.tool_type,
+                "tool_args": self.tool_args,
+                "tool_result": self.tool_result,
+                "tool_call_id": self.tool_call_id,
+                "subagent_id": self.subagent_id,
+                "subagent_name": self.subagent_name,
+                "status": self.status,
+                "error": self.error,
+                "timestamp": self.timestamp,
+                "metadata": self.metadata,
+            },
+        }
 
 
 class CompiledFlow:
@@ -110,6 +130,7 @@ class CompiledFlow:
     - 协调会话生命周期
     - Host层统一管理MCP Client
     - 事件管理和流式输出
+    - 文件变更追踪与管理
     
     属性:
         agents (Dict[str, SoloAgent]): Agent字典
@@ -156,13 +177,18 @@ class CompiledFlow:
         
         # Host层MCP Client管理
         self._mcp_client_manager = mcp_client_manager
-        
+
+        # 执行计时与token统计
         self._start_time: Optional[datetime] = None
         self._token_usage: Dict[str, int] = {}
+        self._token_usage_recorded: set = set()  # 新增：记录已计算的 message_id，防止重复计算
         self._event_callback: Optional[Callable[[ExecutionEvent], None]] = None
         self._stream_callback: Optional[Callable[[str], None]] = None
         self._agent_memories: Dict[str, List[Dict]] = {}
         self._created_time: float = time.time()
+        self._is_new: bool = True
+        self._active_models: Dict[str, Any] = {}
+        self._cancel_event: asyncio.Event = asyncio.Event()
         
         logger.info(
             f"[CompiledFlow] Initialized with {len(agents)} agents, "
@@ -178,8 +204,63 @@ class CompiledFlow:
         self._stream_callback = callback
     
     def set_agent_memories(self, memories: Dict[str, List[Dict]]) -> None:
-        """设置按 agent_id 分组的记忆（由 AgenticFlow实例层调用）"""
         self._agent_memories = memories
+
+    def _calc_duration_ms(self, end_time=None):
+        if not self._start_time:
+            return 0
+        end = end_time or datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        return int((end - self._start_time).total_seconds() * 1000)
+
+    def _build_result_dict(self, status, agent_id=None, agent_name=None,
+                           output=None, error=None, tokens=None, duration_ms=0,
+                           **extra_fields):
+        result = {
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "status": status,
+            "output": output or error or "",
+            "tokens": tokens,
+            "token_usage": self._token_usage if self._token_usage else None,
+            "duration_ms": duration_ms,
+        }
+        if error:
+            result["error"] = error
+        result.update(extra_fields)
+        return result
+
+    def _accumulate_token_usage(self, tokens, message_id=None):
+        if message_id and message_id in self._token_usage_recorded:
+            return
+        if tokens and tokens.get("prompt_tokens") is not None:
+            self._token_usage["prompt_tokens"] = self._token_usage.get("prompt_tokens", 0) + (tokens.get("prompt_tokens") or 0)
+            self._token_usage["completion_tokens"] = self._token_usage.get("completion_tokens", 0) + (tokens.get("completion_tokens") or 0)
+            self._token_usage["total_tokens"] = self._token_usage.get("total_tokens", 0) + (tokens.get("total_tokens") or 0)
+            self._token_usage["duration_ms"] = self._token_usage.get("duration_ms", 0) + (tokens.get("duration_ms") or 0)
+            if message_id:
+                self._token_usage_recorded.add(message_id)
+
+    def _finalize_result(self, result):
+        result["status"] = result.get("status", "completed")
+        result["duration_ms"] = self._calc_duration_ms()
+        result["token_usage"] = self._token_usage if self._token_usage else None
+
+    async def close(self):
+        """关闭 CompiledFlow 并清理资源（MCP Client 等）"""
+        if self._mcp_client_manager:
+            await self._mcp_client_manager.close_all()
+        logger.info(f"[CompiledFlow] Closed and cleaned up resources")
+    
+    async def cancel(self):
+        """取消当前执行，关闭所有活跃的 HTTP 连接"""
+        if self._cancel_event:
+            self._cancel_event.set()
+        for agent_id, model in list(self._active_models.items()):
+            try:
+                await model.cancel()
+            except Exception as e:
+                logger.warning(f"[CompiledFlow] Error cancelling model for agent {agent_id}: {e}")
+        logger.info(f"[CompiledFlow] Cancel completed, cleared {len(self._active_models)} active models")
     
     def _emit_event(self, event: ExecutionEvent):
         """发送执行事件"""
@@ -227,59 +308,33 @@ class CompiledFlow:
             Dict[str, Any]: 运行结果
         """
         context = context or {}
-        self._start_time = datetime.now()
+        self._start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        self._token_usage = {}
+        self._token_usage_recorded = set()
         
         logger.info(f"[CompiledFlow.run] Starting run with session_id={self.session_id}, user_id={self.user_id}, run_project_id={self.run_project_id}, agentic_flow_id={self.agentic_flow_id}")
-        
-        from app.core.database import db_manager, get_db_context
-        
-        self._emit_event(ExecutionEvent(
-            event_type="execution_start",
-            content=input_message,
-            metadata={"agentic_flow_id": self.agentic_flow_id, "user_id": self.user_id, "session_id": self.session_id, "run_project_id": self.run_project_id}
-        ))
-        
+
         try:
-            with get_db_context() as db:
-                result = await self._run_internal(input_message, db, context, cancel_event)
-                return result
+            result = await self._run_internal(input_message, context, cancel_event)
+            return result
         except Exception as e:
             logger.error(f"[CompiledFlow.run] Execution failed: {e}", exc_info=True)
-            # 返回错误结果而不是None
-            return {
-                "session_id": self.session_id,
-                "agentic_flow_id": self.agentic_flow_id,
-                "run_project_id": self.run_project_id,
-                "status": "failed",
-                "error": str(e),
-                "output": f"执行失败: {str(e)}"
-            }
-        finally:
-            # 确保关闭所有MCP Client连接
-            if self._mcp_client_manager:
-                await self._mcp_client_manager.close_all()
+            return self._build_result_dict(
+                "failed", error=str(e), output=f"执行失败: {str(e)}",
+                session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
+                run_project_id=self.run_project_id,
+            )
     
-    async def _run_internal(self, input_message: str, db, context: Dict[str, Any], cancel_event: asyncio.Event = None) -> Dict[str, Any]:
-        """内部运行逻辑"""
-        from app.core.database import db_manager
-        
+    async def _run_internal(self, input_message: str, context: Dict[str, Any], cancel_event: asyncio.Event = None) -> Dict[str, Any]:
         orchestrator = self.get_orchestrator()
         
         if orchestrator is None:
             if len(self.agents) == 1:
                 agent = list(self.agents.values())[0]
-                result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
+                result = await self._execute_agent(agent, input_message, context, cancel_event=cancel_event)
                 
-                if self.session_id and result:
-                    end_time = datetime.now()
-                    duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
-                    db_manager.update_session(
-                        db, self.session_id,
-                        status="completed",
-                        duration_ms=duration_ms,
-                        token_usage=self._token_usage if self._token_usage else None,
-                        completed_at=datetime.now(timezone.utc)
-                    )
+                if isinstance(result, dict):
+                    self._finalize_result(result)
                 
                 return result
             else:
@@ -288,77 +343,122 @@ class CompiledFlow:
                     entry_nodes = list(self.agents.keys())
                 
                 results = {}
+                has_failed = False
+                error_messages = []
                 for entry_id in entry_nodes:
                     agent = self.agents.get(entry_id)
                     if agent:
-                        result = await self._execute_agent(agent, input_message, db, context, cancel_event=cancel_event)
+                        result = await self._execute_agent(agent, input_message, context, cancel_event=cancel_event)
                         results[entry_id] = result
+                        if isinstance(result, dict) and result.get("status") == "failed":
+                            has_failed = True
+                            if result.get("error"):
+                                error_messages.append(result["error"])
                 
                 output = self._aggregate_results(results)
                 
-                end_time = datetime.now()
-                duration_ms = int((end_time - self._start_time).total_seconds() * 1000)
-                
-                if self.session_id:
-                    db_manager.update_session(
-                        db, self.session_id,
-                        status="completed",
-                        duration_ms=duration_ms,
-                        token_usage=self._token_usage if self._token_usage else None,
-                        completed_at=datetime.now(timezone.utc)
+                if has_failed:
+                    combined_error = "; ".join(error_messages) if error_messages else "部分Agent执行失败"
+                    self._emit_event(ExecutionEvent(
+                        event_type="agent_error",
+                        content=output,
+                        error=combined_error,
+                        metadata={"duration_ms": self._calc_duration_ms()}
+                    ))
+                    return self._build_result_dict(
+                        "failed", output=output, error=combined_error,
+                        session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
+                        run_project_id=self.run_project_id, node_results=results,
+                        duration_ms=self._calc_duration_ms(),
                     )
                 
                 self._emit_event(ExecutionEvent(
                     event_type="execution_complete",
                     content=output,
-                    metadata={"duration_ms": duration_ms}
+                    metadata={"duration_ms": self._calc_duration_ms()}
                 ))
                 
-                return {
-                    "session_id": self.session_id,
-                    "agentic_flow_id": self.agentic_flow_id,
-                    "run_project_id": self.run_project_id,
-                        "status": "completed",
-                        "output": output,
-                        "node_results": results,
-                        "duration_ms": duration_ms,
-                        "token_usage": self._token_usage
-                    }
+                return self._build_result_dict(
+                    "completed", output=output,
+                    session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
+                    run_project_id=self.run_project_id, node_results=results,
+                    duration_ms=self._calc_duration_ms(),
+                )
         else:
-            result = await self._execute_agent(orchestrator, input_message, db, context, cancel_event=cancel_event)
+            result = await self._execute_agent(orchestrator, input_message, context, cancel_event=cancel_event)
+            
+            if isinstance(result, dict):
+                self._finalize_result(result)
+            
             return result
     
     async def _execute_agent(
         self, 
         agent: SoloAgent, 
         input_message: str,
-        db,
         context: Dict[str, Any],
         cancel_event: asyncio.Event = None
     ) -> Dict[str, Any]:
-        """执行单个 Agent 并记录"""
-        from app.core.database import db_manager
         
         agent_id = agent.agent_id
         agent_name = agent.name
+        
+        # 生成消息ID（用于关联文件变更）
+        import uuid
+        message_id = str(uuid.uuid4())
+        
+        # 获取工作目录
+        working_dir = agent.config.work_dir if hasattr(agent.config, 'work_dir') else None
         
         self._emit_event(ExecutionEvent(
             event_type="agent_start",
             agent_id=agent_id,
             agent_name=agent_name,
             agent_type=agent.agent_type,
-            content=input_message
+            content=input_message,
         ))
         
         if self._stream_callback and hasattr(agent, 'set_stream_callback'):
             agent.set_stream_callback(self._stream_callback)
         
-        # 只在 agent 未初始化时设置记忆，避免覆盖 ReActCore 的 _conversation_history
+        if self._event_callback and hasattr(agent, '_event_callback'):
+            agent._event_callback = self._event_callback
+        
+        agent_memory = self._agent_memories.get(agent_id, [])
+        
+        # 传递文件变更上下文给 SoloAgent 层（必须在 initialize 之前，因为 _on_tool_executed 需要 working_dir）
+        # 每轮执行都必须调用 set_file_change_context，确保：
+        # 1. _pre_tool_hashes 正确初始化（增量diff依赖此数据判断 created/modified）
+        # 2. set_file_tool_working_dir 被调用（文件工具依赖此上下文变量定位工作目录）
+        if hasattr(agent, 'set_file_change_context'):
+            working_dir = agent.config.work_dir if hasattr(agent.config, 'work_dir') else None
+            if working_dir:
+                agent.set_file_change_context(working_dir)
+                logger.info(f"[_execute_agent] set_file_change_context called, working_dir={working_dir}")
+            else:
+                logger.warning(f"[_execute_agent] No working_dir available for agent {agent_id}")
+        
+        logger.warning(f"[_execute_agent] agent._initialized={agent._initialized}, agent._core={agent._core is not None}")
+        
         if not agent._initialized:
-            agent_memory = self._agent_memories.get(agent_id, [])
             if agent_memory and hasattr(agent, 'set_message_history'):
                 agent.set_message_history(agent_memory)
             await agent.initialize()
+        
+        # 确保 _on_tool_executed 回调被设置（即使 agent 已经被初始化）
+        if hasattr(agent, '_core') and hasattr(agent, '_on_tool_executed'):
+            if hasattr(agent._core, '_on_tool_executed'):
+                agent._core._on_tool_executed = agent._on_tool_executed
+                logger.warning(f"[_execute_agent] Set _on_tool_executed callback, agent._initialized={agent._initialized}")
+            else:
+                logger.warning(f"[_execute_agent] agent._core does not have _on_tool_executed attribute")
+        else:
+            logger.warning(f"[_execute_agent] agent._core={agent._core is not None}, hasattr _on_tool_executed={hasattr(agent, '_on_tool_executed')}")
+        
+        # 注册 agent.model 到 _active_models 注册表
+        if hasattr(agent, '_core') and hasattr(agent._core, 'model'):
+            self._active_models[agent_id] = agent._core.model
+            logger.info(f"[_execute_agent] Registered model for agent {agent_id}")
         
         try:
             original_reply = agent.reply
@@ -367,53 +467,54 @@ class CompiledFlow:
                 response = await original_reply(message, cancel_event=cancel_event)
                 
                 if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
-                    for tool_call in agent._last_tool_calls:
-                        tool_name = tool_call.get("name")
+                    for call in agent._last_tool_calls:
+                        tool_name = call.get("name")
                         if not tool_name:
                             continue
+                        
+                        tool_result_data = call.get("result")
+                        tool_error = None
+                        if isinstance(tool_result_data, dict) and tool_result_data.get("success") is False:
+                            tool_error = tool_result_data.get("error_message", tool_result_data.get("content"))
                         
                         self._emit_event(ExecutionEvent(
                             event_type="tool_call",
                             agent_id=agent_id,
                             agent_name=agent_name,
                             tool_name=tool_name,
-                            tool_args=tool_call.get("args"),
-                            tool_result=tool_call.get("result")
-                        ))
-                
-                if hasattr(agent, '_last_skill_calls'):
-                    for skill_call in agent._last_skill_calls:
-                        self._emit_event(ExecutionEvent(
-                            event_type="skill_call",
-                            agent_id=agent_id,
-                            agent_name=agent_name,
-                            skill_name=skill_call.get("name"),
-                            skill_args=skill_call.get("args"),
-                            skill_result=skill_call.get("result")
-                        ))
-                
-                if hasattr(agent, '_last_mcp_calls'):
-                    for mcp_call in agent._last_mcp_calls:
-                        self._emit_event(ExecutionEvent(
-                            event_type="mcp_call",
-                            agent_id=agent_id,
-                            agent_name=agent_name,
-                            mcp_name=mcp_call.get("name"),
-                            mcp_args=mcp_call.get("args"),
-                            mcp_result=mcp_call.get("result")
+                            tool_type=call.get("tool_type", "tool"),
+                            tool_args=call.get("args"),
+                            tool_result=tool_result_data,
+                            tool_call_id=call.get("id"),
+                            error=tool_error,
+                            metadata=call.get("metadata", {})
                         ))
                 
                 return response
             
             response = await wrapped_reply(input_message)
 
-            # 保存对话历史到记忆 - 使用与 load_and_distribute_memories 一致的格式
-            agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
-            agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
+            agent_core = agent._core if hasattr(agent, '_core') else None
+            if agent_core and hasattr(agent_core, '_conversation_history'):
+                history = agent_core.get_conversation_history()
+                last_user_idx = None
+                for i in range(len(history) - 1, -1, -1):
+                    if history[i].role == "user" and i < len(history) - 1:
+                        last_user_idx = i
+                        break
+                
+                if last_user_idx is not None:
+                    for msg in history[last_user_idx:]:
+                        msg_dict = self._msg_to_memory_dict(msg)
+                        if msg_dict:
+                            agent_memory.append(msg_dict)
+                else:
+                    agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
+                    agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
+            else:
+                agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
+                agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
             self._agent_memories[agent_id] = agent_memory
-            
-            end_time = datetime.now()
-            duration_ms = int((end_time - self._start_time).total_seconds() * 1000) if self._start_time else 0
             
             tool_calls = []
             if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
@@ -421,35 +522,20 @@ class CompiledFlow:
             
             openai_message = agent.get_last_openai_message() if hasattr(agent, 'get_last_openai_message') else {"role": "assistant", "content": response, "reasoning_content": None}
             
-            tokens = None
-            if hasattr(agent, '_last_response') and hasattr(agent._last_response, 'usage') and agent._last_response.usage:
-                usage = agent._last_response.usage
-                tokens = {
-                    "prompt_tokens": getattr(usage, 'input_tokens', None),
-                    "completion_tokens": getattr(usage, 'output_tokens', None),
-                    "total_tokens": getattr(usage, 'output_tokens', 0) + getattr(usage, 'input_tokens', 0) if getattr(usage, 'input_tokens', None) is not None and getattr(usage, 'output_tokens', None) is not None else None,
-                }
-                if tokens.get("prompt_tokens") is not None:
-                    self._token_usage["prompt_tokens"] = self._token_usage.get("prompt_tokens", 0) + (tokens.get("prompt_tokens") or 0)
-                    self._token_usage["completion_tokens"] = self._token_usage.get("completion_tokens", 0) + (tokens.get("completion_tokens") or 0)
-                    self._token_usage["total_tokens"] = self._token_usage.get("total_tokens", 0) + (tokens.get("total_tokens") or 0)
-                    logger.info(f"[Token Usage] Accumulated: {tokens}")
+            tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
             
-            result = {
-                "agent_id": agent_id,
-                "agent_name": agent_name,
-                "agent_type": agent.agent_type,
-                "user_id": self.user_id,
-                "agentic_flow_id": self.agentic_flow_id,
-                "run_project_id": self.run_project_id,
-                "session_id": self.session_id,
-                "output": response,
-                "message": openai_message,
-                "status": "completed",
-                "duration_ms": duration_ms,
-                "tool_calls": tool_calls,
-                "tokens": tokens,
-            }
+            self._accumulate_token_usage(tokens, message_id=message_id)
+            if tokens and message_id and message_id not in self._token_usage_recorded:
+                logger.info(f"[Token Usage] Accumulated: {tokens}, message_id: {message_id}")
+            
+            result = self._build_result_dict(
+                "completed", agent_id=agent_id, agent_name=agent_name,
+                output=response, tokens=tokens, duration_ms=self._calc_duration_ms(),
+                agent_type=agent.agent_type, user_id=self.user_id,
+                agentic_flow_id=self.agentic_flow_id, run_project_id=self.run_project_id,
+                session_id=self.session_id, message=openai_message,
+                tool_calls=tool_calls,
+            )
             
             self._emit_event(ExecutionEvent(
                 event_type="agent_complete",
@@ -457,7 +543,7 @@ class CompiledFlow:
                 agent_name=agent_name,
                 content=openai_message.get("content", response) if openai_message else response,
                 message=openai_message,
-                status="completed"
+                status="completed",
             ))
             
             return result
@@ -466,28 +552,28 @@ class CompiledFlow:
             import traceback
             logger.error(f"Agent execution failed: {agent_name} - {e}")
             logger.error(traceback.format_exc())
-            
+
+            partial_tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
+            self._accumulate_token_usage(partial_tokens)
+            if partial_tokens:
+                logger.info(f"[Token Usage] Partial tokens from failed agent: {partial_tokens}")
+
             self._emit_event(ExecutionEvent(
                 event_type="agent_error",
                 agent_id=agent_id,
                 agent_name=agent_name,
                 error=str(e),
-                status="failed"
+                status="failed",
             ))
             
-            if self.session_id:
-                db_manager.update_session(
-                    db, self.session_id,
-                    status="failed",
-                    error=str(e)
-                )
-            
-            return {
-                "agent_id": agent_id,
-                "agent_name": agent_name,
-                "status": "failed",
-                "error": str(e)
-            }
+            return self._build_result_dict(
+                "failed", agent_id=agent_id, agent_name=agent_name,
+                error=str(e),
+            )
+        finally:
+            # 从注册表中注销 agent.model
+            self._active_models.pop(agent_id, None)
+            logger.info(f"[_execute_agent] Unregistered model for agent {agent_id}")
     
     def _aggregate_results(self, results: Dict[str, Any]) -> str:
         outputs = []
@@ -511,6 +597,28 @@ class CompiledFlow:
             await agent.initialize()
         
         return await agent.reply(message)
+    
+    @staticmethod
+    def _msg_to_memory_dict(msg) -> dict | None:
+        if msg.role == "user":
+            content = msg.content if isinstance(msg.content, str) else (msg.get_text_content() if hasattr(msg, 'get_text_content') else str(msg.content))
+            return {"role": "user", "data": [{"type": "content", "content": content}]}
+        elif msg.role == "assistant":
+            data = []
+            if isinstance(msg.content, list):
+                data = msg.content
+            elif isinstance(msg.content, str):
+                data = [{"type": "content", "content": msg.content}]
+            return {"role": "assistant", "data": data}
+        elif msg.role == "tool":
+            content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            return {
+                "role": "tool",
+                "tool_call_id": msg.tool_call_id,
+                "content": content,
+                "name": msg.name
+            }
+        return None
 
 
 class CompiledFlowFactory:
@@ -519,25 +627,44 @@ class CompiledFlowFactory:
     缓存 key 格式: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}
     """
     
-    MAX_INSTANCES = 100
-    CACHE_TIMEOUT = int(os.getenv("COMPILED_FLOW_CACHE_TIMEOUT", "1800"))
+    MAX_INSTANCES = settings.COMPILED_FLOW_MAX_INSTANCES
+    CACHE_TIMEOUT = settings.COMPILED_FLOW_CACHE_TIMEOUT
     
     _instances: OrderedDict[str, tuple] = OrderedDict()
     _lock = Lock()
     _execution_locks: Dict[str, asyncio.Lock] = {}
     _flow_users: Dict[str, set] = {}
+    _last_cleanup_time: float = 0.0
+    _cleanup_interval: float = settings.COMPILED_FLOW_CLEANUP_INTERVAL
     
     @classmethod
+    def _schedule_close(cls, compiled_flow: CompiledFlow):
+        """调度异步关闭 CompiledFlow 的资源"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(compiled_flow.close())
+            else:
+                loop.run_until_complete(compiled_flow.close())
+        except RuntimeError:
+            try:
+                asyncio.create_task(compiled_flow.close())
+            except Exception:
+                pass
+        except Exception as e:
+            logger.warning(f"Failed to schedule close for CompiledFlow: {e}")
+
+    @classmethod
     def _make_cache_key(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str) -> str:
-        """生成四参数缓存 key"""
-        return f"{user_id}:{agentic_flow_id}:{session_id}:{run_project_id}"
+        from app.utils.common_utils import make_cache_key
+        return make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
     
     @classmethod
     def create(cls, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str, compiled_flow: CompiledFlow) -> CompiledFlow:
         cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
         
         with cls._lock:
-            cls._cleanup_expired()
+            cls._maybe_cleanup()
             
             if cache_key in cls._instances:
                 cls._instances.move_to_end(cache_key)
@@ -546,6 +673,8 @@ class CompiledFlowFactory:
             
             if len(cls._instances) >= cls.MAX_INSTANCES:
                 oldest_key = next(iter(cls._instances))
+                oldest_flow, _ = cls._instances[oldest_key]
+                cls._schedule_close(oldest_flow)
                 del cls._instances[oldest_key]
                 if oldest_key in cls._execution_locks:
                     del cls._execution_locks[oldest_key]
@@ -568,6 +697,7 @@ class CompiledFlowFactory:
         cache_key = cls._make_cache_key(user_id, agentic_flow_id, session_id, run_project_id)
         
         with cls._lock:
+            cls._maybe_cleanup()
             if cache_key in cls._instances:
                 cls._instances.move_to_end(cache_key)
                 compiled_flow, _ = cls._instances[cache_key]
@@ -594,6 +724,14 @@ class CompiledFlowFactory:
         return cls._flow_users.get(cache_key, set())
     
     @classmethod
+    def _maybe_cleanup(cls):
+        current_time = time.time()
+        if current_time - cls._last_cleanup_time < cls._cleanup_interval:
+            return
+        cls._last_cleanup_time = current_time
+        cls._cleanup_expired()
+
+    @classmethod
     def _cleanup_expired(cls):
         current_time = time.time()
         expired_ids = [
@@ -601,6 +739,8 @@ class CompiledFlowFactory:
             if current_time - created_time > cls.CACHE_TIMEOUT
         ]
         for fid in expired_ids:
+            expired_flow, _ = cls._instances[fid]
+            cls._schedule_close(expired_flow)
             del cls._instances[fid]
             if fid in cls._execution_locks:
                 del cls._execution_locks[fid]
@@ -614,17 +754,23 @@ class CompiledFlowFactory:
         
         with cls._lock:
             if cache_key in cls._instances:
+                compiled_flow, _ = cls._instances[cache_key]
+                cls._schedule_close(compiled_flow)
                 del cls._instances[cache_key]
                 if cache_key in cls._execution_locks:
                     del cls._execution_locks[cache_key]
                 if cache_key in cls._flow_users:
                     del cls._flow_users[cache_key]
+                logger.info(f"[CompiledFlowFactory] Removed cache for key: {cache_key}")
                 return True
+            logger.info(f"[CompiledFlowFactory] No cache found for key: {cache_key}")
             return False
     
     @classmethod
     def clear_all(cls):
         with cls._lock:
+            for cache_key, (compiled_flow, _) in cls._instances.items():
+                cls._schedule_close(compiled_flow)
             cls._instances.clear()
             cls._execution_locks.clear()
             cls._flow_users.clear()
@@ -723,7 +869,6 @@ class AgenticFlowCompiler:
         agentic_flow_id: str = None,
         session_id: str = None,
         run_project_id: str = None,
-        use_cache: bool = True,
         register_gateway: bool = True,
     ) -> CompiledFlow:
         """编译 AgenticFlow JSON 为可执行结构
@@ -734,7 +879,6 @@ class AgenticFlowCompiler:
             agentic_flow_id: AgenticFlow ID（必需）
             session_id: 会话 ID（必需）
             run_project_id: 项目 ID（必需）
-            use_cache: 是否使用缓存
             register_gateway: 是否注册到网关
             
         Returns:
@@ -755,69 +899,123 @@ class AgenticFlowCompiler:
         if not run_project_id:
             raise ValueError("run_project_id is required.")
         
-        if use_cache:
-            cached = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
-            if cached:
-                current_llm_configs = self._load_llm_configs(user_id)
-                
-                cached_config_versions = set()
-                for agent in cached.agents.values():
-                    if hasattr(agent.config, '_llm_config_version') and agent.config._llm_config_version:
-                        cached_config_versions.add(agent.config._llm_config_version)
-                
-                current_config_versions = {cfg.version for cfg in current_llm_configs.values() if cfg.version}
-                
-                if cached_config_versions == current_config_versions and (len(cached_config_versions) > 0 or len(current_config_versions) == 0):
-                    logger.info(f"Using cached CompiledFlow for key: {user_id}:{agentic_flow_id}:{session_id}:{run_project_id}")
-                    CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
-                    cached.session_id = session_id
-                    cached.run_project_id = run_project_id
-                    cached.user_id = user_id
-                    cached.agentic_flow_id = agentic_flow_id
-                    return cached
-                else:
-                    logger.info(f"LLM config version changed (cached: {cached_config_versions}, current: {current_config_versions}), recompiling...")
-                    CompiledFlowFactory.remove(user_id, agentic_flow_id, session_id, run_project_id)
+        cached = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
+        if cached:
+            current_llm_configs = self._load_llm_configs(user_id)
+            
+            cached_config_versions = set()
+            for agent in cached.agents.values():
+                if hasattr(agent.config, '_llm_config_version') and agent.config._llm_config_version:
+                    cached_config_versions.add(agent.config._llm_config_version)
+            
+            current_config_versions = {cfg.version for cfg in current_llm_configs.values() if cfg.version}
+
+            canvas_hash = hashlib.md5(json.dumps(flow_data, sort_keys=True).encode()).hexdigest()
+            canvas_changed = getattr(cached, '_canvas_hash', None) != canvas_hash
+
+            mcp_skills_changed = False
+            if not canvas_changed:
+                canvas_data_tmp = flow_data.get("canvas_data", flow_data)
+                tmp_mcp_ids = set()
+                tmp_skill_ids = set()
+                for node in canvas_data_tmp.get("nodes", []):
+                    node_data = node.get("data", {})
+                    for mcp in node_data.get("mcp_servers", []):
+                        tmp_mcp_ids.add(mcp if isinstance(mcp, str) else mcp.get("id"))
+                    for skill in node_data.get("skills", []):
+                        tmp_skill_ids.add(skill if isinstance(skill, str) else skill.get("id"))
+                tmp_mcp_ids.discard(None)
+                tmp_skill_ids.discard(None)
+
+                cached_mcp_versions = getattr(cached, '_mcp_versions', {})
+                cached_skill_versions = getattr(cached, '_skill_versions', {})
+
+                current_mcp_versions = self._load_config_versions(tmp_mcp_ids, 'mcp')
+                current_skill_versions = self._load_config_versions(tmp_skill_ids, 'skill')
+
+                mcp_skills_changed = (cached_mcp_versions != current_mcp_versions or cached_skill_versions != current_skill_versions)
+            
+            if cached_config_versions == current_config_versions and not canvas_changed and not mcp_skills_changed and (len(cached_config_versions) > 0 or len(current_config_versions) == 0):
+                logger.info(f"Using cached CompiledFlow (canvas unchanged, LLM/MCP/Skills versions match)")
+                CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
+                cached.session_id = session_id
+                cached.run_project_id = run_project_id
+                cached.user_id = user_id
+                cached.agentic_flow_id = agentic_flow_id
+                cached._is_new = False
+                return cached
+            else:
+                logger.info(f"Cache invalidated (canvas_changed={canvas_changed}, mcp_skills_changed={mcp_skills_changed}, llm_versions: cached={cached_config_versions}, current={current_config_versions}), recompiling...")
+                CompiledFlowFactory.remove(user_id, agentic_flow_id, session_id, run_project_id)
         
         canvas_data = flow_data.get("canvas_data", flow_data)
         nodes = canvas_data.get("nodes", [])
         edges = canvas_data.get("edges", [])
         
-        llm_configs = self._load_llm_configs(user_id)
-        mcp_configs = self._load_mcp_configs(user_id)
-        skills_configs = self._load_skills_configs(user_id)
-        
+        # 收集所有Agent节点引用的MCP服务器ID、Skills ID、Tool ID
         all_mcp_server_ids = set()
+        all_skill_ids = set()
+        all_tool_ids = set()
+        
         node_map = {n["id"]: n for n in nodes}
         for node in nodes:
             node_data = node.get("data", {})
+            # 收集MCP服务器ID
             mcp_servers = node_data.get("mcp_servers", [])
             for mcp in mcp_servers:
                 if isinstance(mcp, str):
                     all_mcp_server_ids.add(mcp)
                 elif isinstance(mcp, dict) and mcp.get("id"):
                     all_mcp_server_ids.add(mcp["id"])
+            # 收集Skills ID
+            skills = node_data.get("skills", [])
+            for skill in skills:
+                if isinstance(skill, str):
+                    all_skill_ids.add(skill)
+                elif isinstance(skill, dict) and skill.get("id"):
+                    all_skill_ids.add(skill["id"])
+            # 收集Tool ID
+            tools = node_data.get("tools", [])
+            for tool in tools:
+                if isinstance(tool, str):
+                    all_tool_ids.add(tool)
+                elif isinstance(tool, dict) and tool.get("id"):
+                    all_tool_ids.add(tool["id"])
         
-        # 收集所有Agent配置的mcp_servers
-        all_mcp_servers = self._collect_all_mcp_servers(nodes)
+        # 按需加载配置（只加载引用的配置）
+        llm_configs, mcp_configs, skills_configs = await asyncio.gather(
+            asyncio.to_thread(self._load_llm_configs, user_id),
+            asyncio.to_thread(self._load_mcp_configs_by_ids, list(all_mcp_server_ids), user_id),
+            asyncio.to_thread(self._load_skills_configs_by_ids, list(all_skill_ids), user_id),
+        )
         
-        # 创建Host层的Client管理器
+        # 使用按需加载的mcp_configs构建all_mcp_servers
+        all_mcp_servers = {}
+        for server_id, server in mcp_configs.items():
+            all_mcp_servers[server.name] = {"id": server.id}
+        
         from SoloAgent.solo_agent.compiler.mcp_host_client_manager import MCPHostClientManager
         mcp_client_manager = MCPHostClientManager()
         
-        if all_mcp_servers:
-            register_result = await mcp_client_manager.register_servers(
+        # 加载MCP服务器配置到manager（不连接）
+        if all_mcp_servers and mcp_configs:
+            mcp_client_manager.load_server_configs(mcp_configs)
+            logger.info(
+                f"[Compiler] MCP servers configs loaded: {len(all_mcp_servers)} servers"
+            )
+        
+        # 后台异步连接MCP服务器（不阻塞编译）
+        if all_mcp_servers and mcp_client_manager:
+            asyncio.create_task(mcp_client_manager.connect_servers_async(
                 all_mcp_servers, 
                 user_id=user_id
-            )
-            logger.info(
-                f"[Compiler] MCP servers registered: "
-                f"{register_result['connected']}/{register_result['total']} connected"
-            )
+            ))
         
         compilation_order = self._calculate_compilation_order(nodes, edges)
         
         edge_map = self._compile_edges(edges)
+        
+        work_dir = await asyncio.to_thread(self._get_work_dir, user_id, agentic_flow_id)
         
         agents: Dict[str, SoloAgent] = {}
         orchestrator_id: Optional[str] = None
@@ -835,7 +1033,8 @@ class AgenticFlowCompiler:
             if agent_mcp_server_ids and mcp_client_manager:
                 agent_mcp_servers_info = self._create_agent_server_info(
                     agent_mcp_server_ids,
-                    mcp_client_manager
+                    mcp_client_manager,
+                    user_id=user_id
                 )
                 logger.info(
                     f"[Compiler] Agent '{node_id}' configured with "
@@ -853,6 +1052,7 @@ class AgenticFlowCompiler:
                 skills_configs=skills_configs,
                 canvas_data=canvas_data,
                 mcp_servers_info=agent_mcp_servers_info,
+                work_dir=work_dir,
             )
             agents[agent.agent_id] = agent
 
@@ -889,10 +1089,12 @@ class AgenticFlowCompiler:
             run_project_id=run_project_id,
             mcp_client_manager=mcp_client_manager,
         )
+        compiled_flow._canvas_hash = hashlib.md5(json.dumps(flow_data, sort_keys=True).encode()).hexdigest()
+        compiled_flow._mcp_versions = self._load_config_versions(all_mcp_server_ids, 'mcp')
+        compiled_flow._skill_versions = self._load_config_versions(all_skill_ids, 'skill')
         
-        if use_cache:
-            CompiledFlowFactory.create(user_id, agentic_flow_id, session_id, run_project_id, compiled_flow)
-            CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
+        CompiledFlowFactory.create(user_id, agentic_flow_id, session_id, run_project_id, compiled_flow)
+        CompiledFlowFactory.register_user(user_id, agentic_flow_id, session_id, run_project_id, user_id)
         
         if register_gateway:
             self._register_to_gateway(agentic_flow_id, compiled_flow)
@@ -904,45 +1106,18 @@ class AgenticFlowCompiler:
         
         return compiled_flow
     
-    def _collect_all_mcp_servers(self, nodes: List[Dict]) -> Dict[str, Dict]:
-        """收集所有Agent配置的mcp_servers的并集
-        
-        Args:
-            nodes: 节点列表
-        
-        Returns:
-            Dict[str, Dict]: 所有mcp_servers的并集
-                {"server_name": {"id": "..."}, ...}
-        """
-        all_servers = {}
-        
-        from app.core.database import get_db_context, MCPServerModel
-        
-        for node in nodes:
-            node_data = node.get("data", {})
-            mcp_servers = node_data.get("mcp_servers", [])
-            
-            for server_id in mcp_servers:
-                # 从数据库获取服务器信息
-                with get_db_context() as db:
-                    server = db.query(MCPServerModel).filter(
-                        MCPServerModel.id == server_id
-                    ).first()
-                    if server:
-                        all_servers[server.name] = {"id": server_id}
-        
-        return all_servers
-    
     def _create_agent_server_info(
         self,
         agent_mcp_servers: List[str],
-        client_manager: "MCPHostClientManager"
+        client_manager: "MCPHostClientManager",
+        user_id: str = None
     ) -> Dict[str, "MCPServerInfo"]:
         """为Agent创建MCPServerInfo(引用Host的Client)
         
         Args:
             agent_mcp_servers: Agent配置的mcp_server ID列表
             client_manager: Host层Client管理器
+            user_id: 用户ID，用于重新加载时权限检查
         
         Returns:
             Dict[str, MCPServerInfo]: Agent的server_info字典
@@ -968,11 +1143,12 @@ class AgenticFlowCompiler:
             client = client_manager.get_client(server_name)
             config = client_manager.get_server_config(server_name)
             
-            if not client or not config:
-                logger.warning(f"[Compiler] Client for '{server_name}' not available")
+            if not config:
+                logger.warning(f"[Compiler] Config for '{server_name}' not available")
                 continue
             
             # 创建MCPServerInfo，引用Host的Client
+            # client可能为None（异步连接中），这是允许的
             server_info[server_name] = MCPServerInfo(
                 server_id=config["id"],
                 server_name=server_name,
@@ -980,8 +1156,10 @@ class AgenticFlowCompiler:
                 tools=config.get("tools", []),
                 resources=config.get("resources", []),
                 prompts=config.get("prompts", []),
-                client=client,
-                is_connected=True,
+                client=client,  # 可能为None，异步连接后填充
+                is_connected=client is not None,
+                _manager=client_manager,  # 传递manager引用，用于动态获取client
+                _user_id=user_id,  # 传递user_id，用于重新加载时权限检查
             )
         
         return server_info
@@ -997,28 +1175,37 @@ class AgenticFlowCompiler:
             logger.warning(f"Failed to load LLM configs: {e}")
             return {}
     
-    def _load_mcp_configs(self, user_id: str) -> Dict[str, Any]:
-        """从数据库加载用户的 MCP 配置
+    def _load_mcp_configs_by_ids(self, mcp_server_ids: List[str], user_id: str) -> Dict[str, Any]:
+        """从数据库按需加载指定的 MCP 配置
         
-        注意：需要在会话关闭前预加载所有关联数据（sse_config, stdio_config），
-        否则在会话关闭后访问这些属性会导致懒加载失败。
+        Args:
+            mcp_server_ids: MCP服务器ID列表
+            user_id: 用户ID
+            
+        Returns:
+            Dict[str, Any]: MCP配置字典，key为server_id
         """
+        if not mcp_server_ids:
+            return {}
+            
         try:
-            from app.core.database import mcp_db_manager, get_db_context, MCPServerModel
+            from app.core.database import get_db_context, MCPServerModel
             from sqlalchemy.orm import joinedload
+            from sqlalchemy import or_
+            
             with get_db_context() as db:
                 # 使用 joinedload 预加载关联数据，避免懒加载问题
-                from sqlalchemy import or_
                 servers = db.query(MCPServerModel).options(
                     joinedload(MCPServerModel.sse_config),
                     joinedload(MCPServerModel.stdio_config),
                     joinedload(MCPServerModel.http_config)
                 ).filter(
+                    MCPServerModel.id.in_(mcp_server_ids),
                     or_(
                         MCPServerModel.is_public == True,
                         MCPServerModel.user_id == user_id
                     )
-                ).order_by(MCPServerModel.created_at.desc()).all()
+                ).all()
                 
                 # 在会话内访问所有需要的属性，确保数据被加载
                 for server in servers:
@@ -1027,9 +1214,39 @@ class AgenticFlowCompiler:
                     _ = server.http_config
                     _ = server.tools
                 
-                return {server.id: server for server in servers}
+                return {str(server.id): server for server in servers}
         except Exception as e:
-            logger.warning(f"Failed to load MCP configs: {e}")
+            logger.warning(f"Failed to load MCP configs by ids: {e}")
+            return {}
+    
+    def _load_skills_configs_by_ids(self, skill_ids: List[str], user_id: str) -> Dict[str, Any]:
+        """从数据库按需加载指定的 Skills 配置
+        
+        Args:
+            skill_ids: Skills ID列表
+            user_id: 用户ID
+            
+        Returns:
+            Dict[str, Any]: Skills配置字典，key为skill_id
+        """
+        if not skill_ids:
+            return {}
+            
+        try:
+            from app.core.database import get_db_context, SkillsPackageModel
+            from sqlalchemy import or_
+            
+            with get_db_context() as db:
+                skills = db.query(SkillsPackageModel).filter(
+                    SkillsPackageModel.id.in_(skill_ids),
+                    or_(
+                        SkillsPackageModel.is_public == True,
+                        SkillsPackageModel.user_id == user_id
+                    )
+                ).all()
+                return {str(skill.id): skill for skill in skills}
+        except Exception as e:
+            logger.warning(f"Failed to load Skills configs by ids: {e}")
             return {}
     
     def _load_skills_configs(self, user_id: str) -> Dict[str, Any]:
@@ -1041,6 +1258,29 @@ class AgenticFlowCompiler:
                 return {skill.id: skill for skill in skills}
         except Exception as e:
             logger.warning(f"Failed to load Skills configs: {e}")
+            return {}
+
+    def _load_config_versions(self, config_ids: set, config_type: str) -> Dict[str, int]:
+        if not config_ids:
+            return {}
+        try:
+            from app.core.database import get_db_context
+            with get_db_context() as db:
+                if config_type == 'mcp':
+                    from app.core.database import MCPServerModel
+                    rows = db.query(MCPServerModel.id, MCPServerModel.version).filter(
+                        MCPServerModel.id.in_(config_ids)
+                    ).all()
+                elif config_type == 'skill':
+                    from app.core.database import SkillsPackageModel
+                    rows = db.query(SkillsPackageModel.id, SkillsPackageModel.version).filter(
+                        SkillsPackageModel.id.in_(config_ids)
+                    ).all()
+                else:
+                    return {}
+                return {str(row[0]): row[1] for row in rows}
+        except Exception as e:
+            logger.warning(f"Failed to load {config_type} config versions: {e}")
             return {}
     
     def _get_work_dir(self, user_id: str, agentic_flow_id: str = None) -> Optional[str]:
@@ -1055,32 +1295,14 @@ class AgenticFlowCompiler:
             logger.warning(f"Failed to get work_dir: {e}")
         return None
     
-    def _build_system_prompt_with_project_path(
+    def _build_system_prompt_with_work_dir(
         self,
         base_prompt: str,
-        user_id: str,
-        agentic_flow_id: str = None,
+        work_dir: Optional[str] = None,
     ) -> str:
-        """构建包含项目路径信息的 system prompt
-        
-        在原始 system_prompt 基础上追加项目路径信息（XML格式），
-        与 skill、MCP 工具的 XML 格式保持统一，使 LLM 能够感知
-        当前工作目录并提供更精准的文件操作。
-        
-        Args:
-            base_prompt: 原始 system_prompt（来自节点配置）
-            user_id: 用户ID
-            agentic_flow_id: 流程ID
-            
-        Returns:
-            str: 拼接后的完整 system_prompt
-        """
-        work_dir = self._get_work_dir(user_id, agentic_flow_id)
-        
         if not work_dir:
             return base_prompt
         
-        # XML格式，与 skill、MCP 工具格式统一
         project_path_section = f"""\n<env>
 Working Directory: {work_dir}
 </env>"""
@@ -1108,6 +1330,7 @@ Working Directory: {work_dir}
         skills_configs: Dict[str, Any] = None,
         canvas_data: Dict[str, Any] = None,
         mcp_servers_info: Dict[str, Any] = None,
+        work_dir: str = None,
     ) -> SoloAgent:
         """编译单个节点为 Agent
         
@@ -1132,15 +1355,6 @@ Working Directory: {work_dir}
         model_config = node_data.get("model_config", {})
         llm_config_id = node_data.get("llm_config_id")
         
-        provider = model_config.get("provider", "openai")
-        model = model_config.get("model", "gpt-4")
-        api_key = model_config.get("api_key")
-        base_url = model_config.get("base_url")
-        max_tokens = model_config.get("max_tokens", 4096)
-        temperature = model_config.get("temperature", 0.7)
-        frequency_penalty = model_config.get("frequency_penalty", 0.5)
-        presence_penalty = model_config.get("presence_penalty", 0.5)
-        
         from app.core.database import encryption_service
         
         if not llm_config_id:
@@ -1158,11 +1372,16 @@ Working Directory: {work_dir}
         config = llm_configs[llm_config_id]
         provider = config.provider
         model = config.model_name
-        if config.base_url:
-            base_url = config.base_url
-        if config.api_key:
-            api_key = encryption_service.decrypt(config.api_key)
-        logger.info(f"Using LLM config from agenticflow.json: {config.name} ({provider}/{model}), config_id={llm_config_id}")
+        base_url = config.base_url
+        api_key = encryption_service.decrypt(config.api_key) if config.api_key else None
+        max_tokens = config.max_tokens
+        temperature = config.temperature
+        top_p = config.top_p
+        frequency_penalty = config.frequency_penalty
+        presence_penalty = config.presence_penalty
+        timeout = config.timeout
+        extra_params = config.extra_params if hasattr(config, 'extra_params') else None
+        logger.info(f"Using LLM config from database: {config.name} ({provider}/{model}), config_id={llm_config_id}")
         
         if not api_key:
             raise ValueError(
@@ -1172,11 +1391,23 @@ Working Directory: {work_dir}
         
         skills = node_data.get("skills", [])
         enriched_skills = []
+        logger.info(f"[Skills DEBUG] node_id={node_id}, raw skills={skills}")
+        logger.info(f"[Skills DEBUG] skills_configs keys={list(skills_configs.keys()) if skills_configs else []}")
         for skill in skills:
             if isinstance(skill, str):
                 skill_dict = {"id": skill, "name": skill}
-                if skills_configs and skill in skills_configs:
-                    skill_config = skills_configs[skill]
+                # 尝试用skill作为key查找（可能是ID或name）
+                skill_config = None
+                if skills_configs:
+                    if skill in skills_configs:
+                        skill_config = skills_configs[skill]
+                    else:
+                        # 尝试通过name查找
+                        for sid, sc in skills_configs.items():
+                            if sc.name == skill:
+                                skill_config = sc
+                                break
+                if skill_config:
                     skill_dict["name"] = skill_config.name
                     skill_dict["description"] = getattr(skill_config, "description", "")
                     rel_folder_path = getattr(skill_config, "folder_path", None)
@@ -1185,8 +1416,10 @@ Working Directory: {work_dir}
                         skill_dict["folder_path"] = DataPaths.to_absolute_path(rel_folder_path)
                     else:
                         skill_dict["folder_path"] = None
-                    skill_dict["instructions"] = getattr(skill_config, "instructions", None)
                     skill_dict["tools"] = getattr(skill_config, "tools", [])
+                    logger.info(f"[Skills DEBUG] Enriched skill '{skill}' -> name='{skill_config.name}'")
+                else:
+                    logger.warning(f"[Skills DEBUG] Skill '{skill}' not found in configs")
                 enriched_skills.append(skill_dict)
             elif isinstance(skill, dict):
                 enriched_skills.append(skill)
@@ -1256,10 +1489,9 @@ Working Directory: {work_dir}
             model=model,
             api_key=api_key,
             base_url=base_url,
-            system_prompt=self._build_system_prompt_with_project_path(
+            system_prompt=self._build_system_prompt_with_work_dir(
                 base_prompt=node_data.get("system_prompt", ""),
-                user_id=user_id,
-                agentic_flow_id=agentic_flow_id,
+                work_dir=work_dir,
             ),
             desc=node_data.get("desc", ""),
             skills=enriched_skills,
@@ -1280,14 +1512,18 @@ Working Directory: {work_dir}
             ),
             stream=node_data.get("stream", True),
             agent_type=node_data.get("agentType", "executor"),
-            work_dir=self._get_work_dir(user_id, agentic_flow_id),
+            work_dir=work_dir,
             max_tokens=max_tokens,
             temperature=temperature,
+            top_p=top_p,
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
+            timeout=timeout,
             _llm_config_id=llm_config_id,
             _llm_config_version=config.version if config else None,
         )
+        if extra_params:
+            config.extra.update(extra_params)
         
         agent = SoloAgent(config)
         agent._mcp_servers_info = node_mcp_servers_info
@@ -1330,6 +1566,7 @@ class FlowRunner:
         stream_callback: Callable[[dict], None] = None,
         agent_memories: Dict[str, List[Dict]] = None,
         cancel_event: asyncio.Event = None,
+        on_flow_created: Callable = None,
     ) -> Dict[str, Any]:
         """运行 JSON 格式的工作流
         
@@ -1344,6 +1581,8 @@ class FlowRunner:
             event_callback: 事件回调函数
             stream_callback: 流式输出回调函数
             agent_memories: 按 agent_id 分组的记忆
+            cancel_event: 取消事件
+            on_flow_created: CompiledFlow 创建后的回调函数
             
         Returns:
             执行结果
@@ -1355,8 +1594,10 @@ class FlowRunner:
             agentic_flow_id=agentic_flow_id,
             session_id=session_id,
             run_project_id=run_project_id,
-            use_cache=False,  # 强制重新编译以加载MCP工具
         )
+        
+        if on_flow_created:
+            on_flow_created(compiled_flow)
         
         if event_callback:
             compiled_flow.set_event_callback(event_callback)
@@ -1364,15 +1605,19 @@ class FlowRunner:
         if stream_callback:
             compiled_flow.set_stream_callback(stream_callback)
         
-        if agent_memories:
+        if agent_memories and compiled_flow._is_new:
             compiled_flow.set_agent_memories(agent_memories)
         
         execution_lock = CompiledFlowFactory.get_execution_lock(user_id, agentic_flow_id, session_id, run_project_id)
         if execution_lock:
             async with execution_lock:
-                return await compiled_flow.run(input_message, context, cancel_event=cancel_event)
+                result = await compiled_flow.run(input_message, context, cancel_event=cancel_event)
+                compiled_flow._is_new = False
+                return result
         else:
-            return await compiled_flow.run(input_message, context, cancel_event=cancel_event)
+            result = await compiled_flow.run(input_message, context, cancel_event=cancel_event)
+            compiled_flow._is_new = False
+            return result
     
     @staticmethod
     async def run_node(
@@ -1387,10 +1632,6 @@ class FlowRunner:
         agent_memories: Dict[str, List[Dict]] = None,
         cancel_event: asyncio.Event = None,
     ) -> Dict[str, Any]:
-        """运行指定节点"""
-        from app.core.database import db_manager, get_db_context
-        from datetime import datetime, timezone
-        
         if not session_id:
             raise ValueError("session_id is required for data isolation")
         if not user_id:
@@ -1413,7 +1654,7 @@ class FlowRunner:
         if agent is None:
             return {"error": f"Agent '{node_id}' not found"}
         
-        if agent_memories:
+        if agent_memories and compiled_flow._is_new:
             compiled_flow.set_agent_memories(agent_memories)
         
         if not agent._initialized:
@@ -1422,7 +1663,7 @@ class FlowRunner:
         if hasattr(agent, 'set_stream_callback'):
             agent.set_stream_callback(compiled_flow._stream_callback)
         
-        start_time = datetime.now()
+        start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         error_message = None
         try:
             response = await agent.reply(input_message)
@@ -1430,52 +1671,23 @@ class FlowRunner:
             error_message = str(e)
             logger.error(f"Error during agent reply: {error_message}")
             response = f"Error: {error_message}"
-        end_time = datetime.now()
+        end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        
+        duration_ms = int((end_time - start_time).total_seconds() * 1000)
         
         if error_message:
-            if session_id:
-                duration_ms = int((end_time - start_time).total_seconds() * 1000)
-                with get_db_context() as db:
-                    db_manager.update_session(
-                        db, session_id,
-                        status="failed",
-                        duration_ms=duration_ms,
-                        error_message=error_message,
-                        completed_at=datetime.now(timezone.utc)
-                    )
-            
             return {
                 "agent_id": node_id,
                 "agent_name": agent.name,
                 "output": response,
                 "status": "failed",
-                "error": error_message
+                "error": error_message,
+                "duration_ms": duration_ms,
             }
         
         openai_message = agent.get_last_openai_message() if hasattr(agent, 'get_last_openai_message') else {"content": response}
         
-        tokens = None
-        try:
-            if hasattr(agent, '_last_response') and agent._last_response and hasattr(agent._last_response, 'usage') and agent._last_response.usage:
-                usage = agent._last_response.usage
-                tokens = {
-                    "prompt_tokens": getattr(usage, 'input_tokens', None),
-                    "completion_tokens": getattr(usage, 'output_tokens', None),
-                    "total_tokens": (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0)
-                }
-        except Exception as e:
-            logger.error(f"Error getting token usage: {e}")
-        
-        if session_id:
-            duration_ms = int((end_time - start_time).total_seconds() * 1000)
-            with get_db_context() as db:
-                db_manager.update_session(
-                    db, session_id,
-                    status="completed",
-                    duration_ms=duration_ms,
-                    token_usage=tokens,
-                    completed_at=datetime.now(timezone.utc)
-                )
+        tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
         
         return {
             "agent_id": node_id,
@@ -1483,7 +1695,9 @@ class FlowRunner:
             "output": response,
             "status": "completed",
             "message": openai_message,
-            "tokens": tokens
+            "tokens": tokens,
+            "token_usage": tokens,
+            "duration_ms": duration_ms
         }
     
     @staticmethod
@@ -1539,26 +1753,4 @@ class FlowRunner:
                     break
                 yield event
             elif isinstance(event, ExecutionEvent):
-                yield {
-                    "type": event.event_type,
-                    "data": {
-                        "agent_id": event.agent_id,
-                        "agent_name": event.agent_name,
-                        "content": event.content,
-                        "tool_name": event.tool_name,
-                        "tool_args": event.tool_args,
-                        "tool_result": event.tool_result,
-                        "skill_name": event.skill_name,
-                        "skill_args": event.skill_args,
-                        "skill_result": event.skill_result,
-                        "mcp_name": event.mcp_name,
-                        "mcp_args": event.mcp_args,
-                        "mcp_result": event.mcp_result,
-                        "subagent_id": event.subagent_id,
-                        "subagent_name": event.subagent_name,
-                        "status": event.status,
-                        "error": event.error,
-                        "timestamp": event.timestamp,
-                        "metadata": event.metadata
-                    }
-                }
+                yield event.to_dict()

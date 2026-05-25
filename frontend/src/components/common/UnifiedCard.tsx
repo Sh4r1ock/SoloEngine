@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Popconfirm, Tooltip, Switch } from 'antd';
 import { CheckCircleOutlined } from '@ant-design/icons';
-import { formatTime as formatTimezone } from '../../utils/timezone';
+import { formatTime } from '../../utils/timezone';
 import IconSelector from './IconSelector';
 
 export interface CardItemProps {
@@ -30,10 +30,6 @@ export interface CardItemProps {
   onClick?: any;
   deleteConfirmText?: string;
   deleteWarning?: string;
-}
-
-function formatTime(dateStr?: string) {
-  return formatTimezone(dateStr);
 }
 
 const UnifiedCard: React.FC<CardItemProps> = ({

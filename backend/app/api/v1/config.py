@@ -24,7 +24,6 @@ SoloEngine : LLM配置API模块
     - sqlalchemy: ORM框架
     - app.core.database: 数据库管理
     - SoloAgent.model: LLM工厂
-    - SoloAgent.llm_tracker: LLM使用追踪
 
 使用示例:
     - GET /api/v1/llm/providers - 获取提供商列表
@@ -34,20 +33,22 @@ SoloEngine : LLM配置API模块
     - LLM模型配置管理
     - API密钥管理
 """
-import os
 from typing import List, Optional
+from collections import defaultdict
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, LLMConfigModel, OptimisticLockError
+from app.core.database import get_db, db_manager
+from app.core.config import settings
 from SoloAgent.model.llm_factory import LLMFactory, LLMProvider
-from SoloAgent.llm_tracker import LLMUsageTracker
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
+from app.utils.timezone_utils import format_iso
 
-_tracker = LLMUsageTracker()
 router = APIRouter(prefix="/api/v1/llm", tags=["llm"])
 
 
@@ -57,6 +58,7 @@ class ProviderConfig(BaseModel):
     display_name: str
     requires_api_key: bool
     default_model: str
+    default_base_url: str = ""
     models: List[str] = []
 
 
@@ -68,7 +70,7 @@ class LLMConfigCreate(BaseModel):
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="自定义API地址")
     temperature: float = Field(0.7, ge=0, le=2, description="温度参数")
-    max_tokens: int = Field(2048, ge=1, le=128000, description="最大Token数")
+    max_tokens: int = Field(128000, ge=1, description="最大Token数")
     top_p: float = Field(1.0, ge=0, le=1, description="Top P参数")
     frequency_penalty: float = Field(0.0, ge=-2, le=2, description="频率惩罚")
     presence_penalty: float = Field(0.0, ge=-2, le=2, description="存在惩罚")
@@ -84,7 +86,7 @@ class LLMConfigUpdate(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     temperature: Optional[float] = Field(None, ge=0, le=2)
-    max_tokens: Optional[int] = Field(None, ge=1, le=128000)
+    max_tokens: Optional[int] = Field(None, ge=1)
     top_p: Optional[float] = Field(None, ge=0, le=1)
     frequency_penalty: Optional[float] = Field(None, ge=-2, le=2)
     presence_penalty: Optional[float] = Field(None, ge=-2, le=2)
@@ -139,7 +141,18 @@ async def get_providers() -> dict:
             LLMProvider.OPENAI: "OpenAI",
             LLMProvider.ANTHROPIC: "Anthropic Claude",
             LLMProvider.QWEN: "通义千问 (Qwen)",
-            LLMProvider.OLLAMA: "Ollama (本地)",
+            LLMProvider.OLLAMA: "Ollama",
+            LLMProvider.DEEPSEEK: "DeepSeek",
+            LLMProvider.ZHIPU: "智谱AI (Zhipu)",
+        }
+
+        default_base_urls = {
+            LLMProvider.OPENAI: "https://api.openai.com/v1",
+            LLMProvider.ANTHROPIC: "https://api.anthropic.com",
+            LLMProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            LLMProvider.OLLAMA: "http://localhost:11434",
+            LLMProvider.DEEPSEEK: "https://api.deepseek.com",
+            LLMProvider.ZHIPU: "https://open.bigmodel.cn/api/paas/v4",
         }
         
         provider_configs.append(ProviderConfig(
@@ -147,6 +160,7 @@ async def get_providers() -> dict:
             display_name=display_names.get(provider, provider),
             requires_api_key=provider != LLMProvider.OLLAMA,
             default_model=default_model,
+            default_base_url=default_base_urls.get(provider, ""),
             models=models,
         ))
     
@@ -204,8 +218,9 @@ async def list_configs(
                 "is_default": c.is_default,
                 "is_active": c.is_active,
                 "version": c.version,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                "has_api_key": bool(c.api_key),
+                "created_at": format_iso(c.created_at),
+                "updated_at": format_iso(c.updated_at),
             }
             for c in configs
         ],
@@ -242,8 +257,9 @@ async def list_active_configs(
                 "is_default": c.is_default,
                 "is_active": c.is_active,
                 "version": c.version,
-                "created_at": c.created_at.isoformat() if c.created_at else None,
-                "updated_at": c.updated_at.isoformat() if c.updated_at else None,
+                "has_api_key": bool(c.api_key),
+                "created_at": format_iso(c.created_at),
+                "updated_at": format_iso(c.updated_at),
             }
             for c in configs
         ],
@@ -284,6 +300,7 @@ async def get_default_config(
             "timeout": config.timeout,
             "extra_params": config.extra_params or {},
             "is_default": config.is_default,
+            "has_api_key": bool(config.api_key),
             "version": config.version,
         },
     }
@@ -321,9 +338,10 @@ async def get_config(
             "extra_params": config.extra_params or {},
             "is_default": config.is_default,
             "is_active": config.is_active,
+            "has_api_key": bool(config.api_key),
             "version": config.version,
-            "created_at": config.created_at.isoformat() if config.created_at else None,
-            "updated_at": config.updated_at.isoformat() if config.updated_at else None,
+            "created_at": format_iso(config.created_at),
+            "updated_at": format_iso(config.updated_at),
         },
     }
 
@@ -368,6 +386,8 @@ async def create_config(
             },
         }
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -383,12 +403,9 @@ async def update_config(
     
     update_data = {k: v for k, v in request.dict().items() if v is not None and k != "version"}
     
-    try:
-        config = db_manager.update_llm_config(
+    config = db_manager.update_llm_config(
             db, config_id, user_id, version=request.version, **update_data
         )
-    except OptimisticLockError as e:
-        raise HTTPException(status_code=409, detail=str(e))
     
     if not config:
         raise HTTPException(status_code=404, detail=f"Config '{config_id}' not found")
@@ -486,72 +503,122 @@ async def test_config(request: LLMConfigCreate, db: Session = Depends(get_db)) -
         }
 
 
+def _build_usage_query(db: Session, user_id: str, start_date=None, end_date=None, model_name=None, provider=None):
+    """共享：构建 usage 查询，返回过滤后的 query 对象或 None(无匹配配置)。"""
+    from app.core.database import SessionMessageModel, LLMConfigModel
+    
+    query = db.query(SessionMessageModel).filter(
+        SessionMessageModel.user_id == user_id,
+        SessionMessageModel.role == "assistant",
+        SessionMessageModel.total_tokens.isnot(None),
+    )
+    if start_date:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo(settings.DEFAULT_TIMEZONE))
+        query = query.filter(SessionMessageModel.created_at >= start_dt)
+    if end_date:
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=ZoneInfo(settings.DEFAULT_TIMEZONE))
+        query = query.filter(SessionMessageModel.created_at <= end_dt)
+    if model_name or provider:
+        config_query = db.query(LLMConfigModel).filter(LLMConfigModel.user_id == user_id)
+        if provider:
+            config_query = config_query.filter(LLMConfigModel.provider == provider)
+        if model_name:
+            config_query = config_query.filter(LLMConfigModel.model_name == model_name)
+        config_ids = {c.id for c in config_query.all()}
+        if config_ids:
+            query = query.filter(SessionMessageModel.llm_config_id.in_(config_ids))
+        else:
+            return None
+    return query
+
+
+def _build_model_lookup(db: Session, user_id: str) -> dict:
+    """共享：构建 llm_config_id → (model_name, provider) 查找表。"""
+    from app.core.database import LLMConfigModel
+    configs = db.query(LLMConfigModel).filter(LLMConfigModel.user_id == user_id).all()
+    return {c.id: (c.model_name, c.provider) for c in configs}
+
+
+def _build_usage_record(msg, idx: int, model_lookup: dict) -> dict:
+    """共享：根据消息和模型查找表构建单条导出记录。"""
+    record = {
+        "num": idx,
+        "timestamp": format_iso(msg.created_at),
+        "input_tokens": msg.prompt_tokens or 0,
+        "output_tokens": msg.completion_tokens or 0,
+        "total_tokens": msg.total_tokens or 0,
+        "request_id": msg.id,
+        "duration_ms": msg.duration_ms or 0,
+    }
+    if msg.llm_config_id and msg.llm_config_id in model_lookup:
+        record["model_name"], record["provider"] = model_lookup[msg.llm_config_id]
+    else:
+        record["model_name"] = "unknown"
+        record["provider"] = "unknown"
+    return record
+
+
 @router.get("/usage")
 async def get_usage(
-    time_range_hours: int = Query(default=24, ge=1, le=168),
-    provider: str = Query(default=None),
-    model_name: str = Query(default=None),
-    current_user: User = Depends(get_current_user)
-) -> dict:
-    """获取LLM使用统计。"""
-    try:
-        stats = _tracker.get_statistics(
-            time_range_hours=time_range_hours,
-            provider=provider,
-            model_name=model_name,
-        )
-
-        return {
-            "code": 200,
-            "message": "success",
-            "data": stats,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/usage/daily")
-async def get_daily_usage(
     start_date: str = Query(default=None, description="开始日期 YYYY-MM-DD"),
     end_date: str = Query(default=None, description="结束日期 YYYY-MM-DD"),
     provider: str = Query(default=None),
     model_name: str = Query(default=None),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> dict:
-    """获取按天统计的LLM使用数据。"""
+    """获取按天聚合的LLM使用统计（后端无时间默认值，由前端传参控制）。"""
     try:
-        stats = _tracker.get_daily_statistics(
-            start_date=start_date,
-            end_date=end_date,
-            provider=provider,
-            model_name=model_name,
-        )
+        user_id = current_user.id
+
+        query = _build_usage_query(db, user_id, start_date=start_date, end_date=end_date,
+                                   model_name=model_name, provider=provider)
+        if query is None:
+            return {"code": 200, "message": "success", "data": {"daily": [], "summary": {}, "date_range": {"start": None, "end": None}}}
+
+        messages = query.order_by(None).all()
+
+        daily_data = defaultdict(lambda: {"requests": 0, "tokens": 0, "total_duration_ms": 0, "requests_with_duration": 0})
+        for msg in messages:
+            day = msg.created_at.strftime("%Y-%m-%d") if msg.created_at else "unknown"
+            daily_data[day]["requests"] += 1
+            daily_data[day]["tokens"] += msg.total_tokens or 0
+            if msg.duration_ms is not None:
+                daily_data[day]["total_duration_ms"] += msg.duration_ms
+                daily_data[day]["requests_with_duration"] += 1
+
+        sorted_days = sorted(daily_data.keys())
+        daily_stats = []
+        for day in sorted_days:
+            data = daily_data[day]
+            daily_stats.append({
+                "date": day,
+                "requests": data["requests"],
+                "tokens": data["tokens"],
+                "avg_time": data["total_duration_ms"] / data["requests_with_duration"] / 1000 if data["requests_with_duration"] > 0 else 0,
+            })
+
+        total_requests = sum(d["requests"] for d in daily_stats)
+        total_tokens = sum(d["tokens"] for d in daily_stats)
+        total_duration_ms = sum(data["total_duration_ms"] for data in daily_data.values())
+        total_requests_with_duration = sum(data["requests_with_duration"] for data in daily_data.values())
 
         return {
             "code": 200,
             "message": "success",
-            "data": stats,
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/usage/recent")
-async def get_recent_usage(
-    limit: int = Query(default=100, ge=1, le=500),
-    provider: str = Query(default=None),
-    current_user: User = Depends(get_current_user)
-) -> dict:
-    """获取最近的LLM使用记录。"""
-    try:
-        records = _tracker.get_recent_records(limit=limit, provider=provider)
-
-        return {
-            "code": 200,
-            "message": "success",
-            "data": records,
+            "data": {
+                "daily": daily_stats,
+                "summary": {
+                    "total_requests": total_requests,
+                    "total_tokens": total_tokens,
+                    "avg_tokens_per_request": total_tokens / total_requests if total_requests > 0 else 0,
+                    "avg_time_per_request": total_duration_ms / total_requests_with_duration / 1000 if total_requests_with_duration > 0 else 0,
+                },
+                "date_range": {
+                    "start": sorted_days[0] if sorted_days else None,
+                    "end": sorted_days[-1] if sorted_days else None,
+                },
+            },
         }
 
     except Exception as e:
@@ -560,43 +627,43 @@ async def get_recent_usage(
 
 @router.get("/usage/export")
 async def export_usage(
-    format: str = Query(default="json", pattern="^(json|csv)$"),
+    fmt: str = Query(default="json", alias="format", pattern="^(json|csv)$"),
+    model_name: str = Query(default=None),
+    start_date: str = Query(default=None, description="开始日期 YYYY-MM-DD"),
+    end_date: str = Query(default=None, description="结束日期 YYYY-MM-DD"),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> dict:
-    """导出LLM使用数据。"""
+    """导出LLM使用数据，直接返回数据内容供前端下载。"""
+    from app.core.database import SessionMessageModel
+
     try:
-        output_path = _tracker.export_usage(format=format)
+        user_id = current_user.id
 
-        return {
-            "code": 200,
-            "message": "Usage data exported successfully",
-            "data": {
-                "path": output_path,
-                "format": format,
-            },
-        }
+        query = _build_usage_query(db, user_id, start_date=start_date, end_date=end_date, model_name=model_name)
+        if query is None:
+            if fmt == "csv":
+                return {"code": 200, "message": "success", "data": "num,timestamp,provider,model_name,request_id,input_tokens,output_tokens,total_tokens,duration_ms"}
+            return {"code": 200, "message": "success", "data": []}
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        model_lookup = _build_model_lookup(db, user_id)
+        messages = query.order_by(SessionMessageModel.created_at.desc()).all()
 
+        records = [_build_usage_record(msg, idx, model_lookup) for idx, msg in enumerate(messages, start=1)]
 
-@router.delete("/usage")
-async def clear_usage(
-    days_to_keep: int = Query(default=30, ge=1, le=365),
-    current_user: User = Depends(get_current_user)
-) -> dict:
-    """清除旧的LLM使用记录。"""
-    try:
-        removed_count = _tracker.clear_old_records(days_to_keep=days_to_keep)
-
-        return {
-            "code": 200,
-            "message": f"Removed {removed_count} old usage records",
-            "data": {
-                "removed_count": removed_count,
-                "days_kept": days_to_keep,
-            },
-        }
+        if fmt == "csv":
+            import csv
+            import io
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["num", "timestamp", "provider", "model_name", "request_id", "input_tokens", "output_tokens", "total_tokens", "duration_ms"])
+            for r in records:
+                writer.writerow([r["num"], r["timestamp"], r["provider"], r["model_name"], r["request_id"], r["input_tokens"], r["output_tokens"], r["total_tokens"], r["duration_ms"]])
+            csv_content = output.getvalue()
+            output.close()
+            return {"code": 200, "message": "success", "data": csv_content}
+        else:
+            return {"code": 200, "message": "success", "data": records}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

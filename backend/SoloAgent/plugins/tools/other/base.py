@@ -80,9 +80,8 @@ class OtherToolError(Exception):
             Dict[str, Any]: 包含错误信息的字典。
         """
         return {
-            "error": True,
+            "error_message": self.message,
             "error_code": self.error_code,
-            "message": self.message,
             "details": self.details
         }
 
@@ -180,7 +179,6 @@ class BaseOtherTool(ABC):
         Raises:
             OtherToolError: 执行失败时抛出
         """
-        pass
     
     @abstractmethod
     def get_tool_spec(self) -> Dict[str, Any]:
@@ -195,7 +193,6 @@ class BaseOtherTool(ABC):
                 - description: 工具描述
                 - parameters: 参数规范（JSON Schema）
         """
-        pass
     
     def create_action(
         self,
@@ -253,10 +250,11 @@ class BaseOtherTool(ABC):
         """
         return {
             "success": False,
-            "error": True,
+            "content": message,
+            "error_message": message,
             "error_code": error_code,
-            "message": message,
-            "details": details or {}
+            "details": details or {},
+            "metadata": {}
         }
     
     def create_success_response(
@@ -279,6 +277,7 @@ class BaseOtherTool(ABC):
         response = {
             "success": True,
             "content": content,
+            "error_message": None,
             "metadata": metadata or {}
         }
         

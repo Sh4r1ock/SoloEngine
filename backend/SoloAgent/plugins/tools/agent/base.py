@@ -33,6 +33,7 @@ Agent工具类型：
 from typing import Dict, Any, List, Optional, Set
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from app.core.config import settings
 
 
 class AgentToolError(Exception):
@@ -81,9 +82,8 @@ class AgentToolError(Exception):
             Dict[str, Any]: 包含错误信息的字典。
         """
         return {
-            "error": True,
+            "error_message": self.message,
             "error_code": self.error_code,
-            "message": self.message,
             "details": self.details
         }
 
@@ -142,8 +142,8 @@ class ToolPermission:
     denied_tools: Set[str] = field(default_factory=set)
     allowed_paths: Set[str] = field(default_factory=set)
     denied_paths: Set[str] = field(default_factory=set)
-    max_iterations: int = 10
-    timeout: int = 300
+    max_iterations: int = field(default_factory=lambda: settings.DEFAULT_MAX_ITERS)
+    timeout: int = field(default_factory=lambda: settings.AGENT_TOOL_TIMEOUT)
 
 
 class BaseAgentTool(ABC):
@@ -211,7 +211,6 @@ class BaseAgentTool(ABC):
         Raises:
             AgentToolError: 执行失败时抛出
         """
-        pass
     
     @abstractmethod
     def get_tool_spec(self) -> Dict[str, Any]:
@@ -226,7 +225,6 @@ class BaseAgentTool(ABC):
                 - description: 工具描述
                 - parameters: 参数规范（JSON Schema）
         """
-        pass
     
     def set_context(self, context: ToolContext) -> None:
         """
@@ -315,10 +313,11 @@ class BaseAgentTool(ABC):
         """
         return {
             "success": False,
-            "error": True,
+            "content": message,
+            "error_message": message,
             "error_code": error_code,
-            "message": message,
-            "details": details or {}
+            "details": details or {},
+            "metadata": {}
         }
     
     def create_success_response(
@@ -339,5 +338,6 @@ class BaseAgentTool(ABC):
         return {
             "success": True,
             "content": content,
+            "error_message": None,
             "metadata": metadata or {}
         }

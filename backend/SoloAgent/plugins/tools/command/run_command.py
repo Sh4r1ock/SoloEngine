@@ -38,13 +38,13 @@ import asyncio
 import os
 import sys
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional
-
+from app.core.config import settings
 from .base import (
     BaseCommandTool,
     CommandInfo,
     CommandState,
-    CommandType,
     CommandToolError,
     CommandSecurityError,
 )
@@ -85,8 +85,8 @@ class RunCommand(BaseCommandTool):
         >>> command_id = result["command_id"]
     """
     
-    MAX_TIMEOUT_MS = 600000
-    DEFAULT_TIMEOUT_MS = 30000
+    MAX_TIMEOUT_MS = settings.COMMAND_MAX_TIMEOUT_MS
+    DEFAULT_TIMEOUT_MS = settings.COMMAND_DEFAULT_TIMEOUT_MS
     
     @classmethod
     async def execute(
@@ -220,7 +220,7 @@ class RunCommand(BaseCommandTool):
         timeout_seconds = timeout_ms / 1000.0
         
         cmd_info.state = CommandState.RUNNING
-        cmd_info.started_at = datetime.now()
+        cmd_info.started_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         
         try:
             process = await cls._create_process(cmd_info)
@@ -243,13 +243,14 @@ class RunCommand(BaseCommandTool):
             cmd_info.stderr_buffer = stderr.decode('utf-8', errors='replace')
             cmd_info.exit_code = process.returncode
             cmd_info.state = CommandState.DONE
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             
             success = cmd_info.exit_code == 0
             if success:
                 return {
                     "content": cmd_info.stdout_buffer,
                     "success": True,
+                    "error_message": None,
                     "exit_code": cmd_info.exit_code,
                     "command_id": cmd_info.command_id,
                     "metadata": {
@@ -260,6 +261,7 @@ class RunCommand(BaseCommandTool):
                 return {
                     "content": cmd_info.stderr_buffer if cmd_info.stderr_buffer else f"Command failed with exit code {cmd_info.exit_code}",
                     "success": False,
+                    "error_message": cmd_info.stderr_buffer if cmd_info.stderr_buffer else f"Command failed with exit code {cmd_info.exit_code}",
                     "exit_code": cmd_info.exit_code,
                     "command_id": cmd_info.command_id,
                     "metadata": {
@@ -271,7 +273,7 @@ class RunCommand(BaseCommandTool):
             raise
         except Exception as e:
             cmd_info.state = CommandState.ERROR
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             raise CommandToolError(str(e), command_id=cmd_info.command_id)
     
     @classmethod
@@ -291,7 +293,7 @@ class RunCommand(BaseCommandTool):
             Dict[str, Any]: 包含 command_id 的结果。
         """
         cmd_info.state = CommandState.RUNNING
-        cmd_info.started_at = datetime.now()
+        cmd_info.started_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
         
         try:
             process = await cls._create_process(cmd_info)
@@ -311,6 +313,7 @@ class RunCommand(BaseCommandTool):
             return {
                 "content": f"Started: {cmd_info.command_id}",
                 "success": True,
+                "error_message": None,
                 "command_id": cmd_info.command_id,
                 "status": cmd_info.state.value,
                 "metadata": {}
@@ -320,26 +323,16 @@ class RunCommand(BaseCommandTool):
             raise
         except Exception as e:
             cmd_info.state = CommandState.ERROR
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             cmd_info.stderr_buffer = str(e)
             raise CommandToolError(str(e), command_id=cmd_info.command_id)
     
     @classmethod
     async def _create_process(cls, cmd_info: CommandInfo) -> asyncio.subprocess.Process:
-        """
-        创建子进程。
-        
-        根据操作系统选择合适的 shell 执行命令。
-        
-        Args:
-            cmd_info (CommandInfo): 命令信息。
-        
-        Returns:
-            asyncio.subprocess.Process: 进程对象。
-        """
         if sys.platform == 'win32':
+            command = f'chcp 65001 >nul && {cmd_info.command}'
             process = await asyncio.create_subprocess_shell(
-                cmd_info.command,
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cmd_info.cwd,
@@ -377,12 +370,12 @@ class RunCommand(BaseCommandTool):
             cmd_info.stderr_buffer = stderr.decode('utf-8', errors='replace')
             cmd_info.exit_code = process.returncode
             cmd_info.state = CommandState.DONE if process.returncode == 0 else CommandState.ERROR
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
             
         except Exception as e:
             cmd_info.stderr_buffer = str(e)
             cmd_info.state = CommandState.ERROR
-            cmd_info.finished_at = datetime.now()
+            cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
     
     @staticmethod
     def get_tool_spec() -> Dict[str, Any]:
@@ -396,46 +389,42 @@ class RunCommand(BaseCommandTool):
             "name": "RunCommand",
             "description": "执行终端命令。支持阻塞和非阻塞两种执行模式。Windows PowerShell 环境。",
             "parameters": {
-                "command": {
-                    "type": "string",
-                    "description": "要执行的终端命令",
-                    "required": True,
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的终端命令",
+                    },
+                    "blocking": {
+                        "type": "boolean",
+                        "description": "是否阻塞执行。True 表示等待命令完成，False 表示立即返回 command_id",
+                    },
+                    "requires_approval": {
+                        "type": "boolean",
+                        "description": "是否需要用户批准",
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "工作目录（必须是绝对路径）",
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "超时时间（毫秒），最大 600000ms",
+                    },
+                    "command_type": {
+                        "type": "string",
+                        "description": "命令类型：web_server, long_running_process, short_running_process, other",
+                        "enum": ["web_server", "long_running_process", "short_running_process", "other"],
+                    },
+                    "target_terminal": {
+                        "type": "string",
+                        "description": "目标终端 ID",
+                    },
+                    "wait_ms_before_async": {
+                        "type": "integer",
+                        "description": "非阻塞模式下启动后等待时间（毫秒）",
+                    },
                 },
-                "blocking": {
-                    "type": "boolean",
-                    "description": "是否阻塞执行。True 表示等待命令完成，False 表示立即返回 command_id",
-                    "required": True,
-                },
-                "requires_approval": {
-                    "type": "boolean",
-                    "description": "是否需要用户批准",
-                    "required": True,
-                },
-                "cwd": {
-                    "type": "string",
-                    "description": "工作目录（必须是绝对路径）",
-                    "required": False,
-                },
-                "timeout": {
-                    "type": "integer",
-                    "description": "超时时间（毫秒），最大 600000ms",
-                    "required": False,
-                },
-                "command_type": {
-                    "type": "string",
-                    "description": "命令类型：web_server, long_running_process, short_running_process, other",
-                    "enum": ["web_server", "long_running_process", "short_running_process", "other"],
-                    "required": False,
-                },
-                "target_terminal": {
-                    "type": "string",
-                    "description": "目标终端 ID",
-                    "required": False,
-                },
-                "wait_ms_before_async": {
-                    "type": "integer",
-                    "description": "非阻塞模式下启动后等待时间（毫秒）",
-                    "required": False,
-                },
+                "required": ["command", "blocking", "requires_approval"],
             },
         }

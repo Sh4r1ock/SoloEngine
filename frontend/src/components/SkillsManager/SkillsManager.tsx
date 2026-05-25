@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, Modal, message, Empty, Spin, Input, Tag } from 'antd';
+import { Typography, Modal, App, Empty, Spin, Input, Tag } from 'antd';
 import { FolderOpenOutlined } from '@ant-design/icons';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import SkillsPackageList from './SkillsPackageList';
@@ -12,6 +12,7 @@ const { Text } = Typography;
 const { TextArea } = Input;
 
 const SkillsManager: React.FC = () => {
+  const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [packages, setPackages] = useState<SkillsPackage[]>([]);
   const [filteredPackages, setFilteredPackages] = useState<SkillsPackage[]>([]);
@@ -41,7 +42,6 @@ const SkillsManager: React.FC = () => {
             description: pkg.description || '',
             author: pkg.author || '',
             tags: pkg.tags || [],
-            instructions: pkg.instructions || '',
           },
         })));
       }
@@ -186,7 +186,7 @@ const SkillsManager: React.FC = () => {
   }, []);
 
   return (
-    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100vh' }}>
+    <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100%' }}>
       <PageHeader
         icon={<FolderOpenOutlined />}
         title="Skills 技能包"

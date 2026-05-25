@@ -22,6 +22,8 @@ import logging
 import functools
 from typing import Callable, Any, Optional, Dict
 from datetime import datetime
+from zoneinfo import ZoneInfo
+from app.core.config import settings
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -220,7 +222,7 @@ def trace_llm(func: Callable) -> Callable:
         
         record = TraceRecord(
             function_name=func.__name__,
-            start_time=datetime.now().isoformat(),
+            start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
             args=args,
             kwargs=kwargs,
         )
@@ -235,7 +237,7 @@ def trace_llm(func: Callable) -> Callable:
             record.success = False
             raise
         finally:
-            record.end_time = datetime.now().isoformat()
+            record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             record.duration_ms = (
                 datetime.fromisoformat(record.end_time).timestamp() -
                 datetime.fromisoformat(record.start_time).timestamp()
@@ -249,7 +251,7 @@ def trace_llm(func: Callable) -> Callable:
         
         record = TraceRecord(
             function_name=func.__name__,
-            start_time=datetime.now().isoformat(),
+            start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
             args=args,
             kwargs=kwargs,
         )
@@ -264,7 +266,7 @@ def trace_llm(func: Callable) -> Callable:
             record.success = False
             raise
         finally:
-            record.end_time = datetime.now().isoformat()
+            record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             record.duration_ms = (
                 datetime.fromisoformat(record.end_time).timestamp() -
                 datetime.fromisoformat(record.start_time).timestamp()

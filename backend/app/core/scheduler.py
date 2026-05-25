@@ -39,12 +39,14 @@ SoloEngine : 调度器模块
     - 并行执行需要正确处理依赖关系
 """
 import asyncio
-from typing import Dict, Any, Optional, List, Set, Tuple
+from typing import Dict, Any, Optional, List, Set
 from enum import Enum
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.core.config import settings
 from app.models.node import AgentNode
 from app.core.context_manager import ContextManager
-from app.core.tool_registry import tool_registry
 
 
 class ExecutionMode(Enum):
@@ -288,7 +290,7 @@ class Scheduler:
             "node_id": node.id,
             "node_type": node.node_type,
             "status": "running",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
         })
         
         try:
@@ -312,7 +314,7 @@ class Scheduler:
                 "node_type": node.node_type,
                 "status": "completed",
                 "result": result,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
             })
             
             return result
@@ -329,7 +331,7 @@ class Scheduler:
             "node_id": node_id,
             "status": "failed",
             "error": error_message,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
         })
     
     def _build_final_result(self) -> Dict[str, Any]:

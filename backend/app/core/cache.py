@@ -202,11 +202,13 @@ class LRUCache:
             return len(expired_keys)
 
 
-global_cache = LRUCache(max_size=500, default_ttl=300)
+from app.core.config import settings
+
+global_cache = LRUCache(max_size=settings.CACHE_MAX_SIZE, default_ttl=settings.CACHE_DEFAULT_TTL)
 
 
 def cached(
-    ttl: int = 300,
+    ttl: int = None,
     key_prefix: str = "",
     cache: Optional[LRUCache] = None
 ) -> Callable:
