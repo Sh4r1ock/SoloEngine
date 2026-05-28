@@ -21,6 +21,7 @@
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
+[![Ask Zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=flat-square&color=00b0aa&labelColor=000000)](https://zread.ai/Sh4r1ock/SoloEngine)
 
 </div>
 
