@@ -255,7 +255,7 @@ async def get_canvas(
         raise HTTPException(status_code=404, detail=f"AgenticFlow '{agentic_flow_id}' not found")
     
     canvas_data = _get_canvas_data(flow)
-    
+
     return {
         "code": 200,
         "message": "Canvas data retrieved",

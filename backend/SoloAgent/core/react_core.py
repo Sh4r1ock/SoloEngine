@@ -276,6 +276,7 @@ class ReActCore:
         self._iteration_count = 0
         self._last_tool_results: List[Dict[str, Any]] = []
         self._accumulated_text: str = ""
+        self._last_collected_content: list = []
         self._interrupted: bool = False
         self._on_tool_executed: Optional[Any] = None
         self._on_tool_executing: Optional[Any] = None
@@ -406,12 +407,13 @@ class ReActCore:
     def get_accumulated_usage(self) -> Optional[Dict]:
         acc = self._accumulated_usage
         if acc and (acc.get("input_tokens", 0) > 0 or acc.get("output_tokens", 0) > 0):
-            return {
+            result = {
                 "prompt_tokens": acc.get("input_tokens", 0),
                 "completion_tokens": acc.get("output_tokens", 0),
                 "total_tokens": acc.get("input_tokens", 0) + acc.get("output_tokens", 0),
                 "duration_ms": acc.get("duration_ms", 0),
             }
+            return result
         return None
 
     async def reply(self, message: str | Msg, cancel_event: asyncio.Event = None) -> Msg:
@@ -614,6 +616,8 @@ class ReActCore:
         if self.tool_executor and hasattr(self.tool_executor, 'get_available_tools'):
             tools = self.tool_executor.get_available_tools()
         
+        if cancel_event and cancel_event.is_set():
+            raise asyncio.CancelledError()
         if tools:
             logger.info(f"[_reasoning] Calling model with {len(tools)} tools: {[t.get('function', {}).get('name') for t in tools]}")
             response = await self.model(formatted, tools=tools, cancel_event=cancel_event)
@@ -630,6 +634,7 @@ class ReActCore:
             final_response = None
             chunk_count = 0
             collected_content = []
+            self._last_collected_content = collected_content
             collected_text_parts = []
             collected_stop_reason = None
             collected_finish_reason = None
@@ -748,7 +753,32 @@ class ReActCore:
                                         collected_text_parts.append(block.get("text", ""))
                                 else:
                                     logger.debug(f"[ReActCore] Skipped block from final assembled chunk (type={block_type})")
-                
+
+                    if self.stream_callback and chunk.content:
+                        is_assembled = (
+                            hasattr(chunk, 'metadata')
+                            and chunk.metadata
+                            and 'original_model_message' in chunk.metadata
+                        )
+                        if not is_assembled:
+                            non_tool_blocks = [
+                                b for b in chunk.content
+                                if not (isinstance(b, dict) and b.get("type") in ("tool_use", "tool_calls"))
+                            ]
+                            if non_tool_blocks:
+                                from collections import defaultdict
+                                type_groups = defaultdict(list)
+                                for b in non_tool_blocks:
+                                    bt = b.get("type", "text") if isinstance(b, dict) else getattr(b, "type", "text")
+                                    type_groups[bt].append(b)
+                                for bt, blocks in type_groups.items():
+                                    single_type_chunk = ChatResponse(content=blocks)
+                                    delta = single_type_chunk.to_delta()
+                                    if delta:
+                                        self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name)
+
+                    await asyncio.sleep(0)
+
                 if hasattr(chunk, 'metadata') and chunk.metadata:
                     collected_metadata = chunk.metadata
                 if hasattr(chunk, 'usage') and chunk.usage:
@@ -756,30 +786,13 @@ class ReActCore:
                     self._accumulated_usage["input_tokens"] += getattr(chunk.usage, 'input_tokens', 0) or 0
                     self._accumulated_usage["output_tokens"] += getattr(chunk.usage, 'output_tokens', 0) or 0
                 
-                if self.stream_callback and chunk.content:
-                    filtered_content = [
-                        block for block in chunk.content
-                        if not (isinstance(block, dict) and block.get("type") in ("tool_use", "tool_calls"))
-                    ]
-                    if filtered_content:
-                        is_final_assembled = hasattr(chunk, 'metadata') and chunk.metadata and 'original_model_message' in chunk.metadata
-                        if not is_final_assembled:
-                            from collections import defaultdict
-                            type_groups = defaultdict(list)
-                            for block in filtered_content:
-                                if isinstance(block, dict):
-                                    block_type = block.get("type", "text")
-                                else:
-                                    block_type = getattr(block, "type", "text")
-                                type_groups[block_type].append(block)
-                            
-                            for block_type, blocks in type_groups.items():
-                                single_type_chunk = ChatResponse(content=blocks)
-                                delta = single_type_chunk.to_delta()
-                                if delta:
-                                    self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name)
             except asyncio.CancelledError:
                 logger.info(f"[{self.name}] Stream cancelled via aclose")
+                raise
+            except Exception as e:
+                if self.model._was_cancelled:
+                    logger.info(f"[{self.name}] Connection closed due to cancel ({type(e).__name__}: {e})")
+                    raise asyncio.CancelledError() from e
                 raise
             
             logger.info(f"[ReActCore] Total stream chunks processed: {chunk_count}")
@@ -922,6 +935,13 @@ class ReActCore:
                             logger.info(f"[ReActCore] _on_tool_executed is None, skipping callback for tool={tool_call.get('name')}")
                     except Exception as callback_err:
                         logger.warning(f"on_tool_executed callback error: {callback_err}")
+                except asyncio.CancelledError:
+                    self._tool_call_event_manager.on_tool_call_result(
+                        tool_call_id=tool_call.get("id"),
+                        result={"content": "任务执行被取消", "success": False, "error_message": "执行被用户取消"},
+                        error="cancelled"
+                    )
+                    raise
                 except Exception as e:
                     error_str = str(e)
                     self._tool_call_event_manager.on_tool_call_result(

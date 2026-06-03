@@ -204,7 +204,8 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
             self._send_event(
                 "subagent_complete",
                 subagent_id=subagent_id,
-                subagent_name=subagent_name
+                subagent_name=subagent_name,
+                tokens=subagent.get_token_usage() if hasattr(subagent, 'get_token_usage') else None
             )
             
             if hasattr(result, 'content'):
@@ -243,24 +244,20 @@ IMPORTANT: When a subagent is relevant, invoke this tool IMMEDIATELY.""",
         self,
         event_type: str,
         subagent_id: str,
-        subagent_name: str
+        subagent_name: str,
+        tokens: dict = None
     ) -> None:
-        """
-        发送事件通知。
-        
-        Args:
-            event_type: 事件类型
-            subagent_id: SubAgent ID
-            subagent_name: SubAgent名称
-        """
         if hasattr(self._parent_agent, '_stream_callback') and self._parent_agent._stream_callback:
             try:
+                event_data = {
+                    "type": event_type,
+                    "subagent_id": subagent_id,
+                    "subagent_name": subagent_name,
+                }
+                if tokens:
+                    event_data["tokens"] = tokens
                 self._parent_agent._stream_callback(
-                    {
-                        "type": event_type,
-                        "subagent_id": subagent_id,
-                        "subagent_name": subagent_name
-                    },
+                    event_data,
                     agent_id=subagent_id,
                     agent_name=subagent_name
                 )

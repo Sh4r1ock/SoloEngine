@@ -47,9 +47,9 @@ export const useStreamingData = () => {
   const currentMsgIdRef = useRef<string>('');
 
   const detectChunkType = (delta: any): ChunkType => {
-    if (delta.reasoning_content) return 'reasoning_content';
-    if (delta.tool_calls) return 'tool_calls';
-    if (delta.content) return 'content';
+    if (delta.reasoning_content !== undefined && delta.reasoning_content !== null) return 'reasoning_content';
+    if (delta.tool_calls !== undefined && delta.tool_calls !== null) return 'tool_calls';
+    if (delta.content !== undefined && delta.content !== null) return 'content';
     return null;
   };
 
@@ -73,8 +73,14 @@ export const useStreamingData = () => {
     return allBlocks;
   };
 
+  const updateStreamingDataRafRef = useRef<number | null>(null);
+
   const updateStreamingData = useCallback(() => {
-    setStreamingData(collectAllBlocks());
+    if (updateStreamingDataRafRef.current !== null) return;
+    updateStreamingDataRafRef.current = requestAnimationFrame(() => {
+      updateStreamingDataRafRef.current = null;
+      setStreamingData(collectAllBlocks());
+    });
   }, [setStreamingData]);
 
   const flushStreamingData = useCallback(() => {
@@ -235,7 +241,12 @@ export const useStreamingData = () => {
 
     // 2. 如果有 currentBlock，追加到 completedBlocks
     if (stateRef.current.currentBlock) {
-      stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      const isInCompleted = stateRef.current.completedBlocks.includes(
+        stateRef.current.currentBlock
+      );
+      if (!isInCompleted) {
+        stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      }
     }
 
     // 3. 保存引用到堆栈
@@ -405,7 +416,12 @@ export const useStreamingData = () => {
     }
 
     if (stateRef.current.currentBlock) {
-      stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      const isInCompleted = stateRef.current.completedBlocks.includes(
+        stateRef.current.currentBlock
+      );
+      if (!isInCompleted) {
+        stateRef.current.completedBlocks.push(stateRef.current.currentBlock);
+      }
     }
 
     const finalData = [...stateRef.current.completedBlocks];
@@ -427,7 +443,9 @@ export const useStreamingData = () => {
     currentAgentIdRef.current = null;
     rootAgentIdRef.current = null;
 
-    return finalData.length > 0 ? finalData : streamingData;
+    const latestZustand = useRunPanelStore.getState().streamingData;
+    const fallbackData = streamingData || latestZustand;
+    return finalData.length > 0 ? finalData : fallbackData;
   }, [streamingData, clearStreamingData, popScope]);
 
   const resetStream = useCallback(() => {

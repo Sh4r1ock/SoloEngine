@@ -179,7 +179,8 @@ class AgenticFlowRunContext:
             )
     
     async def execute(self, input_message: str, canvas_data: Dict, 
-                      cancel_event=None, event_callback=None, 
+                      cancel_event=None,
+                      event_callback=None, 
                       stream_callback=None) -> Dict:
         self._canvas_data = canvas_data
         
@@ -198,10 +199,10 @@ class AgenticFlowRunContext:
             agentic_flow_id=self.agentic_flow_id,
             session_id=self.session_id,
             run_project_id=self.run_project_id,
+            cancel_event=cancel_event,
             event_callback=wrapped_event_callback,
             stream_callback=stream_callback,
             agent_memories=self._agent_memories,
-            cancel_event=cancel_event,
             on_flow_created=on_flow_created,
         )
         
@@ -325,11 +326,13 @@ class AgenticFlowRunContext:
                         else:
                             current_parent_agent_id = main_agent_id
 
+                        agent_tokens = self._get_agent_token_usage(agent_id_key) or tokens
+
                         try:
                             saved_message = await save_session_message(
                                 db=db, session_id=self.session_id, user_id=self.user_id,
                                 role="assistant", data=data_to_save, status=status,
-                                agent_id=agent_id_key, tokens=tokens,
+                                agent_id=agent_id_key, tokens=agent_tokens,
                                 agentic_flow_id=self.agentic_flow_id,
                                 run_project_id=self.run_project_id,
                                 parent_message_id=parent_message_id,
@@ -393,6 +396,17 @@ class AgenticFlowRunContext:
         )
         if compiled_flow and agent_id in compiled_flow.agents:
             return compiled_flow.agents[agent_id].config._llm_config_id
+        return None
+
+    def _get_agent_token_usage(self, agent_id: str) -> Optional[Dict]:
+        compiled_flow = CompiledFlowFactory.get(
+            self.user_id, self.agentic_flow_id,
+            self.session_id, self.run_project_id
+        )
+        if compiled_flow and agent_id in compiled_flow.agents:
+            agent = compiled_flow.agents[agent_id]
+            if hasattr(agent, 'get_token_usage'):
+                return agent.get_token_usage()
         return None
     
     def clear_cache(self):
@@ -496,7 +510,6 @@ class AgenticFlowRunContext:
                                 file_path=change.file_path,
                                 operation=change.operation,
                                 tool_call_id=None,
-                                file_hash=change.new_hash or change.old_hash,
                                 content_type=change.content_type,
                                 before_content_hash=change.old_hash,
                                 after_content_hash=change.new_hash,
@@ -548,9 +561,13 @@ class ChunkCollector:
         chunk_type = self._normalize_type(delta)
         content = self._extract_content(delta, chunk_type)
         
+        logger.info(f"[ChunkCollector] add_chunk: type={chunk_type}, content_len={len(str(content)) if content else 0}, content_repr={repr(content)[:100]}")
+        
         if chunk_type != 'tool_calls' and not content:
+            logger.warning(f"[ChunkCollector] SKIPPING: non-tool chunk with empty content, type={chunk_type}")
             return
         if chunk_type == 'tool_calls' and not content:
+            logger.warning(f"[ChunkCollector] SKIPPING: tool_calls with empty content")
             return
         
         if chunk_type == 'tool_calls':
@@ -654,11 +671,13 @@ class ChunkCollector:
         if isinstance(delta, str):
             return delta
         if chunk_type == 'reasoning_content':
-            return delta.get('reasoning_content', '') or delta.get('thinking', '') or delta.get('text', '')
+            val = delta.get('reasoning_content') or delta.get('thinking') or delta.get('text')
+            return val if val is not None else ''
         elif chunk_type == 'tool_calls':
             return delta.get('tool_calls', [])
         else:
-            return delta.get('content', '') or delta.get('text', '')
+            val = delta.get('content') or delta.get('text')
+            return val if val is not None else ''
     
     def _handle_agent_switch(self, new_agent_id: str, new_agent_name: str):
         """处理 agent 切换，使用堆栈保存/恢复状态"""
@@ -1384,8 +1403,8 @@ async def delete_session(
     current_user: User = Depends(get_current_user)
 ):
     """删除运行会话及其所有消息。"""
-    from app.models.file_change import FileChangeModel
-    from app.core.content_addressable_storage import cas
+    from app.core.database import SessionMessageModel
+    from app.api.v1.file_changes import delete_messages, DeleteMessagesRequest
 
     session = db.query(AgenticFlowSessionModel).filter(
         AgenticFlowSessionModel.id == session_id,
@@ -1395,12 +1414,24 @@ async def delete_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    db.query(FileChangeModel).filter(FileChangeModel.session_id == session_id).delete()
+    # 1. 获取所有未删除的消息
+    all_messages = db.query(SessionMessageModel).filter(
+        SessionMessageModel.session_id == session_id,
+        SessionMessageModel.is_deleted == False
+    ).all()
 
+    # 2. 调用delete_messages处理消息和file_changes（统一路径）
+    if all_messages:
+        first_msg = all_messages[0]
+        delete_request = DeleteMessagesRequest(
+            session_id=session_id,
+            from_message_id=first_msg.id
+        )
+        await delete_messages(delete_request, db, current_user)
+
+    # 3. 物理删除session（级联删除消息）
     db.delete(session)
     db.commit()
-
-    cas.cleanup_orphan_blobs()
     
     return {
         "code": 200,
@@ -1451,14 +1482,13 @@ async def get_session_messages(
         for parent_id, children in parent_children_map.items()
     }
     
-    # 辅助函数：检查消息是否还在 available_children 中（未被使用）
-    available_msg_ids: Set[str] = set()
-    for children in available_children.values():
-        for child in children:
-            available_msg_ids.add(child.id)
-
+    # 辅助函数：检查消息是否还在 available_children 中（未被 process_agent 消费）
     def is_message_available(msg_id: str) -> bool:
-        return msg_id in available_msg_ids
+        for children in available_children.values():
+            for child in children:
+                if child.id == msg_id:
+                    return True
+        return False
     
     # 处理每条消息
     result = []
@@ -1889,7 +1919,10 @@ def process_agent(
             'agent_id': msg.agent_id,
             'agent_name': current_agent_name,
             'agent_level': agent_level,
-            'message_index': msg.message_index
+            'message_index': msg.message_index,
+            'agent_tokens': msg.total_tokens,
+            'agent_prompt_tokens': msg.prompt_tokens,
+            'agent_completion_tokens': msg.completion_tokens,
         })
         
         # 处理 Task tool_call 中的 subagent

@@ -3,9 +3,11 @@
  * @description 运行面板状态管理
  */
 
-import { create } from 'zustand';
+import { createContext, useContext } from 'react';
+import { createStore, useStore } from 'zustand';
 import { runApi } from '../../../services/runApi';
-import { runProjectApi } from '../../../services/runProjectApi';
+import { runProjectApi, SelectOrCreateProjectResponse, FileInfo as ProjectFileInfo } from '../../../services/runProjectApi';
+import { insertTreeNode, removeTreeNode, moveTreeNode } from '../utils/treePatchUtils';
 import type {
   LLMMessage,
   DataBlock,
@@ -29,6 +31,7 @@ function normalizeFilePath(p: string): string {
 const _lastExternalChangeTime: Record<string, number> = {};
 
 interface RunPanelState {
+  agenticFlowId: string;
   sessions: ExtendedRunSession[];
   currentSessionId: string | null;
   loading: boolean;
@@ -49,6 +52,7 @@ interface RunPanelState {
   documentTabs: FileTab[];
   activeEditorTabId: string | null;
   activeDocumentTabId: string | null;
+  _contentCache: Record<string, string>;
 
   agenticPanels: AgenticPanel[];
   activeAgenticTab: string | null;
@@ -58,6 +62,8 @@ interface RunPanelState {
   currentProject: CurrentProject | null;
   recentProjects: RecentProjectInfo[];
   projectLoading: boolean;
+  files: ProjectFileInfo[];
+  currentPath: string;
 
   canvasData: any | null;
 
@@ -77,6 +83,10 @@ interface RunPanelState {
 
   expandedBlockKeys: Record<string, boolean>;
   toggleBlockExpand: (blockKey: string, currentIsExpanding: boolean) => void;
+
+  agentTokensMap: Record<string, number>;
+  setAgentTokens: (agentId: string, tokens: number) => void;
+  clearAgentTokens: () => void;
 
   setCurrentSessionId: (sessionId: string | null) => void;
   setSessions: (sessions: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
@@ -107,6 +117,8 @@ interface RunPanelState {
   updateEditorTab: (id: string, updates: Partial<FileTab>) => void;
   closeEditorTab: (id: string) => void;
   setActiveEditorTabId: (id: string | null) => void;
+  setTabContent: (tabId: string, content: string) => void;
+  getTabContent: (tabId: string) => string;
 
   addDocumentTab: (tab: FileTab) => void;
   updateDocumentTab: (id: string, updates: Partial<FileTab>) => void;
@@ -124,6 +136,17 @@ interface RunPanelState {
   setCurrentProject: (project: CurrentProject | null) => void;
   setRecentProjects: (projects: RecentProjectInfo[]) => void;
   setProjectLoading: (loading: boolean) => void;
+
+  selectOrCreateProject: (agenticFlowId: string, folderPath: string) => Promise<SelectOrCreateProjectResponse | null>;
+  openNativeFolderDialog: (agenticFlowId: string, title?: string, initialdir?: string) => Promise<SelectOrCreateProjectResponse | null>;
+  setProjectFromSelectOrCreate: (data: SelectOrCreateProjectResponse) => void;
+  loadCurrentProject: (agenticFlowId?: string) => Promise<void>;
+  loadRecentProjects: (agenticFlowId: string) => Promise<RecentProjectInfo[]>;
+  listFiles: (path?: string, pattern?: string) => Promise<void>;
+  setCurrentPath: (path: string) => void;
+  clearProject: () => void;
+  clearError: () => void;
+  applyIncrementalChanges: (changes: FileSystemChange[]) => void;
 
   setCanvasData: (data: any | null) => void;
 
@@ -146,10 +169,40 @@ interface RunPanelState {
 
   handleExternalFileChanges: (changes: FileSystemChange[]) => void;
   resolveExternalChange: (tabId: string) => Promise<void>;
+
+  reset: (mode: 'session' | 'project' | 'full') => void;
+  saveContext: (flowId: string, projectId: string) => void;
+  loadContext: (flowId: string, projectId: string) => { currentSessionId: string | null };
 }
 
-export const useRunPanelStore = create<RunPanelState>()(
+const CACHE_KEY_PREFIX = 'soloengine-session';
+
+const DEFAULT_PANELS: AgenticPanel[] = [
+  { id: 'editor', type: 'editor', title: '编辑器', isOpen: false },
+  { id: 'terminal', type: 'terminal', title: '终端', isOpen: false },
+  { id: 'browser', type: 'browser', title: '浏览器', isOpen: false },
+  { id: 'document', type: 'document', title: '文档', isOpen: false },
+  { id: 'changes', type: 'changes', title: '文件变更', isOpen: false },
+];
+
+function makeCacheKey(flowId: string, projectId: string): string {
+  return `${CACHE_KEY_PREFIX}-${flowId}-${projectId}`;
+}
+
+interface ContextCache {
+  currentSessionId: string | null;
+  inputText: string;
+  editorTabs: Array<Pick<FileTab, 'id' | 'name' | 'path' | 'type' | 'isBinary'>>;
+  documentTabs: Array<Pick<FileTab, 'id' | 'name' | 'path' | 'type' | 'isBinary'>>;
+  activeEditorTabId: string | null;
+  activeDocumentTabId: string | null;
+  agenticPanels: Array<{ id: string; type: string; title: string; isOpen: boolean }>;
+  activeAgenticTab: string | null;
+}
+
+const _createStore = () => createStore<RunPanelState>()(
   (set, get) => ({
+      agenticFlowId: '',
       sessions: [],
       currentSessionId: null,
       loading: false,
@@ -170,6 +223,7 @@ export const useRunPanelStore = create<RunPanelState>()(
       documentTabs: [],
       activeEditorTabId: null,
       activeDocumentTabId: null,
+      _contentCache: {},
 
       agenticPanels: [
         { id: 'editor', type: 'editor', title: '编辑器', isOpen: false },
@@ -185,6 +239,8 @@ export const useRunPanelStore = create<RunPanelState>()(
       currentProject: null,
       recentProjects: [],
       projectLoading: false,
+      files: [],
+      currentPath: '',
 
       canvasData: null,
 
@@ -211,6 +267,14 @@ export const useRunPanelStore = create<RunPanelState>()(
           },
         }));
       },
+
+      agentTokensMap: {},
+      setAgentTokens: (agentId: string, tokens: number) => {
+        set((state) => ({
+          agentTokensMap: { ...state.agentTokensMap, [agentId]: tokens },
+        }));
+      },
+      clearAgentTokens: () => set({ agentTokensMap: {} }),
 
       setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
       setSessions: (sessionsOrUpdater) => {
@@ -307,6 +371,30 @@ export const useRunPanelStore = create<RunPanelState>()(
         set({ editorTabs: newTabs, activeEditorTabId: newActiveId });
       },
       setActiveEditorTabId: (id) => set({ activeEditorTabId: id }),
+
+      setTabContent: (tabId, content) => {
+        set((state) => {
+          const newCache = { ...state._contentCache, [tabId]: content };
+          const needsModifiedUpdate = state.editorTabs.some(t => t.id === tabId && !t.isModified)
+            || state.documentTabs.some(t => t.id === tabId && !t.isModified);
+          if (needsModifiedUpdate) {
+            return {
+              _contentCache: newCache,
+              editorTabs: state.editorTabs.map(t => t.id === tabId ? { ...t, isModified: true } : t),
+              documentTabs: state.documentTabs.map(t => t.id === tabId ? { ...t, isModified: true } : t),
+            };
+          }
+          return { _contentCache: newCache };
+        });
+      },
+
+      getTabContent: (tabId) => {
+        const state = get();
+        return state._contentCache[tabId]
+          ?? state.editorTabs.find(t => t.id === tabId)?.content
+          ?? state.documentTabs.find(t => t.id === tabId)?.content
+          ?? '';
+      },
 
       addDocumentTab: (tab) => set((state) => ({ documentTabs: [...state.documentTabs, tab] })),
       updateDocumentTab: (id, updates) => set((state) => ({
@@ -407,6 +495,155 @@ export const useRunPanelStore = create<RunPanelState>()(
       setRecentProjects: (projects) => set({ recentProjects: projects }),
       setProjectLoading: (loading) => set({ projectLoading: loading }),
 
+      selectOrCreateProject: async (agenticFlowId, folderPath) => {
+        set({ projectLoading: true, error: null });
+        try {
+          const response = await runProjectApi.selectOrCreateProject(agenticFlowId, folderPath);
+          if (response.code === 200) {
+            set({
+              currentProject: {
+                id: response.data.project_id,
+                name: response.data.project_name,
+                folder_path: response.data.folder_path,
+              },
+              recentProjects: response.data.recent_projects,
+              projectLoading: false,
+              files: [],
+              currentPath: '',
+            });
+            return response.data;
+          }
+          set({ projectLoading: false, error: '选择或创建项目失败' });
+          return null;
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.detail || error.message || '选择或创建项目失败';
+          set({ projectLoading: false, error: errorMsg });
+          return null;
+        }
+      },
+
+      openNativeFolderDialog: async (agenticFlowId, title = '选择项目文件夹', initialdir = '') => {
+        set({ projectLoading: true, error: null });
+        try {
+          const response = await runProjectApi.openNativeFolderDialog(agenticFlowId, title, initialdir);
+          set({ projectLoading: false });
+          if (response.code === 200 && response.data) {
+            set({
+              currentProject: {
+                id: response.data.project_id,
+                name: response.data.project_name,
+                folder_path: response.data.folder_path,
+              },
+              recentProjects: response.data.recent_projects || [],
+              files: [],
+              currentPath: '',
+            });
+            return response.data;
+          }
+          return null;
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.detail || error.message || '选择文件夹失败';
+          set({ projectLoading: false, error: errorMsg });
+          return null;
+        }
+      },
+
+      setProjectFromSelectOrCreate: (data) => {
+        set({
+          currentProject: {
+            id: data.project_id,
+            name: data.project_name,
+            folder_path: data.folder_path,
+          },
+          recentProjects: data.recent_projects,
+          currentPath: '',
+        });
+      },
+
+      loadCurrentProject: async (agenticFlowId) => {
+        set({ projectLoading: true, error: null });
+        try {
+          const response = await runProjectApi.getCurrentProject(agenticFlowId);
+          if (response.code === 200 && response.data) {
+            set({
+              currentProject: response.data,
+              projectLoading: false,
+            });
+          } else {
+            set({
+              currentProject: null,
+              projectLoading: false,
+            });
+          }
+        } catch (error: any) {
+          set({ projectLoading: false, error: error.message });
+        }
+      },
+
+      loadRecentProjects: async (agenticFlowId) => {
+        try {
+          const response = await runProjectApi.getRecentProjects(agenticFlowId, 10);
+          if (response.code === 200) {
+            set({ recentProjects: response.data });
+            return response.data;
+          }
+          return [];
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.detail || error.message || '获取最近项目失败';
+          set({ error: errorMsg });
+          console.error('Failed to load recent projects:', error);
+          return [];
+        }
+      },
+
+      listFiles: async (path = '', pattern = '*') => {
+        set({ projectLoading: true, error: null });
+        try {
+          const response = await runProjectApi.listFiles(path, pattern, get().agenticFlowId);
+          if (response.code === 200) {
+            set({
+              files: response.data.files,
+              currentPath: response.data.relative_path,
+              projectLoading: false,
+            });
+          } else {
+            set({ projectLoading: false, error: '获取文件列表失败' });
+          }
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.detail || error.message || '获取文件列表失败';
+          set({ projectLoading: false, error: errorMsg });
+        }
+      },
+
+      setCurrentPath: (path) => set({ currentPath: path }),
+
+      clearProject: () => {
+        set({
+          currentProject: null,
+          files: [],
+          currentPath: '',
+          error: null,
+        });
+      },
+
+      clearError: () => set({ error: null }),
+
+      applyIncrementalChanges: (changes) => {
+        set((state) => {
+          let newTree: any[] = state.files as any;
+          for (const change of changes) {
+            if (change.operation === 'created') {
+              newTree = insertTreeNode(newTree, change.file_path, change.is_directory);
+            } else if (change.operation === 'deleted') {
+              newTree = removeTreeNode(newTree, change.file_path);
+            } else if (change.operation === 'moved' && change.dest_path) {
+              newTree = moveTreeNode(newTree, change.file_path, change.dest_path, change.is_directory);
+            }
+          }
+          return { files: newTree as ProjectFileInfo[] };
+        });
+      },
+
       setCanvasData: (data) => set({ canvasData: data }),
 
       setHoveredMessageId: (id) => set({ hoveredMessageId: id }),
@@ -464,10 +701,6 @@ export const useRunPanelStore = create<RunPanelState>()(
               updates.currentSessionId = newSessions[0].id;
             } else {
               updates.currentSessionId = null;
-              if (agenticFlowId && projectId) {
-                const key = `soloengine-session-${agenticFlowId}-${projectId}`;
-                localStorage.removeItem(key);
-              }
             }
             updates.messages = [];
           }
@@ -533,10 +766,12 @@ export const useRunPanelStore = create<RunPanelState>()(
                 ),
               });
             } else {
-              runProjectApi.readFile(editorTab.path).then((response) => {
+              runProjectApi.readFile(editorTab.path, 'utf-8', get().agenticFlowId).then((response) => {
+                const newContent = response.data.content;
                 set({
+                  _contentCache: { ...get()._contentCache, [editorTab.id]: newContent },
                   editorTabs: get().editorTabs.map((t) =>
-                    t.id === editorTab.id ? { ...t, content: response.data.content, isLoading: false } : t
+                    t.id === editorTab.id ? { ...t, content: newContent, isLoading: false } : t
                   ),
                 });
               });
@@ -547,10 +782,12 @@ export const useRunPanelStore = create<RunPanelState>()(
             (t) => normalizeFilePath(t.path) === normalizedPath
           );
           if (docTab && !docTab.isModified) {
-            runProjectApi.readFile(docTab.path).then((response) => {
+            runProjectApi.readFile(docTab.path, 'utf-8', get().agenticFlowId).then((response) => {
+              const newContent = response.data.content;
               set({
+                _contentCache: { ...get()._contentCache, [docTab.id]: newContent },
                 documentTabs: get().documentTabs.map((t) =>
-                  t.id === docTab.id ? { ...t, content: response.data.content, isLoading: false } : t
+                  t.id === docTab.id ? { ...t, content: newContent, isLoading: false } : t
                 ),
               });
             });
@@ -564,9 +801,10 @@ export const useRunPanelStore = create<RunPanelState>()(
             || state.documentTabs.find((t) => t.id === tabId);
         if (!tab) return;
 
-        const response = await runProjectApi.readFile(tab.path);
+        const response = await runProjectApi.readFile(tab.path, 'utf-8', get().agenticFlowId);
         const fileContent = response.data.content;
         set({
+          _contentCache: { ...get()._contentCache, [tabId]: fileContent },
           editorTabs: state.editorTabs.map((t) =>
             t.id === tabId
               ? { ...t, content: fileContent, isLoading: false, hasExternalChange: false, isModified: false }
@@ -580,8 +818,163 @@ export const useRunPanelStore = create<RunPanelState>()(
         });
       },
 
+      reset: (mode: 'session' | 'project' | 'full') => {
+        const base = {
+          messages: [] as LLMMessage[],
+          streamingData: [] as DataBlock[],
+          inputText: '',
+          isWaitingReply: false,
+          currentMsgId: '',
+          callRecords: [] as CallRecord[],
+          subagentOutputs: [] as SubagentOutput[],
+          hoveredMessageId: null as string | null,
+          expandedReasoning: [] as string[],
+          expandedToolCalls: [] as string[],
+          streamingExpandedKeys: [] as string[],
+          recallingMessageId: null as string | null,
+          recallPreviewFiles: {} as Record<string, any>,
+          recallPreviewMessageId: null as string | null,
+          fileChangeRefreshKey: 0,
+          fileChangesMap: {} as MessageFileChangesMap,
+          fileChangesLoaded: false,
+          activeChangesMessageId: null as string | null,
+          expandedBlockKeys: {} as Record<string, boolean>,
+        };
+
+        if (mode === 'session') {
+          set(base);
+          return;
+        }
+
+        set({
+          ...base,
+          sessions: [] as ExtendedRunSession[],
+          currentSessionId: null,
+          editorTabs: [] as FileTab[],
+          documentTabs: [] as FileTab[],
+          activeEditorTabId: null,
+          activeDocumentTabId: null,
+          _contentCache: {} as Record<string, string>,
+          agenticPanels: DEFAULT_PANELS,
+          activeAgenticTab: null,
+        });
+
+        if (mode === 'full') {
+          set({
+            currentProject: null,
+            recentProjects: [] as RecentProjectInfo[],
+            canvasData: null,
+            files: [],
+            currentPath: '',
+          });
+        }
+      },
+
+      saveContext: (flowId: string, projectId: string) => {
+        const state = get();
+        const key = `soloengine-session-${flowId}-${projectId}`;
+        const data = {
+          currentSessionId: state.currentSessionId,
+          inputText: state.inputText,
+          editorTabs: state.editorTabs.map(t => ({
+            id: t.id, name: t.name, path: t.path, type: t.type, isBinary: t.isBinary,
+          })),
+          documentTabs: state.documentTabs.map(t => ({
+            id: t.id, name: t.name, path: t.path, type: t.type, isBinary: t.isBinary,
+          })),
+          activeEditorTabId: state.activeEditorTabId,
+          activeDocumentTabId: state.activeDocumentTabId,
+          agenticPanels: state.agenticPanels,
+          activeAgenticTab: state.activeAgenticTab,
+          panelRatios: state.panelRatios,
+        };
+        try {
+          localStorage.setItem(key, JSON.stringify(data));
+        } catch (e) {
+          console.warn('[runPanelStore] saveContext failed:', e);
+        }
+      },
+
+      loadContext: (flowId: string, projectId: string) => {
+        const key = `soloengine-session-${flowId}-${projectId}`;
+        try {
+          const raw = localStorage.getItem(key);
+          if (!raw) return { currentSessionId: null };
+          const data = JSON.parse(raw);
+          const editorTabs = (data.editorTabs || []).map((t: any) => ({
+            ...t, content: '', isLoading: true, isModified: false, hasExternalChange: false,
+          }));
+          const documentTabs = (data.documentTabs || []).map((t: any) => ({
+            ...t, content: '', isLoading: true, isModified: false, hasExternalChange: false,
+          }));
+          set({
+            currentSessionId: data.currentSessionId || null,
+            inputText: data.inputText || '',
+            editorTabs,
+            documentTabs,
+            activeEditorTabId: data.activeEditorTabId || null,
+            activeDocumentTabId: data.activeDocumentTabId || null,
+            agenticPanels: data.agenticPanels || [
+              { id: 'editor', type: 'editor', title: '编辑器', isOpen: false },
+              { id: 'terminal', type: 'terminal', title: '终端', isOpen: false },
+              { id: 'browser', type: 'browser', title: '浏览器', isOpen: false },
+              { id: 'document', type: 'document', title: '文档', isOpen: false },
+              { id: 'changes', type: 'changes', title: '文件变更', isOpen: false },
+            ],
+            activeAgenticTab: data.activeAgenticTab || null,
+            panelRatios: data.panelRatios || [1, 4, 4, 1],
+          });
+          return { currentSessionId: data.currentSessionId || null };
+        } catch (e) {
+          console.warn('[runPanelStore] loadContext failed:', e);
+          return { currentSessionId: null };
+        }
+      },
+
 
     }),
 );
+
+type RunPanelStore = ReturnType<typeof _createStore>;
+
+const storeCache = new Map<string, RunPanelStore>();
+
+export function getRunPanelStore(flowId: string): RunPanelStore {
+  if (!storeCache.has(flowId)) {
+    const store = _createStore();
+    store.setState({ agenticFlowId: flowId });
+    storeCache.set(flowId, store);
+  }
+  return storeCache.get(flowId)!;
+}
+
+let _currentStore: RunPanelStore | null = null;
+export function setCurrentRunPanelStore(store: RunPanelStore) {
+  _currentStore = store;
+}
+
+export const RunPanelStoreContext = createContext<RunPanelStore>(null!);
+
+export function useRunPanelStore<T>(selector: (state: RunPanelState) => T): T;
+export function useRunPanelStore(): RunPanelState;
+export function useRunPanelStore(selector?: (state: RunPanelState) => any) {
+  const ctxStore = useContext(RunPanelStoreContext);
+  const store = ctxStore || _currentStore;
+  if (!store) throw new Error('useRunPanelStore: no store');
+  return selector ? useStore(store, selector) : useStore(store);
+}
+
+useRunPanelStore.getState = () => {
+  if (!_currentStore) throw new Error('no active store');
+  return _currentStore.getState();
+};
+useRunPanelStore.subscribe = (listener: (state: RunPanelState, prevState: RunPanelState) => void) => {
+  if (!_currentStore) throw new Error('no active store');
+  return _currentStore.subscribe(listener);
+};
+useRunPanelStore.setState = (partial: Partial<RunPanelState>) => {
+  if (!_currentStore) throw new Error('no active store');
+  _currentStore.setState(partial);
+};
 
 export { generateId };

@@ -298,25 +298,6 @@ class RunProjectModel(Base):
     agentic_flow = relationship("AgenticFlowModel", backref="run_projects")
 
 
-class RecentProjectModel(Base):
-    """最近访问项目记录模型。"""
-    __tablename__ = "recent_projects"
-    __table_args__ = (
-        Index('ix_recent_projects_user_accessed', 'user_id', 'accessed_at'),
-    )
-
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    project_id = Column(String(36), ForeignKey("run_projects.id"), nullable=False, index=True)
-    folder_path = Column(String(1000), nullable=False)
-    project_name = Column(String(255), nullable=False)
-    accessed_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
-    version = Column(Integer, nullable=False, default=1)
-
-    user = relationship("UserModel", backref="recent_projects")
-    project = relationship("RunProjectModel", backref="recent_records")
-
-
 def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_column_exists(engine, 'session_messages', 'error', 'TEXT')
@@ -967,10 +948,10 @@ class DatabaseManager:
         return encryption_service.decrypt(config.api_key)
 
     def delete_llm_config(self, db: Session, config_id: str, user_id: str) -> bool:
-        """删除LLM配置（软删除）。"""
+        """删除LLM配置（真删除）。"""
         config = self.get_llm_config(db, config_id, user_id)
         if config:
-            config.is_active = False
+            db.delete(config)
             db.commit()
             return True
         return False
@@ -1061,57 +1042,13 @@ class DatabaseManager:
             return True
         return False
 
-    def add_recent_project(self, db: Session, user_id: str, project_id: str,
-                           folder_path: str, project_name: str) -> RecentProjectModel:
-        """添加最近访问项目记录。"""
-        # recent_projects表使用绝对路径，不做转换
-        existing = db.query(RecentProjectModel).filter(
-            RecentProjectModel.user_id == user_id,
-            RecentProjectModel.project_id == project_id
-        ).first()
-        
-        if existing:
-            existing.accessed_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-            existing.folder_path = folder_path
-            existing.project_name = project_name
-            db.commit()
-            db.refresh(existing)
-            
-            return existing
-        
-        recent = RecentProjectModel(
-            user_id=user_id,
-            project_id=project_id,
-            folder_path=folder_path,
-            project_name=project_name,
-        )
-        db.add(recent)
-        db.commit()
-        db.refresh(recent)
-        
-        self._cleanup_recent_projects(db, user_id)
-        
-        return recent
-
-    def get_recent_projects(self, db: Session, user_id: str, limit: int = 10) -> List[RecentProjectModel]:
+    def get_recent_projects(self, db: Session, user_id: str, agentic_flow_id: str, limit: int = 10) -> List[RunProjectModel]:
         """获取用户最近访问的项目列表。"""
-        recent_projects = db.query(RecentProjectModel).filter(
-            RecentProjectModel.user_id == user_id
-        ).order_by(RecentProjectModel.accessed_at.desc()).limit(limit).all()
-        
-        # recent_projects表使用绝对路径，不做转换
-        return recent_projects
-
-    def _cleanup_recent_projects(self, db: Session, user_id: str, max_count: int = 10):
-        """清理超出限制的最近项目记录。"""
-        recent_projects = db.query(RecentProjectModel).filter(
-            RecentProjectModel.user_id == user_id
-        ).order_by(RecentProjectModel.accessed_at.desc()).all()
-        
-        if len(recent_projects) > max_count:
-            for project in recent_projects[max_count:]:
-                db.delete(project)
-            db.commit()
+        return db.query(RunProjectModel).filter(
+            RunProjectModel.user_id == user_id,
+            RunProjectModel.agentic_flow_id == agentic_flow_id,
+            RunProjectModel.is_active == True
+        ).order_by(RunProjectModel.last_accessed_at.desc()).limit(limit).all()
 
     def get_system_skills(self, db: Session) -> List[SkillsPackageModel]:
         """获取所有公共skill（is_public=True）。"""

@@ -1,8 +1,10 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useRef, useEffect, useMemo } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import type { FileTab } from '../types';
 import { useEditorInstanceManager, useEditorCleanup } from './index';
+
+const LARGE_FILE_THRESHOLD = 100 * 1024;
 
 interface TextViewerProps {
   instanceId: string;
@@ -21,6 +23,8 @@ const TextViewer: React.FC<TextViewerProps> = ({
 }) => {
   const { addTimer, removeTimer, addEventListener, cleanup } = useEditorInstanceManager(instanceId);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isLargeFile = tab.content.length > LARGE_FILE_THRESHOLD;
 
   const handleChange = useCallback((value: string) => {
     onContentChange(tab.id, value);
@@ -62,7 +66,7 @@ const TextViewer: React.FC<TextViewerProps> = ({
         style={{ fontSize: 13 }}
         basicSetup={{
           lineNumbers: true,
-          highlightActiveLineGutter: true,
+          highlightActiveLineGutter: !isLargeFile,
           highlightSpecialChars: true,
           history: true,
           drawSelection: true,

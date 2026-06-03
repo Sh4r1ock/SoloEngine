@@ -27,7 +27,6 @@ import type { FileChangeInfo } from '../types';
 import { FileOperation, ChangeStatus } from '../constants/fileChangeTypes';
 import type { ChangeStatusType } from '../constants/fileChangeTypes';
 import { useRunPanelStore } from '../stores/runPanelStore';
-import { useRunProjectStore } from '../../../store/runProjectStore';
 import '../styles/FileChangeStyles.css';
 
 const { Text } = Typography;
@@ -180,7 +179,7 @@ export const FileChangePanel: React.FC<FileChangePanelProps> = ({
       setChanges(prev => prev.map(c =>
         c.file_path === change.file_path ? { ...c, status: 'reverted' as ChangeStatusType, _loading: false } : c
       ));
-      useRunProjectStore.getState().listFiles('');
+      useRunPanelStore.getState().listFiles('');
     } catch (error: any) {
       setChanges(prev => prev.map(c =>
         c.file_path === change.file_path ? { ...c, _loading: false } : c

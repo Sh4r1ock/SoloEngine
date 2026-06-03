@@ -315,7 +315,7 @@ class CompiledFlow:
         logger.info(f"[CompiledFlow.run] Starting run with session_id={self.session_id}, user_id={self.user_id}, run_project_id={self.run_project_id}, agentic_flow_id={self.agentic_flow_id}")
 
         try:
-            result = await self._run_internal(input_message, context, cancel_event)
+            result = await self._run_internal(input_message, context, cancel_event=cancel_event)
             return result
         except Exception as e:
             logger.error(f"[CompiledFlow.run] Execution failed: {e}", exc_info=True)
@@ -464,7 +464,7 @@ class CompiledFlow:
             original_reply = agent.reply
             
             async def wrapped_reply(message: str) -> str:
-                response = await original_reply(message, cancel_event=cancel_event)
+                response = await original_reply(message, cancel_event=cancel_event or self._cancel_event)
                 
                 if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
                     for call in agent._last_tool_calls:
@@ -524,7 +524,6 @@ class CompiledFlow:
             
             tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
             
-            self._accumulate_token_usage(tokens, message_id=message_id)
             if tokens and message_id and message_id not in self._token_usage_recorded:
                 logger.info(f"[Token Usage] Accumulated: {tokens}, message_id: {message_id}")
             
@@ -554,7 +553,6 @@ class CompiledFlow:
             logger.error(traceback.format_exc())
 
             partial_tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
-            self._accumulate_token_usage(partial_tokens)
             if partial_tokens:
                 logger.info(f"[Token Usage] Partial tokens from failed agent: {partial_tokens}")
 
@@ -571,7 +569,8 @@ class CompiledFlow:
                 error=str(e),
             )
         finally:
-            # 从注册表中注销 agent.model
+            tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
+            self._accumulate_token_usage(tokens, message_id=message_id)
             self._active_models.pop(agent_id, None)
             logger.info(f"[_execute_agent] Unregistered model for agent {agent_id}")
     
@@ -1353,7 +1352,7 @@ Working Directory: {work_dir}
         node_data = node.get("data", {})
         
         model_config = node_data.get("model_config", {})
-        llm_config_id = node_data.get("llm_config_id")
+        llm_config_id = model_config.get("llm_config_id")
         
         from app.core.database import encryption_service
         
@@ -1374,14 +1373,24 @@ Working Directory: {work_dir}
         model = config.model_name
         base_url = config.base_url
         api_key = encryption_service.decrypt(config.api_key) if config.api_key else None
-        max_tokens = config.max_tokens
-        temperature = config.temperature
-        top_p = config.top_p
-        frequency_penalty = config.frequency_penalty
-        presence_penalty = config.presence_penalty
         timeout = config.timeout
         extra_params = config.extra_params if hasattr(config, 'extra_params') else None
-        logger.info(f"Using LLM config from database: {config.name} ({provider}/{model}), config_id={llm_config_id}")
+
+        required_params = ["temperature", "max_tokens", "frequency_penalty", "presence_penalty"]
+        missing_params = [p for p in required_params if p not in model_config]
+        if missing_params:
+            raise ValueError(
+                f"节点 '{node_data.get('name', node_id)}' 的模型参数缺失: {', '.join(missing_params)}。"
+                f"请在画布中打开该节点，重新选择模型并保存。"
+            )
+
+        temperature = model_config["temperature"]
+        max_tokens = model_config["max_tokens"]
+        top_p = model_config.get("top_p", 1.0)
+        frequency_penalty = model_config["frequency_penalty"]
+        presence_penalty = model_config["presence_penalty"]
+        logger.info(f"Using LLM config: {config.name} ({provider}/{model}), config_id={llm_config_id}")
+        logger.info(f"LLM params from node model_config: temperature={temperature}, max_tokens={max_tokens}, frequency_penalty={frequency_penalty}, presence_penalty={presence_penalty}")
         
         if not api_key:
             raise ValueError(
@@ -1498,7 +1507,6 @@ Working Directory: {work_dir}
             tools=tools,
             mcp_servers=node_mcp_servers_info,
             subagents=[],
-            memory=node_data.get("memory", True),
             user_id=user_id,
             agentic_flow_id=agentic_flow_id,
             run_project_id=run_project_id,
@@ -1581,7 +1589,6 @@ class FlowRunner:
             event_callback: 事件回调函数
             stream_callback: 流式输出回调函数
             agent_memories: 按 agent_id 分组的记忆
-            cancel_event: 取消事件
             on_flow_created: CompiledFlow 创建后的回调函数
             
         Returns:
@@ -1630,7 +1637,6 @@ class FlowRunner:
         run_project_id: str = None,
         context: Dict[str, Any] = None,
         agent_memories: Dict[str, List[Dict]] = None,
-        cancel_event: asyncio.Event = None,
     ) -> Dict[str, Any]:
         if not session_id:
             raise ValueError("session_id is required for data isolation")

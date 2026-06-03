@@ -418,8 +418,7 @@ class OpenAIChatModel(ChatModelBase):
                 self._save_response_ref(stream)
                 async for item in stream:
                     if cancel_event and cancel_event.is_set():
-                        logger.info("[OpenAI] Cancel event detected, closing stream")
-                        await stream.aclose()
+                        logger.info("[OpenAI] Cancel event detected")
                         self._was_cancelled = True
                         raise asyncio.CancelledError()
                     
@@ -566,11 +565,6 @@ class OpenAIChatModel(ChatModelBase):
                     delta_dict = choice.delta.model_dump() if hasattr(choice.delta, 'model_dump') else {}
                     delta_thinking = delta_dict.get("reasoning_content") or ""
                     delta_text = choice.delta.content or ""
-                    
-                    if delta_thinking:
-                        logger.info(f"[Stream Chunk] thinking='{delta_thinking[:50]}...'")
-                    elif delta_text:
-                        logger.info(f"[Stream Chunk] text='{delta_text}'")
                     
                     thinking += delta_thinking
                     text += delta_text

@@ -230,7 +230,6 @@ npm_cache/
 .workbuddy/
 bat/
 docs/
-!i18n/docs/
 SoloEngine.zip
 .tokeignore
 

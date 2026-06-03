@@ -113,18 +113,12 @@ class LLMService:
         api_key = LLMService._get_decrypted_api_key(config)
         base_url = config.base_url
 
-        model_kwargs: Dict[str, Any] = {
-            "model_name": config.model_name,
-            "stream": False,
-            "api_key": api_key,
-        }
-
-        if base_url:
-            model_kwargs["base_url"] = base_url
-
         return LLMFactory.create_model(
             provider=config.provider,
-            **model_kwargs
+            model_name=config.model_name,
+            stream=False,
+            api_key=api_key,
+            client_kwargs={"base_url": base_url} if base_url else {},
         )
 
     @staticmethod

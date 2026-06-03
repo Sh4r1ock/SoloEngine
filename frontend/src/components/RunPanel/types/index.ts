@@ -41,6 +41,9 @@ export interface DataBlock {
   agent_id?: string;
   agent_name?: string;
   agent_level?: number;
+  agent_tokens?: number;
+  agent_prompt_tokens?: number;
+  agent_completion_tokens?: number;
   name?: string;
   arguments?: string;
   _isExpanding?: boolean;
@@ -110,6 +113,7 @@ export interface FileTab {
   isBinary: boolean;
   hasExternalChange: boolean;
   type: 'editor' | 'document' | 'markdown';
+  fileSize?: number;
 }
 
 export type PanelType = 'editor' | 'terminal' | 'browser' | 'document' | 'changes';
@@ -204,7 +208,7 @@ export interface RecentProjectInfo {
   project_id: string;
   project_name: string;
   folder_path: string;
-  accessed_at: string;
+  accessed_at?: string;
 }
 
 export const TOOL_NAME_MAP: Record<string, string> = {

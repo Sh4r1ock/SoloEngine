@@ -41,10 +41,8 @@ class WebSocketRunContext:
 
         self.websocket_open = True
         self.current_execution_task: Optional[asyncio.Task] = None
-        self.current_cancel_event: Optional[asyncio.Event] = None
         self.current_collector = None
         self.status = "completed"
-        self.error_msg = None
         self.last_user_message_id = None
         self.stored_canvas_data: Dict = {}
         self.agent_memories = {}
@@ -57,6 +55,8 @@ class WebSocketRunContext:
 
         self.receiver_task = None
         self._current_taken_over_event = None
+        self.current_cancel_event: Optional[asyncio.Event] = None
+        
 
     async def initialize(self):
         self._active_websockets[self.ws_key] = self.websocket
@@ -81,12 +81,10 @@ class WebSocketRunContext:
             existing_ctx.run_context.set_websocket(self.websocket)
 
             self.current_execution_task = existing_ctx.task
-            self.current_cancel_event = existing_ctx.cancel_event
             self.current_collector = existing_ctx.collector
             self.last_user_message_id = existing_ctx.run_context._last_user_message_id
             self._current_taken_over_event = existing_ctx.taken_over_event
             self.status = "running"
-            self.error_msg = None
             self.websocket_open = True
 
             existing_ctx.status = "running"
@@ -163,23 +161,6 @@ class WebSocketRunContext:
         except Exception:
             pass
 
-        if self.current_collector:
-            try:
-                tokens = self._run_context._last_execute_result.get("token_usage") if self._run_context._last_execute_result else None
-                loop_msg_status = "error" if self.status == "error" else "completed"
-                loop_msg_error = self.error_msg if self.status == "error" else None
-                await self._run_context.save_assistant_message(
-                    collector=self.current_collector,
-                    tokens=tokens,
-                    parent_message_id=self.last_user_message_id,
-                    execution_result=self._run_context._last_execute_result,
-                    update_file_change_message_id=True,
-                    status=loop_msg_status,
-                    error=loop_msg_error,
-                )
-            except Exception:
-                pass
-
         if is_fatal or self.consecutive_errors >= self.MAX_CONSECUTIVE_ERRORS:
             logger.error(f"[WebSocket] Fatal error or too many consecutive errors, closing connection")
             self.websocket_open = False
@@ -227,72 +208,59 @@ class WebSocketRunContext:
             run_project_id=self.run_project_id
         )
 
-        tokens = None
-        result = None
+        if hasattr(self, '_pending_stream_tasks') and self._pending_stream_tasks:
+            await asyncio.gather(*self._pending_stream_tasks, return_exceptions=True)
+            self._pending_stream_tasks.clear()
 
-        fallback_tokens = self._run_context._last_execute_result.get("token_usage") if self._run_context._last_execute_result else None
+        result = None
+        error_msg = None
 
         try:
             if self.current_execution_task.cancelled():
                 self.status = "stop"
                 logger.info(f"[WebSocket] Execution stopped for session: {self.session_id}")
-
-                await self._send_execution_event("execution_stopped", tokens=fallback_tokens)
             else:
                 result = self.current_execution_task.result()
-
                 result_status = result.get("status") if isinstance(result, dict) else None
-                tokens = result.get("token_usage") if isinstance(result, dict) else None
 
                 if result_status == "failed":
                     self.status = "error"
-                    self.error_msg = result.get("error", "执行失败")
-                    logger.error(f"[WebSocket] Execution returned failed status: {self.error_msg}")
-
-                    try:
-                        await self._send_execution_event("execution_error", error=self.error_msg, tokens=tokens)
-                    except Exception as send_error:
-                        logger.error(f"Failed to send execution_error to client: {send_error}")
+                    error_msg = result.get("error", "执行失败")
+                    logger.error(f"[WebSocket] Execution returned failed status: {error_msg}")
                 else:
-                    openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None})
-
-                    await self._send_execution_event("execution_complete", message=openai_message, tokens=tokens, user_message_id=self.last_user_message_id)
-
-
+                    self.status = "completed"
         except asyncio.CancelledError:
             self.status = "stop"
             logger.info(f"[WebSocket] Execution stopped (CancelledError) for session: {self.session_id}")
-
-            await self._send_execution_event("execution_stopped", tokens=fallback_tokens)
         except Exception as exec_error:
             self.status = "error"
-            self.error_msg = str(exec_error)
+            error_msg = str(exec_error)
             logger.error(f"Execution error: {exec_error}", exc_info=True)
 
-            try:
-                await self._send_execution_event("execution_error", error=self.error_msg, tokens=fallback_tokens)
+        tokens = result.get("token_usage") if isinstance(result, dict) else None
+        if not tokens and self._run_context._compiled_flow:
+            tokens = getattr(self._run_context._compiled_flow, '_token_usage', None)
 
-                await self.websocket.send_json({
-                    "type": "execution_result",
-                    "data": {
-                        "status": "error",
-                        "error": self.error_msg
-                    },
-                    "session_id": self.session_id,
-                    "timestamp": self._get_timestamp()
-                })
+        if self.status == "stop":
+            await self._send_execution_event("execution_stopped", tokens=tokens)
+        elif self.status == "error":
+            try:
+                await self._send_execution_event("execution_error", error=error_msg, tokens=tokens)
             except Exception as send_error:
-                logger.error(f"Failed to send error to client: {send_error}")
+                logger.error(f"Failed to send execution_error to client: {send_error}")
+        else:
+            openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None}) if result else None
+            await self._send_execution_event("execution_complete", message=openai_message, tokens=tokens, user_message_id=self.last_user_message_id)
 
         logger.info(f"[WebSocket] Task completed - status: {self.status}, collector has data: {self.current_collector.get_chunk_count() > 0 if self.current_collector else False}, tokens: {tokens}")
 
         has_collector_data = self.current_collector.get_chunk_count() > 0 if self.current_collector else False
         if not has_collector_data and self.status != "error" and self.status != "stop":
             self.status = "error"
-            self.error_msg = self.error_msg or "LLM未返回有效内容"
+            error_msg = error_msg or "LLM未返回有效内容"
 
         msg_status = "error" if self.status == "error" else "completed"
-        msg_error = self.error_msg if self.status == "error" else None
+        msg_error = error_msg if self.status == "error" else None
 
         saved_message_ids = {}
 
@@ -334,12 +302,11 @@ class WebSocketRunContext:
         if self.status == "stop":
             self._run_context._finalize_execution(status_override="stop", tokens=tokens)
         elif self.status == "error":
-            self._run_context._finalize_execution(status_override="error", error_msg=self.error_msg, tokens=tokens)
+            self._run_context._finalize_execution(status_override="error", error_msg=error_msg, tokens=tokens)
         else:
             self._run_context._finalize_execution(status_override="completed", tokens=tokens)
 
         self.current_execution_task = None
-        self.current_cancel_event = None
         self.current_collector = None
 
         file_change_message_id = None
@@ -366,9 +333,9 @@ class WebSocketRunContext:
         if self.current_execution_task and not self.current_execution_task.done():
             logger.info(f"[WebSocket] Stop requested for session: {self.session_id}")
 
-            # 主动关闭：通过 CompiledFlow.cancel() 关闭 HTTP 连接
+            # 通过 CompiledFlow.cancel() 关闭 HTTP 连接
             try:
-                ec = self.execution_context_manager.get(
+                ec = execution_context_manager.get(
                     self.agentic_flow_id, self.session_id, self.run_project_id
                 )
                 if ec and ec.run_context and hasattr(ec.run_context, '_compiled_flow'):
@@ -385,7 +352,11 @@ class WebSocketRunContext:
 
             self.current_execution_task.cancel()
 
-            logger.info(f"[WebSocket] Stop requested, task cancelled, waiting for completion in main loop")
+            try:
+                await self.current_execution_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            logger.info(f"[WebSocket] Execution task completed after stop")
         else:
             try:
                 await self.websocket.send_json({
@@ -413,6 +384,7 @@ class WebSocketRunContext:
 
         self.status = "completed"
         self.current_collector = self._ChunkCollector()
+        self._pending_stream_tasks = []
 
         self._current_round_index += 1
 
@@ -425,6 +397,8 @@ class WebSocketRunContext:
 
         def stream_callback_with_collector(delta: dict, agent_id: str = None, agent_name: str = None):
             try:
+                # DEBUG: verify callback is called and collector exists
+                logger.info(f"[WebSocket] stream_callback called: collector={ctx.current_collector is not None}, delta_keys={list(delta.keys())}, agent_id={agent_id}")
                 ctx.current_collector.add_chunk(delta, agent_id, agent_name)
                 exec_ctx = execution_context_manager.get(
                     user_id=ctx.user_id,
@@ -448,7 +422,8 @@ class WebSocketRunContext:
                                     })
                                 except Exception:
                                     pass
-                            asyncio.create_task(safe_send())
+                            task = asyncio.create_task(safe_send())
+                            ctx._pending_stream_tasks.append(task)
                     except RuntimeError:
                         pass
             except Exception as e:
@@ -527,7 +502,7 @@ class WebSocketRunContext:
                     wait_coroutines.append(message_wait_task)
 
                     execution_wait_task = None
-                    if self.current_execution_task and not self.current_execution_task.done():
+                    if self.current_execution_task:
                         execution_wait_task = asyncio.ensure_future(self.current_execution_task)
                         wait_coroutines.append(execution_wait_task)
 
@@ -676,69 +651,20 @@ class WebSocketRunContext:
                 if self.current_execution_task in done:
                     logger.info(f"[WebSocket] Task completed during grace period: {self.session_id}")
                     await self.handle_execution_completion()
-
                 else:
-                    logger.warning(f"[WebSocket] Grace period expired: {self.session_id}")
+                    logger.warning(f"[WebSocket] Grace period expired, stopping execution: {self.session_id}")
+                    await self.handle_stop()
+                    await self.handle_execution_completion()
+
+            except Exception as e:
+                logger.error(f"[WebSocket] Cleanup error: {e}", exc_info=True)
+                try:
                     if self.current_cancel_event:
                         self.current_cancel_event.set()
-                    self.current_execution_task.cancel()
-                    try:
-                        await asyncio.wait_for(self.current_execution_task, timeout=settings.WEBSOCKET_TASK_CANCEL_TIMEOUT)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        pass
-
-                    self.status = "error"
-                    self.error_msg = "WebSocket连接断开超时，执行被中断"
-
-                    execution_context_manager.unregister(
-                        user_id=self.user_id,
-                        agentic_flow_id=self.agentic_flow_id,
-                        session_id=self.session_id,
-                        run_project_id=self.run_project_id
-                    )
-            except Exception as e:
-                self.status = "error"
-                self.error_msg = f"执行异常: {str(e)}"
-                execution_context_manager.unregister(
-                    user_id=self.user_id,
-                    agentic_flow_id=self.agentic_flow_id,
-                    session_id=self.session_id,
-                    run_project_id=self.run_project_id
-                )
-        else:
-            if not self.status:
-                self.status = "stop"
-
-        tokens = self._run_context._last_execute_result.get("token_usage") if self._run_context._last_execute_result else None
-
-        if self.current_collector:
-            if not self.status:
-                self.status = "stop"
-            
-            has_collector_data = self.current_collector.get_chunk_count() > 0
-            if not has_collector_data and self.status != "error":
-                self.status = "error"
-                self.error_msg = self.error_msg or "LLM未返回有效内容"
-            
-            logger.info(f"[WebSocket] Finally block - saving data, status: {self.status}, collector has data: {has_collector_data}, parent_message_id: {self.last_user_message_id}")
-
-            cleanup_msg_status = "error" if self.status == "error" else "completed"
-            cleanup_msg_error = self.error_msg if self.status == "error" else None
-
-            try:
-                await self._run_context.save_assistant_message(
-                    collector=self.current_collector,
-                    tokens=tokens,
-                    parent_message_id=self.last_user_message_id,
-                    execution_result=self._run_context._last_execute_result,
-                    update_file_change_message_id=True,
-                    status=cleanup_msg_status,
-                    error=cleanup_msg_error,
-                )
-            except Exception as save_error:
-                logger.error(f"[WebSocket] Failed to save message in finally: {save_error}")
-
-            self._run_context._finalize_execution(status_override=self.status or "stop", error_msg=self.error_msg, tokens=tokens)
+                    if self.current_execution_task and not self.current_execution_task.done():
+                        self.current_execution_task.cancel()
+                except Exception:
+                    pass
 
         self._active_websockets.pop(self.ws_key, None)
         self._websocket_timestamps.pop(self.ws_key, None)
