@@ -107,7 +107,7 @@ Special thanks to:
 
 ## Contributing
 
-<p align="center">We are **so** excited to meet you.</p>
+<p align="center">We are so excited to meet you.</p>
 
 <p align="center">Every typo fix, new tool plugin, doc tweak, or full-on feature lands — all of it makes SoloEngine better. Big PRs and small ones, both welcome.</p>
 
