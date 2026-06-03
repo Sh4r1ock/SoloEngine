@@ -33,7 +33,7 @@
  *     - <RunPanel agenticFlowId="flow-id" />
  */
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Layout, Button, Typography, Modal, Dropdown, List, Tag, Empty, Spin, Tooltip, App } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -48,12 +48,11 @@ import {
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 
-import { useRunPanelStore, generateId } from './stores/runPanelStore';
+import { useRunPanelStore, generateId, getRunPanelStore, RunPanelStoreContext, setCurrentRunPanelStore } from './stores/runPanelStore';
 import type { FileSystemChange } from './types';
 import { useStreamingData } from './hooks/useStreamingData';
 import { WEBSOCKET_CONFIG } from '../../config/websocket';
 import { useRunWebSocket, ExecutionEvent } from '../../hooks/useRunWebSocket';
-import { useRunProjectStore } from '../../store/runProjectStore';
 import { runApi } from '../../services/runApi';
 import { loadMessages } from './utils/loadMessagesWithFileChanges';
 import { formatSmartTime } from '../../utils/timezone';
@@ -70,9 +69,6 @@ import type { LLMMessage, DataBlock, FileTab, CallRecord, CallType, SubagentOutp
 
 const { Header } = Layout;
 const { Text } = Typography;
-
-const getSessionStorageKey = (flowId: string, projectId: string) =>
-  `soloengine-session-${flowId}-${projectId}`;
 
 interface RunPanelProps {
   agenticFlowId?: string;
@@ -119,6 +115,9 @@ const ResizableDivider: React.FC<{
 };
 
 const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
+  const store = useMemo(() => getRunPanelStore(agenticFlowId!), [agenticFlowId]);
+  setCurrentRunPanelStore(store);
+
   const accumulateTokenUsage = (existing: any, delta: any) => {
     if (!delta) return existing;
     if (!existing) return delta;
@@ -149,6 +148,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     setCallRecords,
     setSubagentOutputs,
     clearSubagentOutputs,
+    setAgentTokens,
+    clearAgentTokens,
     editorTabs,
     documentTabs,
     activeEditorTabId,
@@ -180,17 +181,12 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     deleteSession: storeDeleteSession,
     loadSessionsForProject: storeLoadSessionsForProject,
     handleExternalFileChanges,
-    clearRecallPreview,
-  } = useRunPanelStore();
-
-  const {
-    currentProject: runProjectCurrentProject,
-    loading: projectLoading,
+    projectLoading,
     loadCurrentProject,
     loadRecentProjects,
     selectOrCreateProject,
     openNativeFolderDialog,
-  } = useRunProjectStore();
+  } = useRunPanelStore();
 
   const streamingDataHook = useStreamingData();
   const streamingDataHookRef = useRef(streamingDataHook);
@@ -216,14 +212,17 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   flowIdRef.current = agenticFlowId || null;
   projectIdRef.current = currentProject?.id || null;
 
+  const saveContextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const unsub = useRunPanelStore.subscribe((state, prevState) => {
-      if (state.currentSessionId === prevState.currentSessionId) return;
+    const unsub = useRunPanelStore.subscribe(() => {
+      if (isResettingRef.current) return;
       const fid = flowIdRef.current;
       const pid = projectIdRef.current;
-      if (!fid || !pid || !state.currentSessionId) return;
-      const key = `soloengine-session-${fid}-${pid}`;
-      localStorage.setItem(key, JSON.stringify({ currentSessionId: state.currentSessionId }));
+      if (!fid || !pid) return;
+      if (saveContextTimerRef.current) clearTimeout(saveContextTimerRef.current);
+      saveContextTimerRef.current = setTimeout(() => {
+        useRunPanelStore.getState().saveContext(fid, pid);
+      }, 1000);
     });
     return unsub;
   }, []);
@@ -276,6 +275,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const loadSessionsRef = useRef(loadSessionsFromBackend);
   loadSessionsRef.current = loadSessionsFromBackend;
 
+  const isResettingRef = useRef(false);
+
   useEffect(() => {
     loadCurrentProject(agenticFlowId);
     if (agenticFlowId) {
@@ -284,27 +285,6 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       });
     }
   }, [agenticFlowId, loadCurrentProject, loadRecentProjects, setRecentProjects]);
-
-  const prevProjectRef = useRef<{id: string; name: string; folder_path: string} | null>(null);
-  useEffect(() => {
-    if (runProjectCurrentProject) {
-      const newProject = {
-        id: runProjectCurrentProject.id,
-        name: runProjectCurrentProject.name,
-        folder_path: runProjectCurrentProject.folder_path,
-      };
-      const prev = prevProjectRef.current;
-      if (!prev || prev.id !== newProject.id || prev.name !== newProject.name || prev.folder_path !== newProject.folder_path) {
-        prevProjectRef.current = newProject;
-        setCurrentProject(newProject);
-      }
-    } else {
-      if (prevProjectRef.current !== null) {
-        prevProjectRef.current = null;
-        setCurrentProject(null);
-      }
-    }
-  }, [runProjectCurrentProject, setCurrentProject]);
 
   useEffect(() => {
     const loadCanvasData = async () => {
@@ -333,31 +313,48 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
       if (initId !== initCounterRef.current) return;
 
-      const key = getSessionStorageKey(agenticFlowId, currentProject.id);
-      const storedData = localStorage.getItem(key);
-      if (storedData) {
-        try {
-          const { currentSessionId: storedSessionId } = JSON.parse(storedData);
-          if (storedSessionId) {
-            const currentSessions = useRunPanelStore.getState().sessions;
-            const isValid = currentSessions.some(s => s.id === storedSessionId);
-            if (isValid) {
-              setCurrentSessionId(storedSessionId);
-              const { messages: restoredMessages, fileChangesMap } = await loadMessages(storedSessionId);
-              if (initId !== initCounterRef.current) return;
-              if (restoredMessages && restoredMessages.length > 0) {
-                setMessages(restoredMessages);
-                setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
-              }
-            } else {
-              localStorage.removeItem(key);
-            }
+      const store = useRunPanelStore.getState();
+      const { currentSessionId: cachedSessionId } = store.loadContext(agenticFlowId, currentProject.id);
+
+      if (initId !== initCounterRef.current) return;
+
+      if (cachedSessionId) {
+        const currentSessions = useRunPanelStore.getState().sessions;
+        const isValid = currentSessions.some(s => s.id === cachedSessionId);
+        if (isValid) {
+          setCurrentSessionId(cachedSessionId);
+          const { messages: restoredMessages, fileChangesMap } = await loadMessages(cachedSessionId);
+          if (initId !== initCounterRef.current) return;
+          if (restoredMessages && restoredMessages.length > 0) {
+            setMessages(restoredMessages);
+            setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
           }
-        } catch (e) {
-          console.error('Failed to parse stored session:', e);
-          localStorage.removeItem(key);
         }
       }
+
+      const tabsToLoad = useRunPanelStore.getState().editorTabs.filter(t => t.isLoading);
+      const currentFlowId = useRunPanelStore.getState().agenticFlowId;
+      for (const tab of tabsToLoad) {
+        runProjectApi.readFile(tab.path, 'utf-8', currentFlowId).then(res => {
+          if (res.code === 200) {
+            useRunPanelStore.getState().updateEditorTab(tab.id, { content: res.data.content, isLoading: false, fileSize: res.data.size });
+          }
+        }).catch(() => {
+          useRunPanelStore.getState().updateEditorTab(tab.id, { content: '加载失败', isLoading: false });
+        });
+      }
+      const docTabsToLoad = useRunPanelStore.getState().documentTabs.filter(t => t.isLoading);
+      for (const tab of docTabsToLoad) {
+        runProjectApi.readFile(tab.path, 'utf-8', currentFlowId).then(res => {
+          if (res.code === 200) {
+            useRunPanelStore.getState().updateDocumentTab(tab.id, { content: res.data.content, isLoading: false, fileSize: res.data.size });
+          }
+        }).catch(() => {
+          useRunPanelStore.getState().updateDocumentTab(tab.id, { content: '加载失败', isLoading: false });
+        });
+      }
+
+      isResettingRef.current = false;
     };
 
     init();
@@ -456,6 +453,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'execution_start':
         setCallRecords([]);
         clearSubagentOutputs();
+        clearAgentTokens();
         streamingHook.resetStream();
         messageAddedRef.current = false;
         startRunning();
@@ -562,12 +560,14 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         break;
 
       case 'subagent_complete':
+        if ((event as any).tokens?.total_tokens) {
+          setAgentTokens((event as any).subagent_id, (event as any).tokens.total_tokens);
+        }
         setSubagentOutputs((prev: SubagentOutput[]) => {
           const endTime = Date.now();
           return prev.map(sa => {
             if (sa.id === (event as any).subagent_id) {
               const startTime = sa.startTime || endTime;
-              // 修复：如果 event.content 为空，保留已有的 output
               const newOutput = (event as any).content || (event as any).subagent_output;
               return {
                 ...sa,
@@ -641,7 +641,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'stream':
         try {
           const delta = event.delta || {} as any;
-          const hasContent = (delta as any).reasoning_content || (delta as any).tool_calls || (delta as any).content;
+          const hasContent = (delta as any).reasoning_content !== undefined && (delta as any).reasoning_content !== null
+            || (delta as any).tool_calls !== undefined && (delta as any).tool_calls !== null
+            || (delta as any).content !== undefined && (delta as any).content !== null;
           const hasLegacyContent = event.content !== undefined && event.content_type !== undefined;
           if (hasContent) {
             streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name);
@@ -875,11 +877,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       return;
     }
 
-    setCurrentSessionId(sessionId);
-    setCallRecords([]);
+    useRunPanelStore.getState().reset('session');
     streamingDataHookRef.current.resetStream();
-    setMessages([]);
-    clearRecallPreview();
+    setCurrentSessionId(sessionId);
 
     try {
       const { messages: restoredMessages, fileChangesMap, rawMessages } = await loadMessages(sessionId);
@@ -887,14 +887,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         setMessages(restoredMessages);
         setFileChangesMap(prev => ({ ...prev, ...fileChangesMap }));
         setSessions(sessions.map(s => s.id === sessionId ? { ...s, messages: rawMessages, fileChangesMap } : s));
-      } else {
-        setMessages([]);
       }
     } catch (error) {
       console.warn('Failed to load session messages:', error);
-      setMessages([]);
     }
-  }, [currentSessionId, setCurrentSessionId, setMessages, setCallRecords, sessions, setSessions, setFileChangesMap]);
+  }, [currentSessionId, setCurrentSessionId, setMessages, sessions, setSessions, setFileChangesMap]);
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -908,40 +905,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
   const handleGoHome = () => navigate('/main');
 
-  /**
-   * 切换项目时重置会话状态
-   *
-   * 功能：
-   * 1. 清空当前 session_id
-   * 2. 清空消息列表
-   * 3. 清空调用记录
-   * 4. 重置流式数据
-   * 5. 触发 WebSocket 重新连接（通过依赖项变化自动触发）
-   */
-  const resetSessionForNewProject = useCallback(async () => {
-    setCurrentSessionId(null);
-
-    // 2. 清空消息列表
-    setMessages([]);
-
-    // 3. 清空 sessions 列表
-    setSessions([]);
-
-    // 4. 清空调用记录
-    setCallRecords([]);
-    clearSubagentOutputs();
-
-    // 5. 重置流式数据
-    streamingDataHookRef.current.resetStream();
-  }, [
-    setCurrentSessionId,
-    setMessages,
-    setSessions,
-    setCallRecords,
-    clearSubagentOutputs
-  ]);
-
-  const handleSelectFolder = async () => {
+  const handleSelectFolder = useCallback(async () => {
     if (!agenticFlowId) {
       message.warning('请先选择工作流');
       return;
@@ -955,22 +919,24 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
       message.success(`已选择项目: ${result.project_name}`);
 
-      // ✅ 先更新currentProject，确保后续操作使用正确的项目
+      if (currentProject?.id && agenticFlowId) {
+        if (saveContextTimerRef.current) { clearTimeout(saveContextTimerRef.current); saveContextTimerRef.current = null; }
+        isResettingRef.current = true;
+        useRunPanelStore.getState().saveContext(agenticFlowId, currentProject.id);
+      }
       setCurrentProject({
         id: result.project_id,
         name: result.project_name,
         folder_path: result.folder_path,
       });
+      useRunPanelStore.getState().reset('project');
+      streamingDataHookRef.current.resetStream();
 
-      // ✅ 重置会话状态
-      await resetSessionForNewProject();
-
-      // ✅ 使用项目ID直接加载sessions（避免React状态异步更新问题）
       await loadSessionsForProject(result.project_id);
     }
-  };
+  }, [agenticFlowId, currentProject?.id, openNativeFolderDialog, setCurrentProject, loadSessionsForProject]);
 
-  const handleSelectFromRecent = async (project: RecentProjectInfo) => {
+  const handleSelectFromRecent = useCallback(async (project: RecentProjectInfo) => {
     if (!agenticFlowId) return;
 
     setSwitchingProjectId(project.project_id);
@@ -985,23 +951,25 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         message.success(`已切换到工作区: ${project.project_name}`);
         setRecentModalVisible(false);
 
-        // ✅ 先更新currentProject，确保后续操作使用正确的项目
+        if (currentProject?.id && agenticFlowId) {
+          if (saveContextTimerRef.current) { clearTimeout(saveContextTimerRef.current); saveContextTimerRef.current = null; }
+          isResettingRef.current = true;
+          useRunPanelStore.getState().saveContext(agenticFlowId, currentProject.id);
+        }
         setCurrentProject({
           id: result.project_id,
           name: result.project_name,
           folder_path: result.folder_path,
         });
+        useRunPanelStore.getState().reset('project');
+        streamingDataHookRef.current.resetStream();
 
-        // ✅ 重置会话状态
-        await resetSessionForNewProject();
-
-        // ✅ 使用项目ID直接加载sessions（避免React状态异步更新问题）
         await loadSessionsForProject(result.project_id);
       }
     } finally {
       setSwitchingProjectId(null);
     }
-  };
+  }, [agenticFlowId, currentProject?.id, selectOrCreateProject, setCurrentProject, loadSessionsForProject]);
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
@@ -1083,7 +1051,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           nodes: [{
             id: 'default_agent',
             type: 'executor',
-            data: { name: 'Assistant', system_prompt: 'You are a helpful assistant.', tools: [], memory: true },
+            data: { name: 'Assistant', system_prompt: 'You are a helpful assistant.', tools: [] },
           }],
           edges: [],
         };
@@ -1154,43 +1122,22 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
 
-    const finalizeAndStop = () => {
-      const finalData = streamingDataHookRef.current.finalizeStream();
-      if (!messageAddedRef.current && finalData.length > 0) {
-        const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
-        const stoppedMessage: LLMMessage = {
-          id: msgId,
-          role: 'assistant',
-          content: '',
-          data: finalData,
-          timestamp: new Date().toISOString(),
-          status: 'stopped',
-        };
-        setMessages(prev => [...prev, stoppedMessage]);
-        messageAddedRef.current = true;
+    const safetyTimer = setTimeout(() => {
+      const stillRunning = useRunPanelStore.getState().isRunning || useRunPanelStore.getState().isWaitingReply;
+      if (stillRunning) {
+        handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
       }
-      stopRunning();
-      setIsWaitingReply(false);
-      clearTimeouts();
-    };
+    }, 3000);
 
     try {
       const sent = await stopFlow();
-      stopRunning();
-      setIsWaitingReply(false);
-      clearTimeouts();
-      if (sent) {
-        setTimeout(() => {
-          const stillRunning = useRunPanelStore.getState().isRunning || useRunPanelStore.getState().isWaitingReply;
-          if (stillRunning) {
-            finalizeAndStop();
-          }
-        }, 3000);
-      } else {
-        finalizeAndStop();
+      if (!sent) {
+        clearTimeout(safetyTimer);
+        handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
       }
     } catch {
-      finalizeAndStop();
+      clearTimeout(safetyTimer);
+      handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
     } finally {
       setTimeout(() => {
         isStoppingRef.current = false;
@@ -1215,12 +1162,12 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     if (result.existed) return;
 
     try {
-      const response = await runProjectApi.readFile(resolvedPath);
+      const response = await runProjectApi.readFile(resolvedPath, 'utf-8', agenticFlowId);
       if (response.code === 200) {
         if (isCode) {
-          updateEditorTab(result.tab.id, { content: response.data.content, isLoading: false });
+          updateEditorTab(result.tab.id, { content: response.data.content, isLoading: false, fileSize: response.data.size });
         } else {
-          updateDocumentTab(result.tab.id, { content: response.data.content, isLoading: false });
+          updateDocumentTab(result.tab.id, { content: response.data.content, isLoading: false, fileSize: response.data.size });
         }
       }
     } catch (error) {
@@ -1256,17 +1203,18 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   }, [activeEditorTabId, editorTabs]);
 
   const handleEditorContentChange = (tabId: string, content: string) => {
-    updateEditorTab(tabId, { content, isModified: true });
+    useRunPanelStore.getState().setTabContent(tabId, content);
   };
 
   const handleDocumentContentChange = (tabId: string, content: string) => {
-    updateDocumentTab(tabId, { content, isModified: true });
+    useRunPanelStore.getState().setTabContent(tabId, content);
   };
 
   const handleAutoSave = async (tab: FileTab) => {
     if (!tab.isModified || tab.isBinary) return;
     try {
-      await runProjectApi.writeFile(tab.path, tab.content);
+      const content = useRunPanelStore.getState().getTabContent(tab.id);
+      await runProjectApi.writeFile(tab.path, content, 'utf-8', 'write', agenticFlowId);
       if (tab.type === 'editor') {
         updateEditorTab(tab.id, { isModified: false });
       } else {
@@ -1320,10 +1268,10 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     };
   }, [isDragging, handleMouseMove, handleMouseUp]);
 
-  const projectMenuItems: MenuProps['items'] = [
-    { key: 'select', label: <span onClick={handleSelectFolder}><FolderOutlined style={{ marginRight: 8 }} />选择项目</span> },
-    { key: 'recent', label: <span onClick={() => setRecentModalVisible(true)}><HistoryOutlined style={{ marginRight: 8 }} />历史项目</span> },
-  ];
+  const projectMenuItems: MenuProps['items'] = useMemo(() => [
+    { key: 'select', label: <><FolderOutlined style={{ marginRight: 8 }} />选择项目</>, onClick: handleSelectFolder },
+    { key: 'recent', label: <><HistoryOutlined style={{ marginRight: 8 }} />历史项目</>, onClick: () => setRecentModalVisible(true) },
+  ], [handleSelectFolder]);
 
   const totalRatio = panelRatios.reduce((a, b) => a + b, 0);
 
@@ -1334,6 +1282,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   };
 
   return (
+    <RunPanelStoreContext.Provider value={store}>
     <>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <Layout style={{ height: '100%', background: 'var(--bg-100)' }}>
@@ -1468,6 +1417,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
       </Layout>
     </>
+    </RunPanelStoreContext.Provider>
   );
 };
 

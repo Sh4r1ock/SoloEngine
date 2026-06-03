@@ -44,61 +44,115 @@ interface FileDiffViewerProps {
 const computeDiff = (oldText: string, newText: string): DiffLine[] => {
   const oldLines = oldText ? oldText.split('\n') : [];
   const newLines = newText ? newText.split('\n') : [];
+  const N = oldLines.length;
+  const M = newLines.length;
 
-  const oldLen = oldLines.length;
-  const newLen = newLines.length;
+  if (N === 0 && M === 0) return [];
+  if (N === 0) {
+    return newLines.map((line, j) => ({
+      oldLineNumber: null,
+      newLineNumber: j + 1,
+      oldContent: '',
+      newContent: line,
+      type: 'added' as const,
+    }));
+  }
+  if (M === 0) {
+    return oldLines.map((line, i) => ({
+      oldLineNumber: i + 1,
+      newLineNumber: null,
+      oldContent: line,
+      newContent: '',
+      type: 'removed' as const,
+    }));
+  }
 
-  const lcs: number[][] = Array(oldLen + 1)
-    .fill(null)
-    .map(() => Array(newLen + 1).fill(0));
+  const MAX = N + M;
+  const maxSteps = Math.min(MAX, 2 * Math.max(N, M));
+  const size = 2 * maxSteps + 1;
+  const offset = maxSteps;
+  const v = new Int32Array(size);
+  const trace: Int32Array[] = [];
 
-  for (let i = 1; i <= oldLen; i++) {
-    for (let j = 1; j <= newLen; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        lcs[i][j] = lcs[i - 1][j - 1] + 1;
+  outer: for (let d = 0; d <= maxSteps; d++) {
+    const newV = new Int32Array(size);
+    newV.set(v);
+    trace.push(newV);
+
+    for (let k = -d; k <= d; k += 2) {
+      let x: number;
+      if (k === -d || (k !== d && v[k - 1 + offset] < v[k + 1 + offset])) {
+        x = v[k + 1 + offset];
       } else {
-        lcs[i][j] = Math.max(lcs[i - 1][j], lcs[i][j - 1]);
+        x = v[k - 1 + offset] + 1;
+      }
+      let y = x - k;
+
+      while (x < N && y < M && oldLines[x] === newLines[y]) {
+        x++;
+        y++;
+      }
+
+      newV[k + offset] = x;
+      if (x >= N && y >= M) break outer;
+    }
+    v.set(newV);
+  }
+
+  const result: DiffLine[] = [];
+  let x = N;
+  let y = M;
+
+  for (let d = trace.length - 1; d >= 0; d--) {
+    const tv = trace[d];
+    const k = x - y;
+
+    let prevK: number;
+    if (k === -d || (k !== d && tv[k - 1 + offset] < tv[k + 1 + offset])) {
+      prevK = k + 1;
+    } else {
+      prevK = k - 1;
+    }
+
+    const prevX = tv[prevK + offset];
+    const prevY = prevX - prevK;
+
+    while (x > prevX && y > prevY) {
+      x--;
+      y--;
+      result.unshift({
+        oldLineNumber: x + 1,
+        newLineNumber: y + 1,
+        oldContent: oldLines[x],
+        newContent: newLines[y],
+        type: 'unchanged',
+      });
+    }
+
+    if (d > 0) {
+      if (x === prevX) {
+        y--;
+        result.unshift({
+          oldLineNumber: null,
+          newLineNumber: y + 1,
+          oldContent: '',
+          newContent: newLines[y],
+          type: 'added',
+        });
+      } else {
+        x--;
+        result.unshift({
+          oldLineNumber: x + 1,
+          newLineNumber: null,
+          oldContent: oldLines[x],
+          newContent: '',
+          type: 'removed',
+        });
       }
     }
   }
 
-  let i = oldLen;
-  let j = newLen;
-  const diffLines: DiffLine[] = [];
-
-  while (i > 0 || j > 0) {
-    if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      diffLines.unshift({
-        oldLineNumber: i,
-        newLineNumber: j,
-        oldContent: oldLines[i - 1],
-        newContent: newLines[j - 1],
-        type: 'unchanged',
-      });
-      i--;
-      j--;
-    } else if (j > 0 && (i === 0 || lcs[i][j - 1] >= lcs[i - 1][j])) {
-      diffLines.unshift({
-        oldLineNumber: null,
-        newLineNumber: j,
-        oldContent: '',
-        newContent: newLines[j - 1],
-        type: 'added',
-      });
-      j--;
-    } else if (i > 0) {
-      diffLines.unshift({
-        oldLineNumber: i,
-        newLineNumber: null,
-        oldContent: oldLines[i - 1],
-        newContent: '',
-        type: 'removed',
-      });
-      i--;
-    }
-  }
-
-  return diffLines;
+  return result;
 };
 
 const pairDiffLines = (diffLines: DiffLine[]): DiffRow[] => {

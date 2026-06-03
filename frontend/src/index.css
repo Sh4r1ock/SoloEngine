@@ -509,16 +509,16 @@ pre {
 
 .react-flow__edge-path {
   stroke-width: 2;
-  transition: stroke-width var(--duration-fast) var(--ease-in-out);
 }
 
 .react-flow__edge:hover .react-flow__edge-path {
-  stroke-width: 3;
+  stroke: var(--primary-200) !important;
+  filter: drop-shadow(0 0 3px rgba(63, 81, 181, 0.3));
 }
 
 .react-flow__edge.selected .react-flow__edge-path {
-  stroke: var(--primary-color);
-  stroke-width: 3;
+  stroke: var(--primary-color) !important;
+  filter: drop-shadow(0 0 6px rgba(63, 81, 181, 0.5));
 }
 
 .react-flow__controls {
@@ -803,6 +803,333 @@ pre {
 
 .property-panel-model-card .ant-card-body {
   padding: var(--spacing-md) !important;
+}
+
+/* ===== 模型配置统一面板 ===== */
+.property-panel-model-config {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--spacing-lg);
+  overflow: hidden;
+  transition: all var(--duration-fast);
+}
+.property-panel-model-config:hover {
+  border-color: var(--primary-100);
+  box-shadow: var(--shadow-xs);
+}
+
+.property-panel-model-config-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+.property-panel-model-config-header .anticon {
+  color: var(--primary-100);
+  font-size: 16px;
+}
+
+.property-panel-model-config-body {
+  padding: 12px 16px;
+}
+
+.property-panel-model-config-body .property-panel-form-item {
+  margin-bottom: 0 !important;
+}
+
+/* ===== 折叠触发器行 ===== */
+.property-panel-model-config-collapse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 4px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--duration-fast);
+  position: relative;
+  z-index: 0;
+}
+.property-panel-model-config-collapse:hover {
+  color: var(--primary-100);
+}
+.property-panel-model-config-collapse-arrow {
+  transition: transform var(--duration-fast);
+  flex-shrink: 0;
+}
+.property-panel-model-config-collapse-arrow.expanded {
+  transform: rotate(90deg);
+}
+.property-panel-model-config-collapse-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border-color-lighter);
+  margin-left: 8px;
+}
+
+/* ===== 可折叠参数区域 ===== */
+.property-panel-model-config-params {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+  margin-top: 0;
+  position: relative;
+  z-index: 1;
+}
+.property-panel-model-config-params.expanded {
+  max-height: 400px;
+  opacity: 1;
+  margin-top: 8px;
+}
+
+/* ===== 参数项 (label 左 + input 右) ===== */
+.property-panel-model-config-param {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: var(--radius-base);
+  transition: background var(--duration-fast);
+}
+.property-panel-model-config-param:hover {
+  background: var(--bg-200);
+}
+.property-panel-model-config-param + .property-panel-model-config-param {
+  margin-top: 2px;
+}
+.property-panel-model-config-param-label {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+/* ===== 自定义微调输入框（± stepper 包裹） ===== */
+.property-panel-model-config-param-input-wrapper {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  border: 1px solid var(--border-color-lighter);
+  border-radius: 10px;
+  background: var(--bg-100);
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.property-panel-model-config-param-input-wrapper:hover {
+  border-color: var(--primary-100);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.06);
+}
+.property-panel-model-config-param-input-wrapper:focus-within {
+  border-color: var(--primary-100);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px rgba(63, 81, 181, 0.15);
+}
+.property-panel-model-config-param-stepper {
+  width: 32px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+  user-select: none;
+}
+.property-panel-model-config-param-stepper:hover {
+  background: var(--bg-200);
+  color: var(--primary-100);
+}
+.property-panel-model-config-param-stepper:active {
+  background: var(--bg-300);
+  color: var(--primary-200);
+}
+.property-panel-model-config-param-stepper + .property-panel-model-config-param-stepper {
+  border-left: 1px solid var(--border-color-lighter);
+}
+.property-panel-model-config-param-input {
+  width: 68px;
+  height: 100%;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  color: var(--text-primary);
+  text-align: center;
+  outline: none;
+  box-sizing: border-box;
+  -moz-appearance: textfield;
+  letter-spacing: 0.02em;
+}
+.property-panel-model-config-param-input::-webkit-inner-spin-button,
+.property-panel-model-config-param-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* ===== LLM Config Selector Dropdown ===== */
+.llm-config-dropdown-inner {
+  display: flex;
+  flex-direction: column;
+}
+
+.llm-config-dropdown-inner .ant-select-item-group {
+  padding: 8px 12px 4px !important;
+  border-top: 1px solid transparent;
+  margin-top: 0 !important;
+}
+
+.llm-config-dropdown-inner .ant-select-item-group:not(:first-of-type) {
+  border-top-color: #e8e8e8;
+  margin-top: 4px !important;
+  padding-top: 12px !important;
+}
+
+.llm-config-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.llm-config-group-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.llm-config-group-name {
+  flex: 1;
+}
+
+.llm-config-group-count {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-quaternary);
+  background: var(--bg-200);
+  padding: 1px 6px;
+  border-radius: 8px;
+  line-height: 16px;
+}
+
+.llm-config-dropdown-inner .ant-select-item {
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  margin: 1px 6px !important;
+  min-height: auto !important;
+  transition: background var(--duration-fast) !important;
+}
+
+.llm-config-dropdown-inner .ant-select-item-option-active {
+  background: var(--bg-tertiary) !important;
+}
+
+.llm-config-dropdown-inner .ant-select-item-option-selected {
+  background: rgba(63, 81, 181, 0.08) !important;
+  font-weight: 500 !important;
+}
+
+.llm-config-dropdown-inner .ant-select-item-option-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--primary-100);
+}
+
+.llm-config-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+}
+
+.llm-config-option-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.llm-config-option-star {
+  color: #fadb14;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.llm-config-option-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-config-option-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.llm-config-option-star-label {
+  color: #fadb14;
+  font-size: 12px;
+}
+
+.llm-config-dropdown-divider {
+  margin: 4px 0 !important;
+  border-color: var(--border-color-lighter) !important;
+}
+
+.llm-config-dropdown-footer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+}
+
+.llm-config-dropdown-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px !important;
+  color: var(--text-tertiary) !important;
+  border-radius: 6px !important;
+  height: 30px !important;
+  padding: 0 10px !important;
+  transition: all var(--duration-fast) !important;
+}
+
+.llm-config-dropdown-footer-btn:hover {
+  color: var(--primary-100) !important;
+  background: rgba(63, 81, 181, 0.06) !important;
 }
 
 .property-panel-tag {
@@ -1096,6 +1423,78 @@ pre {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
+}
+
+/* ===== 统一面板容器 ===== */
+.property-panel-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color-light);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+.property-panel-section:hover {
+  border-color: var(--primary-100);
+  box-shadow: var(--shadow-xs);
+}
+.property-panel-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color-lighter);
+}
+.property-panel-section-head .anticon {
+  color: var(--primary-100);
+  font-size: 16px;
+}
+.property-panel-section-body {
+  padding: 12px 16px;
+}
+.property-panel-section-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  border-top: 1px solid var(--border-color-lighter);
+  background: var(--bg-tertiary);
+}
+
+/* ===== 面板内标签 ===== */
+.property-panel-label-inline {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* ===== 子分区（工具与集成面板内部） ===== */
+.property-panel-subsection {
+  padding: 6px 0;
+}
+.property-panel-subsection + .property-panel-subsection {
+  margin-top: 2px;
+  border-top: 1px solid var(--border-color-lighter);
+  padding-top: 10px;
+}
+.property-panel-subsection-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.property-panel-subsection-label .anticon {
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 .property-panel-toast.success {

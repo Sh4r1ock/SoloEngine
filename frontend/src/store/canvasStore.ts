@@ -34,8 +34,9 @@ import { create } from 'zustand';
 import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../types/canvas';
 import { APP_CONFIG } from '../config/index';
 
+import { MarkerType } from 'reactflow';
 import { agenticFlowApi } from '../services/agenticFlowApi';
-import { llmApi } from '../services/llmApi';
+import { llmApi, LLMConfig } from '../services/llmApi';
 
 const MAX_HISTORY_SIZE = 30;
 const DEBOUNCE_DELAY = 500;
@@ -66,6 +67,7 @@ interface CanvasStore {
   isSettingsOpen: boolean;
   isPropertyPanelOpen: boolean;
   snapToGrid: boolean;
+  configMap: Map<string, LLMConfig>;
   autoSave: () => void;
   history: HistoryState[];
   historyIndex: number;
@@ -89,6 +91,7 @@ interface CanvasStore {
   setIsDragging: (dragging: boolean) => void;
   saveCanvas: () => Promise<void>;
   loadCanvas: (projectId: string) => Promise<void>;
+  loadLLMConfigs: () => Promise<void>;
   undo: () => void;
   redo: () => void;
   pushHistory: () => void;
@@ -112,6 +115,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   isSettingsOpen: false,
   isPropertyPanelOpen: false,
   snapToGrid: true,
+  configMap: new Map(),
   history: [{ nodes: [], edges: [] }],
   historyIndex: 0,
   isDragging: false,
@@ -190,7 +194,22 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   setEdges: (edges, skipHistory = false) => {
-    set({ edges });
+    const edgesWithMarker = edges.map(edge => {
+      const { label, ...rest } = edge;
+      if (!rest.markerEnd) {
+        return {
+          ...rest,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 20,
+            height: 20,
+            color: '#b1b1b7',
+          },
+        };
+      }
+      return rest;
+    });
+    set({ edges: edgesWithMarker as EdgeData[] });
     get().autoSave();
     if (!skipHistory) {
       const { isDragging } = get();
@@ -218,13 +237,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     try {
       const defaultConfig = await llmApi.getDefaultConfig();
       if (defaultConfig) {
-        node.data.llm_config_id = defaultConfig.id;
         node.data.model_config = {
-          config_id: defaultConfig.id,
-          config_name: defaultConfig.name,
-          provider: defaultConfig.provider,
-          model: defaultConfig.model_name,
+          llm_config_id: defaultConfig.id,
+          temperature: defaultConfig.temperature,
+          max_tokens: defaultConfig.max_tokens,
+          frequency_penalty: defaultConfig.frequency_penalty,
+          presence_penalty: defaultConfig.presence_penalty,
         };
+        get().configMap.set(defaultConfig.id, defaultConfig);
       }
     } catch (error) {
       console.warn('Failed to load default LLM config:', error);
@@ -308,5 +328,14 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       nodes: canvasData.nodes,
       edges: canvasData.edges,
     });
+  },
+
+  loadLLMConfigs: async () => {
+    const configs = await llmApi.getConfigs();
+    const map = new Map<string, LLMConfig>();
+    for (const config of configs) {
+      map.set(config.id, config);
+    }
+    set({ configMap: map });
   },
 }));

@@ -20,6 +20,7 @@
  *     - import { NodeData, EdgeData, CanvasData } from './canvas'
  *     - const node: NodeData = { id: '1', type: 'agent', position: { x: 0, y: 0 }, data: {} }
  */
+import { MarkerType } from 'reactflow';
 
 /**
  * 节点数据接口
@@ -39,23 +40,17 @@ export interface NodeData {
     desc?: string;
     agentType?: 'orchestrator' | 'planner' | 'executor' | 'custom';
     system_prompt?: string;
-    assistant_prompt?: string;
-    llm_config_id?: string;
     model_config?: {
-      config_id?: string;
-      config_name?: string;
-      provider: string;
-      model: string;
-      temperature?: number;
-      max_tokens?: number;
-      frequency_penalty?: number;
-      presence_penalty?: number;
+      llm_config_id?: string;
+      temperature: number;
+      max_tokens: number;
+      frequency_penalty: number;
+      presence_penalty: number;
     };
     skills?: string[];
     mcp_tools?: string[];
     mcp_servers?: string[];
     tools?: string[];
-    memory?: boolean;
     text?: string;
     color?: string;
   };
@@ -69,12 +64,25 @@ export interface NodeData {
  *     - source: 源节点ID
  *     - target: 目标节点ID
  *     - label: 边标签（可选）
+ *     - selected: 是否被选中（可选）
+ *     - animated: 是否显示动画（可选）
  */
 export interface EdgeData {
   id: string;
   source: string;
   target: string;
   label?: string;
+  selected?: boolean;
+  animated?: boolean;
+  markerEnd?: {
+    type: MarkerType;
+    width?: number;
+    height?: number;
+    color?: string;
+    markerUnits?: string;
+    orient?: string;
+    strokeWidth?: number;
+  };
 }
 
 /**

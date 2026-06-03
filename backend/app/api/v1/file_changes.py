@@ -539,9 +539,12 @@ async def rewind_file_changes(
             logger.error(f"Failed to rewind {file_path}: {e}")
             failed_files.append(file_path)
 
-    db.query(FileChangeModel).filter(
-        FileChangeModel.message_id.in_(deleted_message_ids)
-    ).delete(synchronize_session=False)
+    # 调用delete_messages处理消息和file_changes（统一路径）
+    delete_request = DeleteMessagesRequest(
+        session_id=request.session_id,
+        from_message_id=request.from_message_id
+    )
+    await delete_messages(delete_request, db, current_user)
 
     token_sum = db.query(
         sqlfunc.sum(SessionMessageModel.prompt_tokens),
@@ -557,15 +560,6 @@ async def rewind_file_changes(
         "completion_tokens": token_sum[1] or 0,
         "total_tokens": token_sum[2] or 0,
     }
-
-    db.query(SessionMessageModel).filter(
-        SessionMessageModel.session_id == request.session_id,
-        SessionMessageModel.message_index >= target_index
-    ).update({"is_deleted": True}, synchronize_session=False)
-
-    db.commit()
-
-    cas.cleanup_orphan_blobs()
 
     CompiledFlowFactory.remove(
         current_user.id,
@@ -595,8 +589,9 @@ async def delete_messages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """仅删除消息记录，不触碰文件变更。完全复用撤回机制的 is_deleted 软删除标记。"""
+    """删除消息及其关联的file_changes和blob。统一删除路径。"""
     from app.core.database import SessionMessageModel
+    from app.services.file_change import file_change_manager
 
     # 1. 验证会话归属
     session = db_manager.get_session(db, request.session_id)
@@ -637,7 +632,12 @@ async def delete_messages(
     if not deleted_message_ids:
         return {"code": 200, "message": "No messages to delete", "data": {"deleted_ids": []}}
 
-    # 5. 标记 is_deleted = True（与撤回机制完全一致）
+    # 5. 清理关联的file_changes和blob
+    file_change_manager.delete_file_changes_and_cleanup(
+        db, FileChangeModel.message_id.in_(deleted_message_ids)
+    )
+
+    # 6. 软删除消息
     db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == request.session_id,
         SessionMessageModel.id.in_(deleted_message_ids)

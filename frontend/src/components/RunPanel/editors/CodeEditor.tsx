@@ -10,6 +10,8 @@ import { useDiffDecorations } from './DiffDecorations';
 
 import type { Extension } from '@codemirror/state';
 
+const LARGE_FILE_THRESHOLD = 100 * 1024;
+
 interface CodeEditorProps {
   instanceId: string;
   tab: FileTab;
@@ -33,6 +35,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const { extensions: diffExtensions, hasPendingDiff } = useDiffDecorations(tab.path);
 
+  const isLargeFile = tab.content.length > LARGE_FILE_THRESHOLD;
+
   useEffect(() => {
     const loadLangExtension = async () => {
       setLoading(true);
@@ -45,12 +49,15 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [language]);
 
   const extensions = useMemo(() => {
-    const exts: Extension[] = [history(), oneDark, ...diffExtensions];
+    const exts: Extension[] = [history(), oneDark];
+    if (!isLargeFile) {
+      exts.push(...diffExtensions);
+    }
     if (languageExtension) {
       exts.unshift(languageExtension);
     }
     return exts;
-  }, [languageExtension, diffExtensions]);
+  }, [languageExtension, diffExtensions, isLargeFile]);
 
   const handleChange = useCallback((value: string) => {
     onContentChange(tab.id, value);
@@ -128,22 +135,22 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }}
         basicSetup={{
           lineNumbers: true,
-          highlightActiveLineGutter: true,
+          highlightActiveLineGutter: !isLargeFile,
           highlightSpecialChars: true,
           history: true,
-          foldGutter: true,
+          foldGutter: !isLargeFile,
           drawSelection: true,
-          dropCursor: true,
-          allowMultipleSelections: true,
-          indentOnInput: true,
+          dropCursor: !isLargeFile,
+          allowMultipleSelections: !isLargeFile,
+          indentOnInput: !isLargeFile,
           syntaxHighlighting: true,
-          bracketMatching: true,
-          closeBrackets: true,
-          autocompletion: true,
-          rectangularSelection: true,
-          crosshairCursor: true,
-          highlightActiveLine: true,
-          highlightSelectionMatches: true,
+          bracketMatching: !isLargeFile,
+          closeBrackets: !isLargeFile,
+          autocompletion: !isLargeFile,
+          rectangularSelection: !isLargeFile,
+          crosshairCursor: false,
+          highlightActiveLine: !isLargeFile,
+          highlightSelectionMatches: !isLargeFile,
         }}
       />
     </div>

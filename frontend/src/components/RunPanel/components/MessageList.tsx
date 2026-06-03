@@ -31,6 +31,7 @@ interface AgentGroup {
   agent_name: string;
   agent_level: number;
   blocks: DataBlock[];
+  agent_tokens?: number;
 }
 
 const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
@@ -41,7 +42,7 @@ const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
     const agentName = block.agent_name || 'AI助手';
     const agentLevel = block.agent_level || 0;
     if (!currentGroup || currentGroup.agent_id !== agentId) {
-      currentGroup = { agent_id: agentId, agent_name: agentName, agent_level: agentLevel, blocks: [] };
+      currentGroup = { agent_id: agentId, agent_name: agentName, agent_level: agentLevel, blocks: [], agent_tokens: block.agent_tokens };
       groups.push(currentGroup);
     }
     currentGroup.blocks.push(block);
@@ -62,14 +63,16 @@ const ThoughtBlock = React.memo(({ block, isExpanded, onToggle, blockKey }: {
         <Text style={{ fontSize: 12, color: 'var(--text-200)', fontWeight: 500 }}>Thought</Text>
       </div>
       {isExpanded && (
-        <AutoScrollContainer maxHeight="50vh" dependency={block.reasoning_content} style={{ transition: 'max-height 0.5s ease-in-out' }}>
+        <div style={{ display: 'flex', flexDirection: 'row', marginTop: 4 }}>
           <div style={{ width: 14, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
             <div style={{ width: 2, background: 'var(--bg-300)' }} />
           </div>
-          <div style={{ flex: 1, minWidth: 0, padding: '0 0 6px 6px', fontSize: 12, color: 'var(--text-200)', lineHeight: 1.65, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
-            {block.reasoning_content}
-          </div>
-        </AutoScrollContainer>
+          <AutoScrollContainer maxHeight="50vh" dependency={block.reasoning_content} style={{ transition: 'max-height 0.5s ease-in-out', marginTop: 0, flex: 1 }}>
+            <div style={{ flex: 1, minWidth: 0, padding: '0 0 6px 6px', fontSize: 12, color: 'var(--text-200)', lineHeight: 1.65, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+              {block.reasoning_content}
+            </div>
+          </AutoScrollContainer>
+        </div>
       )}
     </div>
   );
@@ -137,28 +140,30 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
               })}
             </div>
             {toolExpanded && (
-              <AutoScrollContainer maxHeight="50vh" dependency={`${tc.function?.arguments}${tc.result}`} style={{ transition: 'max-height 0.5s ease-in-out' }}>
+              <div style={{ display: 'flex', flexDirection: 'row', marginTop: 4 }}>
                 <div style={{ width: 14, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
                   <div style={{ width: 2, background: 'var(--bg-300)' }} />
                 </div>
-                <div style={{ flex: 1, minWidth: 0, padding: '0 0 6px 6px', fontSize: 12, color: 'var(--text-200)', lineHeight: 1.65, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
-                  参数: {tc.function?.arguments}
-                  {tc.result && (
-                    <div style={{ marginTop: 6 }}>
-                      <span style={{ fontWeight: 500 }}>结果:</span>
-                      {(() => {
-                        try {
-                          const parsed = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
-                          if (parsed && typeof parsed === 'object') {
-                            return (<div style={{ marginTop: 4 }}>{Object.entries(parsed).map(([key, value]) => (<div key={key} style={{ marginTop: 2 }}><span style={{ fontWeight: 500, color: 'var(--text-200)' }}>{key}:</span>{' '}<span style={{ color: 'var(--text-100)' }}>{typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}</span></div>))}</div>);
-                          }
-                        } catch { return ` ${tc.result}`; }
-                        return ` ${tc.result}`;
-                      })()}
+                <AutoScrollContainer maxHeight="50vh" dependency={`${tc.function?.arguments}${tc.result}`} style={{ transition: 'max-height 0.5s ease-in-out', marginTop: 0, flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0, padding: '0 0 6px 6px', fontSize: 12, color: 'var(--text-200)', lineHeight: 1.65, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
+                    参数: {tc.function?.arguments}
+                    {tc.result && (
+                      <div style={{ marginTop: 6 }}>
+                        <span style={{ fontWeight: 500 }}>结果:</span>
+                        {(() => {
+                          try {
+                            const parsed = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
+                            if (parsed && typeof parsed === 'object') {
+                              return (<div style={{ marginTop: 4 }}>{Object.entries(parsed).map(([key, value]) => (<div key={key} style={{ marginTop: 2 }}><span style={{ fontWeight: 500, color: 'var(--text-200)' }}>{key}:</span>{' '}<span style={{ color: 'var(--text-100)' }}>{typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}</span></div>))}</div>);
+                            }
+                          } catch { return ` ${tc.result}`; }
+                          return ` ${tc.result}`;
+                        })()}
+                      </div>
+                    )}
                     </div>
-                  )}
-                  </div>
-              </AutoScrollContainer>
+                </AutoScrollContainer>
+              </div>
             )}
           </div>
         );
@@ -232,18 +237,24 @@ const AgentGroupItem = React.memo(({ group, msgId, isStreaming, allMessageBlocks
 
   return (
     <div style={{
-      marginLeft: 14 * group.agent_level,
+      marginLeft: 6 * group.agent_level,
       marginTop: 8,
       borderLeft: `3px solid ${borderColor}`,
       paddingLeft: 12,
+      paddingTop: 6,
       background: 'rgba(63, 81, 181, 0.05)',
       borderRadius: 6,
       paddingBottom: 8,
     }}>
-      <div style={{ marginBottom: 4 }}>
+      <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
         <Text style={{ fontSize: 13, color: borderColor, fontWeight: 500 }}>
           {group.agent_name}
         </Text>
+        {group.agent_tokens != null && group.agent_tokens > 0 && (
+          <Text style={{ fontSize: 11, color: 'var(--text-400)', background: 'var(--bg-200)', padding: '0 6px', borderRadius: 4 }}>
+            {group.agent_tokens >= 1000 ? `${(group.agent_tokens / 1000).toFixed(1)}k` : group.agent_tokens} tokens
+          </Text>
+        )}
       </div>
       {blocks}
     </div>
@@ -637,6 +648,7 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(({ isWaiting
   const fileChangeRefreshKey = useRunPanelStore(state => state.fileChangeRefreshKey);
   const incrementFileChangeRefreshKey = useRunPanelStore(state => state.incrementFileChangeRefreshKey);
   const fileChangesMap = useRunPanelStore(state => state.fileChangesMap);
+  const agentTokensMap = useRunPanelStore(state => state.agentTokensMap);
 
   const { message: antMessage } = App.useApp();
 
@@ -829,9 +841,17 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(({ isWaiting
                     );
                   });
                   if (isMainAgent) return <React.Fragment key={groupIdx}>{blocks}</React.Fragment>;
+                  const agentTokens = agentTokensMap[group.agent_id];
                   return (
-                    <div key={groupIdx} style={{ marginLeft: 14 * group.agent_level, marginTop: 8, borderLeft: `3px solid ${borderColor}`, paddingLeft: 12, background: 'rgba(63, 81, 181, 0.05)', borderRadius: 6, paddingBottom: 8 }}>
-                      <div style={{ marginBottom: 4 }}><Text style={{ fontSize: 13, color: borderColor, fontWeight: 500 }}>{group.agent_name}</Text></div>
+                    <div key={groupIdx} style={{ marginLeft: 6 * group.agent_level, marginTop: 8, borderLeft: `3px solid ${borderColor}`, paddingLeft: 12, paddingTop: 4, background: 'rgba(63, 81, 181, 0.05)', borderRadius: 6, paddingBottom: 8 }}>
+                      <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontSize: 13, color: borderColor, fontWeight: 500 }}>{group.agent_name}</Text>
+                        {agentTokens != null && agentTokens > 0 && (
+                          <Text style={{ fontSize: 11, color: 'var(--text-400)', background: 'var(--bg-200)', padding: '0 6px', borderRadius: 4 }}>
+                            {agentTokens >= 1000 ? `${(agentTokens / 1000).toFixed(1)}k` : agentTokens} tokens
+                          </Text>
+                        )}
+                      </div>
                       {blocks}
                     </div>
                   );

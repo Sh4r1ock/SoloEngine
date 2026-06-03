@@ -161,17 +161,19 @@ export const runProjectApi = {
     });
   },
 
-  async listFiles(path: string = '', pattern: string = '*'): Promise<{ code: number; data: FileListResponse }> {
+  async listFiles(path: string = '', pattern: string = '*', agenticFlowId: string = ''): Promise<{ code: number; data: FileListResponse }> {
     return await api.post('/run-project/files/list', {
       path,
       pattern,
+      agentic_flow_id: agenticFlowId,
     });
   },
 
-  async readFile(path: string, encoding: string = 'utf-8'): Promise<{ code: number; data: FileReadResponse }> {
+  async readFile(path: string, encoding: string = 'utf-8', agenticFlowId: string = ''): Promise<{ code: number; data: FileReadResponse }> {
     return await api.post('/run-project/files/read', {
       path,
       encoding,
+      agentic_flow_id: agenticFlowId,
     });
   },
 
@@ -179,34 +181,36 @@ export const runProjectApi = {
     path: string,
     content: string,
     encoding: string = 'utf-8',
-    mode: 'write' | 'append' = 'write'
+    mode: 'write' | 'append' = 'write',
+    agenticFlowId: string = ''
   ): Promise<{ code: number; data: FileWriteResponse }> {
     return await api.post('/run-project/files/write', {
       path,
       content,
       encoding,
       mode,
+      agentic_flow_id: agenticFlowId,
     });
   },
 
-  async deleteFile(path: string): Promise<{ code: number; data: { path: string; type: string; deleted: boolean } }> {
-    return await api.delete('/run-project/files/delete', { params: { path } });
+  async deleteFile(path: string, agenticFlowId: string = ''): Promise<{ code: number; data: { path: string; type: string; deleted: boolean } }> {
+    return await api.delete('/run-project/files/delete', { params: { path, agentic_flow_id: agenticFlowId } });
   },
 
-  async createDirectory(path: string): Promise<{ code: number; data: { path: string; created: boolean } }> {
-    return await api.post('/run-project/files/mkdir', null, { params: { path } });
+  async createDirectory(path: string, agenticFlowId: string = ''): Promise<{ code: number; data: { path: string; created: boolean } }> {
+    return await api.post('/run-project/files/mkdir', null, { params: { path, agentic_flow_id: agenticFlowId } });
   },
 
-  async getFileInfo(path: string): Promise<{ code: number; data: FileInfo }> {
-    return await api.get('/run-project/files/info', { params: { path } });
+  async getFileInfo(path: string, agenticFlowId: string = ''): Promise<{ code: number; data: FileInfo }> {
+    return await api.get('/run-project/files/info', { params: { path, agentic_flow_id: agenticFlowId } });
   },
 
-  async fileExists(path: string): Promise<{ code: number; data: { path: string; exists: boolean } }> {
-    return await api.get('/run-project/files/exists', { params: { path } });
+  async fileExists(path: string, agenticFlowId: string = ''): Promise<{ code: number; data: { path: string; exists: boolean } }> {
+    return await api.get('/run-project/files/exists', { params: { path, agentic_flow_id: agenticFlowId } });
   },
 
-  getFileAccessUrl(path: string): string {
-    return `/api/v1/run-project/files/access?path=${encodeURIComponent(path)}`;
+  getFileAccessUrl(path: string, agenticFlowId: string = ''): string {
+    return `/api/v1/run-project/files/access?path=${encodeURIComponent(path)}&agentic_flow_id=${encodeURIComponent(agenticFlowId)}`;
   },
 };
 

@@ -36,6 +36,7 @@ API 差异：
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import asyncio
 import json
 from typing import (
     Any,
@@ -438,173 +439,172 @@ class AnthropicChatModel(ChatModelBase):
                 self._save_response_ref(stream)
                 async for event in stream:
                     if cancel_event and cancel_event.is_set():
-                        logger.info("[Anthropic] Cancel event detected, closing stream")
-                        await stream.aclose()
+                        logger.info("[Anthropic] Cancel event detected")
                         self._was_cancelled = True
                         raise asyncio.CancelledError()
-                if event.type == "message_start":
-                    current_response_id = event.message.id
-                    if hasattr(event.message, "stop_reason"):
-                        stop_reason = event.message.stop_reason
-                elif event.type == "content_block_start":
-                    if event.content_block.type == "text":
-                        text = ""
-                    elif event.content_block.type == "thinking":
-                        thinking = ""
-                elif event.type == "content_block_delta":
-                    if event.content_block.type == "text":
-                        delta_text = event.delta.text
-                        text += delta_text
-                    elif event.content_block.type == "thinking":
-                        delta_thinking = event.delta.text
-                        thinking += delta_thinking
-                    elif event.content_block.type == "input_json":
-                        if event.delta.type == "tool_use":
-                            tool_use_id = event.content_block.index
-                            if tool_use_id not in tool_calls:
-                                tool_calls[tool_use_id] = {
-                                    "type": "tool_use",
-                                    "id": tool_use_id,
-                                    "name": "",
-                                    "input": {},
-                                }
-                            if event.delta.partial_json:
-                                tool_calls[tool_use_id]["input"].update(
-                                    event.delta.partial_json
-                                )
-                                tool_calls[tool_use_id]["name"] = event.delta.partial_json.get(
-                                    "name", ""
-                                )
-                    
-                    # 增量输出
-                    contents = []
-                    if thinking and len(thinking) > len(last_thinking):
-                        delta_thinking_content = thinking[len(last_thinking):]
-                        contents.append(
-                            SoloThinkingBlock(
-                                type="thinking",
-                                thinking=delta_thinking_content,
-                            ),
-                        )
-                        last_thinking = thinking
-                    if text and len(text) > len(last_text):
-                        delta_text_content = text[len(last_text):]
-                        contents.append(
-                            SoloTextBlock(
-                                type="text",
-                                text=delta_text_content,
-                            ),
-                        )
-                        last_text = text
-                    
-                    if contents:
-                        res = ChatResponse(
-                            content=contents,
-                            usage=usage,
-                            metadata=metadata,
-                        )
-                        yield res
+                    if event.type == "message_start":
+                        current_response_id = event.message.id
+                        if hasattr(event.message, "stop_reason"):
+                            stop_reason = event.message.stop_reason
+                    elif event.type == "content_block_start":
+                        if event.content_block.type == "text":
+                            text = ""
+                        elif event.content_block.type == "thinking":
+                            thinking = ""
+                    elif event.type == "content_block_delta":
+                        if event.content_block.type == "text":
+                            delta_text = event.delta.text
+                            text += delta_text
+                        elif event.content_block.type == "thinking":
+                            delta_thinking = event.delta.text
+                            thinking += delta_thinking
+                        elif event.content_block.type == "input_json":
+                            if event.delta.type == "tool_use":
+                                tool_use_id = event.content_block.index
+                                if tool_use_id not in tool_calls:
+                                    tool_calls[tool_use_id] = {
+                                        "type": "tool_use",
+                                        "id": tool_use_id,
+                                        "name": "",
+                                        "input": {},
+                                    }
+                                if event.delta.partial_json:
+                                    tool_calls[tool_use_id]["input"].update(
+                                        event.delta.partial_json
+                                    )
+                                    tool_calls[tool_use_id]["name"] = event.delta.partial_json.get(
+                                        "name", ""
+                                    )
                         
-                elif event.type == "content_block_stop":
-                    # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
-                    contents = []
-                    if thinking:
-                        contents.append(
-                            SoloThinkingBlock(
-                                type="thinking",
-                                thinking=thinking,
-                            ),
-                        )
-                    if text:
-                        contents.append(
-                            SoloTextBlock(
-                                type="text",
-                                text=text,
-                            ),
-                        )
-                    # 工具调用输出增量格式
-                    for tool_id, tool_call in tool_calls.items():
-                        tool_call_delta = {
-                            "index": list(tool_calls.keys()).index(tool_id),
-                            "id": tool_id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_call["name"],
-                                "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                        # 增量输出
+                        contents = []
+                        if thinking and len(thinking) > len(last_thinking):
+                            delta_thinking_content = thinking[len(last_thinking):]
+                            contents.append(
+                                SoloThinkingBlock(
+                                    type="thinking",
+                                    thinking=delta_thinking_content,
+                                ),
+                            )
+                            last_thinking = thinking
+                        if text and len(text) > len(last_text):
+                            delta_text_content = text[len(last_text):]
+                            contents.append(
+                                SoloTextBlock(
+                                    type="text",
+                                    text=delta_text_content,
+                                ),
+                            )
+                            last_text = text
+                        
+                        if contents:
+                            res = ChatResponse(
+                                content=contents,
+                                usage=usage,
+                                metadata=metadata,
+                            )
+                            yield res
+                            
+                    elif event.type == "content_block_stop":
+                        # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
+                        contents = []
+                        if thinking:
+                            contents.append(
+                                SoloThinkingBlock(
+                                    type="thinking",
+                                    thinking=thinking,
+                                ),
+                            )
+                        if text:
+                            contents.append(
+                                SoloTextBlock(
+                                    type="text",
+                                    text=text,
+                                ),
+                            )
+                        # 工具调用输出增量格式
+                        for tool_id, tool_call in tool_calls.items():
+                            tool_call_delta = {
+                                "index": list(tool_calls.keys()).index(tool_id),
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call["name"],
+                                    "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                                }
                             }
-                        }
-                        contents.append({
-                            "type": "tool_calls",
-                            "tool_calls": [tool_call_delta],
-                        })
-                    if contents:
-                        res = ChatResponse(
-                            content=contents,
-                            usage=usage,
-                            metadata=metadata,
-                        )
-                        yield res
-                elif event.type == "message_delta":
-                    if event.delta.type == "delta" and event.delta.text:
-                        text += event.delta.text
-                    if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
-                        stop_reason = event.delta.stop_reason
-                        logger.info(f"[Anthropic Stream] stop_reason detected: {stop_reason}")
-                elif event.type == "message_stop":
-                    # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
-                    contents = []
-                    if thinking:
-                        contents.append(
-                            SoloThinkingBlock(
-                                type="thinking",
-                                thinking=thinking,
-                            ),
-                        )
-                    if text:
-                        contents.append(
-                            SoloTextBlock(
-                                type="text",
-                                text=text,
-                            ),
-                        )
-                    # 工具调用输出增量格式
-                    for tool_id, tool_call in tool_calls.items():
-                        tool_call_delta = {
-                            "index": list(tool_calls.keys()).index(tool_id),
-                            "id": tool_id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_call["name"],
-                                "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                            contents.append({
+                                "type": "tool_calls",
+                                "tool_calls": [tool_call_delta],
+                            })
+                        if contents:
+                            res = ChatResponse(
+                                content=contents,
+                                usage=usage,
+                                metadata=metadata,
+                            )
+                            yield res
+                    elif event.type == "message_delta":
+                        if event.delta.type == "delta" and event.delta.text:
+                            text += event.delta.text
+                        if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
+                            stop_reason = event.delta.stop_reason
+                            logger.info(f"[Anthropic Stream] stop_reason detected: {stop_reason}")
+                    elif event.type == "message_stop":
+                        # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
+                        contents = []
+                        if thinking:
+                            contents.append(
+                                SoloThinkingBlock(
+                                    type="thinking",
+                                    thinking=thinking,
+                                ),
+                            )
+                        if text:
+                            contents.append(
+                                SoloTextBlock(
+                                    type="text",
+                                    text=text,
+                                ),
+                            )
+                        # 工具调用输出增量格式
+                        for tool_id, tool_call in tool_calls.items():
+                            tool_call_delta = {
+                                "index": list(tool_calls.keys()).index(tool_id),
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call["name"],
+                                    "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
+                                }
                             }
-                        }
-                        contents.append({
-                            "type": "tool_calls",
-                            "tool_calls": [tool_call_delta],
-                        })
-                    
-                    if contents:
-                        res = ChatResponse(
-                            content=contents,
-                            usage=usage,
-                            metadata=metadata,
-                            stop_reason=stop_reason,
-                            finish_reason="tool_calls" if tool_calls else stop_reason,
+                            contents.append({
+                                "type": "tool_calls",
+                                "tool_calls": [tool_call_delta],
+                            })
+                        
+                        if contents:
+                            res = ChatResponse(
+                                content=contents,
+                                usage=usage,
+                                metadata=metadata,
+                                stop_reason=stop_reason,
+                                finish_reason="tool_calls" if tool_calls else stop_reason,
+                            )
+                            yield res
+                    elif event.type == "error":
+                        logger.error(f"Anthropic stream error: {event.error}")
+                        yield ChatResponse(
+                            content=[],
+                            usage=None,
+                            metadata={"error": str(event.error)},
                         )
-                        yield res
-                elif event.type == "error":
-                    logger.error(f"Anthropic stream error: {event.error}")
-                    yield ChatResponse(
-                        content=[],
-                        usage=None,
-                        metadata={"error": str(event.error)},
-                    )
-                elif event.type == "usage":
-                    usage = ChatUsage(
-                        input_tokens=event.usage.input_tokens,
-                        output_tokens=event.usage.output_tokens,
-                        time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
-                    )
+                    elif event.type == "usage":
+                        usage = ChatUsage(
+                            input_tokens=event.usage.input_tokens,
+                            output_tokens=event.usage.output_tokens,
+                            time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                        )
         finally:
             self._clear_response_ref()
 

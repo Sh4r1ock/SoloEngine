@@ -336,6 +336,7 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
       };
 
       ws.onerror = (error) => {
+        if (isIntentionalCloseRef.current) return;
         if (!isReconnectingRef.current) {
           setConnectionStatus('error');
         }

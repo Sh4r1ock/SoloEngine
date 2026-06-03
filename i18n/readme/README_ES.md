@@ -4,11 +4,11 @@
 
 </div>
 
----
+***
 
 <h2 align="center"><b>Que la IA impulse cada industria.</b></h2>
 
----
+***
 
 <p align="center"><b>SoloEngine</b> es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y ejecuta. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.</p>
 
@@ -16,25 +16,25 @@
 
 <div align="center">
 
-[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square&label=stars&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square&logo=react&logoColor=white)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
 [![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
 
 </div>
 
 <p align="center">
-  <a href="../../README.md">简体中文</a> |
-  <a href="./README_EN.md">English</a> |
+  <a href="../../README.md">English</a> |
+  <a href="./README_ZH.md">简体中文</a> |
   Español |
   <a href="./README_DE.md">Deutsch</a> |
   <a href="./README_FR.md">Français</a>
 </p>
 
----
+***
 
 ## ¿Por qué SoloEngine?
 
@@ -44,19 +44,19 @@ Las alternativas actuales tampoco resuelven el problema: las plataformas de work
 
 <div align="center">
 
-| | Dify, n8n, Zapier | LangChain, CrewAI, LangGraph | **SoloEngine** |
-| :---: | :---: | :---: | :---: |
-| Agentic AI | ✗ Solo workflows con scripts | ✓ ReAct / Multi-Agent | ✓ ReAct / Multi-Agent |
-| Sin programación | ✓ | ✗ Requiere Python | ✓ |
-| Orquestación visual | Parcial | ✗ | ✓ Experiencia completa en lienzo |
-| Expertos de dominio autónomos | ✓ (pero el Agent no es realmente Agentic) | ✗ | ✓ |
-| Colaboración Multi-Agent | ✗ | ✓ | ✓ |
+|             <br />            |         Dify, n8n, Zapier        | LangChain, CrewAI, LangGraph |          **SoloEngine**          |
+| :---------------------------: | :------------------------------: | :--------------------------: | :------------------------------: |
+|           Agentic AI          |   ✗ Solo workflows con scripts   |     ✓ ReAct / Multi-Agent    |       ✓ ReAct / Multi-Agent      |
+|        Sin programación       |                 ✓                |       ✗ Requiere Python      |                 ✓                |
+|      Orquestación visual      | ✓ Experiencia completa en lienzo |               ✗              | ✓ Experiencia completa en lienzo |
+| Expertos de dominio autónomos |                 ✓                |               ✗              |                 ✓                |
+|    Colaboración Multi-Agent   |                 ✗                |               ✓              |                 ✓                |
 
 </div>
 
-- **No es una herramienta de workflow más.** Los Agents operan con el ciclo «pensar → actuar → observar → repetir». Todas las decisiones se toman en tiempo de ejecución. Si un Agent de investigación se atasca, ajusta su plan sobre la marcha, sin rutas de respaldo predefinidas.
+- **Kill WorkFlow** — SoloEngine está completamente basado en la arquitectura ReAct. Nada de flujos predefinidos: solo el ciclo «pensar → actuar → observar → repetir». Todas las decisiones se toman dinámicamente en tiempo de ejecución. Cuando un Agent se encuentra con un obstáculo inesperado, ajusta su plan automáticamente — sin rutas de respaldo codificadas.
 - **Los expertos de dominio construyen directamente.** Un abogado arrastra un Agent de revisión de contratos al lienzo, lo conecta a un Agent de investigación y ejecuta. Sin intervención de programadores.
-- **Herramientas, Skills, MCP — Divulgación progresiva y conectable en caliente.** Cada Agent carga solo lo que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
+- **Herramientas, Skills, MCP — diseño conectable en caliente, divulgación progresiva** — Cada Agent carga solo las herramientas y Skills que necesita en tiempo de ejecución. Gracias a la divulgación progresiva, el consumo de tokens se reduce en más de un 85 %.
 - **Una sola capa de adaptación para todos los modelos.** OpenAI, Anthropic, Ollama, DeepSeek, Qwen, Zhipu: una interfaz unificada, cambio transparente.
 
 ### Cómo funciona
@@ -84,7 +84,7 @@ npm install
 npm run dev
 ```
 
-Abre [**http://localhost:8991**](http://localhost:8991) en el navegador y construye tu primer equipo de Agents.
+Abre **<http://localhost:8991>** en el navegador y construye tu primer equipo de Agents.
 
 ## Casos de uso
 
@@ -94,7 +94,7 @@ Abre [**http://localhost:8991**](http://localhost:8991) en el navegador y constr
 
 ## Tendencias de Stars
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine\&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine\&Date)
 
 <p align="center">⭐ <b>Si SoloEngine te resulta útil, ¡regálanos una estrella! Cada una es un gran estímulo para nosotros.</b></p>
 
@@ -118,7 +118,7 @@ Un agradecimiento especial a:
 
 <p align="center">Apache License 2.0. Consulta la <a href="../../LICENSE">LICENCIA</a>.</p>
 
----
+***
 
 <div align="center">
 

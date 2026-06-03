@@ -32,6 +32,7 @@ export interface ProviderConfig {
   default_model: string;
   default_base_url: string;
   models: string[];
+  color: string;
 }
 
 export interface LLMConfig {

@@ -19,14 +19,6 @@ export const APP_CONFIG = {
   WS_EXECUTION_TIMEOUT:          parseInt(import.meta.env.VITE_EXECUTION_TIMEOUT || '1800'),
   WS_RESPONSE_TIMEOUT:           parseInt(import.meta.env.VITE_WEBSOCKET_RESPONSE_TIMEOUT || '120'),
 
-  // --- Provider 默认 Base URL ---
-  PROVIDER_OPENAI_BASE_URL:    import.meta.env.VITE_LLM_PROVIDER_OPENAI_BASE_URL || 'https://api.openai.com/v1',
-  PROVIDER_ANTHROPIC_BASE_URL: import.meta.env.VITE_LLM_PROVIDER_ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
-  PROVIDER_QWEN_BASE_URL:      import.meta.env.VITE_LLM_PROVIDER_QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  PROVIDER_OLLAMA_BASE_URL:    import.meta.env.VITE_LLM_PROVIDER_OLLAMA_BASE_URL || 'http://localhost:11434',
-  PROVIDER_DEEPSEEK_BASE_URL:  import.meta.env.VITE_LLM_PROVIDER_DEEPSEEK_BASE_URL || 'https://api.deepseek.com',
-  PROVIDER_ZHIPU_BASE_URL:     import.meta.env.VITE_LLM_PROVIDER_ZHIPU_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-
   // --- API 参数 ---
   API_BASE_URL:                import.meta.env.VITE_API_BASE_URL || 'http://localhost:8990',
   API_REQUEST_TIMEOUT:         parseInt(import.meta.env.VITE_API_REQUEST_TIMEOUT || '30000'),

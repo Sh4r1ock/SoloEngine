@@ -23,12 +23,6 @@ interface ImportMetaEnv {
   readonly VITE_LLM_DEFAULT_FREQUENCY_PENALTY?: string;
   readonly VITE_LLM_DEFAULT_PRESENCE_PENALTY?: string;
   readonly VITE_LLM_DEFAULT_TIMEOUT?: string;
-  readonly VITE_LLM_PROVIDER_OPENAI_BASE_URL?: string;
-  readonly VITE_LLM_PROVIDER_ANTHROPIC_BASE_URL?: string;
-  readonly VITE_LLM_PROVIDER_QWEN_BASE_URL?: string;
-  readonly VITE_LLM_PROVIDER_OLLAMA_BASE_URL?: string;
-  readonly VITE_LLM_PROVIDER_DEEPSEEK_BASE_URL?: string;
-  readonly VITE_LLM_PROVIDER_ZHIPU_BASE_URL?: string;
 }
 
 interface ImportMeta {

@@ -5,6 +5,7 @@ import { ReloadOutlined, DownloadOutlined, FileWordOutlined } from '@ant-design/
 import type { FileTab } from '../types';
 import { useEditorInstanceManager, useEditorCleanup } from './index';
 import { runProjectApi } from '../../../services/runProjectApi';
+import { useRunPanelStore } from '../stores/runPanelStore';
 
 interface WordViewerProps {
   instanceId: string;
@@ -12,6 +13,7 @@ interface WordViewerProps {
 }
 
 const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
+  const agenticFlowId = useRunPanelStore(state => state.agenticFlowId);
   const { addDomRef, cleanup } = useEditorInstanceManager(instanceId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +70,7 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
           throw new Error('文件内容格式不支持，请使用文件访问接口');
         }
       } else {
-        const accessUrl = runProjectApi.getFileAccessUrl(tab.path);
+        const accessUrl = runProjectApi.getFileAccessUrl(tab.path, agenticFlowId);
         const response = await fetch(accessUrl, {
           credentials: 'include',
           headers: {
@@ -148,14 +150,14 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
   useEditorCleanup(instanceId, cleanup);
 
   const handleDownload = useCallback(() => {
-    const accessUrl = runProjectApi.getFileAccessUrl(tab.path);
+    const accessUrl = runProjectApi.getFileAccessUrl(tab.path, agenticFlowId);
     const link = document.createElement('a');
     link.href = accessUrl;
     link.download = tab.name;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  }, [tab.path, tab.name]);
+  }, [tab.path, tab.name, agenticFlowId]);
 
   if (loading) {
     return (

@@ -60,6 +60,7 @@ class ProviderConfig(BaseModel):
     default_model: str
     default_base_url: str = ""
     models: List[str] = []
+    color: str = "#8c8c8c"
 
 
 class LLMConfigCreate(BaseModel):
@@ -131,39 +132,23 @@ class UsageStatistics(BaseModel):
 async def get_providers() -> dict:
     """获取所有LLM提供商。"""
     providers = LLMFactory.get_available_providers()
-    
+
     provider_configs = []
     for provider in providers:
-        models = LLMFactory.get_available_models(provider)
-        default_model = LLMFactory.get_default_model(provider)
-        
-        display_names = {
-            LLMProvider.OPENAI: "OpenAI",
-            LLMProvider.ANTHROPIC: "Anthropic Claude",
-            LLMProvider.QWEN: "通义千问 (Qwen)",
-            LLMProvider.OLLAMA: "Ollama",
-            LLMProvider.DEEPSEEK: "DeepSeek",
-            LLMProvider.ZHIPU: "智谱AI (Zhipu)",
-        }
+        config = LLMFactory.get_provider_config(provider)
+        if not config:
+            continue
 
-        default_base_urls = {
-            LLMProvider.OPENAI: "https://api.openai.com/v1",
-            LLMProvider.ANTHROPIC: "https://api.anthropic.com",
-            LLMProvider.QWEN: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            LLMProvider.OLLAMA: "http://localhost:11434",
-            LLMProvider.DEEPSEEK: "https://api.deepseek.com",
-            LLMProvider.ZHIPU: "https://open.bigmodel.cn/api/paas/v4",
-        }
-        
         provider_configs.append(ProviderConfig(
             name=provider,
-            display_name=display_names.get(provider, provider),
-            requires_api_key=provider != LLMProvider.OLLAMA,
-            default_model=default_model,
-            default_base_url=default_base_urls.get(provider, ""),
-            models=models,
+            display_name=config.get("name", provider),
+            requires_api_key=config.get("requires_api_key", True),
+            default_model=config.get("default_model", ""),
+            default_base_url=config.get("default_base_url", ""),
+            models=config.get("models", []),
+            color=config.get("color", "#8c8c8c"),
         ))
-    
+
     return {
         "code": 200,
         "message": "success",
@@ -478,7 +463,7 @@ async def test_config(request: LLMConfigCreate, db: Session = Depends(get_db)) -
             model_name=request.model_name,
             stream=False,
             api_key=request.api_key,
-            base_url=request.base_url,
+            client_kwargs={"base_url": request.base_url} if request.base_url else {},
         )
         
         return {

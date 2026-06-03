@@ -32,6 +32,7 @@ SoloEngine : 通义千问(Qwen)模型实现，支持阿里DashScope API
 """
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import asyncio
 from typing import (
     Any,
     TYPE_CHECKING,
@@ -375,8 +376,7 @@ class QwenChatModel(ChatModelBase):
         try:
             async for chunk in response:
                 if cancel_event and cancel_event.is_set():
-                    logger.info("[Qwen] Cancel event detected, closing stream")
-                    await response.aclose()
+                    logger.info("[Qwen] Cancel event detected")
                     self._was_cancelled = True
                     raise asyncio.CancelledError()
                 if hasattr(chunk, "usage") and chunk.usage:

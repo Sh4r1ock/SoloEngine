@@ -36,30 +36,31 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import ReactFlow, {
   Node,
+  Edge,
   Connection,
   Controls,
   MiniMap,
   NodeTypes,
+  MarkerType,
   ReactFlowInstance,
   OnNodesChange,
   OnEdgesChange,
   applyNodeChanges,
   applyEdgeChanges,
   NodeDragHandler,
+  EdgeMouseHandler,
   SelectionMode,
   Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Dropdown, Menu, Button, Input, Modal, App, Tooltip } from 'antd';
 import { 
-  PlusOutlined, 
   UserOutlined, 
   TeamOutlined, 
   ToolOutlined,
   CommentOutlined,
   DeleteOutlined,
   CopyOutlined,
-  SelectOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
@@ -68,7 +69,6 @@ import AgentNode from './AgentNode';
 import Toolbar from '../Toolbar/Toolbar';
 import ScalableBackground from './ScalableBackground';
 import SmartGridLines from './SmartGridLines';
-import { toolsApi, AgentPreset } from '../../services/toolsApi';
 import { getPresets } from '../../stores/presetsStore';
 
 interface ContextMenuPosition {
@@ -76,16 +76,6 @@ interface ContextMenuPosition {
   y: number;
   canvasX: number;
   canvasY: number;
-}
-
-interface Annotation {
-  id: string;
-  text: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color: string;
 }
 
 interface AnnotationNodeData {
@@ -168,16 +158,14 @@ const Canvas: React.FC = () => {
     snapToGrid, 
     setIsDragging, 
     pushHistory,
-    selectedNode,
-    setSelectedNode,
   } = useCanvasStore();
   
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
   const [draggingNodeInfo, setDraggingNodeInfo] = useState<{ id: string; position: { x: number; y: number } } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [annotationModalVisible, setAnnotationModalVisible] = useState(false);
   const [annotationText, setAnnotationText] = useState('');
   const [annotationColor, setAnnotationColor] = useState('#fff3cd');
@@ -210,13 +198,36 @@ const Canvas: React.FC = () => {
 
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => {
+      const hasRemove = changes.some(c => c.type === 'remove');
+      const hasSelectionOnly = changes.every(c => c.type === 'select');
+
+      if (hasRemove) {
+        const removeIds = new Set(changes.filter(c => c.type === 'remove').map(c => c.id));
+        const newEdges = edges.filter(edge => !removeIds.has(edge.id));
+        setEdges(newEdges);
+        setSelectedEdgeIds(prev => prev.filter(id => !removeIds.has(id)));
+        return;
+      }
+
       const updatedEdges = applyEdgeChanges(changes, edges as any);
-      setEdges(updatedEdges.map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        label: typeof edge.label === 'string' ? edge.label : undefined
-      })) as EdgeData[]);
+      const mappedEdges = updatedEdges.map(edge => {
+        const base: any = {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          selected: edge.selected,
+          animated: edge.animated,
+        };
+        if (edge.markerEnd && typeof edge.markerEnd === 'object') {
+          base.markerEnd = { ...edge.markerEnd, color: edge.selected ? '#3F51B5' : '#b1b1b7' };
+        }
+        return base;
+      }) as EdgeData[];
+
+      const newSelectedIds = mappedEdges.filter(e => e.selected).map(e => e.id);
+      setSelectedEdgeIds(newSelectedIds);
+
+      setEdges(mappedEdges, hasSelectionOnly);
     },
     [edges, setEdges]
   );
@@ -227,7 +238,12 @@ const Canvas: React.FC = () => {
         id: `e_${params.source}_${params.target}`,
         source: params.source!,
         target: params.target!,
-        label: '调用',
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          width: 20,
+          height: 20,
+          color: '#b1b1b7',
+        },
       };
       
       storeAddEdge(newEdge);
@@ -238,16 +254,22 @@ const Canvas: React.FC = () => {
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     useCanvasStore.getState().setSelectedNode(node as any);
     useCanvasStore.getState().setPropertyPanelOpen(true);
+    setSelectedEdgeIds([]);
   }, []);
 
-  const onSelectionChange = useCallback(({ nodes: selectedNodes }: { nodes: Node[] }) => {
+  const onSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }: { nodes: Node[]; edges: Edge[] }) => {
     if (selectedNodes.length > 0) {
       setSelectedNodeIds(selectedNodes.map(n => n.id));
+      setSelectedEdgeIds([]);
       if (selectedNodes.length === 1) {
         useCanvasStore.getState().setSelectedNode(selectedNodes[0] as any);
       }
+    } else if (selectedEdges.length > 0) {
+      setSelectedNodeIds([]);
+      setSelectedEdgeIds(selectedEdges.map(e => e.id));
     } else {
       setSelectedNodeIds([]);
+      setSelectedEdgeIds([]);
     }
   }, []);
 
@@ -255,7 +277,22 @@ const Canvas: React.FC = () => {
     useCanvasStore.getState().setSelectedNode(null);
     setContextMenu(null);
     setSelectedNodeIds([]);
+    setSelectedEdgeIds([]);
   }, []);
+
+  const onEdgeClick: EdgeMouseHandler = useCallback((_, edge) => {
+    setSelectedNodeIds([]);
+    setSelectedEdgeIds([edge.id]);
+  }, []);
+
+  const handleDeleteSelectedEdges = useCallback(() => {
+    const { edges, setEdges } = useCanvasStore.getState();
+    const newEdges = edges.filter(edge => !selectedEdgeIds.includes(edge.id));
+    setEdges(newEdges);
+    setSelectedEdgeIds([]);
+    pushHistory();
+    message.success(`已删除 ${selectedEdgeIds.length} 条连线`);
+  }, [selectedEdgeIds, pushHistory]);
 
   const onContextMenu = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
@@ -292,7 +329,6 @@ const Canvas: React.FC = () => {
         agentType: presetId,
         color: preset?.color || '#3F51B5',
         system_prompt: preset?.system_prompt || '',
-        assistant_prompt: '',
         skills: preset?.skills || [],
         tools: preset?.tools || [],
         mcp_tools: preset?.mcp_tools || [],
@@ -333,6 +369,7 @@ const Canvas: React.FC = () => {
     setNodes(newNodes);
     setEdges(newEdges);
     setSelectedNodeIds([]);
+    setSelectedEdgeIds([]);
     pushHistory();
     message.success(`已删除 ${selectedNodeIds.length} 个节点`);
   }, [selectedNodeIds, pushHistory]);
@@ -388,7 +425,7 @@ const Canvas: React.FC = () => {
           {
             key: 'delete-selected',
             icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
-            label: <span style={{ color: '#ff4d4f' }}>删除选中 ({selectedNodeIds.length})</span>,
+            label: <span style={{ color: '#ff4d4f' }}>删除选中节点 ({selectedNodeIds.length})</span>,
             onClick: handleDeleteSelected,
           },
           {
@@ -396,6 +433,15 @@ const Canvas: React.FC = () => {
             icon: <CopyOutlined />,
             label: <span>复制选中 ({selectedNodeIds.length})</span>,
             onClick: handleDuplicateSelected,
+          },
+        ] : []),
+        ...(selectedEdgeIds.length > 0 ? [
+          { type: 'divider' as const },
+          {
+            key: 'delete-selected-edges',
+            icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+            label: <span style={{ color: '#ff4d4f' }}>删除选中连线 ({selectedEdgeIds.length})</span>,
+            onClick: handleDeleteSelectedEdges,
           },
         ] : []),
       ]}
@@ -431,7 +477,6 @@ const Canvas: React.FC = () => {
           agentType: presetId,
           color: preset?.color || '#3F51B5',
           system_prompt: preset?.system_prompt || '',
-          assistant_prompt: '',
           skills: preset?.skills || [],
           tools: preset?.tools || [],
           mcp_tools: preset?.mcp_tools || [],
@@ -473,7 +518,6 @@ const Canvas: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // 如果在输入框中，不处理快捷键
       const activeElement = document.activeElement;
       if (activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA') {
         return;
@@ -483,6 +527,9 @@ const Canvas: React.FC = () => {
         if (selectedNodeIds.length > 0) {
           event.preventDefault();
           handleDeleteSelected();
+        } else if (selectedEdgeIds.length > 0) {
+          event.preventDefault();
+          handleDeleteSelectedEdges();
         }
       }
       
@@ -497,12 +544,10 @@ const Canvas: React.FC = () => {
             handleDuplicateSelected();
           }
         }
-        // Ctrl+Z 撤销
         if (event.key === 'z' || event.key === 'Z') {
           event.preventDefault();
           useCanvasStore.getState().undo();
         }
-        // Ctrl+Y 重做
         if (event.key === 'y' || event.key === 'Y') {
           event.preventDefault();
           useCanvasStore.getState().redo();
@@ -512,7 +557,7 @@ const Canvas: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedNodeIds, nodes, handleDeleteSelected, handleDuplicateSelected]);
+  }, [selectedNodeIds, selectedEdgeIds, nodes, handleDeleteSelected, handleDeleteSelectedEdges, handleDuplicateSelected]);
 
   return (
     <>
@@ -537,6 +582,7 @@ const Canvas: React.FC = () => {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
+              onEdgeClick={onEdgeClick}
               onPaneClick={onPaneClick}
               onContextMenu={onContextMenu}
               onDrop={onDrop}
@@ -547,6 +593,14 @@ const Canvas: React.FC = () => {
               onInit={setReactFlowInstance}
               onSelectionChange={onSelectionChange}
               nodeTypes={nodeTypes}
+              defaultEdgeOptions={{
+                markerEnd: {
+                  type: MarkerType.ArrowClosed,
+                  width: 20,
+                  height: 20,
+                  color: '#b1b1b7',
+                },
+              }}
               snapToGrid={snapToGrid}
               snapGrid={[20, 20]}
               fitView
@@ -555,6 +609,7 @@ const Canvas: React.FC = () => {
               panOnDrag={true}
               selectNodesOnDrag={false}
               multiSelectionKeyCode="Shift"
+              deleteKeyCode={null}
               panOnScroll
               panOnScrollMode={1 as any}
             >
@@ -590,6 +645,24 @@ const Canvas: React.FC = () => {
                     </Tooltip>
                     <Tooltip title="删除">
                       <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDeleteSelected} />
+                    </Tooltip>
+                  </div>
+                )}
+                {selectedEdgeIds.length > 0 && selectedNodeIds.length === 0 && (
+                  <div style={{
+                    background: 'var(--bg-100)',
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-base)',
+                    boxShadow: 'var(--shadow-base)',
+                    display: 'flex',
+                    gap: 8,
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontSize: 12, color: 'var(--text-200)' }}>
+                      已选择 {selectedEdgeIds.length} 条连线
+                    </span>
+                    <Tooltip title="删除连线">
+                      <Button size="small" danger icon={<DeleteOutlined />} onClick={handleDeleteSelectedEdges} />
                     </Tooltip>
                   </div>
                 )}

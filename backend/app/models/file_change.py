@@ -19,7 +19,6 @@ class FileContentBlobModel(Base):
     content = Column(Text, nullable=True)
     is_large_file = Column(Boolean, default=False)
     file_size = Column(Integer, default=0)
-    ref_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
 
 
@@ -40,7 +39,6 @@ class FileChangeModel(Base):
     file_path = Column(String(500), nullable=False)
     operation = Column(String(20), nullable=False)
     tool_call_id = Column(String(100), nullable=True, index=True)
-    file_hash = Column(String(64), nullable=True)
     content_type = Column(String(20), default="text")
     before_content_hash = Column(String(64), nullable=True)
     after_content_hash = Column(String(64), nullable=True)
@@ -68,7 +66,6 @@ class FileChangeModel(Base):
             "file_path": self.file_path,
             "operation": self.operation,
             "tool_call_id": self.tool_call_id,
-            "file_hash": self.file_hash,
             "content_type": self.content_type,
             "before_content_hash": self.before_content_hash,
             "after_content_hash": self.after_content_hash,

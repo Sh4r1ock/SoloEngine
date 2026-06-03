@@ -96,11 +96,13 @@ class RecentProjectInfo(BaseModel):
 class FileListRequest(BaseModel):
     path: str = Field(default="", description="相对路径")
     pattern: str = Field(default="*", description="文件匹配模式")
+    agentic_flow_id: str = Field(default="", description="流程ID")
 
 
 class FileReadRequest(BaseModel):
     path: str = Field(..., description="相对文件路径")
     encoding: str = Field(default="utf-8", description="文件编码")
+    agentic_flow_id: str = Field(default="", description="流程ID")
 
 
 class FileWriteRequest(BaseModel):
@@ -108,6 +110,7 @@ class FileWriteRequest(BaseModel):
     content: str = Field(..., description="文件内容")
     encoding: str = Field(default="utf-8", description="文件编码")
     mode: str = Field(default="write", description="写入模式: write, append")
+    agentic_flow_id: str = Field(default="", description="流程ID")
 
 
 class SandboxedFileSystem:
@@ -303,15 +306,7 @@ def _do_select_or_create_project(
     session_key = _get_session_key(user_id, agentic_flow_id)
     _active_project_sessions[session_key] = project.id
     
-    db_manager.add_recent_project(
-        db=db,
-        user_id=user_id,
-        project_id=project.id,
-        folder_path=folder_path,
-        project_name=project_name,
-    )
-    
-    recent_projects = db_manager.get_recent_projects(db, user_id, limit=10)
+    recent_projects = db_manager.get_recent_projects(db, user_id, agentic_flow_id, limit=10)
     
     return {
         "project_id": project.id,
@@ -321,10 +316,10 @@ def _do_select_or_create_project(
         "recent_projects": [
             {
                 "id": rp.id,
-                "project_id": rp.project_id,
-                "project_name": rp.project_name,
+                "project_id": rp.id,
+                "project_name": rp.name,
                 "folder_path": rp.folder_path,
-                "accessed_at": format_iso(rp.accessed_at),
+                "accessed_at": format_iso(rp.last_accessed_at),
             }
             for rp in recent_projects
         ]
@@ -333,6 +328,8 @@ def _do_select_or_create_project(
 
 def get_sandboxed_fs(user_id: str, db: Session, agentic_flow_id: str = None) -> SandboxedFileSystem:
     """获取用户的沙箱文件系统实例。"""
+    if agentic_flow_id == "":
+        agentic_flow_id = None
     session_key = _get_session_key(user_id, agentic_flow_id)
     project_id = _active_project_sessions.get(session_key)
     
@@ -461,15 +458,7 @@ async def get_recent_projects(
         agentic_flow_id: 流程ID，必需，用于过滤特定流程的项目
         limit: 返回数量限制
     """
-    # 使用db_manager方法获取，确保路径转换正确
-    recent_projects = db_manager.get_recent_projects(db, current_user.id, limit=limit)
-    
-    # 过滤特定agentic_flow_id的项目
-    filtered_projects = []
-    for rp in recent_projects:
-        project = db_manager.get_run_project(db, rp.project_id)
-        if project and project.agentic_flow_id == agentic_flow_id:
-            filtered_projects.append(rp)
+    recent_projects = db_manager.get_recent_projects(db, current_user.id, agentic_flow_id, limit=limit)
     
     return {
         "code": 200,
@@ -477,12 +466,12 @@ async def get_recent_projects(
         "data": [
             {
                 "id": rp.id,
-                "project_id": rp.project_id,
-                "project_name": rp.project_name,
+                "project_id": rp.id,
+                "project_name": rp.name,
                 "folder_path": rp.folder_path,
-                "accessed_at": format_iso(rp.accessed_at),
+                "accessed_at": format_iso(rp.last_accessed_at),
             }
-            for rp in filtered_projects
+            for rp in recent_projects
         ]
     }
 
@@ -495,7 +484,7 @@ async def list_files(
 ):
     """列出项目文件。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, request.agentic_flow_id)
         files = fs.list_files(request.path, request.pattern)
         
         return {
@@ -524,7 +513,7 @@ async def read_file(
 ):
     """读取项目文件。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, request.agentic_flow_id)
         result = fs.read_file(request.path, request.encoding)
         
         return {
@@ -551,7 +540,7 @@ async def write_file(
 ):
     """写入项目文件。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, request.agentic_flow_id)
         result = fs.write_file(request.path, request.content, request.encoding, request.mode)
         
         return {
@@ -569,12 +558,13 @@ async def write_file(
 @router.delete("/files/delete")
 async def delete_file(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """删除项目文件或目录。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         result = fs.delete_file(path)
         
         return {
@@ -594,12 +584,13 @@ async def delete_file(
 @router.post("/files/mkdir")
 async def create_directory(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """创建目录。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         result = fs.create_directory(path)
         
         return {
@@ -617,12 +608,13 @@ async def create_directory(
 @router.get("/files/info")
 async def get_file_info(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """获取文件信息。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         result = fs.get_file_info(path)
         
         return {
@@ -642,12 +634,13 @@ async def get_file_info(
 @router.get("/files/exists")
 async def check_file_exists(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """检查文件是否存在。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         exists = fs.file_exists(path)
         
         return {
@@ -794,6 +787,7 @@ async def open_native_folder_dialog(
     from tkinter import filedialog
     
     def open_dialog():
+        root = None
         try:
             root = tk.Tk()
             root.withdraw()
@@ -804,11 +798,17 @@ async def open_native_folder_dialog(
                 initialdir=initialdir if initialdir else None
             )
             
-            root.destroy()
             return folder_path if folder_path else None
         except Exception as e:
             logger.error(f"Failed to open folder dialog: {e}")
             return None
+        finally:
+            if root:
+                try:
+                    root.quit()
+                    root.destroy()
+                except Exception:
+                    pass
     
     try:
         folder_path = await asyncio.to_thread(open_dialog)
@@ -840,12 +840,13 @@ async def open_native_folder_dialog(
 @router.get("/files/access")
 async def access_file(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """访问文件（用于预览）。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         absolute_path = fs._resolve_path(path)
         
         if not os.path.exists(absolute_path):
@@ -892,6 +893,7 @@ def generate_file_key(file_path: str) -> str:
 class OnlyOfficeConfigRequest(BaseModel):
     path: str = Field(..., description="文件路径")
     mode: str = Field(default="edit", description="编辑模式: edit, view")
+    agentic_flow_id: str = Field(default="", description="流程ID")
 
 
 @router.post("/onlyoffice/config")
@@ -902,7 +904,7 @@ async def get_onlyoffice_config(
 ):
     """获取 OnlyOffice 编辑器配置。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, request.agentic_flow_id)
         absolute_path = fs._resolve_path(request.path)
         
         if not os.path.exists(absolute_path):
@@ -969,12 +971,13 @@ async def get_onlyoffice_config(
 @router.get("/onlyoffice/download")
 async def onlyoffice_download_file(
     path: str,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """OnlyOffice 下载文件 API。"""
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         absolute_path = fs._resolve_path(path)
         
         if not os.path.exists(absolute_path):
@@ -999,14 +1002,15 @@ async def onlyoffice_download_file(
 @router.post("/onlyoffice/save")
 async def onlyoffice_save_file(
     path: str,
-    background_tasks: BackgroundTasks,
+    agentic_flow_id: str = Query(default="", description="流程ID"),
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """OnlyOffice 保存文件回调 API。"""
     
     try:
-        fs = get_sandboxed_fs(current_user.id, db)
+        fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         absolute_path = fs._resolve_path(path)
         
         if not os.path.exists(absolute_path):

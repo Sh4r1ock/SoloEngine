@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 import os
 import logging
-from typing import Dict, Optional, List
+from typing import Optional
 
 from app.core.database import get_db_context
 from app.models.file_change import FileContentBlobModel
-from app.utils.file_utils import compute_file_hash, compute_content_hash
+from app.utils.file_utils import compute_content_hash
 
 logger = logging.getLogger("SoloEngine")
 
@@ -25,8 +25,6 @@ class ContentAddressableStorage:
                 FileContentBlobModel.content_hash == content_hash
             ).first()
             if existing:
-                existing.ref_count += 1
-                db.commit()
                 return content_hash
 
             is_large = len(content) > self.LARGE_FILE_THRESHOLD
@@ -42,7 +40,6 @@ class ContentAddressableStorage:
                 content=text_content,
                 is_large_file=is_large,
                 file_size=len(content),
-                ref_count=1,
             )
             db.add(blob)
 
@@ -88,44 +85,5 @@ class ContentAddressableStorage:
         with open(target_path, 'wb') as f:
             f.write(content)
         return True
-
-    def decrement_ref_count(self, content_hashes: List[str]) -> None:
-        if not content_hashes:
-            return
-        with get_db_context() as db:
-            db.query(FileContentBlobModel).filter(
-                FileContentBlobModel.content_hash.in_(content_hashes)
-            ).update({"ref_count": FileContentBlobModel.ref_count - 1}, synchronize_session=False)
-            db.commit()
-
-    def cleanup_orphan_blobs(self, batch_size: int = 1000) -> int:
-        with get_db_context() as db:
-            orphans = db.query(FileContentBlobModel).filter(
-                FileContentBlobModel.ref_count <= 0
-            ).limit(batch_size).all()
-            count = len(orphans)
-            for blob in orphans:
-                if blob.is_large_file:
-                    blob_path = os.path.join(self._blob_dir, blob.content_hash)
-                    if os.path.exists(blob_path):
-                        os.remove(blob_path)
-                db.delete(blob)
-            db.commit()
-        return count
-
-    def get_session_blob_hashes(self, session_id: str) -> List[str]:
-        from app.models.file_change import FileChangeModel
-        hashes = set()
-        with get_db_context() as db:
-            changes = db.query(FileChangeModel).filter(
-                FileChangeModel.session_id == session_id
-            ).all()
-            for c in changes:
-                if c.before_content_hash:
-                    hashes.add(c.before_content_hash)
-                if c.after_content_hash:
-                    hashes.add(c.after_content_hash)
-        return list(hashes)
-
 
 cas = ContentAddressableStorage()

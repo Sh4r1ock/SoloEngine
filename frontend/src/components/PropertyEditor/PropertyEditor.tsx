@@ -24,21 +24,20 @@
  * - 配置数据存储在节点数据的 llm_config_id 字段
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Form, Input, InputNumber, Select, Button, Typography, Divider, App, Tag, Modal, Spin, Card, Tabs, Tooltip, Popover, Empty, Alert, Switch } from 'antd';
-import { ReloadOutlined, ToolOutlined, FolderOutlined, BookOutlined, EyeOutlined, ThunderboltOutlined, SettingOutlined, DatabaseOutlined, TeamOutlined, UserOutlined } from '@ant-design/icons';
+import { Form, Input, Select, Button, Typography, App } from 'antd';
+import { ToolOutlined, FolderOutlined, ThunderboltOutlined, SettingOutlined, TeamOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, EditOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useMCPStore } from '../../store/mcpStore';
 import { useRunStore } from '../../store/runStore';
-import { generateOrchestratorPrompt, generatePlannerPrompt, generateExecutorPrompt } from '../../utils/promptGenerator';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import { mcpApi, MCPTool, MCPServer } from '../../services/mcpApi';
-import { runApi } from '../../services/runApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
 import { toolsApi, ToolInfo, AgentPreset } from '../../services/toolsApi';
 import { getPresets } from '../../stores/presetsStore';
 import { LLM_DEFAULTS } from '../../config/llmDefaults';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -67,140 +66,58 @@ const SOLOAGENT_TOOLS = [
   { name: 'ExitPlanMode', description: '退出计划模式' },
 ];
 
-interface PromptTemplate {
-  id: string;
-  name: string;
-  description: string;
-  category: 'orchestrator' | 'planner' | 'executor' | 'general';
-  template: string;
-  variables: string[];
+interface StepperInputProps {
+  value?: number;
+  onChange?: (value: number) => void;
+  min: number;
+  max: number;
+  step: number;
 }
 
-const PROMPT_TEMPLATES: PromptTemplate[] = [
-  {
-    id: 'orchestrator-default',
-    name: '协调者默认模板',
-    description: '适用于协调者节点的基础模板',
-    category: 'orchestrator',
-    template: `你是一个工作流协调者，负责管理多个子Agent的协作。
+const StepperInput: React.FC<StepperInputProps> = ({ value, onChange, min, max, step }) => {
+  const handleStep = (delta: number) => {
+    const current = value ?? 0;
+    let newVal = current + delta;
+    if (!isNaN(min) && newVal < min) newVal = min;
+    if (!isNaN(max) && newVal > max) newVal = max;
+    const decimals = (step.toString().split('.')[1] || '').length;
+    onChange?.(decimals > 0 ? parseFloat(newVal.toFixed(decimals)) : newVal);
+  };
 
-可用Agent列表:
-{available_agents}
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const numVal = parseFloat(e.target.value);
+    if (!isNaN(numVal)) {
+      onChange?.(numVal);
+    }
+  };
 
-用户输入: {user_input}
-
-请分析用户需求，决定需要调用哪些Agent来完成任务。`,
-    variables: ['available_agents', 'user_input']
-  },
-  {
-    id: 'orchestrator-advanced',
-    name: '协调者高级模板',
-    description: '包含详细执行计划的高级模板',
-    category: 'orchestrator',
-    template: `你是一个高级工作流协调者，负责规划和管理复杂任务的执行。
-
-可用Agent:
-{available_agents}
-
-执行历史:
-{execution_history}
-
-用户请求: {user_input}
-
-请按以下格式输出:
-1. 任务分析
-2. 执行计划
-3. 需要调用的Agent及顺序`,
-    variables: ['available_agents', 'execution_history', 'user_input']
-  },
-  {
-    id: 'planner-default',
-    name: '规划者默认模板',
-    description: '适用于规划者节点的基础模板',
-    category: 'planner',
-    template: `你是一个任务规划专家，负责将复杂任务分解为可执行的步骤。
-
-可用执行者:
-{available_executors}
-
-当前任务: {user_input}
-
-请制定详细的执行计划，包括每个步骤的具体操作和预期结果。`,
-    variables: ['available_executors', 'user_input']
-  },
-  {
-    id: 'executor-default',
-    name: '执行者默认模板',
-    description: '适用于执行者节点的基础模板',
-    category: 'executor',
-    template: `你是一个任务执行者，负责完成分配给你的具体任务。
-
-你的能力:
-{skills}
-
-当前任务: {task}
-
-请使用你的能力完成任务，并输出执行结果。`,
-    variables: ['skills', 'task']
-  },
-  {
-    id: 'executor-code',
-    name: '代码执行者模板',
-    description: '适用于代码生成和执行任务',
-    category: 'executor',
-    template: `你是一个代码专家，负责编写和执行代码任务。
-
-任务描述: {task}
-
-请按照以下步骤完成任务:
-1. 分析需求
-2. 设计解决方案
-3. 编写代码
-4. 测试验证
-
-输出完整的代码和说明。`,
-    variables: ['task']
-  },
-  {
-    id: 'general-analysis',
-    name: '通用分析模板',
-    description: '适用于数据分析和总结任务',
-    category: 'general',
-    template: `请分析以下内容:
-
-{content}
-
-分析要求:
-1. 总结关键信息
-2. 识别主要模式
-3. 提供洞察和建议`,
-    variables: ['content']
-  },
-  {
-    id: 'general-qa',
-    name: '问答模板',
-    description: '适用于问答场景',
-    category: 'general',
-    template: `请回答以下问题:
-
-问题: {question}
-
-背景信息: {context}
-
-请提供准确、详细的回答。`,
-    variables: ['question', 'context']
-  }
-];
+  return (
+    <div className="property-panel-model-config-param-input-wrapper">
+      <button type="button" className="property-panel-model-config-param-stepper" onClick={() => handleStep(-step)}>−</button>
+      <input
+        className="property-panel-model-config-param-input"
+        type="number"
+        min={min} max={max} step={step}
+        value={value ?? ''}
+        onChange={handleInputChange}
+      />
+      <button type="button" className="property-panel-model-config-param-stepper" onClick={() => handleStep(step)}>+</button>
+    </div>
+  );
+};
 
 const PropertyPanel: React.FC = () => {
   const { message } = App.useApp();
-  const { selectedNode, updateNode, nodes, edges, saveCanvas } = useCanvasStore();
+  const { selectedNode, updateNode, nodes, edges, saveCanvas, configMap } = useCanvasStore();
   const [form] = Form.useForm();
   const { projectId } = useParams<{ projectId: string }>();
   const { currentSessionId } = useRunStore();
   
-  const [showAssistantPrompt, setShowAssistantPrompt] = useState(false);
   const saveTimeoutRef = useRef<number | null>(null);
+  const selectedNodeRef = useRef<typeof selectedNode>(null);
+  const isInternalUpdateRef = useRef(false);
+  const configMapRef = useRef(configMap);
+  configMapRef.current = configMap;
   
   const [skillsPackages, setSkillsPackages] = useState<SkillsPackage[]>([]);
   const [allSkillsPackages, setAllSkillsPackages] = useState<SkillsPackage[]>([]);
@@ -212,95 +129,73 @@ const PropertyPanel: React.FC = () => {
   const [loadingTools, setLoadingTools] = useState(false);
   const [localTools, setLocalTools] = useState<ToolInfo[]>([]);
   const [loadingLocalTools, setLoadingLocalTools] = useState(false);
-  
-  const [templateModalVisible, setTemplateModalVisible] = useState(false);
-  const [previewContent, setPreviewContent] = useState('');
-  const [previewVisible, setPreviewVisible] = useState(false);
-  
+
   const [selectedLLMConfig, setSelectedLLMConfig] = useState<LLMConfig | null>(null);
   const selectedLLMConfigRef = useRef<LLMConfig | null>(null);
-  const [hasNoConfig, setHasNoConfig] = useState(false);
+  const [paramsExpanded, setParamsExpanded] = useState(false);
+  const [pendingPresetId, setPendingPresetId] = useState<string | null>(null);
+  const [agentTypeValue, setAgentTypeValue] = useState<string>('executor');
+  const prevNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     selectedLLMConfigRef.current = selectedLLMConfig;
   }, [selectedLLMConfig]);
 
   useEffect(() => {
+    form.setFieldsValue({ agentType: agentTypeValue });
+  }, [agentTypeValue, form]);
+
+  useEffect(() => {
+    selectedNodeRef.current = selectedNode;
+
+    const nodeIdChanged = prevNodeIdRef.current !== (selectedNode?.id ?? null);
+
+    if (nodeIdChanged) {
+      selectedLLMConfigRef.current = null;
+      setSelectedLLMConfig(null);
+    }
+
     if (selectedNode) {
       const nodeModelConfig: Record<string, any> = selectedNode.data.model_config || {};
+      isInternalUpdateRef.current = true;
       form.setFieldsValue({
         name: selectedNode.data.name || '',
         desc: selectedNode.data.desc || '',
         agentType: selectedNode.data.agentType || 'executor',
-        llm_config_id: selectedNode.data.llm_config_id || undefined,
         system_prompt: selectedNode.data.system_prompt || '',
-        assistant_prompt: selectedNode.data.assistant_prompt || '',
         skills: selectedNode.data.skills || [],
         mcp_servers: selectedNode.data.mcp_servers || [],
         tools: selectedNode.data.tools || [],
-        memory: selectedNode.data.memory !== undefined ? selectedNode.data.memory : true,
-        temperature: nodeModelConfig.temperature ?? LLM_DEFAULTS.TEMPERATURE,
-        max_tokens: nodeModelConfig.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
-        frequency_penalty: nodeModelConfig.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
-        presence_penalty: nodeModelConfig.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
+        temperature: nodeModelConfig.temperature,
+        max_tokens: nodeModelConfig.max_tokens,
+        frequency_penalty: nodeModelConfig.frequency_penalty,
+        presence_penalty: nodeModelConfig.presence_penalty,
       });
-      
-      if (selectedNode.data.llm_config_id) {
-        llmApi.getConfig(selectedNode.data.llm_config_id).then(config => {
-          setSelectedLLMConfig(config);
-          selectedLLMConfigRef.current = config;
-        }).catch((error) => {
-          console.warn('Failed to load LLM config:', error);
-          setSelectedLLMConfig(null);
-          selectedLLMConfigRef.current = null;
-        });
-      } else if (!selectedNode.data.model_config?.config_id) {
-        llmApi.getDefaultConfig().then(config => {
-          if (config) {
+      setTimeout(() => { isInternalUpdateRef.current = false; }, 0);
+      setAgentTypeValue(selectedNode.data.agentType || 'executor');
+      if (nodeIdChanged) {
+        setPendingPresetId(null);
+      }
+      prevNodeIdRef.current = selectedNode.id;
+      const nodeId = selectedNode.id;
+
+      if (nodeModelConfig.llm_config_id) {
+        const cached = configMapRef.current.get(nodeModelConfig.llm_config_id);
+        if (cached) {
+          setSelectedLLMConfig(cached);
+          selectedLLMConfigRef.current = cached;
+        } else {
+          llmApi.getConfig(nodeModelConfig.llm_config_id).then(config => {
+            if (selectedNodeRef.current?.id !== nodeId) return;
             setSelectedLLMConfig(config);
             selectedLLMConfigRef.current = config;
-            form.setFieldsValue({ llm_config_id: config.id });
-            updateNode(selectedNode.id, {
-              llm_config_id: config.id,
-              model_config: {
-                config_id: config.id,
-                config_name: config.name,
-                provider: config.provider,
-                model: config.model_name,
-              },
-            });
-          } else {
-            setSelectedLLMConfig(null);
-            selectedLLMConfigRef.current = null;
-          }
-        }).catch((error) => {
-          console.warn('Failed to load default LLM config:', error);
-          setSelectedLLMConfig(null);
-          selectedLLMConfigRef.current = null;
-        });
-      } else if (selectedNode.data.model_config) {
-        const mc = selectedNode.data.model_config;
-        setSelectedLLMConfig({
-          id: mc.config_id || '',
-          name: mc.config_name || '',
-          provider: mc.provider,
-          model_name: mc.model,
-          temperature: mc.temperature ?? LLM_DEFAULTS.TEMPERATURE,
-          max_tokens: mc.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
-          top_p: LLM_DEFAULTS.TOP_P,
-          frequency_penalty: mc.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
-          presence_penalty: mc.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
-          timeout: LLM_DEFAULTS.TIMEOUT,
-          extra_params: {},
-          is_default: false,
-          is_active: true,
-          version: 1,
-          user_id: '',
-        } as LLMConfig);
-        selectedLLMConfigRef.current = null;
+          }).catch((error) => {
+            console.warn('Failed to load LLM config:', error);
+          });
+        }
       }
     }
-  }, [selectedNode, form, updateNode]);
+  }, [selectedNode]);
 
   const loadSkillsPackages = async () => {
     setLoadingSkills(true);
@@ -375,40 +270,45 @@ const PropertyPanel: React.FC = () => {
   }, []);
 
   const handleSave = useCallback(async () => {
-    if (!selectedNode) return;
+    const node = selectedNodeRef.current;
+    if (!node) return;
 
     try {
       const values = form.getFieldsValue();
       const currentConfig = selectedLLMConfigRef.current;
+      const existingModelConfig: Record<string, any> = node.data.model_config || {};
 
-      updateNode(selectedNode.id, {
-        name: values.name,
-        desc: values.desc,
-        agentType: values.agentType,
-        system_prompt: values.system_prompt,
-        assistant_prompt: values.assistant_prompt,
-        llm_config_id: values.llm_config_id,
-        model_config: currentConfig ? {
-          config_id: currentConfig.id,
-          config_name: currentConfig.name,
-          provider: currentConfig.provider,
-          model: currentConfig.model_name,
+      const updateData: Record<string, any> = {};
+
+      if (values.name !== undefined) updateData.name = values.name;
+      if (values.desc !== undefined) updateData.desc = values.desc;
+      if (values.agentType !== undefined) updateData.agentType = values.agentType;
+      if (values.system_prompt !== undefined) updateData.system_prompt = values.system_prompt;
+      if (values.skills !== undefined) updateData.skills = values.skills;
+      if (values.mcp_servers !== undefined) updateData.mcp_servers = values.mcp_servers;
+      if (values.tools !== undefined) updateData.tools = values.tools;
+
+      const llmConfigId = currentConfig?.id || existingModelConfig.llm_config_id;
+
+      if (llmConfigId) {
+        updateData.model_config = {
+          llm_config_id: llmConfigId,
           temperature: values.temperature,
           max_tokens: values.max_tokens,
           frequency_penalty: values.frequency_penalty,
           presence_penalty: values.presence_penalty,
-        } : undefined,
-        skills: values.skills || [],
-        mcp_servers: values.mcp_servers || [],
-        tools: values.tools || [],
-        memory: values.memory,
-      });
+        };
+      }
+
+      updateNode(node.id, updateData);
     } catch (error) {
       message.error('保存失败，请重试');
     }
-  }, [selectedNode, form, updateNode]);
+  }, [form, updateNode]);
 
   const handleValuesChange = () => {
+    if (isInternalUpdateRef.current) return;
+
     if (saveTimeoutRef.current !== null) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -428,21 +328,68 @@ const PropertyPanel: React.FC = () => {
     return iconMap[iconName] || <SettingOutlined />;
   };
 
+  const hasPresetDiff = (a: string[] | undefined, b: string[] | undefined) => {
+    const sa = (a || []).slice().sort();
+    const sb = (b || []).slice().sort();
+    return JSON.stringify(sa) !== JSON.stringify(sb);
+  };
+
   const handlePresetChange = (presetId: string) => {
     const preset = getPresets().find(p => p.id === presetId);
-    if (preset && selectedNode) {
-      form.setFieldsValue({
-        agentType: preset.id,
-        tools: preset.tools,
-        skills: preset.skills,
-        mcp_servers: preset.mcp_servers,
-        system_prompt: preset.system_prompt,
-      });
-      updateNode(selectedNode.id, {
-        color: preset.color || '#3F51B5',
-      });
-      handleValuesChange();
+    if (!preset || !selectedNodeRef.current) return;
+
+    const currentPreset = getPresets().find(p => p.id === agentTypeValue);
+    const currentValues = form.getFieldsValue();
+
+    const hasDiff =
+      (currentValues.system_prompt || '').trim() !== (currentPreset?.system_prompt || '').trim() ||
+      hasPresetDiff(currentValues.tools, currentPreset?.tools) ||
+      hasPresetDiff(currentValues.skills, currentPreset?.skills) ||
+      hasPresetDiff(currentValues.mcp_servers, currentPreset?.mcp_servers || currentPreset?.mcp_tools);
+
+    if (hasDiff) {
+      setPendingPresetId(presetId);
+    } else {
+      applyPresetChange(presetId);
     }
+  };
+
+  const applyPresetChange = (presetId: string) => {
+    const preset = getPresets().find(p => p.id === presetId);
+    const node = selectedNodeRef.current;
+    if (!preset || !node) return;
+
+    setAgentTypeValue(presetId);
+    const values = form.getFieldsValue();
+    form.setFieldsValue({
+      agentType: preset.id,
+      tools: preset.tools,
+      skills: preset.skills,
+      mcp_servers: preset.mcp_servers || preset.mcp_tools || [],
+      system_prompt: preset.system_prompt,
+    });
+    updateNode(node.id, {
+      name: values.name,
+      desc: values.desc,
+      agentType: preset.id as 'orchestrator' | 'planner' | 'executor' | 'custom',
+      color: preset.color || '#3F51B5',
+      system_prompt: preset.system_prompt,
+      tools: preset.tools,
+      skills: preset.skills,
+      mcp_servers: preset.mcp_servers || preset.mcp_tools || [],
+    });
+    handleValuesChange();
+  };
+
+  const handleConfirmPresetChange = () => {
+    if (pendingPresetId) {
+      applyPresetChange(pendingPresetId);
+      setPendingPresetId(null);
+    }
+  };
+
+  const handleCancelPresetChange = () => {
+    setPendingPresetId(null);
   };
 
   useEffect(() => {
@@ -453,157 +400,34 @@ const PropertyPanel: React.FC = () => {
     };
   }, []);
 
-  const getConnectedNodes = (nodeId: string, direction: 'upstream' | 'downstream') => {
-    if (direction === 'upstream') {
-      const sourceEdges = edges.filter(edge => edge.target === nodeId);
-      return sourceEdges.map(edge => nodes.find(node => node.id === edge.source)).filter(Boolean);
-    } else {
-      const targetEdges = edges.filter(edge => edge.source === nodeId);
-      return targetEdges.map(edge => nodes.find(node => node.id === edge.target)).filter(Boolean);
-    }
-  };
-
-  const generateSmartPrompt = () => {
-    if (!selectedNode) return;
-
-    const agentType = selectedNode.data.agentType;
-    
-    if (agentType === 'orchestrator') {
-      const plannerNodes = getConnectedNodes(selectedNode.id, 'downstream').filter(
-        node => node?.data.agentType === 'planner'
-      );
-      const prompt = generateOrchestratorPrompt(selectedNode as any, plannerNodes as any);
-      form.setFieldsValue({ system_prompt: prompt });
-    } else if (agentType === 'planner') {
-      const executorNodes = getConnectedNodes(selectedNode.id, 'downstream').filter(
-        node => node?.data.agentType === 'executor'
-      );
-      const prompt = generatePlannerPrompt(selectedNode as any, executorNodes as any);
-      form.setFieldsValue({ system_prompt: prompt });
-    } else if (agentType === 'executor') {
-      const prompt = generateExecutorPrompt(selectedNode as any);
-      form.setFieldsValue({ system_prompt: prompt });
-    }
-  };
-
-  const handleApplyTemplate = (template: PromptTemplate) => {
-    form.setFieldsValue({ system_prompt: template.template });
-    setTemplateModalVisible(false);
-    message.success(`已应用模板: ${template.name}`);
-  };
-
   const handleLLMConfigChange = (configId: string, config: LLMConfig | null) => {
     setSelectedLLMConfig(config);
     selectedLLMConfigRef.current = config;
-    form.setFieldsValue({ llm_config_id: configId });
+    setParamsExpanded(true);
 
     if (config) {
-      form.setFieldsValue({
+      const params = {
         temperature: config.temperature ?? LLM_DEFAULTS.TEMPERATURE,
         max_tokens: config.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
         frequency_penalty: config.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
         presence_penalty: config.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
+      };
+      form.setFieldsValue(params);
+
+      configMapRef.current.set(config.id, config);
+
+      isInternalUpdateRef.current = true;
+      updateNode(selectedNodeRef.current!.id, {
+        model_config: {
+          llm_config_id: config.id,
+          ...params,
+        },
       });
-    }
-
-    handleValuesChange();
-  };
-
-  const getAvailableVariables = (): Record<string, string> => {
-    const variables: Record<string, string> = {
-      '{user_input}': '用户输入内容',
-      '{execution_history}': '执行历史记录',
-      '{current_plan}': '当前执行计划',
-      '{timestamp}': '当前时间戳',
-    };
-
-    if (selectedNode) {
-      if (selectedNode.data.agentType === 'orchestrator') {
-        variables['{available_agents}'] = '可用Agent列表';
-        const downstreamNodes = getConnectedNodes(selectedNode.id, 'downstream');
-        if (downstreamNodes.length > 0) {
-          variables['{downstream_agents}'] = downstreamNodes.map(n => n?.data.name).join(', ');
-        }
-      } else if (selectedNode.data.agentType === 'planner') {
-        variables['{available_executors}'] = '可用执行者列表';
-      } else if (selectedNode.data.agentType === 'executor') {
-        variables['{skills}'] = '绑定的技能列表';
-        variables['{task}'] = '当前任务';
-      }
-    }
-
-    if (selectedNode?.data.skills?.length) {
-      variables['{skills}'] = selectedNode.data.skills.join(', ');
-    }
-
-    return variables;
-  };
-
-  const interpolatePrompt = (prompt: string): string => {
-    const variables = getAvailableVariables();
-    let result = prompt;
-    
-    for (const [key, value] of Object.entries(variables)) {
-      result = result.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), value);
-    }
-    
-    return result;
-  };
-
-  const handlePreviewInterpolation = () => {
-    const systemPrompt = form.getFieldValue('system_prompt');
-    if (!systemPrompt) {
-      message.warning('请先输入提示词');
-      return;
-    }
-    
-    const interpolated = interpolatePrompt(systemPrompt);
-    setPreviewContent(interpolated);
-    setPreviewVisible(true);
-  };
-
-  const getModelOptions = (provider: string) => {
-    switch (provider) {
-      case 'openai':
-        return [
-          { value: 'gpt-4o', label: 'GPT-4o' },
-          { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-          { value: 'gpt-4', label: 'GPT-4' },
-          { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo' },
-        ];
-      case 'anthropic':
-        return [
-          { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet' },
-          { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus' },
-          { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet' },
-          { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku' },
-        ];
-      case 'qwen':
-        return [
-          { value: 'qwen-max', label: '通义千问 Max' },
-          { value: 'qwen-plus', label: '通义千问 Plus' },
-          { value: 'qwen-turbo', label: '通义千问 Turbo' },
-        ];
-      case 'ollama':
-        return [
-          { value: 'llama3', label: 'Llama 3' },
-          { value: 'llama2', label: 'Llama 2' },
-          { value: 'mistral', label: 'Mistral' },
-          { value: 'codellama', label: 'Code Llama' },
-        ];
-      default:
-        return [];
+      setTimeout(() => { isInternalUpdateRef.current = false; }, 0);
     }
   };
 
-  const getFilteredTemplates = () => {
-    const agentType = selectedNode?.data.agentType;
-    if (!agentType) return PROMPT_TEMPLATES.filter(t => t.category === 'general');
-    
-    return PROMPT_TEMPLATES.filter(t => 
-      t.category === agentType || t.category === 'general'
-    );
-  };
+  const toggleParamsExpanded = () => setParamsExpanded(prev => !prev);
 
   if (!selectedNode) {
     return (
@@ -620,563 +444,347 @@ const PropertyPanel: React.FC = () => {
   return (
     <>
       <Form form={form} layout="vertical" onValuesChange={handleValuesChange} className="property-panel-form">
-        <Form.Item 
-          label="节点名称" 
-          name="name" 
-          rules={[{ required: true, message: '请输入节点名称' }]}
-          className="property-panel-form-item"
-        >
-          <Input placeholder="请输入节点名称" />
-        </Form.Item>
-
-        <Form.Item 
-          label="节点简介" 
-          name="desc"
-          className="property-panel-form-item"
-        >
-          <Input placeholder="请输入节点简介" />
-        </Form.Item>
-
-        <Form.Item 
-          label="Agent 类型" 
-          name="agentType" 
-          rules={[{ required: true, message: '请选择 Agent 类型' }]}
-          className="property-panel-form-item"
-        >
-          <Select
-            placeholder="请选择 Agent 类型"
-            onChange={handlePresetChange}
-            optionLabelProp="label"
-          >
-            {getPresets().map(preset => (
-              <Select.Option 
-                key={preset.id} 
-                value={preset.id}
-                label={preset.name}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: preset.color || '#3F51B5' }}>
-                    {getPresetIcon(preset.icon)}
-                  </span>
-                  <span>{preset.name}</span>
-                  <span style={{ fontSize: 12, color: '#999', marginLeft: 'auto' }}>
-                    {preset.description}
-                  </span>
-                </div>
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
-
-        <Form.Item 
-          name="memory"
-          valuePropName="checked"
-          className="property-panel-form-item"
-        >
-          <div className="property-panel-switch-wrapper">
-            <div className="property-panel-switch-label">
-              <span className="property-panel-switch-title">启用记忆</span>
-              <span className="property-panel-switch-desc">
-                启用后，对话历史将保存到数据库，支持多轮对话上下文
-              </span>
-            </div>
-            <Switch checkedChildren="开" unCheckedChildren="关" />
+        {/* 1. 基本信息 */}
+        <div className="property-panel-section">
+          <div className="property-panel-section-head">
+            <EditOutlined /> 基本信息
           </div>
-        </Form.Item>
+          <div className="property-panel-section-body">
+            <Form.Item
+              label={<span className="property-panel-label-inline">节点名称</span>}
+              name="name"
+              rules={[{ required: true, message: '请输入节点名称' }]}
+              className="property-panel-form-item"
+            >
+              <Input placeholder="请输入节点名称" />
+            </Form.Item>
 
-        <Divider className="property-panel-divider">模型配置</Divider>
+            <Form.Item
+              label="节点简介"
+              name="desc"
+              className="property-panel-form-item"
+            >
+              <Input placeholder="请输入节点简介" />
+            </Form.Item>
 
-        <Form.Item 
-          label="LLM配置" 
-          name="llm_config_id"
-          className="property-panel-form-item"
-          extra={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <span style={{ fontSize: 12, color: '#999' }}>
-                从设置页面配置的模型中选择
-              </span>
-              <Button 
-                type="link" 
-                size="small" 
-                icon={<SettingOutlined />}
-                onClick={() => window.open('/main/llm', '_blank')}
-                className="property-panel-link-btn"
+            <Form.Item
+              label={<span className="property-panel-label-inline">Agent 类型</span>}
+              rules={[{ required: true, message: '请选择 Agent 类型' }]}
+              className="property-panel-form-item"
+              style={{ marginBottom: 0 }}
+            >
+              <Select
+                value={agentTypeValue}
+                placeholder="请选择 Agent 类型"
+                onChange={handlePresetChange}
+                optionLabelProp="label"
               >
-                管理配置
-              </Button>
-            </div>
-          }
-        >
-          <LLMConfigSelector
-            onChange={handleLLMConfigChange}
-            showAddButton={true}
-          />
-        </Form.Item>
-
-        {selectedLLMConfig && (
-          <Card size="small" className="property-panel-model-card">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              <Tag className={`property-panel-tag property-panel-tag-provider-${selectedLLMConfig.provider}`}>
-                {selectedLLMConfig.provider}
-              </Tag>
-              <Tag className="property-panel-tag property-panel-tag-model">
-                {selectedLLMConfig.name}
-              </Tag>
-              {selectedLLMConfig.is_default && (
-                <Tag className="property-panel-tag property-panel-tag-default">
-                  默认
-                </Tag>
-              )}
-            </div>
-
-            <Form.Item name="temperature" label="温度 (0-2)" style={{ marginBottom: 8 }}>
-              <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item name="max_tokens" label="最大Token" style={{ marginBottom: 8 }}>
-              <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item name="frequency_penalty" label="频率惩罚 (-2 到 2)" style={{ marginBottom: 8 }}>
-              <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-
-            <Form.Item name="presence_penalty" label="存在惩罚 (-2 到 2)" style={{ marginBottom: 8 }}>
-              <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Card>
-        )}
-
-        <Divider className="property-panel-divider">提示词配置</Divider>
-
-        <div className="property-panel-btn-group">
-          <Button 
-            className="property-panel-btn property-panel-btn-primary"
-            onClick={generateSmartPrompt}
-            icon={<ThunderboltOutlined />}
-          >
-            智能生成
-          </Button>
-          <Button 
-            className="property-panel-btn"
-            onClick={() => setTemplateModalVisible(true)}
-            icon={<BookOutlined />}
-          >
-            模板库
-          </Button>
-          <Popover
-            content={
-              <div style={{ maxWidth: 300 }}>
-                <Text strong>可用变量:</Text>
-                <div style={{ marginTop: 8 }}>
-                  {Object.entries(getAvailableVariables()).map(([key, value]) => (
-                    <div key={key} style={{ marginBottom: 4 }}>
-                      <Tag>{key}</Tag>
-                      <Text type="secondary">{value}</Text>
+                {getPresets().map(preset => (
+                  <Select.Option
+                    key={preset.id}
+                    value={preset.id}
+                    label={preset.name}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: preset.color || '#3F51B5' }}>
+                        {getPresetIcon(preset.icon)}
+                      </span>
+                      <span>{preset.name}</span>
+                      <span style={{ fontSize: 12, color: '#999', marginLeft: 'auto' }}>
+                        {preset.description}
+                      </span>
                     </div>
-                  ))}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          </div>
+        </div>
+
+        {/* 模型配置 - 统一面板 */}
+        <div className="property-panel-model-config">
+          <div className="property-panel-model-config-header">
+            <RobotOutlined /> 模型配置
+          </div>
+          <div className="property-panel-model-config-body">
+            <LLMConfigSelector value={selectedLLMConfig?.id} onChange={handleLLMConfigChange} showAddButton={true} />
+
+            {selectedLLMConfig && (
+              <>
+                <div
+                  className="property-panel-model-config-collapse"
+                  onClick={toggleParamsExpanded}
+                >
+                  <CaretRightOutlined
+                    className={`property-panel-model-config-collapse-arrow ${paramsExpanded ? 'expanded' : ''}`}
+                  />
+                  <span>参数</span>
+                  <span className="property-panel-model-config-collapse-line" />
+                </div>
+
+                <div
+                  className={`property-panel-model-config-params ${paramsExpanded ? 'expanded' : ''}`}
+                  key={`params-${selectedNode?.id}-${selectedLLMConfig?.id}`}
+                >
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">温度 (0-2)</span>
+                  <Form.Item name="temperature" noStyle>
+                    <StepperInput min={0} max={2} step={0.1} />
+                  </Form.Item>
+                </div>
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">最大Token</span>
+                  <Form.Item name="max_tokens" noStyle>
+                    <StepperInput min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} step={1000} />
+                  </Form.Item>
+                </div>
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">频率惩罚 (-2~2)</span>
+                  <Form.Item name="frequency_penalty" noStyle>
+                    <StepperInput min={-2} max={2} step={0.1} />
+                  </Form.Item>
+                </div>
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">存在惩罚 (-2~2)</span>
+                  <Form.Item name="presence_penalty" noStyle>
+                    <StepperInput min={-2} max={2} step={0.1} />
+                  </Form.Item>
                 </div>
               </div>
-            }
-            title="变量说明"
-            trigger="click"
-          >
-            <Button className="property-panel-btn">
-              变量说明
-            </Button>
-          </Popover>
-          <Button 
-            className="property-panel-btn"
-            onClick={handlePreviewInterpolation}
-            icon={<EyeOutlined />}
-          >
-            预览插值
-          </Button>
+              </>
+            )}
+          </div>
         </div>
 
-        <Form.Item
-          label="System Prompt"
-          name="system_prompt"
-          extra="支持变量插值，如 {available_agents}"
-          className="property-panel-form-item"
-        >
-          <TextArea 
-            className="property-panel-textarea"
-            rows={4} 
-            placeholder="请输入系统提示词" 
-          />
-        </Form.Item>
+        {/* 3. 系统提示词 */}
+        <div className="property-panel-section">
+          <div className="property-panel-section-head">
+            <ThunderboltOutlined /> 系统提示词
+          </div>
+          <div className="property-panel-section-body">
+            <Form.Item
+              name="system_prompt"
+              className="property-panel-form-item"
+              style={{ marginBottom: 0 }}
+            >
+              <TextArea
+                className="property-panel-textarea"
+                rows={8}
+                placeholder="请输入系统提示词"
+              />
+            </Form.Item>
+          </div>
+        </div>
 
-        {showAssistantPrompt && (
-          <Form.Item
-            label="Assistant Prompt"
-            name="assistant_prompt"
-            extra="支持变量插值，如 {execution_history}"
-            className="property-panel-form-item"
-          >
-            <TextArea 
-              className="property-panel-textarea"
-              rows={3} 
-              placeholder="请输入助手提示词" 
-            />
-          </Form.Item>
-        )}
-
-        <Button 
-          type="link" 
-          size="small" 
-          onClick={() => setShowAssistantPrompt(!showAssistantPrompt)}
-          className="property-panel-link-btn"
-          style={{ marginBottom: 16 }}
-        >
-          {showAssistantPrompt ? '隐藏' : '显示'} Assistant Prompt
-        </Button>
-
-        <Divider className="property-panel-divider">
-          <FolderOutlined style={{ marginRight: 8 }} />
-          Skills 包绑定
-        </Divider>
-
-        <Form.Item 
-          label="绑定的 Skills 包" 
-          name="skills"
-          className="property-panel-form-item"
-          extra={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>从主菜单管理 Skills 包</span>
-              <Button 
-                type="link" 
-                size="small" 
-                icon={<ReloadOutlined />} 
-                onClick={loadSkillsPackages}
-                loading={loadingSkills}
-                className="property-panel-link-btn"
+        {/* 4. 工具与集成 */}
+        <div className="property-panel-section">
+          <div className="property-panel-section-head">
+            <ToolOutlined /> 工具与集成
+          </div>
+          <div className="property-panel-section-body">
+            {/* 工具 */}
+            <div className="property-panel-subsection">
+              <div className="property-panel-subsection-label">
+                <ToolOutlined /> 工具
+              </div>
+              <Form.Item
+                name="tools"
+                className="property-panel-form-item"
+                style={{ marginBottom: 0 }}
               >
-                刷新
-              </Button>
-            </div>
-          }
-        >
-          <Select
-            mode="multiple"
-            placeholder={loadingSkills ? "加载中..." : "请选择 Skills 包"}
-            loading={loadingSkills}
-            optionLabelProp="label"
-          >
-            {(() => {
-              const selectedSkills = form.getFieldValue('skills') || [];
-              const enabledIds = new Set(skillsPackages.map(pkg => pkg.id));
-
-              return [
-                ...skillsPackages.map(pkg => (
-                  <Select.Option
-                    key={pkg.id}
-                    value={pkg.id}
-                    label={pkg.name}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span>{pkg.name}</span>
-                      {pkg.description && (
-                        <span style={{
-                          fontSize: 12,
-                          color: '#999',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          maxWidth: '100%'
-                        }} title={pkg.description}>
-                          {pkg.description}
-                        </span>
-                      )}
-                    </div>
-                  </Select.Option>
-                )),
-                ...allSkillsPackages
-                  .filter(pkg => !enabledIds.has(pkg.id) && selectedSkills.includes(pkg.id))
-                  .map(pkg => (
+                <Select
+                  mode="multiple"
+                  placeholder={loadingLocalTools ? "加载中..." : "请选择工具"}
+                  loading={loadingLocalTools}
+                  optionLabelProp="label"
+                >
+                  {SOLOAGENT_TOOLS.map(tool => (
                     <Select.Option
-                      key={pkg.id}
-                      value={pkg.id}
-                      label={pkg.name}
-                      disabled
+                      key={tool.name}
+                      value={tool.name}
+                      label={tool.name}
                     >
                       <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span>{pkg.name}</span>
-                        {pkg.description && (
-                          <span style={{
-                            fontSize: 12,
-                            color: '#999',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '100%'
-                          }} title={pkg.description}>
-                            {pkg.description}
+                        <span>{tool.name}</span>
+                        {tool.description && (
+                          <span style={{ fontSize: 12, color: '#999' }}>
+                            {tool.description}
                           </span>
                         )}
                       </div>
                     </Select.Option>
-                  ))
-              ];
-            })()}
-          </Select>
-        </Form.Item>
-
-        <Divider className="property-panel-divider">
-          <ToolOutlined style={{ marginRight: 8 }} />
-          本地工具绑定
-        </Divider>
-
-        <Form.Item 
-          label="绑定的本地工具" 
-          name="tools"
-          className="property-panel-form-item"
-          extra={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>SoloAgent 内置工具</span>
-              <Button 
-                type="link" 
-                size="small" 
-                icon={<ReloadOutlined />} 
-                onClick={loadLocalTools}
-                loading={loadingLocalTools}
-                className="property-panel-link-btn"
-              >
-                刷新
-              </Button>
+                  ))}
+                </Select>
+              </Form.Item>
             </div>
-          }
-        >
-          <Select 
-            mode="multiple" 
-            placeholder={loadingLocalTools ? "加载中..." : "请选择本地工具"}
-            loading={loadingLocalTools}
-            optionLabelProp="label"
-          >
-            {SOLOAGENT_TOOLS.map(tool => (
-              <Select.Option 
-                key={tool.name} 
-                value={tool.name}
-                label={tool.name}
+            {/* Skills */}
+            <div className="property-panel-subsection">
+              <div className="property-panel-subsection-label">
+                <FolderOutlined /> Skills
+              </div>
+              <Form.Item
+                name="skills"
+                className="property-panel-form-item"
+                style={{ marginBottom: 0 }}
               >
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span>{tool.name}</span>
-                  {tool.description && (
-                    <span style={{ fontSize: 12, color: '#999' }}>
-                      {tool.description}
-                    </span>
-                  )}
-                </div>
-              </Select.Option>
-            ))}
-          </Select>
-        </Form.Item>
+                <Select
+                  mode="multiple"
+                  placeholder={loadingSkills ? "加载中..." : "请选择 Skills"}
+                  loading={loadingSkills}
+                  optionLabelProp="label"
+                >
+                  {(() => {
+                    const selectedSkills = form.getFieldValue('skills') || [];
+                    const enabledIds = new Set(skillsPackages.map(pkg => pkg.id));
 
-        <Divider className="property-panel-divider">
-          <ToolOutlined style={{ marginRight: 8 }} />
-          MCP 服务器绑定
-        </Divider>
-
-        <Form.Item
-          label="绑定的 MCP 服务器"
-          name="mcp_servers"
-          className="property-panel-form-item"
-          extra={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span>从主菜单管理 MCP 服务器</span>
-              <Button
-                type="link"
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={loadMCPTools}
-                loading={loadingTools}
-                className="property-panel-link-btn"
-              >
-                刷新
-              </Button>
-            </div>
-          }
-        >
-          <Select
-            mode="multiple"
-            placeholder={loadingTools ? "加载中..." : "请选择 MCP 服务器"}
-            loading={loadingTools}
-            optionLabelProp="label"
-          >
-            {(() => {
-              const selectedMcpServers = form.getFieldValue('mcp_servers') || [];
-              const enabledServerIds = new Set(mcpServers.map(s => s.id));
-
-              return [
-                // 显示所有启用的服务器（和 Skill 模式一致）
-                ...mcpServers.map(server => (
-                  <Select.Option
-                    key={server.id}
-                    value={server.id}
-                    label={server.name}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span>{server.name}</span>
-                      {server.description && (
-                        <span style={{
-                          fontSize: 12,
-                          color: '#999',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                          maxWidth: '100%'
-                        }} title={server.description}>
-                          {server.description}
-                        </span>
-                      )}
-                    </div>
-                  </Select.Option>
-                )),
-                // 显示用户已选择但已禁用的服务器（和 Skill 模式一致）
-                ...allMcpServers
-                  .filter(server => {
-                    return !enabledServerIds.has(server.id) && selectedMcpServers.includes(server.id);
-                  })
-                  .map(server => (
-                    <Select.Option
-                      key={server.id}
-                      value={server.id}
-                      label={server.name}
-                      disabled
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span>{server.name}</span>
-                        {server.description && (
-                          <span style={{
-                            fontSize: 12,
-                            color: '#999',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '100%'
-                          }} title={server.description}>
-                            {server.description}
-                          </span>
-                        )}
-                      </div>
-                    </Select.Option>
-                  ))
-              ];
-            })()}
-          </Select>
-        </Form.Item>
-      </Form>
-
-      <Modal
-        title="提示词模板库"
-        open={templateModalVisible}
-        onCancel={() => setTemplateModalVisible(false)}
-        footer={null}
-        width={700}
-      >
-        <Tabs
-          items={[
-            {
-              key: 'current',
-              label: '当前类型模板',
-              children: (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {getFilteredTemplates().map(template => (
-                    <Card
-                      key={template.id}
-                      size="small"
-                      hoverable
-                      onClick={() => handleApplyTemplate(template)}
-                      className="property-panel-template-card"
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <Text strong>{template.name}</Text>
-                          <br />
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            {template.description}
-                          </Text>
-                          <div style={{ marginTop: 4 }}>
-                            {template.variables.map(v => (
-                              <Tag key={v} style={{ fontSize: 10 }}>{`{${v}}`}</Tag>
-                            ))}
+                    return [
+                      ...skillsPackages.map(pkg => (
+                        <Select.Option
+                          key={pkg.id}
+                          value={pkg.id}
+                          label={pkg.name}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{pkg.name}</span>
+                            {pkg.description && (
+                              <span style={{
+                                fontSize: 12,
+                                color: '#999',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
+                              }} title={pkg.description}>
+                                {pkg.description}
+                              </span>
+                            )}
                           </div>
-                        </div>
-                        <Button type="link" className="property-panel-link-btn">应用</Button>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              ),
-            },
-            {
-              key: 'all',
-              label: '全部模板',
-              children: (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {PROMPT_TEMPLATES.map(template => (
-                    <Card
-                      key={template.id}
-                      size="small"
-                      hoverable
-                      onClick={() => handleApplyTemplate(template)}
-                      className="property-panel-template-card"
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <Text strong>{template.name}</Text>
-                          <Tag style={{ marginLeft: 8 }} color={
-                            template.category === 'orchestrator' ? 'blue' :
-                            template.category === 'planner' ? 'green' :
-                            template.category === 'executor' ? 'orange' : 'default'
-                          }>
-                            {template.category}
-                          </Tag>
-                          <br />
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            {template.description}
-                          </Text>
-                        </div>
-                        <Button type="link" className="property-panel-link-btn">应用</Button>
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              ),
-            },
-          ]}
-        />
-      </Modal>
+                        </Select.Option>
+                      )),
+                      ...allSkillsPackages
+                        .filter(pkg => !enabledIds.has(pkg.id) && selectedSkills.includes(pkg.id))
+                        .map(pkg => (
+                          <Select.Option
+                            key={pkg.id}
+                            value={pkg.id}
+                            label={pkg.name}
+                            disabled
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span>{pkg.name}</span>
+                              {pkg.description && (
+                                <span style={{
+                                  fontSize: 12,
+                                  color: '#999',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: '100%'
+                                }} title={pkg.description}>
+                                  {pkg.description}
+                                </span>
+                              )}
+                            </div>
+                          </Select.Option>
+                        ))
+                    ];
+                  })()}
+                </Select>
+              </Form.Item>
+            </div>
+            {/* MCP */}
+            <div className="property-panel-subsection">
+              <div className="property-panel-subsection-label">
+                <SettingOutlined /> MCP
+              </div>
+              <Form.Item
+                name="mcp_servers"
+                className="property-panel-form-item"
+                style={{ marginBottom: 0 }}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder={loadingTools ? "加载中..." : "请选择 MCP"}
+                  loading={loadingTools}
+                  optionLabelProp="label"
+                >
+                  {(() => {
+                    const selectedMcpServers = form.getFieldValue('mcp_servers') || [];
+                    const enabledServerIds = new Set(mcpServers.map(s => s.id));
 
-      <Modal
-        title="变量插值预览"
-        open={previewVisible}
-        onCancel={() => setPreviewVisible(false)}
-        footer={[
-          <Button key="close" onClick={() => setPreviewVisible(false)}>
-            关闭
-          </Button>,
-        ]}
-        width={600}
-      >
-        <div className="property-panel-preview-section">
-          <Text strong>原始提示词:</Text>
-          <Card size="small" style={{ marginTop: 8, background: '#f5f5f5', maxHeight: 150, overflow: 'auto' }} className="property-panel-preview-box">
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              {form.getFieldValue('system_prompt')}
-            </pre>
-          </Card>
+                    return [
+                      ...mcpServers.map(server => (
+                        <Select.Option
+                          key={server.id}
+                          value={server.id}
+                          label={server.name}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span>{server.name}</span>
+                            {server.description && (
+                              <span style={{
+                                fontSize: 12,
+                                color: '#999',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
+                              }} title={server.description}>
+                                {server.description}
+                              </span>
+                            )}
+                          </div>
+                        </Select.Option>
+                      )),
+                      ...allMcpServers
+                        .filter(server => {
+                          return !enabledServerIds.has(server.id) && selectedMcpServers.includes(server.id);
+                        })
+                        .map(server => (
+                          <Select.Option
+                            key={server.id}
+                            value={server.id}
+                            label={server.name}
+                            disabled
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span>{server.name}</span>
+                              {server.description && (
+                                <span style={{
+                                  fontSize: 12,
+                                  color: '#999',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  maxWidth: '100%'
+                                }} title={server.description}>
+                                  {server.description}
+                                </span>
+                              )}
+                            </div>
+                          </Select.Option>
+                        ))
+                    ];
+                  })()}
+                </Select>
+              </Form.Item>
+            </div>
+          </div>
+          <div className="property-panel-section-foot">
+            <span>在设置页面中管理工具、Skills 和 MCP</span>
+          </div>
         </div>
-        
-        <div className="property-panel-preview-section">
-          <Text strong>插值后预览:</Text>
-          <Card size="small" style={{ marginTop: 8, background: '#e6f7ff', maxHeight: 200, overflow: 'auto' }} className="property-panel-preview-box blue">
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-              {previewContent}
-            </pre>
-          </Card>
-        </div>
-      </Modal>
+      </Form>
+      <ConfirmDialog
+        open={pendingPresetId !== null}
+        title="切换节点类型"
+        content="切换节点类型，会导致当前自定义的提示词、工具、Skills、MCP 内容被覆盖。是否确认切换？"
+        okText="确认切换"
+        cancelText="取消"
+        danger
+        onOk={handleConfirmPresetChange}
+        onCancel={() => handleCancelPresetChange()}
+      />
     </>
   );
 };

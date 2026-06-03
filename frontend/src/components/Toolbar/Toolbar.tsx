@@ -38,7 +38,6 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
           desc: '',
           agentType: 'custom' as "orchestrator" | "planner" | "executor" | "custom",
           system_prompt: '',
-          assistant_prompt: '',
           skills: [],
         },
       };

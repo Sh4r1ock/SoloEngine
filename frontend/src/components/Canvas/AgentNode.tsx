@@ -20,41 +20,25 @@
  * - 不同类型使用不同颜色区分
  * - 显示用户配置的模型名称
  */
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Typography, Tag, Tooltip } from 'antd';
 import { StarFilled } from '@ant-design/icons';
-import { llmApi, LLMConfig } from '../../services/llmApi';
+import { useCanvasStore } from '../../store/canvasStore';
 
 const { Text } = Typography;
 
 const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
   const color = data.color || '#3F51B5';
-  const [configName, setConfigName] = useState<string | null>(null);
-
-  useEffect(() => {
-    const configId = data.llm_config_id || data.model_config?.config_id;
-    if (configId) {
-      llmApi.getConfig(configId)
-        .then((config: LLMConfig) => setConfigName(config.name))
-        .catch(() => setConfigName(null));
-    }
-  }, [data.llm_config_id, data.model_config?.config_id]);
-
-  const getProviderColor = (provider: string) => {
-    const colors: Record<string, string> = {
-      openai: 'blue',
-      anthropic: 'orange',
-      qwen: 'green',
-      ollama: 'purple',
-    };
-    return colors[provider] || 'default';
-  };
+  const configMap = useCanvasStore((s) => s.configMap);
+  const llmInfo = data.model_config?.llm_config_id
+    ? configMap.get(data.model_config.llm_config_id)
+    : undefined;
 
   const renderModelInfo = () => {
-    const displayName = configName || data.model_config?.config_name;
-    const modelName = data.model_config?.model;
-    const provider = data.model_config?.provider;
+    const displayName = llmInfo?.name;
+    const modelName = llmInfo?.model_name;
+    const provider = llmInfo?.provider;
 
     if (displayName || modelName) {
       return (
