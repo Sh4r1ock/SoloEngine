@@ -67,7 +67,6 @@ class SoloAgentConfig:
         tools (List[str]): 工具列表
         mcp_servers (Any): MCP服务器配置
         subagents (List[Dict]): 子Agent配置
-        memory (bool): 是否启用记忆
         max_iters (int): 最大迭代次数
         stream (bool): 是否流式输出
         temperature (float): 温度参数
@@ -85,8 +84,7 @@ class SoloAgentConfig:
     mcp_servers: Any = field(default_factory=dict)
     
     subagents: List[Dict[str, Any]] = field(default_factory=list)
-    
-    memory: bool = False
+
     user_id: Optional[str] = None
     agentic_flow_id: Optional[str] = None
     run_project_id: Optional[str] = None
@@ -131,7 +129,6 @@ class SoloAgentConfig:
             tools=data.get("tools", []),
             mcp_servers=data.get("mcp_servers", []),
             subagents=data.get("subagents", data.get("child_agents", [])),
-            memory=data.get("memory", False),
             user_id=data.get("user_id"),
             agentic_flow_id=data.get("agentic_flow_id"),
             run_project_id=data.get("run_project_id"),
@@ -164,7 +161,6 @@ class SoloAgentConfig:
             "tools": self.tools,
             "mcp_servers": self.mcp_servers,
             "subagents": self.subagents,
-            "memory": self.memory,
             "user_id": self.user_id,
             "agentic_flow_id": self.agentic_flow_id,
             "run_project_id": self.run_project_id,

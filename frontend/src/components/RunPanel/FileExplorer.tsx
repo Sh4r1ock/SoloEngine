@@ -20,7 +20,7 @@ import {
   CopyOutlined,
 } from '@ant-design/icons';
 import type { TreeDataNode, TreeProps } from 'antd';
-import { useRunProjectStore } from '../../store/runProjectStore';
+import { useRunPanelStore } from './stores/runPanelStore';
 import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 import type { FileSystemChange } from './types';
 import { insertTreeNode, removeTreeNode, moveTreeNode } from './utils/treePatchUtils';
@@ -40,7 +40,7 @@ interface FileExplorerProps {
   }) => void;
 }
 
-interface FileTreeNode extends TreeDataNode {
+export interface FileTreeNode extends TreeDataNode {
   file?: FileInfo;
   children?: FileTreeNode[];
 }
@@ -60,9 +60,10 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     currentProject,
     files,
     currentPath,
-    loading,
+    projectLoading: loading,
     listFiles,
-  } = useRunProjectStore();
+    agenticFlowId,
+  } = useRunPanelStore();
 
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
   const selectedKeysRef = useRef<React.Key[]>([]);
@@ -82,6 +83,19 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
   const [actionLoading, setActionLoading] = useState(false);
   const [deleteTargets, setDeleteTargets] = useState<FileInfo[]>([]);
   const treeRef = useRef<any>(null);
+
+  const prevProjectIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const currentId = currentProject?.id || null;
+    if (prevProjectIdRef.current !== null && prevProjectIdRef.current !== currentId) {
+      setTreeData([]);
+      setExpandedKeys([]);
+      setLoadedKeys([]);
+      setSelectedKeys([]);
+      setLoadingKeys([]);
+    }
+    prevProjectIdRef.current = currentId;
+  }, [currentProject?.id]);
 
   const handleRefresh = useCallback(async () => {
     setLoadedKeys([]);
@@ -367,7 +381,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     setLoadingKeys(prev => [...prev, key as string]);
     
     try {
-      const response = await runProjectApi.listFiles(key as string, '*');
+      const response = await runProjectApi.listFiles(key as string, '*', agenticFlowId);
       if (response.code === 200 && response.data.files.length > 0) {
         const newChildren = buildTreeData(response.data.files);
         
@@ -417,7 +431,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     setActionLoading(true);
     try {
       const filePath = currentPath ? `${currentPath}/${newFileName}` : newFileName;
-      await runProjectApi.writeFile(filePath, '');
+      await runProjectApi.writeFile(filePath, '', 'utf-8', 'write', agenticFlowId);
       message.success('文件创建成功');
       setNewFileDialogVisible(false);
       setNewFileName('');
@@ -437,7 +451,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     setActionLoading(true);
     try {
       const folderPath = currentPath ? `${currentPath}/${newFolderName}` : newFolderName;
-      await runProjectApi.createDirectory(folderPath);
+      await runProjectApi.createDirectory(folderPath, agenticFlowId);
       message.success('文件夹创建成功');
       setNewFolderDialogVisible(false);
       setNewFolderName('');
@@ -456,7 +470,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
       const parentPath = i === 0 ? '' : parts.slice(0, i).join('/');
       if (parentPath !== '' && !loadedKeysRef.current.includes(parentPath) && parentPath !== accumulated) {
         try {
-          const response = await runProjectApi.listFiles(parentPath, '*');
+          const response = await runProjectApi.listFiles(parentPath, '*', agenticFlowId);
           if (response.code === 200 && response.data.files.length > 0) {
             const newChildren = buildTreeData(response.data.files);
             setTreeData(prev => updateTreeChildren(prev, parentPath, newChildren));
@@ -487,7 +501,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     const isBatch = targets.length > 1;
     try {
       for (const file of targets) {
-        await runProjectApi.deleteFile(file.path);
+        await runProjectApi.deleteFile(file.path, agenticFlowId);
         setTreeData(prev => removeTreeNode(prev, file.path));
       }
       message.success(isBatch ? `已删除 ${targets.length} 个文件` : '删除成功');

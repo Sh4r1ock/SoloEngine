@@ -88,13 +88,13 @@ const EditorPage: React.FC = () => {
         try {
           const flow = await agenticFlowApi.getFlow(projectId);
           if (flow) {
-            const canvasData = flow.canvas_data || { nodes: [], edges: [] };
-            useCanvasStore.getState().setNodes(canvasData.nodes || []);
-            useCanvasStore.getState().setEdges(canvasData.edges || []);
-            setCurrentProject({ 
-              id: projectId, 
+            await useCanvasStore.getState().loadLLMConfigs();
+             await useCanvasStore.getState().loadCanvas(projectId);
+            useCanvasStore.getState().setSelectedNode(null);
+            setCurrentProject({
+              id: projectId,
               name: flow.name,
-              canvas: canvasData
+              canvas: flow.canvas_data || { nodes: [], edges: [] }
             });
           }
         } catch (error) {
@@ -249,6 +249,9 @@ const EditorPage: React.FC = () => {
         e.preventDefault();
         useCanvasStore.getState().redo();
       }
+      if (e.key === 'Escape') {
+        handleClosePropertyPanel();
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -379,34 +382,39 @@ const EditorPage: React.FC = () => {
               flexDirection: 'column',
               background: 'var(--bg-100)',
             }}>
-              <Button
-                type="text"
-                icon={<CloseOutlined />}
+              <button
                 onClick={handleClosePropertyPanel}
                 style={{
                   position: 'absolute',
                   top: 12,
                   right: 12,
-                  fontSize: 14,
-                  padding: 8,
                   zIndex: 10,
-                  color: 'var(--text-300)',
-                  borderRadius: 'var(--radius-base)',
+                  width: 32,
+                  height: 32,
+                  padding: 0,
+                  borderRadius: 8,
+                  border: '1px solid var(--border-color)',
                   background: 'var(--bg-surface)',
-                  border: '1px solid var(--border-color-lighter)',
-                  transition: 'all var(--duration-fast)',
+                  color: 'var(--text-300)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--error-color)';
+                  e.currentTarget.style.color = '#ef4444';
                   e.currentTarget.style.background = '#fef2f2';
                   e.currentTarget.style.borderColor = '#fecaca';
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.color = 'var(--text-300)';
                   e.currentTarget.style.background = 'var(--bg-surface)';
-                  e.currentTarget.style.borderColor = 'var(--border-color-lighter)';
+                  e.currentTarget.style.borderColor = 'var(--border-color)';
                 }}
-              />
+              >
+                <CloseOutlined style={{ fontSize: 16 }} />
+              </button>
               
               <div
                 ref={dragHandleRef}

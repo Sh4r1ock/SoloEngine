@@ -34,6 +34,7 @@ from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
 
 from .config import SoloAgentConfig
 from ..utils.message_utils import MessageBlockExtractor
+from ..model.model_response import ChatResponse
 
 if TYPE_CHECKING:
     from ..core.react_core import ReActCore
@@ -597,15 +598,25 @@ class SoloAgent:
             self._llm = self._create_openai_compatible_model(llm_config, stream=True)
         else:
             factory_kwargs = {}
+            client_kwargs_holder = {}
             if llm_config.get("base_url"):
-                factory_kwargs["base_url"] = llm_config.get("base_url")
+                client_kwargs_holder["base_url"] = llm_config.get("base_url")
             if llm_config.get("timeout"):
                 import httpx
-                factory_kwargs["client_kwargs"] = {"timeout": httpx.Timeout(float(llm_config["timeout"]), connect=10.0)}
+                client_kwargs_holder["timeout"] = httpx.Timeout(float(llm_config["timeout"]), connect=10.0)
+            if client_kwargs_holder:
+                factory_kwargs["client_kwargs"] = client_kwargs_holder
+            generate_kwargs = {}
             if llm_config.get("max_tokens"):
-                factory_kwargs["generate_kwargs"] = {"max_tokens": llm_config["max_tokens"]}
+                generate_kwargs["max_tokens"] = llm_config["max_tokens"]
             if llm_config.get("temperature") is not None:
-                factory_kwargs.setdefault("generate_kwargs", {})["temperature"] = llm_config["temperature"]
+                generate_kwargs["temperature"] = llm_config["temperature"]
+            if llm_config.get("frequency_penalty") is not None:
+                generate_kwargs["frequency_penalty"] = llm_config["frequency_penalty"]
+            if llm_config.get("presence_penalty") is not None:
+                generate_kwargs["presence_penalty"] = llm_config["presence_penalty"]
+            if generate_kwargs:
+                factory_kwargs["generate_kwargs"] = generate_kwargs
             
             self._llm = LLMFactory.create_model(
                 provider=provider,
@@ -802,6 +813,19 @@ class SoloAgent:
             response_text = response.get_text_content() if hasattr(response, 'get_text_content') else str(response)
             
             return response_text
+        except asyncio.CancelledError:
+            core = self._core
+            content_list = getattr(core, '_last_collected_content', []) if core else []
+            if not content_list and core:
+                for msg in reversed(getattr(core, '_conversation_history', [])):
+                    if getattr(msg, 'role', None) == "assistant":
+                        content = getattr(msg, 'content', "")
+                        if isinstance(content, str):
+                            return content
+                        if isinstance(content, list):
+                            content_list = content
+                            break
+            return ChatResponse(content=content_list).get_text_content() or "任务执行被取消"
         except Exception as e:
             logger.error(f"Agent reply error: {e}")
             raise

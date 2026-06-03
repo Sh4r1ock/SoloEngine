@@ -30,7 +30,7 @@ const RunPage: React.FC = () => {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <RunPanel agenticFlowId={agenticFlowId} />
+      <RunPanel key={agenticFlowId} agenticFlowId={agenticFlowId} />
     </div>
   );
 };

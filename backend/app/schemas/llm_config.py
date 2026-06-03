@@ -41,6 +41,7 @@ class LLMProvider(Enum):
     ANTHROPIC = "anthropic"
     QWEN = "qwen"
     OLLAMA = "ollama"
+    MIMO = "mimo"
 
 
 @dataclass

@@ -32,6 +32,7 @@ SoloEngine : Ollama本地模型实现，支持本地部署的LLM
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import asyncio
 from typing import (
     Any,
     AsyncGenerator,
@@ -242,8 +243,7 @@ class OllamaChatModel(ChatModelBase):
         try:
             async for line in response.aiter_lines():
                 if cancel_event and cancel_event.is_set():
-                    logger.info("[Ollama] Cancel event detected, closing stream")
-                    await response.aclose()
+                    logger.info("[Ollama] Cancel event detected")
                     self._was_cancelled = True
                     raise asyncio.CancelledError()
                 if not line.strip():

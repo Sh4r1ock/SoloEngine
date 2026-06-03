@@ -321,6 +321,11 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
       }}>
         {tab.name}
       </Text>
+      {tab.fileSize && tab.fileSize > 100 * 1024 && (
+        <span style={{ fontSize: 9, color: 'var(--text-300)', flexShrink: 0 }}>
+          {(tab.fileSize / 1024).toFixed(0)}KB
+        </span>
+      )}
       {tab.hasExternalChange && (
         <Tag color="warning" style={{ margin: '0 2px', fontSize: 9, padding: '0 4px', lineHeight: '14px' }}>
           外部修改

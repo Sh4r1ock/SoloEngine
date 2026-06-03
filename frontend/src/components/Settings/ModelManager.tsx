@@ -14,7 +14,6 @@ import {
   Form,
   Input,
   Select,
-  AutoComplete,
   InputNumber,
   Switch,
   message,
@@ -26,6 +25,7 @@ import {
   Alert,
   Pagination,
 } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import {
   PlusOutlined,
   EditOutlined,
@@ -38,7 +38,6 @@ import {
 import { llmApi, LLMConfig, ProviderConfig, CreateLLMConfigRequest } from '../../services/llmApi';
 import { formatDateTime } from '../../utils/timezone';
 import { LLM_DEFAULTS } from '../../config/llmDefaults';
-import { getProviderDefaultBaseUrl } from '../../config/providerDefaults';
 
 const { Option } = Select;
 
@@ -225,7 +224,12 @@ const ModelManager: React.FC = () => {
     return provider?.display_name || providerName;
   };
 
-  const columns = [
+  const getProviderColor = (providerName: string) => {
+    const provider = providers.find(p => p.name === providerName);
+    return provider?.color || undefined;
+  };
+
+  const columns: ColumnsType<LLMConfig> = [
     {
       title: '名称',
       dataIndex: 'name',
@@ -246,12 +250,7 @@ const ModelManager: React.FC = () => {
       key: 'provider',
       align: 'center',
       render: (provider: string) => (
-        <Tag color={
-          provider === 'openai' ? 'blue' :
-          provider === 'anthropic' ? 'orange' :
-          provider === 'qwen' ? 'green' : 
-          provider === 'deepseek' ? 'purple' : 'default'
-        }>
+        <Tag color={getProviderColor(provider)}>
           {getProviderDisplayName(provider)}
         </Tag>
       ),
@@ -407,7 +406,7 @@ const ModelManager: React.FC = () => {
         okText="保存"
         cancelText="取消"
       >
-        <Form form={form} layout="vertical" requiredMark="optional">
+        <Form form={form} layout="vertical" requiredMark="optional" autoComplete="off">
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item
@@ -430,7 +429,7 @@ const ModelManager: React.FC = () => {
                   const provider = providers.find(p => p.name === value);
                   if (provider) {
                     form.setFieldsValue({
-                      base_url: getProviderDefaultBaseUrl(value),
+                      base_url: provider.default_base_url,
                       model_name: provider.default_model,
                     });
                   }
@@ -453,21 +452,13 @@ const ModelManager: React.FC = () => {
                 label="模型名称"
                 rules={[{ required: true, message: '请输入模型名称' }]}
               >
-                <AutoComplete
-                  placeholder="选择或输入模型名称"
+                <Select
+                  showSearch
                   allowClear
+                  placeholder="选择或搜索模型名称"
+                  optionFilterProp="label"
                   options={(currentProvider?.models || []).map(m => ({ label: m, value: m }))}
-                  filterOption={(inputValue, option) =>
-                    (option?.value as string)?.toLowerCase().includes(inputValue.toLowerCase()) ?? false
-                  }
-                  dropdownRender={(menu) => (
-                    <>
-                      {menu}
-                      <div style={{ padding: '8px', borderTop: '1px solid #e8e8e8', color: '#999', fontSize: 12 }}>
-                        💡 提示：可以直接输入自定义模型名称
-                      </div>
-                    </>
-                  )}
+                  autoComplete="off"
                 />
               </Form.Item>
             </Col>
@@ -480,7 +471,7 @@ const ModelManager: React.FC = () => {
                   message: '请输入API密钥'
                 }]}
               >
-                <Input.Password placeholder="输入API密钥" />
+                <Input.Password placeholder="输入API密钥" autoComplete="new-password" />
               </Form.Item>
             </Col>
           </Row>

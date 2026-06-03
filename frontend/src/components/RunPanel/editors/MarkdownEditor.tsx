@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo, useDeferredValue } from 'react';
 import { Button, Tooltip, Spin } from 'antd';
 import { EditOutlined, EyeOutlined, ColumnWidthOutlined, CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
@@ -137,6 +137,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   );
 
   const content = tab.content || '';
+  const deferredContent = useDeferredValue(content);
 
   const isDark = theme === 'dark';
   const bgColor = isDark ? '#1e1e1e' : '#ffffff';
@@ -498,7 +499,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
                 rehypePlugins={[plugins.rehypeRaw]}
                 components={EDITOR_MARKDOWN_COMPONENTS}
               >
-                {content}
+                {deferredContent}
               </ReactMarkdownComp>
             ) : (
               <div style={{ color: isDark ? '#888' : '#999', textAlign: 'center', padding: 40 }}>

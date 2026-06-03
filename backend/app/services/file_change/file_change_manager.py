@@ -165,5 +165,53 @@ class FileChangeManager:
             })
         return aggregate_incremental_to_net_view(incremental_dicts)
 
+    def delete_file_changes_and_cleanup(self, db, filter_condition) -> int:
+        from app.models.file_change import FileChangeModel, FileContentBlobModel
+        from app.core.content_addressable_storage import cas
+
+        records = db.query(
+            FileChangeModel.before_content_hash,
+            FileChangeModel.after_content_hash
+        ).filter(filter_condition).all()
+
+        candidate_hashes = set()
+        for before, after in records:
+            if before:
+                candidate_hashes.add(before)
+            if after:
+                candidate_hashes.add(after)
+
+        count = db.query(FileChangeModel).filter(filter_condition).delete(
+            synchronize_session=False
+        )
+        db.flush()
+
+        if candidate_hashes:
+            still_referenced = set()
+            for (before, after) in db.query(
+                FileChangeModel.before_content_hash,
+                FileChangeModel.after_content_hash
+            ).all():
+                if before and before in candidate_hashes:
+                    still_referenced.add(before)
+                if after and after in candidate_hashes:
+                    still_referenced.add(after)
+
+            to_delete = candidate_hashes - still_referenced
+
+            if to_delete:
+                blobs = db.query(FileContentBlobModel).filter(
+                    FileContentBlobModel.content_hash.in_(to_delete)
+                ).all()
+                for blob in blobs:
+                    if blob.is_large_file:
+                        blob_path = os.path.join(cas._blob_dir, blob.content_hash)
+                        if os.path.exists(blob_path):
+                            os.remove(blob_path)
+                    db.delete(blob)
+
+        db.commit()
+        return count
+
 
 file_change_manager = FileChangeManager()

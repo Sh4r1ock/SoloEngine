@@ -202,9 +202,21 @@ class ChatModelBase:
             )
 
     async def cancel(self):
+        """取消当前流式调用，关闭底层 HTTP 连接。
+
+        尝试 aclose()（适用于 OpenAI AsyncStream、Qwen async generator、Ollama httpx.Response），
+        回退到 close()（适用于 Anthropic MessageStream）。
+        """
         if self._active_response:
+            # 先尝试异步 aclose()
             try:
                 await self._active_response.aclose()
+            except (AttributeError, NotImplementedError):
+                # 回退到同步 close()（Anthropic MessageStream 等）
+                try:
+                    self._active_response.close()
+                except Exception:
+                    pass
             except Exception:
                 pass
             self._active_response = None

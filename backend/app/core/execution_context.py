@@ -10,8 +10,8 @@ SoloEngine : 执行上下文管理器模块
 功能描述：
 本模块提供以下核心功能：
     - 跟踪运行中的 asyncio.Task
-    - 提供 cancel_event 信号传播
-    - 支持通过 WebSocket 或 HTTP API 取消任务
+    - 统一管理执行上下文（Task、WebSocket 引用、ChunkCollector 等）
+    - 支持通过 CompiledFlow.cancel() 取消任务
     - 自动清理已完成的任务
     - 多任务并发管理
 
@@ -51,11 +51,11 @@ logger = logging.getLogger(__name__)
 class ExecutionContext:
     """执行上下文数据类"""
     task: asyncio.Task
-    cancel_event: asyncio.Event
-    session_id: str
-    user_id: str
-    agentic_flow_id: str
-    run_project_id: str
+    cancel_event: asyncio.Event = None
+    session_id: str = None
+    user_id: str = None
+    agentic_flow_id: str = None
+    run_project_id: str = None
     created_at: datetime = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
     metadata: Dict[str, Any] = field(default_factory=dict)
     collector: Any = None
@@ -151,9 +151,6 @@ class ExecutionContextManager:
         """
         key = self._make_key(user_id, agentic_flow_id, session_id, run_project_id)
         
-        if cancel_event is None:
-            cancel_event = asyncio.Event()
-        
         context = ExecutionContext(
             task=task,
             cancel_event=cancel_event,
@@ -171,12 +168,6 @@ class ExecutionContextManager:
         )
         
         with self._context_lock:
-            old_context = self._contexts.get(key)
-            if old_context and not old_context.task.done():
-                logger.warning(f"Replacing running task for key: {key}")
-                old_context.cancel_event.set()
-                old_context.task.cancel()
-            
             self._contexts[key] = context
         
         logger.info(f"Registered execution context: {key}")
@@ -204,72 +195,6 @@ class ExecutionContextManager:
         key = self._make_key(user_id, agentic_flow_id, session_id, run_project_id)
         with self._context_lock:
             return self._contexts.get(key)
-    
-    def get_cancel_event(
-        self,
-        user_id: str,
-        agentic_flow_id: str,
-        session_id: str,
-        run_project_id: str
-    ) -> Optional[asyncio.Event]:
-        """
-        获取取消事件。
-        
-        Args:
-            user_id: 用户 ID
-            agentic_flow_id: AgenticFlow ID
-            session_id: 会话 ID
-            run_project_id: 项目 ID
-            
-        Returns:
-            asyncio.Event 或 None
-        """
-        context = self.get(user_id, agentic_flow_id, session_id, run_project_id)
-        return context.cancel_event if context else None
-    
-    def cancel(
-        self,
-        user_id: str,
-        agentic_flow_id: str,
-        session_id: str,
-        run_project_id: str
-    ) -> bool:
-        """
-        取消运行中的任务。
-        
-        设置 cancel_event 信号，并调用 task.cancel()。
-        流式输出循环会检测到 cancel_event 并主动退出。
-        
-        Args:
-            user_id: 用户 ID
-            agentic_flow_id: AgenticFlow ID
-            session_id: 会话 ID
-            run_project_id: 项目 ID
-            
-        Returns:
-            bool: 是否成功取消（如果任务不存在或已完成返回 False）
-        """
-        key = self._make_key(user_id, agentic_flow_id, session_id, run_project_id)
-        
-        with self._context_lock:
-            context = self._contexts.get(key)
-            
-            if context is None:
-                logger.warning(f"No execution context found for key: {key}")
-                return False
-            
-            if context.task.done():
-                logger.info(f"Task already done for key: {key}")
-                del self._contexts[key]
-                return False
-            
-            logger.info(f"Cancelling task for key: {key}")
-            
-            context.cancel_event.set()
-            
-            context.task.cancel()
-            
-            return True
     
     def unregister(
         self,
