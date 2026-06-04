@@ -20,12 +20,15 @@ class FileSystemPushService:
         self._ws_registry = registry
 
     def push_change(self, session_id: str, file_path: str, operation: str,
-                    is_directory: bool = False):
-        self._pending[session_id].append({
+                    is_directory: bool = False, dest_path: str = None):
+        change = {
             "file_path": file_path,
             "operation": operation,
             "is_directory": is_directory,
-        })
+        }
+        if dest_path:
+            change["dest_path"] = dest_path
+        self._pending[session_id].append(change)
         self._event.set()
 
     async def _flush_loop(self):

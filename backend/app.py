@@ -70,6 +70,7 @@ async def _watchdog_consumer(queue: asyncio.Queue):
             file_path=event["file_path"],
             operation=event["operation"],
             is_directory=event["is_directory"],
+            dest_path=event.get("dest_path"),
         )
 
 

@@ -36,6 +36,7 @@ SoloEngine : 运行项目API模块
     - 文件系统沙箱隔离
 """
 import os
+import json
 import logging
 import shutil
 from send2trash import send2trash
@@ -43,7 +44,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query, WebSocket
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -1008,14 +1009,14 @@ async def onlyoffice_save_file(
     current_user: User = Depends(get_current_user)
 ):
     """OnlyOffice 保存文件回调 API。"""
-    
+
     try:
         fs = get_sandboxed_fs(current_user.id, db, agentic_flow_id)
         absolute_path = fs._resolve_path(path)
-        
+
         if not os.path.exists(absolute_path):
             raise HTTPException(status_code=404, detail="File not found")
-        
+
         return {
             "error": 0
         }
@@ -1025,3 +1026,64 @@ async def onlyoffice_save_file(
             "error": 1,
             "message": str(e)
         }
+
+
+@router.websocket("/ws/watch/{project_id}")
+async def project_watcher_ws(
+    websocket: WebSocket,
+    project_id: str,
+    token: str = Query(None)
+):
+    """项目级文件监听 WebSocket 端点。
+
+    当用户浏览资源管理器时，独立于执行会话启动 watchdog 监听，
+    实时推送文件系统变化事件到前端。
+
+    URL 格式: /api/v1/run-project/ws/watch/{project_id}?token=xxx
+    """
+    from app.api.v1.websocket import verify_token
+    from app.services.file_system_push import ws_registry
+    from app.services.workspace_watcher import workspace_watcher
+    from app.core.database import get_db_context
+
+    if not token:
+        await websocket.close(code=4001, reason="Missing authentication token")
+        return
+
+    valid, user_id = await verify_token(token)
+    if not valid:
+        await websocket.close(code=4001, reason="Invalid or expired token")
+        return
+
+    with get_db_context() as db:
+        project = db_manager.get_run_project(db, project_id, user_id)
+    if not project:
+        await websocket.close(code=4004, reason="Project not found")
+        return
+
+    folder_path = project.folder_path
+    if not folder_path or not os.path.exists(folder_path):
+        await websocket.close(code=4004, reason="Project folder not found")
+        return
+
+    await websocket.accept()
+
+    session_id = f"project:{project_id}"
+    ws_key = f"watcher:{project_id}:{user_id}"
+    ws_registry.register(ws_key, session_id, websocket)
+    workspace_watcher.start_watching(session_id, folder_path)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "ping":
+                    await websocket.send_text(json.dumps({"type": "pong"}))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    finally:
+        workspace_watcher.stop_watching(session_id)
+        ws_registry.unregister(ws_key)
