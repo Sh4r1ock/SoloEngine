@@ -828,7 +828,18 @@ class SoloAgent:
             return ChatResponse(content=content_list).get_text_content() or "任务执行被取消"
         except Exception as e:
             logger.error(f"Agent reply error: {e}")
-            raise
+            core = self._core
+            content_list = getattr(core, '_last_collected_content', []) if core else []
+            if not content_list and core:
+                for msg in reversed(getattr(core, '_conversation_history', [])):
+                    if getattr(msg, 'role', None) == "assistant":
+                        content = getattr(msg, 'content', "")
+                        if isinstance(content, str):
+                            return content
+                        if isinstance(content, list):
+                            content_list = content
+                            break
+            return ChatResponse(content=content_list).get_text_content() or f"执行失败: {str(e)}"
     
     def get_last_openai_message(self) -> dict:
         if self._last_response is None:

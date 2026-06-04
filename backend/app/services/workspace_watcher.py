@@ -34,17 +34,20 @@ class WorkspaceWatcher:
             observer.stop()
             observer.join(timeout=5)
 
-    def _on_change(self, session_id: str, file_path: str, operation: str, is_directory: bool):
+    def _on_change(self, session_id: str, file_path: str, operation: str, is_directory: bool, dest_path: str = None):
         if self._loop and self._change_queue:
             try:
+                event_data = {
+                    "session_id": session_id,
+                    "file_path": file_path,
+                    "operation": operation,
+                    "is_directory": is_directory,
+                }
+                if dest_path:
+                    event_data["dest_path"] = dest_path
                 self._loop.call_soon_threadsafe(
                     self._change_queue.put_nowait,
-                    {
-                        "session_id": session_id,
-                        "file_path": file_path,
-                        "operation": operation,
-                        "is_directory": is_directory,
-                    },
+                    event_data,
                 )
             except Exception:
                 pass
@@ -84,7 +87,7 @@ class WorkspaceEventHandler(FileSystemEventHandler):
         dest_path = self._normalize(event.dest_path)
         if self._ignored(rel_path) and self._ignored(dest_path):
             return
-        self.on_change(self.session_id, rel_path, "moved", event.is_directory)
+        self.on_change(self.session_id, rel_path, "moved", event.is_directory, dest_path)
 
     def _normalize(self, abs_path: str) -> str:
         return os.path.relpath(abs_path, self.working_dir).replace("\\", "/")

@@ -23,6 +23,7 @@
 状态: ✅ 完整实现
 """
 
+import asyncio
 import json
 import re
 from html import unescape
@@ -81,7 +82,7 @@ class WebSearch(BaseNetworkTool):
     """
     
     DUCKDUCKGO_URL = "https://html.duckduckgo.com/html/"
-    BING_URL = "https://www.bing.com/search"
+    BING_URL = "https://cn.bing.com/search"
     TAVILY_API = "https://api.tavily.com/search"
     SERPER_API = "https://google.serper.dev/search"
     
@@ -218,10 +219,7 @@ class WebSearch(BaseNetworkTool):
         lr: Optional[str],
     ) -> List[SearchResult]:
         """
-        使用 Bing 搜索。
-        
-        通过爬取 Bing HTML 搜索结果页面实现，免费免 API Key。
-        解析 .b_algo > h2 > a（标题+链接）、.b_caption > p（摘要）结构。
+        使用 cn.bing.com 搜索（通过 curl_cffi 模拟 Chrome TLS 指纹）。
         
         Args:
             query (str): 搜索查询。
@@ -231,9 +229,12 @@ class WebSearch(BaseNetworkTool):
         Returns:
             List[SearchResult]: 搜索结果列表。
         """
+        from curl_cffi import requests as cffi_requests
+        
         params = {"q": query}
         headers = {
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.bing.com/",
         }
         
         if lr:
@@ -246,20 +247,34 @@ class WebSearch(BaseNetworkTool):
             else:
                 params["setlang"] = lang_code.split("-")[0] if "-" in lang_code else lang_code
         
-        response = await self._fetch(
-            url=self.BING_URL,
-            params=params,
-            headers=headers,
-        )
+        loop = asyncio.get_event_loop()
         
-        if not response.success:
-            raise NetworkToolError(
-                f"Bing 搜索失败: {response.error_message}",
-                status_code=response.status_code,
-                url=response.url,
+        def _sync_fetch():
+            return cffi_requests.get(
+                self.BING_URL,
+                params=params,
+                headers=headers,
+                impersonate="chrome",
+                timeout=15,
             )
         
-        html = response.content
+        response = await loop.run_in_executor(None, _sync_fetch)
+        
+        if response.status_code != 200:
+            raise NetworkToolError(
+                f"Bing 搜索失败: HTTP {response.status_code}",
+                status_code=response.status_code,
+                url=str(response.url),
+            )
+        
+        if "b_algo" not in response.text:
+            raise NetworkToolError(
+                "Bing 搜索未返回结果（可能触发了验证码）",
+                status_code=response.status_code,
+                url=str(response.url),
+            )
+        
+        html = response.text
         results: List[SearchResult] = []
         
         algo_blocks = re.findall(
@@ -458,7 +473,7 @@ class WebSearch(BaseNetworkTool):
         """根据引擎类型生成所使用的资源URL。"""
         engine_urls = {
             "duckduckgo": f"https://html.duckduckgo.com/html/?q={query}",
-            "bing": f"https://www.bing.com/search?q={query}",
+            "bing": f"https://cn.bing.com/search?q={query}",
             "tavily": "https://api.tavily.com/search",
             "serper": "https://google.serper.dev/search",
         }
@@ -533,36 +548,37 @@ class WebSearch(BaseNetworkTool):
                 }
             }
     
-    @property
-    def spec(self) -> Dict[str, Any]:
-        """工具规范"""
+    def get_tool_spec(self) -> Dict[str, Any]:
+        """
+        获取搜索工具的规范定义。
+
+        Returns:
+            Dict[str, Any]: 工具规范，兼容 OpenAI Function Calling 格式。
+        """
         return {
-            "name": "web_search",
-            "description": "在网络上搜索信息。免费免 API Key，默认使用 Bing 页面爬取。支持 DuckDuckGo、Bing、Tavily、Serper 多种引擎。适用于获取实时信息或搜索不了解的技术概念。",
+            "name": "WebSearch",
+            "description": "在网络上搜索信息。默认使用 cn.bing.com（免费免 API Key，国内可用）。支持 DuckDuckGo、Tavily、Serper 等多种引擎。适用于获取实时信息或搜索不了解的技术概念。",
             "parameters": {
-                "query": {
-                    "type": "string",
-                    "required": True,
-                    "description": "搜索查询字符串",
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索查询字符串",
+                    },
+                    "num": {
+                        "type": "integer",
+                        "description": "最大返回结果数量（默认5）",
+                    },
+                    "lr": {
+                        "type": "string",
+                        "description": "语言限制，如 'lang_zh-CN' 表示中文",
+                    },
+                    "engine": {
+                        "type": "string",
+                        "description": "搜索引擎：bing（默认，cn.bing.com，国内可用，免费）、duckduckgo（免费）、tavily（需API Key）、serper（需API Key）",
+                    },
                 },
-                "num": {
-                    "type": "integer",
-                    "required": False,
-                    "default": 5,
-                    "description": "最大返回结果数量（默认5）",
-                },
-                "lr": {
-                    "type": "string",
-                    "required": False,
-                    "default": None,
-                    "description": "语言限制，如 'lang_zh-CN' 表示中文",
-                },
-                "engine": {
-                    "type": "string",
-                    "required": False,
-                    "default": "bing",
-                    "description": "搜索引擎：bing（默认，免费）、duckduckgo（免费）、tavily（需API Key）、serper（需API Key）",
-                },
+                "required": ["query"],
             },
         }
 
@@ -629,48 +645,8 @@ async def web_search(
         }
 
 
-def get_web_search_tool_spec() -> Dict[str, Any]:
-    """
-    获取搜索工具的规范定义。
-    
-    Returns:
-        Dict[str, Any]: 工具规范，用于注册到工具执行器。
-    """
-    return {
-        "name": "web_search",
-        "function": web_search,
-        "description": "在网络上搜索信息。免费免 API Key，默认使用 Bing 页面爬取。支持 DuckDuckGo、Bing、Tavily、Serper 多种引擎。适用于获取实时信息或搜索不了解的技术概念。",
-        "parameters": {
-            "query": {
-                "type": "string",
-                "required": True,
-                "description": "搜索查询字符串",
-            },
-            "num": {
-                "type": "integer",
-                "required": False,
-                "default": 5,
-                "description": "最大返回结果数量（默认5）",
-            },
-            "lr": {
-                "type": "string",
-                "required": False,
-                "default": None,
-                "description": "语言限制，如 'lang_zh-CN' 表示中文",
-            },
-            "engine": {
-                "type": "string",
-                "required": False,
-                "default": "bing",
-                "description": "搜索引擎：bing（默认，免费）、duckduckgo（免费）、tavily（需API Key）、serper（需API Key）",
-            },
-        },
-    }
-
-
 __all__ = [
     "WebSearch",
     "SearchResult",
     "web_search",
-    "get_web_search_tool_spec",
 ]

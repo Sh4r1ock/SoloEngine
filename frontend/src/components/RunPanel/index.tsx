@@ -53,6 +53,7 @@ import type { FileSystemChange } from './types';
 import { useStreamingData } from './hooks/useStreamingData';
 import { WEBSOCKET_CONFIG } from '../../config/websocket';
 import { useRunWebSocket, ExecutionEvent } from '../../hooks/useRunWebSocket';
+import { useProjectWatcher } from '../../hooks/useProjectWatcher';
 import { runApi } from '../../services/runApi';
 import { loadMessages } from './utils/loadMessagesWithFileChanges';
 import { formatSmartTime } from '../../utils/timezone';
@@ -200,6 +201,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const currentMsgIdRef = useRef<string>('');
   const fileExplorerActionsRef = useRef<{ refresh: () => void; applyIncrementalChanges: (changes: FileSystemChange[]) => void; openNewFileDialog: () => void; openNewFolderDialog: () => void; navigateToFile: (path: string) => Promise<void> } | null>(null);
   const isStoppingRef = useRef(false);
+  const safetyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const firstChunkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const messagesLengthRef = useRef(0);
@@ -368,12 +370,20 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     errorMessage?: string,
   ) => {
     setIsWaitingReply(false);
+
+    // 清除安全计时器，防止安全计时器在真实事件处理完成后再次触发
+    if (safetyTimerRef.current) {
+      clearTimeout(safetyTimerRef.current);
+      safetyTimerRef.current = null;
+    }
+
     const finalData = streamingHook.finalizeStream();
     const totalTokens = tokenData?.total_tokens ||
       (tokenData?.prompt_tokens && tokenData?.completion_tokens
         ? tokenData.prompt_tokens + tokenData.completion_tokens
         : undefined);
 
+    // 步骤1：消息创建（仅首次）
     if (!messageAddedRef.current) {
       const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
       const endMessage: LLMMessage = {
@@ -388,53 +398,51 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       };
       setMessages(prev => [...prev, endMessage]);
       messageAddedRef.current = true;
+    }
 
-      if (currentSessionId) {
-        const contentBlock = finalData.find((b: DataBlock) => b.type === 'content' && b.content);
-        const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
-        setSessions(sessionsState => {
-          const updated = sessionsState.map(s =>
-            s.id === currentSessionId
-              ? {
-                  ...s,
-                  status: sessionStatus,
-                  firstAssistantContent: s.firstAssistantContent || firstAssistantContent,
-                  token_usage: accumulateTokenUsage(s.token_usage, tokenData),
-                  updated_at: new Date().toISOString(),
-                  messages: [...(s.messages || []), {
-                    id: endMessage.id,
-                    role: endMessage.role,
-                    content: endMessage.content || '',
-                    reasoning_content: endMessage.reasoning_content,
-                    status: messageStatus,
-                    error: endMessage.error,
-                    data: endMessage.data || [],
-                    message_index: (s.messages?.length || 0),
-                    timestamp: endMessage.timestamp,
-                    created_at: endMessage.timestamp,
-                    tokens: totalTokens,
-                    prompt_tokens: tokenData?.prompt_tokens,
-                    completion_tokens: tokenData?.completion_tokens,
-                    total_tokens: tokenData?.total_tokens,
-                  }]
-                }
-              : s
-          );
-          updated.sort((a: any, b: any) =>
-            new Date(b.updated_at || b.createdAt || '').getTime() - new Date(a.updated_at || a.createdAt || '').getTime()
-          );
-          return updated;
-        });
-      }
-    } else if (currentSessionId) {
-      const contentBlock = finalData.find((b: DataBlock) => b.type === 'content' && b.content);
-      const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
-      setSessions(sessionsState => {
-        const updated = sessionsState.map(s =>
-          s.id === currentSessionId
-            ? { ...s, status: sessionStatus, firstAssistantContent: s.firstAssistantContent || firstAssistantContent, token_usage: accumulateTokenUsage(s.token_usage, tokenData), updated_at: new Date().toISOString() }
-            : s
+    // 步骤2：Token 更新（有 tokenData 时始终执行，与正常/停止路径无关）
+    if (currentSessionId) {
+      setMessages(prev => {
+        const lastAssistantIdx = prev.reduce((lastIdx, msg, idx) => {
+          if (msg.role === 'assistant') return idx;
+          return lastIdx;
+        }, -1);
+        if (lastAssistantIdx === -1) return prev;
+        return prev.map((m, idx) =>
+          idx === lastAssistantIdx
+            ? { ...m, tokens: totalTokens }
+            : m
         );
+      });
+
+      setSessions(sessionsState => {
+        const updated = sessionsState.map(s => {
+          if (s.id !== currentSessionId) return s;
+          const contentBlock = finalData.find((b: DataBlock) => b.type === 'content' && b.content);
+          const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
+          const updatedSession: any = {
+            ...s,
+            status: sessionStatus,
+            firstAssistantContent: s.firstAssistantContent || firstAssistantContent,
+            token_usage: accumulateTokenUsage(s.token_usage, tokenData),
+            updated_at: new Date().toISOString(),
+          };
+          // 同步更新 session 内嵌 messages 的最后一条 assistant 消息的 tokens
+          if (s.messages && s.messages.length > 0) {
+            const lastMsgIdx = s.messages.reduce((lastIdx: number, msg: any, idx: number) => {
+              if (msg.role === 'assistant') return idx;
+              return lastIdx;
+            }, -1);
+            if (lastMsgIdx >= 0) {
+              updatedSession.messages = s.messages.map((msg: any, idx: number) =>
+                idx === lastMsgIdx
+                  ? { ...msg, tokens: totalTokens, prompt_tokens: tokenData?.prompt_tokens, completion_tokens: tokenData?.completion_tokens, total_tokens: tokenData?.total_tokens }
+                  : msg
+              );
+            }
+          }
+          return updatedSession;
+        });
         updated.sort((a: any, b: any) =>
           new Date(b.updated_at || b.createdAt || '').getTime() - new Date(a.updated_at || a.createdAt || '').getTime()
         );
@@ -778,6 +786,11 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     onError: handleWebSocketError,
     autoReconnect: true,
   });
+
+  useProjectWatcher(currentProject?.id || null, useCallback((changes: FileSystemChange[]) => {
+    fileExplorerActionsRef.current?.applyIncrementalChanges(changes);
+    handleExternalFileChanges(changes);
+  }, [handleExternalFileChanges]));
 
   useEffect(() => {
     isConnectedRef.current = isConnected;
@@ -1128,6 +1141,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
       }
     }, 3000);
+    safetyTimerRef.current = safetyTimer;
 
     try {
       const sent = await stopFlow();
