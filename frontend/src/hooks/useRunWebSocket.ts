@@ -329,6 +329,17 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
             return;
           }
 
+          if (message.type === 'file_system_event') {
+            const fsEvent: ExecutionEvent = {
+              event_type: 'file_system_event',
+              changes: (message as any).changes,
+              source: (message as any).source,
+              timestamp: new Date((message as any).timestamp || Date.now()).toISOString(),
+            } as ExecutionEvent;
+            onEventRef.current?.(fsEvent);
+            return;
+          }
+
           onMessageRef.current?.(message);
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err);

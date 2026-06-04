@@ -397,7 +397,7 @@ class WebFetch(BaseNetworkTool):
             }
         except NetworkToolError as e:
             return {
-                "content": f"获取网页失败: {e.message}",
+                "content": e.message,
                 "success": False,
                 "error_message": e.message,
                 "url": url,

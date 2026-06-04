@@ -106,21 +106,10 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
 
   const applyIncrementalChanges = useCallback(
     (changes: FileSystemChange[]) => {
-      setTreeData((prev) => {
-        let result = prev;
-        for (const change of changes) {
-          if (change.operation === 'created') {
-            result = insertTreeNode(result, change.file_path, change.is_directory);
-          } else if (change.operation === 'deleted') {
-            result = removeTreeNode(result, change.file_path);
-          } else if (change.operation === 'moved' && change.dest_path) {
-            result = moveTreeNode(result, change.file_path, change.dest_path, change.is_directory);
-          }
-        }
-        return result;
-      });
+      // 直接刷新根目录，让 buildTreeData 创建格式正确的节点（图标、右键菜单等）
+      listFiles('');
     },
-    [],
+    [listFiles],
   );
 
   const openNewFileDialog = useCallback(() => {
