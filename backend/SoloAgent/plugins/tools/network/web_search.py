@@ -23,7 +23,6 @@
 状态: ✅ 完整实现
 """
 
-import asyncio
 import json
 import re
 from html import unescape
@@ -31,6 +30,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base import BaseNetworkTool, NetworkResponse, NetworkToolError
+from app.core.config import settings
 
 
 @dataclass
@@ -83,6 +83,7 @@ class WebSearch(BaseNetworkTool):
     
     DUCKDUCKGO_URL = "https://html.duckduckgo.com/html/"
     BING_URL = "https://cn.bing.com/search"
+    BAIDU_URL = "https://www.baidu.com/s"
     TAVILY_API = "https://api.tavily.com/search"
     SERPER_API = "https://google.serper.dev/search"
     
@@ -100,14 +101,21 @@ class WebSearch(BaseNetworkTool):
                 支持的 key: "tavily", "serper"。默认为 None。
         """
         super().__init__(timeout=timeout)
-        self.api_keys = api_keys or {}
+        if api_keys:
+            self.api_keys = api_keys
+        else:
+            self.api_keys = {}
+            if settings.TAVILY_API_KEY:
+                self.api_keys["tavily"] = settings.TAVILY_API_KEY
+            if settings.SERPER_API_KEY:
+                self.api_keys["serper"] = settings.SERPER_API_KEY
     
     async def search(
         self,
         query: str,
         num: int = 5,
         lr: Optional[str] = None,
-        engine: str = "bing",
+        engine: Optional[str] = None,
     ) -> List[SearchResult]:
         """
         执行网络搜索。
@@ -119,9 +127,9 @@ class WebSearch(BaseNetworkTool):
             num (int, optional): 最大返回结果数量。默认为 5。
             lr (Optional[str], optional): 语言限制，如 "lang_zh-CN"。
                 默认为 None（DuckDuckGo/Bing 页面爬取目前不支持 lr 过滤）。
-            engine (str, optional): 搜索引擎。
-                可选 "duckduckgo"、"bing"、"tavily"、"serper"。
-                默认为 "bing"。
+            engine (Optional[str], optional): 搜索引擎。
+                可选 "duckduckgo"、"bing"、"tavily"、"serper"、"baidu"。
+                默认从 settings.SEARCH_ENGINE 读取（默认 "bing"）。
         
         Returns:
             List[SearchResult]: 搜索结果列表。
@@ -132,6 +140,8 @@ class WebSearch(BaseNetworkTool):
         Example:
             >>> results = await search.search("Python 教程", num=3, lr="lang_zh-CN")
         """
+        if engine is None:
+            engine = settings.SEARCH_ENGINE
         if engine == "duckduckgo":
             return await self._search_duckduckgo(query, num, lr)
         elif engine == "bing":
@@ -140,6 +150,8 @@ class WebSearch(BaseNetworkTool):
             return await self._search_tavily(query, num, lr)
         elif engine == "serper":
             return await self._search_serper(query, num, lr)
+        elif engine == "baidu":
+            return await self._search_baidu(query, num, lr)
         else:
             raise NetworkToolError(f"不支持的搜索引擎: {engine}")
     
@@ -229,11 +241,8 @@ class WebSearch(BaseNetworkTool):
         Returns:
             List[SearchResult]: 搜索结果列表。
         """
-        from curl_cffi import requests as cffi_requests
-        
         params = {"q": query}
         headers = {
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
             "Referer": "https://www.bing.com/",
         }
         
@@ -247,18 +256,12 @@ class WebSearch(BaseNetworkTool):
             else:
                 params["setlang"] = lang_code.split("-")[0] if "-" in lang_code else lang_code
         
-        loop = asyncio.get_event_loop()
-        
-        def _sync_fetch():
-            return cffi_requests.get(
-                self.BING_URL,
-                params=params,
-                headers=headers,
-                impersonate="chrome",
-                timeout=15,
-            )
-        
-        response = await loop.run_in_executor(None, _sync_fetch)
+        response = await self._fetch_impersonate(
+            url=self.BING_URL,
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
         
         if response.status_code != 200:
             raise NetworkToolError(
@@ -267,14 +270,14 @@ class WebSearch(BaseNetworkTool):
                 url=str(response.url),
             )
         
-        if "b_algo" not in response.text:
+        if "b_algo" not in response.content:
             raise NetworkToolError(
                 "Bing 搜索未返回结果（可能触发了验证码）",
                 status_code=response.status_code,
                 url=str(response.url),
             )
         
-        html = response.text
+        html = response.content
         results: List[SearchResult] = []
         
         algo_blocks = re.findall(
@@ -448,6 +451,96 @@ class WebSearch(BaseNetworkTool):
         
         return results
     
+    async def _search_baidu(
+        self,
+        query: str,
+        num: int,
+        lr: Optional[str],
+    ) -> List[SearchResult]:
+        """
+        使用百度搜索（通过 curl_cffi 模拟 Chrome TLS 指纹）。
+        
+        Args:
+            query (str): 搜索查询。
+            num (int): 结果数量限制。
+            lr (Optional[str]): 语言限制（HTML 爬取不支持此参数）。
+        
+        Returns:
+            List[SearchResult]: 搜索结果列表。
+        """
+        params = {"wd": query}
+        headers = {
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.baidu.com/",
+        }
+        
+        response = await self._fetch_impersonate(
+            url=self.BAIDU_URL,
+            params=params,
+            headers=headers,
+            timeout=15,
+        )
+        
+        if not response.success:
+            raise NetworkToolError(
+                f"百度搜索失败: {response.error_message}",
+                status_code=response.status_code,
+                url=response.url,
+            )
+        
+        html = response.content
+        results: List[SearchResult] = []
+        
+        # 解析百度搜索结果
+        # 结果容器: div.result.c-container 或 div.c-container
+        container_blocks = re.findall(
+            r'<div[^>]*class="[^"]*(?:result|c-container)[^"]*"[^>]*>(.*?)(?=<div[^>]*class="[^"]*(?:result|c-container)[^"]*"|$)',
+            html,
+            re.DOTALL,
+        )
+        
+        for block in container_blocks:
+            if len(results) >= num:
+                break
+            
+            # 提取标题和链接
+            title_match = re.search(
+                r'<h3[^>]*>.*?<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>',
+                block,
+                re.DOTALL,
+            )
+            if not title_match:
+                continue
+            
+            href = title_match.group(1)
+            title = re.sub(r'<[^>]+>', '', unescape(title_match.group(2))).strip()
+            
+            # 提取摘要
+            snippet = ""
+            snippet_match = re.search(
+                r'<span[^>]*class="[^"]*content-right[^"]*"[^>]*>(.*?)</span>',
+                block,
+                re.DOTALL,
+            )
+            if not snippet_match:
+                snippet_match = re.search(
+                    r'<div[^>]*class="[^"]*c-abstract[^"]*"[^>]*>(.*?)</div>',
+                    block,
+                    re.DOTALL,
+                )
+            if snippet_match:
+                snippet = re.sub(r'<[^>]+>', '', unescape(snippet_match.group(1))).strip()
+            
+            if title and href:
+                results.append(SearchResult(
+                    title=title[:200],
+                    url=href,
+                    content=snippet[:300],
+                    source="baidu",
+                ))
+        
+        return results[:num]
+    
     def format_results(self, results: List[SearchResult]) -> str:
         """
         格式化搜索结果为可读文本。
@@ -474,6 +567,7 @@ class WebSearch(BaseNetworkTool):
         engine_urls = {
             "duckduckgo": f"https://html.duckduckgo.com/html/?q={query}",
             "bing": f"https://cn.bing.com/search?q={query}",
+            "baidu": f"https://www.baidu.com/s?wd={query}",
             "tavily": "https://api.tavily.com/search",
             "serper": "https://google.serper.dev/search",
         }
@@ -484,7 +578,7 @@ class WebSearch(BaseNetworkTool):
         query: str,
         num: int = 5,
         lr: Optional[str] = None,
-        engine: str = "bing",
+        engine: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         执行搜索（工具接口）。
@@ -495,13 +589,15 @@ class WebSearch(BaseNetworkTool):
             query (str): 搜索查询字符串。
             num (int, optional): 最大返回结果数量。默认为 5。
             lr (Optional[str], optional): 语言限制，如 "lang_zh-CN"。
-            engine (str, optional): 搜索引擎。
-                可选 "duckduckgo"、"bing"、"tavily"、"serper"。
-                默认为 "bing"。
+            engine (Optional[str], optional): 搜索引擎。
+                可选 "duckduckgo"、"bing"、"tavily"、"serper"、"baidu"。
+                默认从 settings.SEARCH_ENGINE 读取（默认 "bing"）。
         
         Returns:
             Dict[str, Any]: 包含搜索结果的字典。
         """
+        if engine is None:
+            engine = settings.SEARCH_ENGINE
         try:
             results = await self.search(query, num=num, lr=lr, engine=engine)
             resource_url = self._resource_url(query, engine)
@@ -557,7 +653,7 @@ class WebSearch(BaseNetworkTool):
         """
         return {
             "name": "WebSearch",
-            "description": "在网络上搜索信息。默认使用 cn.bing.com（免费免 API Key，国内可用）。支持 DuckDuckGo、Tavily、Serper 等多种引擎。适用于获取实时信息或搜索不了解的技术概念。",
+            "description": "在网络上搜索信息。默认使用 cn.bing.com（免费免 API Key，国内可用）。支持 DuckDuckGo、百度、Tavily、Serper 等多种引擎。适用于获取实时信息或搜索不了解的技术概念。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -575,7 +671,7 @@ class WebSearch(BaseNetworkTool):
                     },
                     "engine": {
                         "type": "string",
-                        "description": "搜索引擎：bing（默认，cn.bing.com，国内可用，免费）、duckduckgo（免费）、tavily（需API Key）、serper（需API Key）",
+                        "description": "搜索引擎：bing（默认，cn.bing.com，国内可用，免费）、duckduckgo（免费）、baidu（百度，国内可用，免费）、tavily（需API Key）、serper（需API Key）",
                     },
                 },
                 "required": ["query"],
@@ -587,7 +683,7 @@ async def web_search(
     query: str,
     num: int = 5,
     lr: Optional[str] = None,
-    engine: str = "bing",
+    engine: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     网络搜索工具函数。
@@ -598,9 +694,9 @@ async def web_search(
         query (str): 搜索查询字符串。
         num (int, optional): 最大返回结果数量。默认为 5。
         lr (Optional[str], optional): 语言限制，如 "lang_zh-CN"。
-        engine (str, optional): 搜索引擎。
-            可选 "duckduckgo"、"bing"、"tavily"、"serper"。
-            默认为 "bing"。
+        engine (Optional[str], optional): 搜索引擎。
+            可选 "duckduckgo"、"bing"、"tavily"、"serper"、"baidu"。
+            默认从 settings.SEARCH_ENGINE 读取（默认 "bing"）。
     
     Returns:
         Dict[str, Any]: 包含搜索结果的字典。
@@ -610,6 +706,8 @@ async def web_search(
         >>> print(result["content"])
     """
     search_tool = WebSearch()
+    if engine is None:
+        engine = settings.SEARCH_ENGINE
     
     try:
         results = await search_tool.search(query, num=num, lr=lr, engine=engine)

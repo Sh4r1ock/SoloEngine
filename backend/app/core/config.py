@@ -121,6 +121,11 @@ class Settings(BaseSettings):
         "path,file_path,filePath,filepath,source_path,target_path,output_path,destination,notebook_path,image_path,document_path,directory,dir_path,folder_path"
     )
 
+    # ===== 搜索引擎配置 =====
+    SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "bing")
+    TAVILY_API_KEY: Optional[str] = os.getenv("TAVILY_API_KEY")
+    SERPER_API_KEY: Optional[str] = os.getenv("SERPER_API_KEY")
+
     class Config:
         """Pydantic配置类"""
         env_file = ".env"
