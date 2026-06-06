@@ -18,6 +18,7 @@
 - WebFetch: 网页获取工具基类
 """
 
+import asyncio
 import httpx
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -272,6 +273,82 @@ class BaseNetworkTool:
                 return response.content, response.status_code, response.is_success
         except Exception:
             return b"", 0, False
+    
+    async def _fetch_impersonate(
+        self,
+        url: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        data: Optional[Dict[str, Any]] = None,
+        json: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[int] = None,
+        impersonate: str = "chrome",
+    ) -> NetworkResponse:
+        """
+        使用 curl_cffi 模拟浏览器 TLS 指纹发送 HTTP 请求。
+        
+        通过模拟 Chrome 浏览器的 TLS 握手特征（JA3/JA4 指纹），
+        绕过对 TLS 指纹有严格检查的网站的反爬机制。
+        
+        Args:
+            url (str): 请求 URL。
+            method (str, optional): HTTP 方法。默认为 "GET"。
+            params (Optional[Dict[str, Any]], optional): URL 参数。默认为 None。
+            data (Optional[Dict[str, Any]], optional): 表单数据。默认为 None。
+            json (Optional[Dict[str, Any]], optional): JSON 数据。默认为 None。
+            headers (Optional[Dict[str, str]], optional): 额外请求头。默认为 None。
+            timeout (Optional[int], optional): 超时时间。默认为 None。
+            impersonate (str, optional): 模拟的浏览器类型。
+                支持 "chrome"、"safari"、"firefox"、"edge" 等。
+                默认为 "chrome"。
+        
+        Returns:
+            NetworkResponse: 标准化的响应对象。
+        
+        Example:
+            >>> response = await self._fetch_impersonate(
+            ...     "https://cn.bing.com/search",
+            ...     params={"q": "Python"},
+            ...     headers={"Referer": "https://www.bing.com/"},
+            ... )
+        """
+        from curl_cffi import requests as cffi_requests
+        
+        request_headers = {**self.headers, **(headers or {})}
+        request_timeout = timeout or self.timeout
+        
+        def _sync_fetch():
+            return cffi_requests.request(
+                method=method,
+                url=url,
+                params=params,
+                data=data,
+                json=json,
+                headers=request_headers,
+                timeout=request_timeout,
+                impersonate=impersonate,
+            )
+        
+        loop = asyncio.get_event_loop()
+        try:
+            response = await loop.run_in_executor(None, _sync_fetch)
+            return NetworkResponse(
+                content=response.text,
+                status_code=response.status_code,
+                success=response.ok,
+                error_message=None if response.ok else f"HTTP {response.status_code}",
+                headers=dict(response.headers),
+                url=str(response.url),
+            )
+        except Exception as e:
+            return NetworkResponse(
+                content="",
+                status_code=0,
+                success=False,
+                error_message=f"请求失败: {str(e)}",
+                url=url,
+            )
 
 
 __all__ = [
