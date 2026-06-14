@@ -34,7 +34,6 @@ import shutil
 import uuid
 import tempfile
 import json
-from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
@@ -232,7 +231,6 @@ def sync_system_skills(db: Session) -> int:
             existing.version = (existing.version or 0) + 1
             logger.info(f"Updated system skill: {skill_name}")
         else:
-            from datetime import datetime, timezone
             tags = skill_info.get("tags", [])
             if "system" not in tags:
                 tags.append("system")

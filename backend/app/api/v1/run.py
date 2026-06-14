@@ -26,7 +26,6 @@ import json
 import logging
 import os
 from typing import Dict, List, Optional, Any, Set
-from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, WebSocket, Depends, Query
@@ -38,7 +37,6 @@ from sqlalchemy import func as sqlfunc
 from app.core.database import get_db, AgenticFlowSessionModel, SessionMessageModel
 from SoloAgent.solo_agent.compiler import FlowRunner, CompiledFlowFactory
 from app.api.v1.auth import get_current_user
-from app.core.auth import User, auth_service
 from app.core.config import settings
 from app.utils.timezone_utils import format_iso
 
@@ -416,7 +414,6 @@ class AgenticFlowRunContext:
         )
     
     def ensure_session(self):
-        from app.core.database import get_db_context, db_manager, AgenticFlowSessionModel
         if self.session_id:
             with get_db_context() as db:
                 session = db.query(AgenticFlowSessionModel).filter(

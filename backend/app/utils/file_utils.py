@@ -3,7 +3,6 @@ import os
 import hashlib
 import difflib
 import fnmatch
-from typing import Dict, List, Optional, Set, Tuple
 
 TEXT_EXTENSIONS = frozenset({
     '.py', '.js', '.ts', '.tsx', '.jsx', '.html', '.css', '.scss',

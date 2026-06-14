@@ -38,12 +38,10 @@ import zipfile
 import tempfile
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
-from app.core.config import settings
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager, mcp_db_manager, MCPServerModel, MCPStdioConfigModel
 from app.core.data_paths import DataPaths
 from app.api.v1.auth import get_current_user
 from app.core.auth import User

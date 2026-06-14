@@ -122,8 +122,6 @@ async def list_timezones():
 @router.get("/time")
 async def get_current_time():
     try:
-        from datetime import datetime as dt, timezone
-        from zoneinfo import ZoneInfo
 
         now_user = TimezoneManager.now()
         now_utc = now_user.astimezone(timezone.utc)

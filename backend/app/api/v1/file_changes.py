@@ -179,7 +179,6 @@ async def get_session_file_change_summaries(
     if not session or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    from sqlalchemy import func as sqlfunc
 
     message_ids_query = db.query(FileChangeModel.message_id).filter(
         FileChangeModel.session_id == session_id,
