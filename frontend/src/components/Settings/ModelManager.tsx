@@ -458,7 +458,6 @@ const ModelManager: React.FC = () => {
                   placeholder="选择或搜索模型名称"
                   optionFilterProp="label"
                   options={(currentProvider?.models || []).map(m => ({ label: m, value: m }))}
-                  autoComplete="off"
                 />
               </Form.Item>
             </Col>
