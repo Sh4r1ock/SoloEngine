@@ -29,6 +29,8 @@ import logging
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
+from app.core.database import AgenticFlowModel
+
 logger = logging.getLogger(__name__)
 
 

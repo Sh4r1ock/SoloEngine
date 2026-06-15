@@ -33,6 +33,7 @@ import os
 from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
 
 from .config import SoloAgentConfig
+from ..message.message_base import Msg
 from ..utils.message_utils import MessageBlockExtractor
 from ..model.model_response import ChatResponse
 

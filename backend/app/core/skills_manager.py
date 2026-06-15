@@ -48,6 +48,7 @@ from pathlib import Path
 import zipfile
 import tempfile
 
+from app.utils.skill_parser import SkillParser, SkillsPackageBuilder
 
 logger = logging.getLogger(__name__)
 

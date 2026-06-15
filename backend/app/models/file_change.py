@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import uuid
 from datetime import datetime
+from typing import Any, Dict
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, JSON, Boolean, Index, Integer

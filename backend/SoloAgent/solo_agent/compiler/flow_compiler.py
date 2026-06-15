@@ -42,7 +42,8 @@ import time
 import asyncio
 import hashlib
 import json
-from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Callable, AsyncGenerator, TYPE_CHECKING
 from collections import OrderedDict
 from threading import Lock
 from zoneinfo import ZoneInfo
@@ -51,6 +52,10 @@ from dataclasses import dataclass, field
 from ..config import SoloAgentConfig
 from ..agent import SoloAgent
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from SoloAgent.plugins.tools.agent.mcp import MCPServerInfo
+    from SoloAgent.solo_agent.compiler.mcp_host_client_manager import MCPHostClientManager
 
 logger = logging.getLogger("SoloEngine")
 

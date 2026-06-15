@@ -43,6 +43,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.data_paths import DataPaths
+from app.core.database import get_db, mcp_db_manager, MCPServerModel, MCPStdioConfigModel
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 from app.utils.timezone_utils import format_iso
@@ -170,9 +171,7 @@ async def list_servers(
     user_id = current_user.id
 
     servers = mcp_db_manager.get_servers(db, user_id)
-    
-    user_server_names = {s.name for s in servers}
-    
+
     result = []
     
     for server in servers:
@@ -651,7 +650,7 @@ async def disconnect_server(
 
 
 @router.post("/servers/connect")
-async def connect_server(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
+async def test_connect_server(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
     """测试 MCP 服务器连接。"""
     from SoloAgent.plugins.mcp.mcp_client import MCPClient
     

@@ -25,6 +25,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 from typing import Dict, List, Optional, Any, Set
 from zoneinfo import ZoneInfo
 
@@ -34,10 +35,11 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 
-from app.core.database import get_db, AgenticFlowSessionModel, SessionMessageModel
+from app.core.database import get_db, get_db_context, AgenticFlowSessionModel, SessionMessageModel
 from SoloAgent.solo_agent.compiler import FlowRunner, CompiledFlowFactory
 from app.api.v1.auth import get_current_user
 from app.core.config import settings
+from app.models.auth import User
 from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
@@ -564,7 +566,7 @@ class ChunkCollector:
             logger.warning(f"[ChunkCollector] SKIPPING: non-tool chunk with empty content, type={chunk_type}")
             return
         if chunk_type == 'tool_calls' and not content:
-            logger.warning(f"[ChunkCollector] SKIPPING: tool_calls with empty content")
+            logger.warning("[ChunkCollector] SKIPPING: tool_calls with empty content")
             return
         
         if chunk_type == 'tool_calls':
@@ -1077,7 +1079,6 @@ async def startup_event():
 @router.on_event("shutdown")
 async def shutdown_event():
     """应用关闭时停止清理任务。"""
-    global _cleanup_task
     if _cleanup_task:
         _cleanup_task.cancel()
         try:
@@ -1244,10 +1245,8 @@ async def stream_workflow(
             await execution_task
             
             if execution_error:
-                status = "error"
                 yield f"data: {json.dumps({'type': 'error', 'message': str(execution_error)}, ensure_ascii=False)}\n\n"
             else:
-                status = "completed"
                 openai_message = execution_result.get("message", {"role": "assistant", "content": execution_result.get("output", "")})
                 tokens = execution_result.get("tokens") or execution_result.get("token_usage")
                 yield f"data: {json.dumps({'type': 'execution_complete', 'message': openai_message, 'data': execution_result, 'tokens': tokens}, ensure_ascii=False)}\n\n"

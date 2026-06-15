@@ -41,6 +41,7 @@ import hashlib
 import base64
 import secrets
 from contextlib import contextmanager, asynccontextmanager
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional, List, Dict, Any
 
@@ -71,6 +72,7 @@ Base = declarative_base()
 # 必须在Base定义之后、init_db()调用之前导入
 try:
     from app.models.file_change import FileChangeModel, FileContentBlobModel
+    _FILE_CHANGE_MODELS_REGISTERED = (FileChangeModel, FileContentBlobModel)
 except ImportError as e:
     logger.warning(f"Failed to import file change models: {e}")
 
