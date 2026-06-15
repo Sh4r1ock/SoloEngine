@@ -30,6 +30,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from app.core.config import settings
+from .base import BaseNetworkTool, NetworkToolError
 
 
 @dataclass

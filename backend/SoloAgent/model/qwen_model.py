@@ -33,6 +33,7 @@ SoloEngine : 通义千问(Qwen)模型实现，支持阿里DashScope API
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import asyncio
+import json
 from typing import (
     Any,
     TYPE_CHECKING,
@@ -297,6 +298,8 @@ class QwenChatModel(ChatModelBase):
                 tool_choice = "auto"
             self._validate_tool_choice(tool_choice, tools)
             gen_kwargs["tool_choice"] = tool_choice
+
+        start_datetime = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
 
         # Handle structured model (Qwen calls it result_format)
         if structured_model:
