@@ -78,7 +78,7 @@ pip install -r requirements.txt
 python main.py
 
 # Frontend (Node.js 18+) — open another terminal
-cd frontend 
+cd ../frontend 
 npm install
 npm run dev
 ```
