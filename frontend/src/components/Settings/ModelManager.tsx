@@ -23,6 +23,7 @@ import {
   Row,
   Col,
   Alert,
+  AutoComplete,
   Pagination,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -452,13 +453,21 @@ const ModelManager: React.FC = () => {
                 label="模型名称"
                 rules={[{ required: true, message: '请输入模型名称' }]}
               >
-                <Select
-                  showSearch
+                <AutoComplete
                   allowClear
-                  placeholder="选择或搜索模型名称"
-                  optionFilterProp="label"
+                  placeholder="选择或输入模型名称"
                   options={(currentProvider?.models || []).map(m => ({ label: m, value: m }))}
-                  autoComplete="off"
+                  filterOption={(inputValue, option) =>
+                    (option?.label as string).toLowerCase().includes(inputValue.toLowerCase())
+                  }
+                  dropdownRender={(menu) => (
+                    <>
+                      {menu}
+                      <div style={{ padding: '8px', borderTop: '1px solid #e8e8e8', color: '#999', fontSize: 12 }}>
+                        💡 提示：可直接输入自定义模型名称
+                      </div>
+                    </>
+                  )}
                 />
               </Form.Item>
             </Col>

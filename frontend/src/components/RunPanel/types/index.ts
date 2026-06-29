@@ -65,6 +65,16 @@ export interface LLMMessage {
   error?: string;
 }
 
+export interface SystemMessage {
+  id: string;
+  role: 'error';
+  error: string;
+  timestamp: string;
+  status?: 'error' | 'warning' | 'info';
+}
+
+export type Message = LLMMessage | SystemMessage;
+
 export type CallType = 'tool' | 'skill' | 'mcp' | 'subagent';
 export type CallStatus = 'pending' | 'running' | 'success' | 'error';
 

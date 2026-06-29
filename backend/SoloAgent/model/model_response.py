@@ -35,7 +35,7 @@ from .model_usage import ChatUsage
 from ..utils import _get_timestamp, DictMixin
 from ..message import (
     TextBlock,
-    ToolUseBlock,
+    ToolCallsBlock,
     ThinkingBlock,
     AudioBlock,
 )
@@ -69,7 +69,7 @@ class ChatResponse(DictMixin):
         >>> print(response.to_dict())
     """
 
-    content: Sequence[TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock]
+    content: Sequence[TextBlock | ToolCallsBlock | ThinkingBlock | AudioBlock]
     """
     响应内容块列表。
     
@@ -229,31 +229,7 @@ class ChatResponse(DictMixin):
             else:
                 block_type = None
             
-            if block_type == "tool_use":
-                if isinstance(block, dict):
-                    tool_id = block.get("id", "")
-                    tool_name = block.get("name", "")
-                    tool_input = block.get("input", {})
-                else:
-                    tool_id = block.get("id", "") if hasattr(block, "get") else (block["id"] if "id" in block else "")
-                    tool_name = block.get("name", "") if hasattr(block, "get") else (block["name"] if "name" in block else "")
-                    tool_input = block.get("input", {}) if hasattr(block, "get") else (block["input"] if "input" in block else {})
-                if isinstance(tool_input, str):
-                    arguments_str = tool_input
-                else:
-                    try:
-                        arguments_str = json.dumps(tool_input, ensure_ascii=False)
-                    except:
-                        arguments_str = ""
-                tool_calls.append({
-                    "id": tool_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": arguments_str
-                    }
-                })
-            elif block_type == "tool_calls":
+            if block_type == "tool_calls":
                 if isinstance(block, dict):
                     tcs = block.get("tool_calls", [])
                 else:
@@ -325,33 +301,7 @@ class ChatResponse(DictMixin):
                     thinking = block.get("thinking", "") if hasattr(block, "get") else (block["thinking"] if "thinking" in block else "")
                 if thinking:
                     delta["reasoning_content"] = thinking
-            elif block_type == "tool_use":
-                if isinstance(block, dict):
-                    tool_id = block.get("id", "")
-                    tool_name = block.get("name", "")
-                    tool_input = block.get("input", {})
-                else:
-                    tool_id = block.get("id", "") if hasattr(block, "get") else (block["id"] if "id" in block else "")
-                    tool_name = block.get("name", "") if hasattr(block, "get") else (block["name"] if "name" in block else "")
-                    tool_input = block.get("input", {}) if hasattr(block, "get") else (block["input"] if "input" in block else {})
-                if isinstance(tool_input, str):
-                    arguments_str = tool_input
-                else:
-                    try:
-                        arguments_str = json.dumps(tool_input, ensure_ascii=False)
-                    except:
-                        arguments_str = ""
-                tool_calls_list.append({
-                    "index": len(tool_calls_list),
-                    "id": tool_id,
-                    "type": "function",
-                    "function": {
-                        "name": tool_name,
-                        "arguments": arguments_str
-                    }
-                })
-            elif block_type == "tool_calls":
-                # 流式格式的 tool_calls 块
+            if block_type == "tool_calls":
                 if isinstance(block, dict):
                     for tc in block.get("tool_calls", []):
                         tool_calls_list.append(tc)

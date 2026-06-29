@@ -246,6 +246,7 @@ class ToolCallEventManager:
         return None
 
 
+
 class ReActCore:
     
     def __init__(
@@ -283,12 +284,28 @@ class ReActCore:
         self._accumulated_usage = {"input_tokens": 0, "output_tokens": 0, "duration_ms": 0}
         self._last_error: Optional[str] = None
 
+        # tiktoken 编码器：用于流式输出时实时估算 token（API usage 仅最后一个 chunk 返回）
+        self._token_encoder = None
+        try:
+            import tiktoken
+            model_name = getattr(model, 'model_name', None) or ''
+            try:
+                self._token_encoder = tiktoken.encoding_for_model(model_name)
+                logger.info(f"[ReActCore] tiktoken initialized: model={model_name}, encoding={self._token_encoder.name}")
+            except KeyError:
+                self._token_encoder = tiktoken.get_encoding("o200k_base")
+                logger.info(f"[ReActCore] tiktoken fallback: model={model_name}, encoding=o200k_base")
+        except ImportError:
+            logger.warning(f"[ReActCore] tiktoken not installed, token estimation disabled")
+        except Exception as e:
+            logger.warning(f"[ReActCore] tiktoken init error: {e}")
+
         self._tool_call_event_manager = ToolCallEventManager(
             stream_callback=self.stream_callback,
             agent_id=self.agent_id,
             agent_name=self.name
         )
-    
+
     def load_history(self, messages: List[Msg]) -> None:
         self._conversation_history = messages.copy()
     
@@ -298,9 +315,7 @@ class ReActCore:
         content_blocks = msg.get_content_blocks()
         for block in content_blocks:
             if isinstance(block, dict):
-                if block.get("type") == "tool_use" and block.get("id") == tool_call_id:
-                    return True
-                elif block.get("type") == "tool_calls":
+                if block.get("type") == "tool_calls":
                     for tc in block.get("tool_calls", []):
                         if tc.get("id") == tool_call_id:
                             return True
@@ -317,9 +332,7 @@ class ReActCore:
         content_blocks = msg.get_content_blocks()
         for block in content_blocks:
             if isinstance(block, dict):
-                if block.get("type") == "tool_use":
-                    ids.add(block.get("id"))
-                elif block.get("type") == "tool_calls":
+                if block.get("type") == "tool_calls":
                     for tc in block.get("tool_calls", []):
                         ids.add(tc.get("id"))
         if msg.metadata and isinstance(msg.metadata, dict):
@@ -396,7 +409,7 @@ class ReActCore:
     
     def reset_interrupt(self) -> None:
         self._interrupted = False
-        
+    
     def _build_accumulated_usage(self) -> ChatUsage:
         return ChatUsage(
             input_tokens=self._accumulated_usage["input_tokens"],
@@ -464,10 +477,6 @@ class ReActCore:
                 cancel_event
             )
             
-            if self.model._was_cancelled:
-                logger.info(f"[{self.name}] Model cancelled at iteration {iteration}")
-                raise asyncio.CancelledError()
-            
             precomputed_text = getattr(reasoning_result, 'text', None)
             precomputed_has_tool_calls = getattr(reasoning_result, 'has_tool_calls', False)
             
@@ -478,10 +487,10 @@ class ReActCore:
             )
             
             if completion_check.get("auto_continue"):
-                has_tool_use_in_partial = precomputed_has_tool_calls
+                has_tool_calls_in_partial = precomputed_has_tool_calls
                 
-                if has_tool_use_in_partial:
-                    logger.warning(f"[ReActCore] MAX_TOKENS with tool_use in partial, treating as tool_calls instead of auto_continue")
+                if has_tool_calls_in_partial:
+                    logger.warning(f"[ReActCore] MAX_TOKENS with tool_calls in partial, treating as tool_calls instead of auto_continue")
                 else:
                     partial_text = self._extract_text(reasoning_result, precomputed_text)
                     if partial_text.strip():
@@ -605,6 +614,10 @@ class ReActCore:
         iteration: int,
         cancel_event: asyncio.Event = None
     ) -> ChatResponse:
+        # 初始化本轮的 token 值（不修改累加值）
+        current_input_tokens = 0
+        current_output_tokens = 0
+        
         messages = [
             Msg(name="system", content=system_prompt, role="system"),
             *self._get_sliding_window(max_messages=10),
@@ -615,6 +628,35 @@ class ReActCore:
         tools = None
         if self.tool_executor and hasattr(self.tool_executor, 'get_available_tools'):
             tools = self.tool_executor.get_available_tools()
+        
+        # tiktoken 预估算 input_tokens（作为 API usage 不可达时的 fallback）
+        # API usage 精确值会在后续 chunk 中覆盖此估算值
+        if self._token_encoder and formatted:
+            try:
+                estimated_input = 3
+                for msg in formatted:
+                    estimated_input += 3
+                    content = msg.get("content", "")
+                    if isinstance(content, str) and content:
+                        estimated_input += len(self._token_encoder.encode(content))
+                    elif isinstance(content, list):
+                        for block in content:
+                            if isinstance(block, dict):
+                                text = block.get("text", "") or block.get("thinking", "")
+                                if text:
+                                    estimated_input += len(self._token_encoder.encode(text))
+                    name = msg.get("name")
+                    if name:
+                        estimated_input += len(self._token_encoder.encode(name)) + 1
+                if tools:
+                    import json
+                    tools_text = json.dumps(tools, ensure_ascii=False)
+                    estimated_input += len(self._token_encoder.encode(tools_text))
+                # 不直接赋值到累加值，改为记录本轮的 tiktoken 估算值
+                current_input_tokens = estimated_input
+                logger.info(f"[_reasoning] tiktoken estimated input_tokens={estimated_input}")
+            except Exception as e:
+                logger.warning(f"[_reasoning] tiktoken input estimation failed: {e}")
         
         if cancel_event and cancel_event.is_set():
             raise asyncio.CancelledError()
@@ -641,6 +683,8 @@ class ReActCore:
             collected_metadata = None
             collected_usage = None
             
+            _prev_block_type = None
+            
             try:
                 async for chunk in response:
                     if self._interrupted:
@@ -665,49 +709,20 @@ class ReActCore:
                     
                     
                     if hasattr(chunk, 'content') and chunk.content:
-                        for block in chunk.content:
-                            if isinstance(block, dict):
-                                block_type = block.get("type")
-                            elif hasattr(block, "__getitem__"):
-                                try:
-                                    block_type = block["type"] if "type" in block else None
-                                except (KeyError, TypeError):
-                                    block_type = None
-                            else:
-                                block_type = None
-                            
-                            if block_type == "tool_use":
-                                tool_id = block.get("id") if isinstance(block, dict) else getattr(block, "id", None)
-                                if tool_id:
-                                    input_data = block.get("input", {}) if isinstance(block, dict) else getattr(block, "input", {})
-                                    if isinstance(input_data, str):
-                                        try:
-                                            input_data = json.loads(input_data) if input_data.strip() else {}
-                                        except json.JSONDecodeError:
-                                            logger.warning(f"Failed to parse tool_use input: {input_data[:100]}...")
-                                            input_data = {}
-                                    
-                                    tool_name = block.get("name", "") if isinstance(block, dict) else getattr(block, "name", "")
-                                    
-                                    self._tool_call_event_manager.on_tool_call_start(
-                                        tool_call_id=tool_id,
-                                        tool_name=tool_name
-                                    )
-                                    args_str = json.dumps(input_data, ensure_ascii=False) if input_data else "{}"
-                                    self._tool_call_event_manager.on_tool_call_args(
-                                        tool_call_id=tool_id,
-                                        delta=args_str
-                                    )
-                                    self._tool_call_event_manager.on_tool_call_end(tool_id)
-                                    
-                                    block_dict = {
-                                        "type": "tool_use",
-                                        "id": tool_id,
-                                        "name": tool_name,
-                                        "input": input_data
-                                    }
-                                    collected_content.append(block_dict)
-                            elif block_type == "tool_calls":
+                        block = chunk.content[0]
+                        block_type = block.get("type") if isinstance(block, dict) else None
+
+                        # 检查点 1：text 结束（text → 非 text 就触发，不管后面是 thinking 还是 tool_calls）
+                        if _prev_block_type == "text" and block_type != "text":
+                            logger.info(f"[Checkpoint] content_ended: prev={_prev_block_type}, current={block_type}")
+                            if self.stream_callback:
+                                self.stream_callback(
+                                    {"__checkpoint__": "content_ended"},
+                                    agent_id=self.agent_id, agent_name=self.name
+                                )
+                        _prev_block_type = block_type
+
+                        if block_type == "tool_calls":
                                 for tool_call_data in block.get("tool_calls", []):
                                     tool_id = tool_call_data.get("id")
                                     tool_index = tool_call_data.get("index")
@@ -729,6 +744,12 @@ class ReActCore:
                                         continue
                                     
                                     if actual_tool_id not in self._tool_call_event_manager.get_active_tool_calls():
+                                        # 检查点 2：tool_calls 调用前
+                                        if self.stream_callback:
+                                            self.stream_callback(
+                                                {"__checkpoint__": "before_tool_calls"},
+                                                agent_id=self.agent_id, agent_name=self.name
+                                            )
                                         self._tool_call_event_manager.on_tool_call_start(
                                             tool_call_id=actual_tool_id,
                                             tool_name=func.get("name", "")
@@ -744,15 +765,15 @@ class ReActCore:
                                         logger.info(f"[ReActCore] TOOL_CALL_ARGS: {actual_tool_id}, delta={delta_args[:50]}...")
                                     else:
                                         logger.info(f"[ReActCore] TOOL_CALL_ARGS skipped: delta_args is empty or None")
+                        else:
+                            is_final_assembled = hasattr(chunk, 'metadata') and chunk.metadata and 'original_model_message' in chunk.metadata
+                            
+                            if not is_final_assembled:
+                                collected_content.append(block)
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    collected_text_parts.append(block.get("text", ""))
                             else:
-                                is_final_assembled = hasattr(chunk, 'metadata') and chunk.metadata and 'original_model_message' in chunk.metadata
-                                
-                                if not is_final_assembled:
-                                    collected_content.append(block)
-                                    if isinstance(block, dict) and block.get("type") == "text":
-                                        collected_text_parts.append(block.get("text", ""))
-                                else:
-                                    logger.debug(f"[ReActCore] Skipped block from final assembled chunk (type={block_type})")
+                                logger.debug(f"[ReActCore] Skipped block from final assembled chunk (type={block_type})")
 
                     if self.stream_callback and chunk.content:
                         is_assembled = (
@@ -763,7 +784,7 @@ class ReActCore:
                         if not is_assembled:
                             non_tool_blocks = [
                                 b for b in chunk.content
-                                if not (isinstance(b, dict) and b.get("type") in ("tool_use", "tool_calls"))
+                                if not (isinstance(b, dict) and b.get("type") == "tool_calls")
                             ]
                             if non_tool_blocks:
                                 from collections import defaultdict
@@ -777,39 +798,82 @@ class ReActCore:
                                     if delta:
                                         self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name)
 
+                    # tiktoken 逐 chunk 累积（正常完成时被 API usage 精确值覆盖）
+                    if self._token_encoder and hasattr(chunk, 'content') and chunk.content:
+                        for block in chunk.content:
+                            if isinstance(block, dict):
+                                text = block.get('text') or block.get('thinking') or ''
+                            else:
+                                text = getattr(block, 'text', None) or getattr(block, 'thinking', None) or ''
+                            if text:
+                                # 累加到本轮 output_tokens，而非直接累加到总累加值
+                                current_output_tokens += len(self._token_encoder.encode(text))
+
                     await asyncio.sleep(0)
 
                 if hasattr(chunk, 'metadata') and chunk.metadata:
                     collected_metadata = chunk.metadata
                 if hasattr(chunk, 'usage') and chunk.usage:
+                    # API 返回精确 usage，覆盖本轮的 tiktoken 估算值
+                    # 统一获取函数：在获取端处理无效值，后续只判断 is not None
+                    # 原因：统一在获取端处理，后续逻辑简单，避免每次使用都漏判 0 或 None
+                    def _get_valid_token_value(usage, field):
+                        """获取有效的 token 值，无效值（None/0/空）统一转为 None"""
+                        val = getattr(usage, field, None)
+                        if val is None or val == 0:
+                            return None
+                        return val
+                    
                     collected_usage = chunk.usage
-                    self._accumulated_usage["input_tokens"] += getattr(chunk.usage, 'input_tokens', 0) or 0
-                    self._accumulated_usage["output_tokens"] += getattr(chunk.usage, 'output_tokens', 0) or 0
-                
+                    llm_input_tokens = _get_valid_token_value(chunk.usage, 'input_tokens')
+                    llm_output_tokens = _get_valid_token_value(chunk.usage, 'output_tokens')
+                    
+                    # 用 LLM 精确值替换本轮的 tiktoken 估算值
+                    if llm_input_tokens is not None:
+                        current_input_tokens = llm_input_tokens
+                    # 如果 llm_input_tokens 为 None，保留 tiktoken 估算值，不覆盖
+                    
+                    if llm_output_tokens is not None:
+                        current_output_tokens = llm_output_tokens
+                    # 如果 llm_output_tokens 为 None，保留 tiktoken 逐 chunk 累加值，不覆盖
+
             except asyncio.CancelledError:
-                logger.info(f"[{self.name}] Stream cancelled via aclose")
-                raise
+                logger.info(f"[{self.name}] Stream cancelled, treating as normal end")
+                # 不 re-raise：aclose() 已关闭连接，流结束，走正常结束路径
             except Exception as e:
                 if self.model._was_cancelled:
-                    logger.info(f"[{self.name}] Connection closed due to cancel ({type(e).__name__}: {e})")
-                    raise asyncio.CancelledError() from e
-                raise
+                    logger.info(f"[{self.name}] Stream closed by aclose ({type(e).__name__}), treating as normal end")
+                    # 不转 CancelledError：aclose() 导致的异常视为正常结束
+                else:
+                    raise
             
             logger.info(f"[ReActCore] Total stream chunks processed: {chunk_count}")
             
+            # 每轮迭代结束时，将本轮的 token 累加到总累加值
+            self._accumulated_usage["input_tokens"] += current_input_tokens
+            self._accumulated_usage["output_tokens"] += current_output_tokens
+            
             if collected_finish_reason == "tool_calls":
                 self._tool_call_event_manager.end_all_active_tool_calls()
+                # 检查点 3：tool_calls 调用结束
+                if self.stream_callback:
+                    self.stream_callback(
+                        {"__checkpoint__": "after_tool_calls"},
+                        agent_id=self.agent_id, agent_name=self.name
+                    )
                 logger.info(f"[ReActCore] finish_reason=tool_calls, ended all active tool calls")
             
             type_counts = Counter(block.get('type') if isinstance(block, dict) else type(block).__name__ for block in collected_content)
-            logger.info(f"[ReActCore] collected_content types before tool_use merge: {dict(type_counts)}")
+            logger.info(f"[ReActCore] collected_content types before tool_calls merge: {dict(type_counts)}")
             
             active_tool_calls = self._tool_call_event_manager.get_active_tool_calls()
             if active_tool_calls:
                 existing_tool_ids = set()
                 for block in collected_content:
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
-                        existing_tool_ids.add(block.get("id"))
+                    if isinstance(block, dict) and block.get("type") == "tool_calls":
+                        for tc in block.get("tool_calls", []):
+                            if isinstance(tc, dict) and tc.get("id"):
+                                existing_tool_ids.add(tc.get("id"))
                 
                 for tool_id, tool_call in active_tool_calls.items():
                     if tool_id not in existing_tool_ids:
@@ -819,14 +883,20 @@ class ReActCore:
                             logger.warning(f"Failed to parse arguments for tool {tool_call.get('name')}: {tool_call.get('arguments', '')[:100]}...")
                             arguments = {}
                         
-                        tool_use_block = {
-                            "type": "tool_use",
-                            "id": tool_id,
-                            "name": tool_call.get("name", ""),
-                            "input": arguments
+                        tool_calls_block = {
+                            "type": "tool_calls",
+                            "tool_calls": [{
+                                "index": len([b for b in collected_content if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                "id": tool_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call.get("name", ""),
+                                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                                },
+                            }],
                         }
-                        collected_content.append(tool_use_block)
-                        logger.info(f"[ReActCore] Built ToolUseBlock from ToolCallEventManager: {tool_id}")
+                        collected_content.append(tool_calls_block)
+                        logger.info(f"[ReActCore] Built ToolCallsBlock from ToolCallEventManager: {tool_id}")
             
             final_type_counts = Counter(block.get('type') if isinstance(block, dict) else type(block).__name__ for block in collected_content)
             logger.info(f"[ReActCore] Final collected_content types: {dict(final_type_counts)}")
@@ -860,8 +930,11 @@ class ReActCore:
                 reasoning_text = self._extract_text(response)
             tool_calls_info = []
             for block in response.content:
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    tool_calls_info.append(f"{block.get('name')}({block.get('input', {})})")
+                if isinstance(block, dict) and block.get("type") == "tool_calls":
+                    for tc in block.get("tool_calls", []):
+                        if isinstance(tc, dict):
+                            func = tc.get("function", {})
+                            tool_calls_info.append(f"{func.get('name')}({func.get('arguments', '')})")
             
             if tool_calls_info:
                 print(f"[Iteration {iteration}] Tool calls: {tool_calls_info}")
@@ -1024,14 +1097,23 @@ class ReActCore:
             if isinstance(block, dict):
                 block_type = block.get("type")
                 
-                if block_type == "tool_use":
-                    tool_id = block.get("id")
-                    if tool_id:
-                        tool_calls.append({
-                            "id": tool_id,
-                            "name": block.get("name"),
-                            "arguments": block.get("input", {})
-                        })
+                if block_type == "tool_calls":
+                    for tc in block.get("tool_calls", []):
+                        if isinstance(tc, dict):
+                            tc_id = tc.get("id", "")
+                            if tc_id:
+                                func = tc.get("function", {})
+                                args = func.get("arguments", "")
+                                if isinstance(args, str):
+                                    try:
+                                        args = json.loads(args) if args.strip() else {}
+                                    except json.JSONDecodeError:
+                                        args = {}
+                                tool_calls.append({
+                                    "id": tc_id,
+                                    "name": func.get("name", ""),
+                                    "arguments": args
+                                })
         
         if tool_calls:
             logger.info(f"[_parse_tool_calls] Parsed {len(tool_calls)} tool calls from response content")

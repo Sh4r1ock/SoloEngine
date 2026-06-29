@@ -12,7 +12,6 @@
 - FormatterBase: 格式化器基类
 - TruncatedFormatterBase: 截断格式化器基类
 - OpenAIChatFormatter: OpenAI聊天格式化器
-- OpenAIMultiAgentFormatter: OpenAI多Agent格式化器
 
 依赖:
 - .formatter_base: 格式化器基类
@@ -26,11 +25,10 @@
 
 from .formatter_base import FormatterBase
 from .truncated_formatter_base import TruncatedFormatterBase
-from .openai_formatter import OpenAIChatFormatter, OpenAIMultiAgentFormatter
+from .openai_formatter import OpenAIChatFormatter
 
 __all__ = [
     "FormatterBase",
     "TruncatedFormatterBase",
     "OpenAIChatFormatter",
-    "OpenAIMultiAgentFormatter",
 ]

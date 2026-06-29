@@ -11,7 +11,6 @@ SoloEngine : OpenAI格式化器，将消息转换为OpenAI API格式
 功能描述：
 本模块提供OpenAI API的消息格式化功能，包括：
     - OpenAIChatFormatter: OpenAI聊天格式化器
-    - OpenAIMultiAgentFormatter: OpenAI多Agent格式化器
     - 支持图像、音频等多模态内容
     - 支持工具调用格式转换
 
@@ -24,7 +23,6 @@ SoloEngine : OpenAI格式化器，将消息转换为OpenAI API格式
     - .truncated_formatter_base: 截断格式化器基类
     - ..message: 消息类型
     - ..model.model_response: 响应类
-    - ..token_counter: Token计数器
 
 使用示例:
     - from SoloAgent.formatter import OpenAIChatFormatter
@@ -48,12 +46,11 @@ from ..message import (
     ImageBlock,
     AudioBlock,
     Base64Source,
-    ToolUseBlock,
+    ToolCallsBlock,
     ToolResultBlock,
     ThinkingBlock,
 )
 from ..model.model_response import ChatResponse
-from ..token_counter import TokenCounterBase
 
 
 def _format_openai_image_block(
@@ -236,8 +233,6 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         support_vision: 是否支持视觉
         supported_blocks: 支持的内容块类型列表
         promote_tool_result_images: 是否提升工具结果图像
-        token_counter: Token计数器
-        max_tokens: 最大Token数
 
     示例:
         >>> formatter = OpenAIChatFormatter()
@@ -254,7 +249,7 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
         TextBlock,
         ImageBlock,
         AudioBlock,
-        ToolUseBlock,
+        ToolCallsBlock,
         ToolResultBlock,
         ThinkingBlock,
     ]
@@ -262,10 +257,8 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
     def __init__(
         self,
         promote_tool_result_images: bool = False,
-        token_counter: TokenCounterBase | None = None,
-        max_tokens: int | None = None,
     ) -> None:
-        super().__init__(token_counter=token_counter, max_tokens=max_tokens)
+        super().__init__()
         self.promote_tool_result_images = promote_tool_result_images
 
     async def _format(
@@ -285,6 +278,13 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                 chat_response = ChatResponse(content=msg.content if msg.content else [])
                 openai_msg = chat_response.to_openai_message()
                 openai_msg["name"] = msg.name
+                
+                # 过滤 thinking-only 消息：content 为空且无 tool_calls
+                if not openai_msg.get("content") and not openai_msg.get("tool_calls"):
+                    logger.warning(f"[OpenAIChatFormatter] Skipping thinking-only assistant message: {msg.name}")
+                    i += 1
+                    continue
+                
                 messages.append(openai_msg)
                 i += 1
                 continue
@@ -309,23 +309,7 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                     elif "content" in block:
                         reasoning_content = block.get("content", "")
 
-                elif typ == "tool_use":
-                    tool_calls.append(
-                        {
-                            "id": block.get("id"),
-                            "type": "function",
-                            "function": {
-                                "name": block.get("name"),
-                                "arguments": json.dumps(
-                                    block.get("input", {}),
-                                    ensure_ascii=False,
-                                ),
-                            },
-                        },
-                    )
-
-                elif typ == "tool_calls":
-                    # 流式格式的 tool_calls 块
+                if typ == "tool_calls":
                     for tc in block.get("tool_calls", []):
                         tool_calls.append(tc)
 
@@ -449,14 +433,6 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
             has_valid_content = has_content or tool_calls
             
             if has_valid_content or msg.role == "tool":
-                # 即使没有original_model_message，也从content中提取thinking内容
-                if reasoning_content is not None and msg.role == "assistant":
-                    msg_openai["reasoning_content"] = reasoning_content
-                # 关键修复：确保所有有tool_calls的assistant消息都有reasoning_content字段
-                if tool_calls and msg.role == "assistant" and "reasoning_content" not in msg_openai:
-                    # 如果没有reasoning_content，添加一个空字符串
-                    msg_openai["reasoning_content"] = ""
-                    logger.warning(f"[OpenAIChatFormatter] Added empty reasoning_content to assistant message with tool_calls")
                 messages.append(msg_openai)
 
             i += 1
@@ -546,58 +522,3 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
             logger.info(f"[OpenAIChatFormatter] All tool_calls have matching tool messages")
         
         return formatted
-
-
-class OpenAIMultiAgentFormatter(TruncatedFormatterBase):
-    """
-    OpenAI多Agent格式化器类
-
-    职责:
-        - 将Msg对象转换为OpenAI API格式，支持多Agent对话
-        - 支持多模态内容（图像、音频）
-        - 支持工具调用格式转换
-        - 管理对话历史提示
-
-    属性:
-        support_tools_api: 是否支持工具API
-        support_multiagent: 是否支持多Agent
-        support_vision: 是否支持视觉
-        supported_blocks: 支持的内容块类型列表
-        conversation_history_prompt: 对话历史提示文本
-        promote_tool_result_images: 是否提升工具结果图像
-        token_counter: Token计数器
-        max_tokens: 最大Token数
-
-    示例:
-        >>> formatter = OpenAIMultiAgentFormatter()
-        >>> messages = [Msg(name="agent1", content="你好", role="assistant")]
-        >>> formatted = await formatter.format(messages)
-    """
-
-    support_tools_api: bool = True
-    support_multiagent: bool = True
-    support_vision: bool = True
-
-    supported_blocks: list[type] = [
-        TextBlock,
-        ImageBlock,
-        AudioBlock,
-        ToolUseBlock,
-        ToolResultBlock,
-        ThinkingBlock,
-    ]
-
-    def __init__(
-        self,
-        conversation_history_prompt: str = (
-            "# Conversation History\n"
-            "The content between <history></history> tags contains "
-            "your conversation history\n"
-        ),
-        promote_tool_result_images: bool = False,
-        token_counter: TokenCounterBase | None = None,
-        max_tokens: int | None = None,
-    ) -> None:
-        super().__init__(token_counter=token_counter, max_tokens=max_tokens)
-        self.conversation_history_prompt = conversation_history_prompt
-        self.prom

@@ -29,7 +29,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
   return (
     <div style={{
       flexShrink: 0,
-      padding: '12px',
+      padding: '10px 12px 12px',
       background: 'var(--bg-100)',
     }}>
       <div style={{
@@ -60,7 +60,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
           onPressEnter={(e) => {
             if (!e.shiftKey) {
               e.preventDefault();
-              if (!isRunning) {
+              if (value.trim()) {
                 onSend();
               }
             }
@@ -74,39 +74,59 @@ const MessageInput: React.FC<MessageInputProps> = ({
           padding: '8px 12px',
         }}>
           {isRunning ? (
-            <Button
-              type="primary"
-              size="small"
-              icon={
-                <div style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: '50%',
-                  border: '2px solid #fff',
+            value.trim() ? (
+              <Button
+                type="primary"
+                size="small"
+                icon={<SendOutlined style={{ fontSize: 14 }} />}
+                onClick={onSend}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 6,
+                  background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
+                  border: 'none',
+                  padding: 0,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                }}>
+                }}
+              />
+            ) : (
+              <Button
+                type="primary"
+                size="small"
+                icon={
                   <div style={{
-                    width: 7,
-                    height: 7,
-                    background: '#fff',
-                  }} />
-                </div>
-              }
-              onClick={onStop}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 6,
-                background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
-                border: 'none',
-                padding: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            />
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    border: '2px solid #fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <div style={{
+                      width: 7,
+                      height: 7,
+                      background: '#fff',
+                    }} />
+                  </div>
+                }
+                onClick={onStop}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 6,
+                  background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))',
+                  border: 'none',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              />
+            )
           ) : (
             <Button
               type="primary"

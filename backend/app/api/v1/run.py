@@ -25,18 +25,22 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Dict, List, Optional, Any, Set
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, WebSocket, Depends, Query
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sqlfunc
 
 from app.core.database import get_db, AgenticFlowSessionModel, SessionMessageModel
+from app.core.execution_context import execution_context_manager
 from SoloAgent.solo_agent.compiler import FlowRunner, CompiledFlowFactory
+from SoloAgent.exception.exceptions import SoloEngineException
+from SoloAgent.message.message_base import Msg
 from app.api.v1.auth import get_current_user
 from app.core.auth import User, auth_service
 from app.core.config import settings
@@ -78,8 +82,61 @@ def aggregate_incremental_to_net_view(incremental_changes: List[Dict]):
     return result
 
 
+class MessageQueue:
+    """消息队列。支持异步等待、入队、drain。内部使用 asyncio.Queue。"""
+
+    def __init__(self):
+        self._queue = asyncio.Queue()
+
+    async def put(self, message) -> None:
+        """异步入队。"""
+        await self._queue.put(message)
+
+    def enqueue(self, message) -> None:
+        """同步入队。"""
+        self._queue.put_nowait(message)
+
+    def remove(self, index: int) -> bool:
+        """按索引删除。"""
+        items = []
+        while not self._queue.empty():
+            items.append(self._queue.get_nowait())
+        if 0 <= index < len(items):
+            del items[index]
+        for item in items:
+            self._queue.put_nowait(item)
+        return 0 <= index <= len(items)
+
+    def drain_all(self) -> list:
+        """Drain 所有消息，连续相同 name 的条目合并为一条。"""
+        items = []
+        while not self._queue.empty():
+            items.append(self._queue.get_nowait())
+
+        merged = []
+        for msg in items:
+            msg_name = getattr(msg, 'name', None)
+            msg_content = getattr(msg, 'content', None)
+            msg_role = getattr(msg, 'role', 'user')
+            if merged and getattr(merged[-1], 'name', None) == msg_name:
+                setattr(merged[-1], 'content',
+                        (getattr(merged[-1], 'content', None) or "") + "\n" + (msg_content or ""))
+            else:
+                from SoloAgent.message.message_base import Msg as _Msg
+                merged.append(_Msg(name=msg_name, content=msg_content, role=msg_role))
+        return merged
+
+    async def get(self):
+        """异步获取消息。事件循环调用。"""
+        return await self._queue.get()
+
+    @property
+    def has_pending(self) -> bool:
+        return not self._queue.empty()
+
+
 class AgenticFlowRunContext:
-    
+
     def __init__(self, user_id: str, agentic_flow_id: str, session_id: str, run_project_id: str):
         self.user_id = user_id
         self.agentic_flow_id = agentic_flow_id
@@ -94,7 +151,606 @@ class AgenticFlowRunContext:
         self._pending_file_changes: List[Dict] = []
         self._websocket = None
         self._compiled_flow = None
-    
+        self._message_queue = MessageQueue()       # 业务消息队列（Msg），管理待发送消息
+        self._ws_message_queue = asyncio.Queue()   # WebSocket 传输队列（dict），仅数据传递
+
+        # 从 websocket_handler 移入的执行状态
+        self._current_execution_task = None
+        self._current_collector = None
+        self._status = "completed"
+        self._stop_event = None
+        self._cancel_event = None
+        self._stored_canvas_data = {}
+        self._pending_stream_tasks = []
+        self._current_round_index = 0
+        # 流式回调（由 websocket_handler 注入）
+        self._stream_send_callback = None
+
+        # 事件循环状态
+        self._send_event_callback = None              # 发送事件到前端的回调（包装 event 格式）
+        self._send_raw_callback = None                # 发送原始数据到前端的回调（不包装）
+        self._message_receiver_func = None            # 消息接收函数
+        self._websocket_open = True                   # 连接是否打开
+        self._receiver_task = None                    # 消息接收任务
+        self._taken_over_event = None                 # 接管信号
+        self._consecutive_errors = 0                  # 连续错误计数
+        self._max_consecutive_errors = settings.MAX_CONSECUTIVE_ERRORS
+
+    def enqueue_message(self, msg) -> None:
+        """外部入队。仅入队。"""
+        self._message_queue.enqueue(msg)
+
+    def remove_message(self, index: int) -> bool:
+        """外部删除队列消息。"""
+        return self._message_queue.remove(index)
+
+    def set_stream_send_callback(self, callback):
+        """注入流式数据发送回调。重连时 ws_handler 调用更新。"""
+        self._stream_send_callback = callback
+
+    async def start_execution(self, data):
+        """创建执行任务。返回 execution_start 事件数据。"""
+        self._stop_event = asyncio.Event()
+        self._cancel_event = asyncio.Event()
+        self._compiled_flow = None  # 清空旧的 compiled_flow，避免 stop_execution 取消旧 flow
+        self._status = "completed"
+        self._current_collector = ChunkCollector()
+        self._pending_stream_tasks = []
+        self._stored_canvas_data = data.get("canvas_data", {}) or self._stored_canvas_data
+        input_message = data.get("input_message", "")
+
+        self.ensure_session()
+        message_id = await self.save_user_message(input_message)
+        self._last_user_message_id = message_id
+        self._current_round_index += 1
+
+        async def run_execution():
+            return await self.execute(
+                input_message=input_message,
+                canvas_data=self._stored_canvas_data,
+                cancel_event=self._cancel_event,
+                event_callback=self.event_callback,
+                stream_callback=self._stream_collector_callback,
+            )
+
+        self._current_execution_task = asyncio.create_task(run_execution())
+
+        execution_context_manager.register(
+            task=self._current_execution_task,
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id,
+            cancel_event=self._cancel_event,
+            collector=self._current_collector,
+            run_context=self,
+            websocket_ref=None,
+            taken_over_event=None,
+        )
+
+        return {
+            "event_type": "execution_start",
+            "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
+        }
+
+    async def stop_execution(self):
+        """停止执行。通过 flow.cancel() 关闭 LLM HTTP 连接，让任务自然完成。"""
+        if not self._current_execution_task or self._current_execution_task.done():
+            return
+
+        if self._compiled_flow:
+            await self._compiled_flow.cancel()
+
+        if self._cancel_event:
+            self._cancel_event.set()
+
+    def drain_queue(self):
+        """Drain 消息队列，返回消息文本列表。"""
+        if self._message_queue.has_pending:
+            return [m.get_text_content() or "" for m in self._message_queue.drain_all()]
+        return []
+
+    async def send_queue_returned(self):
+        """用户停止：drain 队列并发送 queue_returned 到前端。"""
+        queue_msgs = self.drain_queue()
+        if queue_msgs:
+            await self._send_event({
+                "event_type": "queue_returned",
+                "messages": queue_msgs,
+            })
+
+    async def send_queue_drained_and_start(self):
+        """检查点停止后：drain 队列，发送 queue_drained，然后完全复用用户发送消息的流程启动新任务。"""
+        queue_msgs = self.drain_queue()
+        if not queue_msgs:
+            return
+        merged_text = "\n".join(queue_msgs)
+        await self._send_event({
+            "event_type": "queue_drained",
+            "content": merged_text,
+        })
+        # 完全复用用户发送消息的流程（run.py line 573-587）
+        # 1. 创建 taken_over_event
+        taken_over_event = asyncio.Event()
+        self._taken_over_event = taken_over_event
+        # 2. 调用 start_execution
+        start_event = await self.start_execution({
+            "input_message": merged_text,
+            "canvas_data": self._stored_canvas_data,
+        })
+        # 3. 注入传输层上下文
+        exec_ctx = execution_context_manager.get(
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id
+        )
+        if exec_ctx:
+            exec_ctx.websocket_ref = self._websocket
+            exec_ctx.taken_over_event = taken_over_event
+        # 4. 发送 execution_start 事件
+        await self._send_event(start_event)
+
+    async def on_execution_done(self):
+        """执行完成后处理。返回事件列表。"""
+        execution_context_manager.unregister(
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id
+        )
+
+        if self._pending_stream_tasks:
+            await asyncio.gather(*self._pending_stream_tasks, return_exceptions=True)
+            self._pending_stream_tasks.clear()
+
+        # 判断执行状态
+        result = None
+        error_msg = None
+        try:
+            if self._current_execution_task.cancelled():
+                self._status = "stop"
+                logger.info(f"[RunContext] Task cancelled")
+            else:
+                result = self._current_execution_task.result()
+                result_status = result.get("status") if isinstance(result, dict) else None
+                if result_status == "failed":
+                    self._status = "error"
+                    error_msg = result.get("error", "执行失败")
+                else:
+                    self._status = "completed"
+                logger.info(f"[RunContext] Task completed: result_type={type(result).__name__}, has_token_usage={bool(result.get('token_usage')) if isinstance(result, dict) else False}")
+        except asyncio.CancelledError:
+            self._status = "stop"
+        except Exception as exec_error:
+            self._status = "error"
+            error_msg = str(exec_error)
+
+        tokens = result.get("token_usage") if isinstance(result, dict) else None
+        if not tokens and self._compiled_flow:
+            tokens = getattr(self._compiled_flow, '_token_usage', None)
+        logger.info(f"[RunContext] Token extraction: result_has_token_usage={bool(result.get('token_usage')) if isinstance(result, dict) else False}, compiled_flow_token_usage={getattr(self._compiled_flow, '_token_usage', None) if self._compiled_flow else None}, final_tokens={tokens}")
+
+        # ★ 统一路径：先检查 collector 是否为空，如果是空的且 status 不是 error/stop，设置 self._status="error"
+        # 这样后续生成的事件（execution_error）和保存的消息（status="error"）才能正确反映错误状态
+        # 根因：agent.reply 捕获异常返回错误字符串，_execute_agent 认为 status="completed"，
+        # 但 collector 为空（stream_callback 未被调用），需要在此处修正为 error
+        has_collector_data = self._current_collector.get_chunk_count() > 0 if self._current_collector else False
+        if not has_collector_data and self._status != "error" and self._status != "stop":
+            self._status = "error"
+            # ★ 优先使用 result.output（LLM 调用失败时 agent.reply 返回的详细错误信息）作为 error_msg
+            # 这样前端 content 区域（修改4）能显示详细错误信息，而非笼统的"LLM未返回有效内容"
+            if result and isinstance(result, dict) and result.get("output"):
+                error_msg = result["output"]
+            else:
+                error_msg = error_msg or "LLM未返回有效内容"
+            logger.info(f"[RunContext] Collector empty, status set to error: error_msg={error_msg[:100] if error_msg else None}")
+
+        events = []
+
+        # 执行状态事件（此时 self._status 已经是最终状态，确保事件类型正确）
+        if self._status == "stop":
+            events.append({
+                "event_type": "execution_stopped",
+                "status": "stopped",
+                "tokens": tokens,
+                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+            })
+        elif self._status == "error":
+            events.append({
+                "event_type": "execution_error",
+                "status": "error",
+                "error": error_msg or "",
+                "tokens": tokens,
+                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+            })
+        else:
+            openai_message = result.get("message", {"role": "assistant", "content": result.get("output", ""), "reasoning_content": None}) if result else None
+            events.append({
+                "event_type": "execution_complete",
+                "message": openai_message,
+                "tokens": tokens,
+                "user_message_id": str(self._last_user_message_id) if self._last_user_message_id else None,
+                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+            })
+
+        # 保存 assistant 消息
+        msg_status = "error" if self._status == "error" else "completed"
+        msg_error = error_msg if self._status == "error" else None
+
+        saved_message_ids = {}
+        if self._current_collector:
+            saved_message_ids = await self.save_assistant_message(
+                collector=self._current_collector,
+                tokens=tokens,
+                parent_message_id=self._last_user_message_id,
+                execution_result=self._last_execute_result,
+                update_file_change_message_id=True,
+                status=msg_status,
+                error=msg_error,
+            )
+        else:
+            await self.save_assistant_message(
+                collector=None,
+                tokens=tokens,
+                parent_message_id=self._last_user_message_id,
+                execution_result=self._last_execute_result,
+                update_file_change_message_id=True,
+                status=msg_status,
+                error=msg_error,
+            )
+
+        if saved_message_ids:
+            events.append({
+                "event_type": "message_ids_updated",
+                "session_id": self.session_id,
+                "message_ids": saved_message_ids,
+            })
+
+        # finalize_execution（只调用一次，修复当前代码的双重调用 bug）
+        if self._status == "stop":
+            self._finalize_execution(status_override="stop", tokens=tokens)
+        elif self._status == "error":
+            self._finalize_execution(status_override="error", error_msg=error_msg, tokens=tokens)
+        else:
+            self._finalize_execution(status_override="completed", tokens=tokens)
+
+        self._current_execution_task = None
+        self._current_collector = None
+
+        # save_file_changes
+        file_change_message_id = None
+        if saved_message_ids:
+            first_key = next(iter(saved_message_ids), None)
+            if first_key:
+                file_change_message_id = saved_message_ids[first_key]
+        await self.save_file_changes(message_id=file_change_message_id)
+
+        events.append({
+            "event_type": "file_changes_ready",
+            "message_id": file_change_message_id,
+        })
+
+        return events
+
+    def _stream_collector_callback(self, delta, agent_id=None, agent_name=None):
+        """流式收集 + 前端发送。检查点拦截由 execute() 内的 _checkpoint_interceptor 负责。"""
+        self._current_collector.add_chunk(delta, agent_id, agent_name)
+        if self._stream_send_callback:
+            self._stream_send_callback(delta, agent_id, agent_name)
+
+    def has_pending_stop(self) -> bool:
+        """是否有检查点停止信号。ws_handler 事件循环调用。"""
+        return self._stop_event is not None
+
+    async def wait_for_stop(self):
+        """等待检查点停止信号。ws_handler 事件循环调用。"""
+        if self._stop_event:
+            await self._stop_event.wait()
+
+    def clear_stop_event(self):
+        """清除检查点停止信号。ws_handler 检测到后调用。"""
+        if self._stop_event:
+            self._stop_event.clear()
+
+    def set_transport_callbacks(self, send_event_callback, message_receiver_func, send_raw_callback=None):
+        """注入传输层回调。ws_handler 在 initialize() 中调用。"""
+        self._send_event_callback = send_event_callback
+        self._message_receiver_func = message_receiver_func
+        self._send_raw_callback = send_raw_callback
+
+    async def _send_event(self, event):
+        """发送事件到前端（包装 event 格式）。通过回调调用 ws_handler 的 send_json。"""
+        if self._send_event_callback:
+            try:
+                await self._send_event_callback(event)
+            except Exception as e:
+                logger.error(f"[RunContext] Failed to send event: {e}")
+
+    async def _send_raw(self, data):
+        """发送原始数据到前端（不包装）。用于 pong 等直接响应。"""
+        if self._send_raw_callback:
+            try:
+                await self._send_raw_callback(data)
+            except Exception as e:
+                logger.error(f"[RunContext] Failed to send raw: {e}")
+
+    async def run_event_loop(self):
+        """执行层事件循环。等待信号、路由消息、处理生命周期。"""
+        self._receiver_task = asyncio.create_task(self._message_receiver_func())
+
+        try:
+            while self._websocket_open:
+                try:
+                    wait_coroutines = []
+
+                    # 等待用户消息
+                    message_wait_task = asyncio.create_task(self._ws_message_queue.get())
+                    wait_coroutines.append(message_wait_task)
+
+                    # 等待执行完成
+                    execution_wait_task = None
+                    if self._current_execution_task:
+                        execution_wait_task = asyncio.ensure_future(self._current_execution_task)
+                        wait_coroutines.append(execution_wait_task)
+
+                    # 等待接管信号
+                    taken_over_wait_task = None
+                    if self._taken_over_event is not None:
+                        taken_over_wait_task = asyncio.ensure_future(self._taken_over_event.wait())
+                        wait_coroutines.append(taken_over_wait_task)
+
+                    # 等待检查点停止
+                    stop_wait_task = None
+                    if self.has_pending_stop():
+                        stop_wait_task = asyncio.ensure_future(self.wait_for_stop())
+                        wait_coroutines.append(stop_wait_task)
+
+                    done, pending = await asyncio.wait(
+                        wait_coroutines,
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+
+                    # 连接接管
+                    if taken_over_wait_task and taken_over_wait_task in done:
+                        logger.info(f"[RunContext] Taken over by new connection")
+                        for p in pending:
+                            p.cancel()
+                            try:
+                                await p
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        break
+
+                    # 检查点停止
+                    if stop_wait_task and stop_wait_task in done:
+                        logger.info(f"[RunContext] Stop requested by checkpoint")
+                        self.clear_stop_event()
+                        await self.stop_execution()
+                        # 不启动新任务，让事件循环正常处理 execution_wait_task 完成
+                        # 和用户手动点击停止完全一样：
+                        # 1. stop_execution() 停止 LLM（fire-and-forget，关闭 HTTP 连接）
+                        # 2. 事件循环检测到 execution_wait_task 完成
+                        # 3. on_execution_done() 保存 assistant 消息到数据库
+                        # 4. 检查队列，如果有消息，send_queue_drained_and_start() 启动新任务
+                        continue
+
+                    # 执行完成
+                    if execution_wait_task and execution_wait_task in done:
+                        if message_wait_task not in done:
+                            message_wait_task.cancel()
+                            try:
+                                await message_wait_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        if taken_over_wait_task and taken_over_wait_task not in done:
+                            taken_over_wait_task.cancel()
+                            try:
+                                await taken_over_wait_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        if stop_wait_task and stop_wait_task not in done:
+                            stop_wait_task.cancel()
+                            try:
+                                await stop_wait_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+
+                        events = await self.on_execution_done()
+                        for event in events:
+                            await self._send_event(event)
+
+                        # 执行完成后，检查队列中是否有待发送消息
+                        # 适用于检查点停止后的场景：
+                        # - 检查点停止 → stop_execution() → LLM 结束 → on_execution_done() 保存
+                        # - 检查队列 → 队列有消息 → send_queue_drained_and_start() 启动新任务
+                        # send_queue_drained_and_start() 内部完全复用用户发送消息的流程
+                        if self._message_queue.has_pending:
+                            await self.send_queue_drained_and_start()
+                        continue
+
+                    # 用户消息
+                    if message_wait_task in done:
+                        result = None
+                        try:
+                            result = message_wait_task.result()
+                        except Exception as e:
+                            logger.error(f"[RunContext] Error getting message: {e}")
+                            continue
+
+                        if isinstance(result, dict) and result.get("type") == "__disconnect__":
+                            logger.info(f"[RunContext] Client disconnected")
+                            self._websocket_open = False
+                            break
+
+                        if isinstance(result, dict) and "type" in result:
+                            self._consecutive_errors = 0
+                            data = result
+
+                            if data.get("type") == "ping":
+                                await self._send_raw({"type": "pong", "timestamp": time.time()})
+
+                            elif data.get("type") == "stop":
+                                await self.stop_execution()
+                                await self.send_queue_returned()
+
+                            elif data.get("type") == "execute":
+                                if not self._current_execution_task or self._current_execution_task.done():
+                                    taken_over_event = asyncio.Event()
+                                    self._taken_over_event = taken_over_event
+                                    start_event = await self.start_execution(data)
+                                    exec_ctx = execution_context_manager.get(
+                                        user_id=self.user_id,
+                                        agentic_flow_id=self.agentic_flow_id,
+                                        session_id=self.session_id,
+                                        run_project_id=self.run_project_id
+                                    )
+                                    if exec_ctx:
+                                        exec_ctx.websocket_ref = self._websocket
+                                        exec_ctx.taken_over_event = taken_over_event
+                                    await self._send_event(start_event)
+                                else:
+                                    input_content = data.get("input_message", "")
+                                    if not input_content:
+                                        continue
+                                    user_msg = Msg(name="user", content=input_content, role="user")
+                                    self.enqueue_message(user_msg)
+                                    logger.info(f"[Message Queue] Enqueued message: '{input_content[:50]}', queue_has_pending={self._message_queue.has_pending}")
+                                    await self._send_event({
+                                        "event_type": "message_queued",
+                                        "content": input_content,
+                                    })
+
+                            elif data.get("type") == "queue_remove":
+                                self.remove_message(data.get("index", -1))
+
+                except asyncio.CancelledError:
+                    logger.info(f"[RunContext] Event loop cancelled")
+                    break
+                except SoloEngineException as e:
+                    await self._handle_loop_error(e, is_fatal=e.is_fatal)
+                    if not self._websocket_open:
+                        break
+                    continue
+                except Exception as e:
+                    await self._handle_loop_error(e)
+                    if not self._websocket_open:
+                        break
+                    continue
+
+        except WebSocketDisconnect:
+            logger.info(f"[RunContext] WebSocket disconnected")
+            self._websocket_open = False
+        except Exception as e:
+            logger.error(f"[RunContext] Event loop outer error: {e}", exc_info=True)
+            self._websocket_open = False
+        finally:
+            await self.handle_cleanup()
+
+    async def _handle_loop_error(self, error, is_fatal=False):
+        """事件循环错误处理。"""
+        self._consecutive_errors += 1
+        logger.error(f"[RunContext] Error ({self._consecutive_errors}/{self._max_consecutive_errors}): {error}", exc_info=True)
+        try:
+            await self._send_raw({
+                "type": "error",
+                "message": f"Internal error: {str(error)}",
+                "timestamp": time.time()
+            })
+        except Exception:
+            pass
+
+        if is_fatal or self._consecutive_errors >= self._max_consecutive_errors:
+            logger.error(f"[RunContext] Fatal error or too many errors, closing")
+            self._websocket_open = False
+        else:
+            await asyncio.sleep(settings.WEBSOCKET_ERROR_BACKOFF_BASE * min(self._consecutive_errors, settings.WEBSOCKET_ERROR_BACKOFF_MAX_CONSECUTIVE))
+
+    async def handle_cleanup(self):
+        """grace period + 停止 + 完成 + 清理。从 ws_handler.cleanup() 迁移。"""
+        self._websocket_open = False
+
+        # 停止消息接收任务
+        if self._receiver_task and not self._receiver_task.done():
+            self._receiver_task.cancel()
+            try:
+                await self._receiver_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        # 接管时跳过 grace period
+        if self._taken_over_event is not None and self._taken_over_event.is_set():
+            logger.info(f"[RunContext] Taken over, skipping grace period: {self.session_id}")
+            return
+
+        if self._current_execution_task and not self._current_execution_task.done():
+            exec_ctx = execution_context_manager.get(
+                user_id=self.user_id,
+                agentic_flow_id=self.agentic_flow_id,
+                session_id=self.session_id,
+                run_project_id=self.run_project_id
+            )
+
+            if exec_ctx:
+                exec_ctx.websocket_ref = None
+                exec_ctx.status = "grace_period"
+                exec_ctx.chunks_sent_count = self._current_collector.get_chunk_count() if self._current_collector else 0
+
+            grace_period = settings.WEBSOCKET_GRACE_PERIOD_SECONDS
+            logger.info(f"[RunContext] Entering grace period ({grace_period}s): {self.session_id}")
+
+            try:
+                saved_taken_over_event = exec_ctx.taken_over_event if exec_ctx else None
+
+                wait_coroutines = [self._current_execution_task]
+                if saved_taken_over_event:
+                    taken_over_task = asyncio.create_task(saved_taken_over_event.wait())
+                    wait_coroutines.append(taken_over_task)
+
+                done, pending = await asyncio.wait(wait_coroutines, timeout=grace_period)
+
+                for p in pending:
+                    p.cancel()
+                    try:
+                        await p
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+                if saved_taken_over_event and saved_taken_over_event.is_set():
+                    logger.info(f"[RunContext] Execution taken over: {self.session_id}")
+                    return
+
+                if self._current_execution_task in done:
+                    logger.info(f"[RunContext] Task completed during grace period: {self.session_id}")
+                    events = await self.on_execution_done()
+                    for event in events:
+                        await self._send_event(event)
+                else:
+                    logger.warning(f"[RunContext] Grace period expired, stopping: {self.session_id}")
+                    await self.stop_execution()
+                    events = await self.on_execution_done()
+                    for event in events:
+                        await self._send_event(event)
+
+            except Exception as e:
+                logger.error(f"[RunContext] Cleanup error: {e}", exc_info=True)
+                try:
+                    if self._cancel_event:
+                        self._cancel_event.set()
+                    if self._current_execution_task and not self._current_execution_task.done():
+                        self._current_execution_task.cancel()
+                except Exception:
+                    pass
+
+        # 注销执行上下文
+        execution_context_manager.unregister(
+            user_id=self.user_id,
+            agentic_flow_id=self.agentic_flow_id,
+            session_id=self.session_id,
+            run_project_id=self.run_project_id
+        )
+        self.clear_cache()
+
     def set_websocket(self, websocket):
         self._websocket = websocket
     
@@ -106,34 +762,19 @@ class AgenticFlowRunContext:
             else:
                 event_type = getattr(event, "event_type", None)
                 file_changes = getattr(event, "file_changes", None) or []
-            
+
             if event_type == "file_change_preview" and file_changes:
                 self._pending_file_changes.extend(file_changes)
                 self._persist_incremental_changes(file_changes)
-            
-            if self._websocket:
+
+            # 通过传输层回调发送事件
+            if self._send_event_callback:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    asyncio.create_task(self._send_websocket_event(event))
+                    asyncio.create_task(self._send_event(event))
         except Exception as e:
             logger.warning(f"[RunContext] event_callback error: {e}")
     
-    async def _send_websocket_event(self, event):
-        try:
-            if isinstance(event, dict):
-                await self._websocket.send_json({
-                    "type": "event",
-                    "event": event,
-                    "session_id": self.session_id
-                })
-            else:
-                await self._websocket.send_json({
-                    "type": "event",
-                    "event": event.to_dict() if hasattr(event, 'to_dict') else str(event),
-                    "session_id": self.session_id
-                })
-        except Exception as e:
-            logger.warning(f"[RunContext] Failed to send WebSocket event: {e}")
 
     def _persist_incremental_changes(self, file_changes: List[Dict]) -> None:
         from app.models.file_change import FileChangeModel
@@ -178,41 +819,68 @@ class AgenticFlowRunContext:
                 db, self.session_id, self.user_id
             )
     
-    async def execute(self, input_message: str, canvas_data: Dict, 
+    async def execute(self, input_message: str, canvas_data: Dict,
                       cancel_event=None,
-                      event_callback=None, 
+                      event_callback=None,
                       stream_callback=None) -> Dict:
         self._canvas_data = canvas_data
-        
+
         def wrapped_event_callback(event):
             self.event_callback(event)
             if event_callback:
                 event_callback(event)
-        
+
         def on_flow_created(compiled_flow):
             self._compiled_flow = compiled_flow
-        
-        result = await FlowRunner.run_from_json(
-            json_data=canvas_data,
-            input_message=input_message,
-            user_id=self.user_id,
-            agentic_flow_id=self.agentic_flow_id,
-            session_id=self.session_id,
-            run_project_id=self.run_project_id,
-            cancel_event=cancel_event,
-            event_callback=wrapped_event_callback,
-            stream_callback=stream_callback,
-            agent_memories=self._agent_memories,
-            on_flow_created=on_flow_created,
-        )
-        
+            # 检查 cancel_event 是否已经在 flow 创建前被设置（用户提前点击停止）
+            # 如果已设置，立即取消新 flow（调用 model.cancel() 关闭 HTTP 连接）
+            if self._cancel_event and self._cancel_event.is_set():
+                logger.info(f"[RunContext] Cancel event already set before flow creation, cancelling new flow")
+                asyncio.create_task(compiled_flow.cancel())
+
+        # 检查点拦截器：拦截 react_core 发出的 __checkpoint__ 信号，检查队列并决定是否停止
+        # 非检查点数据转发给 _stream_collector_callback（collector + 前端发送）
+        run_ctx = self
+        def _checkpoint_interceptor(delta: dict, agent_id=None, agent_name=None):
+            if "__checkpoint__" in delta:
+                checkpoint_type = delta.get("__checkpoint__", "unknown")
+                has_pending = run_ctx._message_queue.has_pending
+                logger.info(f"[Checkpoint Interceptor] type={checkpoint_type}, queue_has_pending={has_pending}")
+                if has_pending:
+                    if hasattr(run_ctx, '_stop_event') and run_ctx._stop_event:
+                        logger.info(f"[Checkpoint Interceptor] Stopping LLM due to pending queue messages")
+                        run_ctx._stop_event.set()
+                return  # checkpoint 信号不转发前端
+            if stream_callback:
+                stream_callback(delta, agent_id=agent_id, agent_name=agent_name)
+
+        try:
+            result = await FlowRunner.run_from_json(
+                json_data=canvas_data,
+                input_message=input_message,
+                user_id=self.user_id,
+                agentic_flow_id=self.agentic_flow_id,
+                session_id=self.session_id,
+                run_project_id=self.run_project_id,
+                cancel_event=cancel_event,
+                event_callback=wrapped_event_callback,
+                stream_callback=_checkpoint_interceptor,
+                agent_memories=self._agent_memories,
+                on_flow_created=on_flow_created,
+            )
+        except asyncio.CancelledError:
+            # 任务被取消时，仍需记录 token（tiktoken 估算值已在 _compiled_flow._token_usage 中）
+            if self._compiled_flow:
+                self._finalize_execution(status_override="stop", tokens=self._compiled_flow._token_usage or None)
+            raise
+
         self._last_execute_result = result
-        
+
         self._finalize_execution(result=result)
-        
+
         return result
-    
-    async def execute_node(self, canvas_data: Dict, node_id: str, 
+
+    async def execute_node(self, canvas_data: Dict, node_id: str,
                            input_message: str, context: Dict = None) -> Dict:
         result = await FlowRunner.run_node(
             canvas_data, node_id, input_message,
@@ -263,9 +931,6 @@ class AgenticFlowRunContext:
 
         self._update_session_status(final_status, **update_data)
     
-    def handle_cleanup(self, status: str, error_msg: str = None, tokens: Dict = None):
-        self._finalize_execution(status_override=status, error_msg=error_msg, tokens=tokens)
-    
     def _update_session_token_usage(self, token_usage: Dict):
         from app.core.database import get_db_context, db_manager
         with get_db_context() as db:
@@ -307,72 +972,72 @@ class AgenticFlowRunContext:
                                parent_message_id=None, execution_result=None,
                                update_file_change_message_id=False,
                                status: str = "completed", error: str = None):
+        """统一保存路径：无论 status 是 completed 还是 error，都走相同的保存路径。
+
+        核心原则：
+        - agent_id 来自 collector 或 compiled_flow.orchestrator_id（不再硬编码 "default"）
+        - llm_config_id / tokens 来自 get_agent_llm_config_id / _get_agent_token_usage
+        - data 只包含 collector 收集的数据（为空则 []），error 不写入 data
+        - error 作为数据库独立字段保存
+        """
         saved_message_ids = {}
         from app.core.database import get_db_context
         try:
             agent_data = collector.get_agent_data() if collector else None
-            if agent_data:
-                with get_db_context() as db:
-                    main_agent_id = None
-                    for agent_id_key, agent_info in agent_data.items():
-                        data_to_save = agent_info.get('data', [])
-                        if not data_to_save:
-                            data_to_save = []
-                        llm_config_id = self.get_agent_llm_config_id(agent_id_key)
 
-                        if main_agent_id is None:
-                            main_agent_id = agent_id_key
-                            current_parent_agent_id = None
-                        else:
-                            current_parent_agent_id = main_agent_id
+            # ★ 统一路径：如果 agent_data 为空（collector 为 None 或无 chunk），构造一个使用 orchestrator_id 的空数据
+            # 不再走单独的 else 分支，避免硬编码 agent_id="default" 和将 error 写入 data
+            if not agent_data:
+                main_agent_id = None
+                if self._compiled_flow:
+                    main_agent_id = getattr(self._compiled_flow, 'orchestrator_id', None)
+                    if not main_agent_id and self._compiled_flow.agents:
+                        main_agent_id = list(self._compiled_flow.agents.keys())[0]
+                if not main_agent_id:
+                    main_agent_id = "default"  # 最终兜底（理论上不会到达）
 
-                        agent_tokens = self._get_agent_token_usage(agent_id_key) or tokens
+                agent_data = {
+                    main_agent_id: {
+                        'agent_name': None,
+                        'data': []  # ★ data 为空，不写入 error
+                    }
+                }
 
-                        try:
-                            saved_message = await save_session_message(
-                                db=db, session_id=self.session_id, user_id=self.user_id,
-                                role="assistant", data=data_to_save, status=status,
-                                agent_id=agent_id_key, tokens=agent_tokens,
-                                agentic_flow_id=self.agentic_flow_id,
-                                run_project_id=self.run_project_id,
-                                parent_message_id=parent_message_id,
-                                parent_agent_id=current_parent_agent_id,
-                                llm_config_id=llm_config_id,
-                                error=error,
-                            )
-                            if saved_message and update_file_change_message_id and parent_message_id:
-                                self._update_file_change_message_id(db, parent_message_id, saved_message.id)
-                            if saved_message:
-                                saved_message_ids[agent_id_key] = str(saved_message.id)
-                        except Exception as e:
-                            logger.error(f"[RunContext] Failed to save agent message: {e}", exc_info=True)
-            else:
-                content = ""
-                if execution_result and isinstance(execution_result, dict):
-                    content = execution_result.get("output", "") or execution_result.get("error", "")
-                
-                if not content and status != "error":
-                    status = "error"
-                    error = error or "LLM未返回有效内容"
-                
-                with get_db_context() as db:
+            # ★ 统一保存路径（正常路径和错误路径走相同的代码）
+            with get_db_context() as db:
+                first_agent_id = None
+                for agent_id_key, agent_info in agent_data.items():
+                    data_to_save = agent_info.get('data', [])
+                    if not data_to_save:
+                        data_to_save = []
+                    llm_config_id = self.get_agent_llm_config_id(agent_id_key)
+
+                    if first_agent_id is None:
+                        first_agent_id = agent_id_key
+                        current_parent_agent_id = None
+                    else:
+                        current_parent_agent_id = first_agent_id
+
+                    agent_tokens = self._get_agent_token_usage(agent_id_key) or tokens
+
                     try:
                         saved_message = await save_session_message(
                             db=db, session_id=self.session_id, user_id=self.user_id,
-                            role="assistant",
-                            data=[{"type": "content", "content": content}] if content else [],
-                            status=status, agent_id="default", tokens=tokens,
+                            role="assistant", data=data_to_save, status=status,
+                            agent_id=agent_id_key, tokens=agent_tokens,
                             agentic_flow_id=self.agentic_flow_id,
                             run_project_id=self.run_project_id,
                             parent_message_id=parent_message_id,
-                            error=error,
+                            parent_agent_id=current_parent_agent_id,
+                            llm_config_id=llm_config_id,
+                            error=error,  # ★ error 作为独立字段，不写入 data
                         )
+                        if saved_message and update_file_change_message_id and parent_message_id:
+                            self._update_file_change_message_id(db, parent_message_id, saved_message.id)
                         if saved_message:
-                            saved_message_ids["default"] = str(saved_message.id)
-                            if update_file_change_message_id and parent_message_id:
-                                self._update_file_change_message_id(db, parent_message_id, saved_message.id)
+                            saved_message_ids[agent_id_key] = str(saved_message.id)
                     except Exception as e:
-                        logger.error(f"[RunContext] Failed to save empty assistant message: {e}", exc_info=True)
+                        logger.error(f"[RunContext] Failed to save agent message: {e}", exc_info=True)
         except Exception as e:
             logger.error(f"[RunContext] Failed to save assistant message: {e}", exc_info=True)
         return saved_message_ids
@@ -659,7 +1324,7 @@ class ChunkCollector:
         raw_type = delta.get("type", None)
         if raw_type in ('thinking', 'think', 'reason', 'reasoning_content'):
             return 'reasoning_content'
-        if raw_type in ('tool_use', 'tool_call', 'tool_calls') or 'tool_calls' in delta:
+        if raw_type in ('tool_call', 'tool_calls') or 'tool_calls' in delta:
             return 'tool_calls'
         if 'reasoning_content' in delta and delta.get('reasoning_content'):
             return 'reasoning_content'

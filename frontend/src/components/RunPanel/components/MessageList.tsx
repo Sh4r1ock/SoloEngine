@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useCallback, useMemo, forwardRef, useImperati
 import { Typography, Tooltip, App } from 'antd';
 import { RobotOutlined, UndoOutlined, DeleteOutlined, FileAddOutlined, CloseCircleOutlined, CloseOutlined, FileTextOutlined, ExclamationCircleOutlined, CodeOutlined, PictureOutlined, FilePdfOutlined, FileZipOutlined, FileExcelOutlined, FilePptOutlined, AudioOutlined, VideoCameraOutlined, FileOutlined, InfoCircleOutlined, LoadingOutlined } from '@ant-design/icons';
 import { useRunPanelStore } from '../stores/runPanelStore';
-import type { LLMMessage, DataBlock, FileChangeInfo } from '../types';
+import type { LLMMessage, SystemMessage, Message, DataBlock, FileChangeInfo } from '../types';
 import BeautifulMarkdownRenderer from '../../common/BeautifulMarkdownRenderer';
 import FileChangePanel from './FileChangePanel';
 import AutoScrollContainer from './AutoScrollContainer';
@@ -340,12 +340,19 @@ const UserMessageItem = React.memo(({ msg, isHovered, onHover, onLeave, onRewind
   const previewFiles = recallPreviewFiles[msg.id];
   const isPreviewing = recallPreviewMessageId === msg.id;
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(msg.content).then(() => {
+  const handleCopy = useCallback(async () => {
+    // 显式以 text/plain MIME 类型写入剪贴板，Windows 剪贴板历史(Win+V)才能正确捕获
+    // 单条路径：W3C Clipboard API (Baseline 2024) + ClipboardItem，无需任何降级或 DOM 操纵
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([msg.content], { type: 'text/plain' }),
+        }),
+      ]);
       antMessage.success('已复制到剪贴板');
-    }).catch(() => {
-      antMessage.error('复制失败');
-    });
+    } catch (err) {
+      antMessage.error('复制失败,请检查浏览器剪贴板权限');
+    }
   }, [msg.content, antMessage]);
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -524,7 +531,7 @@ const UserMessageItem = React.memo(({ msg, isHovered, onHover, onLeave, onRewind
 const AssistantMessageItem = React.memo(({ msg, msgIdx, messages, currentSessionId, currentProject, fileChangeRefreshKey, fileChangesMap, handleBlockToggle, onFileClick }: {
   msg: LLMMessage;
   msgIdx: number;
-  messages: LLMMessage[];
+  messages: Message[];
   currentSessionId: string | null;
   currentProject: any;
   fileChangeRefreshKey: number;
@@ -543,65 +550,51 @@ const AssistantMessageItem = React.memo(({ msg, msgIdx, messages, currentSession
     return blocks.filter(b => b.type === 'file_changes' && !b.file_changes?.some((fc: any) => fc._preview)).flatMap(b => b.file_changes || []);
   };
 
+  // 所有 assistant 消息都显示 LLM 回复块（AI 头像/名称/时间/tokens）
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <div style={{ width: 28, height: 28, borderRadius: 6, background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <RobotOutlined style={{ color: '#fff', fontSize: 14 }} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13, color: 'var(--text-100)', fontWeight: 500 }}>
-            {extractAgentName(msg) || 'AI助手'}
-          </Text>
-          <Text style={{ fontSize: 12, color: 'var(--text-300)' }}>
-            {formatSmartTime(msg.timestamp)}
-          </Text>
-          {msg.tokens != null && msg.tokens > 0 && (
-            <Text style={{ fontSize: 11, color: 'var(--text-400)', background: 'var(--bg-200)', padding: '0 6px', borderRadius: 4 }}>
-              {msg.tokens >= 1000 ? `${(msg.tokens / 1000).toFixed(1)}k` : msg.tokens} tokens
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <div style={{ width: 28, height: 28, borderRadius: 6, background: 'linear-gradient(135deg, var(--primary-100), var(--primary-200))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <RobotOutlined style={{ color: '#fff', fontSize: 14 }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 13, color: 'var(--text-100)', fontWeight: 500 }}>
+              {extractAgentName(msg) || 'AI助手'}
             </Text>
+            <Text style={{ fontSize: 12, color: 'var(--text-300)' }}>
+              {formatSmartTime(msg.timestamp)}
+            </Text>
+            {msg.tokens != null && msg.tokens > 0 && (
+              <Text style={{ fontSize: 11, color: 'var(--text-400)', background: 'var(--bg-200)', padding: '0 6px', borderRadius: 4 }}>
+                {msg.tokens >= 1000 ? `${(msg.tokens / 1000).toFixed(1)}k` : msg.tokens} tokens
+              </Text>
+            )}
+          </div>
+          {msg.data && agentGroups.map((group, groupIdx) => (
+            <AgentGroupItem
+              key={groupIdx}
+              group={group}
+              msgId={msg.id}
+              isStreaming={false}
+              allMessageBlocks={msg.data!}
+              handleBlockToggle={handleBlockToggle}
+              fileChangesMap={fileChangesMap}
+              onFileClick={onFileClick}
+            />
+          ))}
+          {currentSessionId && (msg.status === 'completed' || msg.status === 'error' || msg.status === 'stopped') && (
+            <FileChangePanel
+              sessionId={currentSessionId}
+              messageId={msg.id}
+              subsequentMessageIds={messages.filter((m, i) => i > msgIdx && m.role === 'assistant').map(m => m.id)}
+              refreshKey={fileChangeRefreshKey}
+              workingDir={currentProject?.folder_path}
+              initialChanges={getFileChangesForMessage(msg.id, msg.data)}
+              onFileClick={onFileClick}
+            />
           )}
         </div>
-        {msg.data && agentGroups.map((group, groupIdx) => (
-          <AgentGroupItem
-            key={groupIdx}
-            group={group}
-            msgId={msg.id}
-            isStreaming={false}
-            allMessageBlocks={msg.data!}
-            handleBlockToggle={handleBlockToggle}
-            fileChangesMap={fileChangesMap}
-            onFileClick={onFileClick}
-          />
-        ))}
-        {msg.status === 'error' && msg.error && (
-          <div style={{
-            marginTop: 8,
-            padding: '8px 12px',
-            background: 'rgba(255, 77, 79, 0.08)',
-            borderLeft: '3px solid #ff4d4f',
-            borderRadius: 4,
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 8,
-          }}>
-            <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 14, marginTop: 2, flexShrink: 0 }} />
-            <Text style={{ fontSize: 13, color: '#ff4d4f', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.6 }}>
-              {msg.error}
-            </Text>
-          </div>
-        )}
-        {currentSessionId && (msg.status === 'completed' || msg.status === 'error' || msg.status === 'stopped') && (
-          <FileChangePanel
-            sessionId={currentSessionId}
-            messageId={msg.id}
-            subsequentMessageIds={messages.filter((m, i) => i > msgIdx && m.role === 'assistant').map(m => m.id)}
-            refreshKey={fileChangeRefreshKey}
-            workingDir={currentProject?.folder_path}
-            initialChanges={getFileChangesForMessage(msg.id, msg.data)}
-            onFileClick={onFileClick}
-          />
-        )}
       </div>
     </div>
   );
@@ -615,6 +608,25 @@ const AssistantMessageItem = React.memo(({ msg, msgIdx, messages, currentSession
     && prev.fileChangesMap === next.fileChangesMap
     && prev.handleBlockToggle === next.handleBlockToggle;
 });
+
+const SystemMessageItem = React.memo(({ msg }: { msg: SystemMessage }) => {
+  return (
+    <div style={{
+      padding: '8px 12px',
+      background: 'rgba(255, 77, 79, 0.08)',
+      borderLeft: '3px solid #ff4d4f',
+      borderRadius: 4,
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 8,
+    }}>
+      <CloseCircleOutlined style={{ color: '#ff4d4f', fontSize: 14, marginTop: 2, flexShrink: 0 }} />
+      <Text style={{ fontSize: 13, color: '#ff4d4f', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', lineHeight: 1.6 }}>
+        {msg.error}
+      </Text>
+    </div>
+  );
+}, (prev, next) => prev.msg === next.msg);
 
 export interface MessageListHandle {
   isAutoScrollEnabled: boolean;
@@ -788,6 +800,13 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(({ isWaiting
                     setMessages(prev => prev.filter(m => !deletedIds.includes(m.id)));
                   }}
                 />
+              );
+            }
+            if (msg.role === 'error') {
+              return (
+                <div key={msg.id} style={{ marginTop: -12 }}>
+                  <SystemMessageItem msg={msg} />
+                </div>
               );
             }
             return (

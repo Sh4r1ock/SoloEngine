@@ -219,7 +219,7 @@ class CompiledFlow:
             "agent_id": agent_id,
             "agent_name": agent_name,
             "status": status,
-            "output": output or error or "",
+            "output": output or "",  # ★ 只用 output，不用 error 填充，避免 error 污染 output
             "tokens": tokens,
             "token_usage": self._token_usage if self._token_usage else None,
             "duration_ms": duration_ms,
@@ -320,7 +320,7 @@ class CompiledFlow:
         except Exception as e:
             logger.error(f"[CompiledFlow.run] Execution failed: {e}", exc_info=True)
             return self._build_result_dict(
-                "failed", error=str(e), output=f"执行失败: {str(e)}",
+                "failed", error=str(e),  # ★ 不再设置 output=f"执行失败: {str(e)}"，避免 error 写入 output
                 session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
                 run_project_id=self.run_project_id,
             )
@@ -495,6 +495,7 @@ class CompiledFlow:
             response = await wrapped_reply(input_message)
 
             agent_core = agent._core if hasattr(agent, '_core') else None
+            was_interrupted = agent_core.is_interrupted() if agent_core else False
             if agent_core and hasattr(agent_core, '_conversation_history'):
                 history = agent_core.get_conversation_history()
                 last_user_idx = None
@@ -528,7 +529,7 @@ class CompiledFlow:
                 logger.info(f"[Token Usage] Accumulated: {tokens}, message_id: {message_id}")
             
             result = self._build_result_dict(
-                "completed", agent_id=agent_id, agent_name=agent_name,
+                "stop" if was_interrupted else "completed", agent_id=agent_id, agent_name=agent_name,
                 output=response, tokens=tokens, duration_ms=self._calc_duration_ms(),
                 agent_type=agent.agent_type, user_id=self.user_id,
                 agentic_flow_id=self.agentic_flow_id, run_project_id=self.run_project_id,
@@ -542,7 +543,7 @@ class CompiledFlow:
                 agent_name=agent_name,
                 content=openai_message.get("content", response) if openai_message else response,
                 message=openai_message,
-                status="completed",
+                status="stop" if was_interrupted else "completed",
             ))
             
             return result

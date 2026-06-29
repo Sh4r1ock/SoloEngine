@@ -242,5 +242,9 @@ SoloEngine.zip
 .encryption_key
 
 # 临时文件
-tmp_*
+*.swp
+*.swo
+
+# 前端构建输出
+frontend/dist/
 
