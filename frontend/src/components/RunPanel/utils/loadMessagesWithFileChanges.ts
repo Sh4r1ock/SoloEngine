@@ -1,7 +1,7 @@
 import { runApi } from '../../../services/runApi';
 import { fileChangesApi } from '../../../services/fileChangesApi';
 import { convertToLLMMessages } from './messageUtils';
-import type { LLMMessage, DataBlock, FileChangeInfo, SessionMessage, MessageFileChangesMap } from '../types';
+import type { LLMMessage, Message, DataBlock, FileChangeInfo, SessionMessage, MessageFileChangesMap } from '../types';
 
 const mapFileChange = (c: any): FileChangeInfo => ({
   file_path: c.file_path,
@@ -16,7 +16,7 @@ const mapFileChange = (c: any): FileChangeInfo => ({
   } : undefined,
 });
 
-export const loadMessages = async (sessionId: string): Promise<{ messages: LLMMessage[]; fileChangesMap: MessageFileChangesMap; rawMessages: SessionMessage[] }> => {
+export const loadMessages = async (sessionId: string): Promise<{ messages: Message[]; fileChangesMap: MessageFileChangesMap; rawMessages: SessionMessage[] }> => {
   const [msgs, fcResponse] = await Promise.all([
     runApi.getSessionMessages(sessionId),
     fileChangesApi.getSessionFileChanges(sessionId, { limit: 500, diff_type: 'net' } as any).catch(() => null),
@@ -39,7 +39,7 @@ export const loadMessages = async (sessionId: string): Promise<{ messages: LLMMe
     total_tokens: msg.total_tokens,
   }));
 
-  const restoredMessages: LLMMessage[] = convertToLLMMessages(rawMessages);
+  const restoredMessages: Message[] = convertToLLMMessages(rawMessages);
 
   const fileChangesMap: MessageFileChangesMap = {};
 

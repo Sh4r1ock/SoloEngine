@@ -47,7 +47,6 @@ from .model_base import ChatModelBase
 from .model_usage import ChatUsage
 from ..message import (
     TextBlock as SoloTextBlock,
-    ToolUseBlock as SoloToolUseBlock,
     ThinkingBlock as SoloThinkingBlock,
 )
 from ..utils.logging import logger
@@ -243,9 +242,9 @@ class OllamaChatModel(ChatModelBase):
         try:
             async for line in response.aiter_lines():
                 if cancel_event and cancel_event.is_set():
-                    logger.info("[Ollama] Cancel event detected")
+                    logger.info("[Ollama] Cancel event detected, breaking stream loop")
                     self._was_cancelled = True
-                    raise asyncio.CancelledError()
+                    break
                 if not line.strip():
                     continue
 
@@ -287,23 +286,21 @@ class OllamaChatModel(ChatModelBase):
                         )
 
                     # Yield response periodically
-                    contents = []
+                    # 逐个 yield，每个 ChatResponse 只含一种 block type
                     if thinking and len(thinking) > len(last_thinking):
                         delta_thinking_content = thinking[len(last_thinking):]
-                        contents.append(
-                            SoloThinkingBlock(
-                                type="thinking",
-                                thinking=delta_thinking_content,
-                            ),
+                        yield ChatResponse(
+                            content=[SoloThinkingBlock(type="thinking", thinking=delta_thinking_content)],
+                            usage=usage,
+                            metadata=None,
                         )
                         last_thinking = thinking
                     if text and len(text) > len(last_text):
                         delta_text_content = text[len(last_text):]
-                        contents.append(
-                            SoloTextBlock(
-                                type="text",
-                                text=delta_text_content,
-                            ),
+                        yield ChatResponse(
+                            content=[SoloTextBlock(type="text", text=delta_text_content)],
+                            usage=usage,
+                            metadata=None,
                         )
                         last_text = text
                     
@@ -362,19 +359,16 @@ class OllamaChatModel(ChatModelBase):
                                     logger.info(f"[Ollama] Tool call args delta: index={index}, delta={delta_args[:50]}...")
                         
                         for chunk_data in tool_call_chunks:
-                            contents.append({
-                                "type": "tool_calls",
-                                "tool_calls": [chunk_data],
-                            })
+                            yield ChatResponse(
+                                content=[{
+                                    "type": "tool_calls",
+                                    "tool_calls": [chunk_data],
+                                }],
+                                usage=usage,
+                                metadata=None,
+                            )
                     
                     last_tool_calls = OrderedDict(tool_calls)
-                    
-                    if contents:
-                        yield ChatResponse(
-                            content=contents,
-                            usage=usage,
-                            metadata=None,
-                        )
 
         except Exception as e:
             logger.error(f"Error parsing Ollama stream: {e}")
@@ -411,7 +405,7 @@ class OllamaChatModel(ChatModelBase):
             )
 
         content_blocks: list[
-            SoloTextBlock | SoloToolUseBlock | SoloThinkingBlock
+            SoloTextBlock | dict | SoloThinkingBlock
         ] = []
         metadata: dict | None = None
 
@@ -450,14 +444,18 @@ class OllamaChatModel(ChatModelBase):
                             )
                         elif block.get("type") == "tool_calls":
                             for tool_call in block.get("tool_calls", []):
-                                content_blocks.append(
-                                    SoloToolUseBlock(
-                                        type="tool_use",
-                                        id=tool_call.get("id", ""),
-                                        name=tool_call.get("function", {}).get("name", ""),
-                                        input=tool_call.get("arguments", {}),
-                                    ),
-                                )
+                                content_blocks.append({
+                                    "type": "tool_calls",
+                                    "tool_calls": [{
+                                        "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                        "id": tool_call.get("id", ""),
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool_call.get("function", {}).get("name", ""),
+                                            "arguments": json.dumps(tool_call.get("arguments", {}), ensure_ascii=False),
+                                        },
+                                    }],
+                                })
 
         if "prompt_eval_count" in data and "eval_count" in data:
             usage = ChatUsage(

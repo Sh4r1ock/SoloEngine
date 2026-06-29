@@ -290,6 +290,45 @@ class ToolUseBlock(TypedDict, total=False):
     """工具参数，格式取决于工具定义"""
 
 
+class ToolCallFunction(TypedDict, total=False):
+    """工具调用函数信息"""
+    name: str
+    """函数名称"""
+    arguments: str
+    """函数参数（JSON 字符串）"""
+
+
+class ToolCallItem(TypedDict, total=False):
+    """单个工具调用项"""
+    index: int
+    """工具调用索引"""
+    id: str
+    """工具调用唯一标识符"""
+    type: Literal["function"]
+    """调用类型，固定为 "function" """
+    function: ToolCallFunction
+    """函数信息"""
+    status: str
+    """状态："start" 或 "end" """
+
+
+class ToolCallsBlock(TypedDict, total=False):
+    """
+    工具调用块（OpenAI 格式）。
+
+    用于表示 LLM 请求调用的工具，包含工具调用列表。
+    这是 SoloEngine 内部统一使用的工具调用格式。
+
+    Attributes:
+        type (Literal["tool_calls"]): 块类型标识，固定为 "tool_calls"。
+        tool_calls (List[ToolCallItem]): 工具调用列表。
+    """
+    type: Required[Literal["tool_calls"]]
+    """块类型标识，固定为 "tool_calls" """
+    tool_calls: Required[List[ToolCallItem]]
+    """工具调用列表"""
+
+
 class ToolResultBlock(TypedDict, total=False):
     """
     工具调用结果块。
@@ -332,7 +371,7 @@ class ToolResultBlock(TypedDict, total=False):
 
 
 ContentBlock = (
-    ToolUseBlock
+    ToolCallsBlock
     | ToolResultBlock
     | TextBlock
     | ThinkingBlock

@@ -72,7 +72,6 @@ from .model_base import ChatModelBase
 from .model_usage import ChatUsage
 from ..message import (
     TextBlock as SoloTextBlock,
-    ToolUseBlock as SoloToolUseBlock,
     ThinkingBlock as SoloThinkingBlock,
 )
 from ..utils.logging import logger
@@ -376,9 +375,9 @@ class QwenChatModel(ChatModelBase):
         try:
             async for chunk in response:
                 if cancel_event and cancel_event.is_set():
-                    logger.info("[Qwen] Cancel event detected")
+                    logger.info("[Qwen] Cancel event detected, breaking stream loop")
                     self._was_cancelled = True
-                    raise asyncio.CancelledError()
+                    break
                 if hasattr(chunk, "usage") and chunk.usage:
                     total_input_tokens = getattr(chunk.usage, 'input_tokens', None) or getattr(chunk.usage, 'prompt_tokens', None)
                     total_output_tokens = getattr(chunk.usage, 'output_tokens', None) or getattr(chunk.usage, 'completion_tokens', None)
@@ -398,6 +397,13 @@ class QwenChatModel(ChatModelBase):
                                 logger.info(f"[Qwen Stream] usage at end: input={total_input_tokens}, output={total_output_tokens}")
                         elif finish_reason == "tool_calls":
                             stop_reason = "tool_use"
+                            # tool_calls 完成时也需要创建 usage
+                            if total_input_tokens is not None or total_output_tokens is not None:
+                                usage = ChatUsage(
+                                    input_tokens=total_input_tokens,
+                                    output_tokens=total_output_tokens,
+                                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                                )
                         logger.info(f"[Qwen Stream] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
                     
                     if isinstance(output, list) and output:
@@ -431,26 +437,25 @@ class QwenChatModel(ChatModelBase):
                                         elif block.get("type") == "thinking":
                                             thinking += block.get("text", "")
 
-                contents = []
+                last_tool_calls = OrderedDict(tool_calls)
+                
+                # 逐个 yield，每个 ChatResponse 只含一种 block type
                 if thinking and len(thinking) > len(last_thinking):
                     delta_thinking_content = thinking[len(last_thinking):]
-                    contents.append(
-                        SoloThinkingBlock(
-                            type="thinking",
-                            thinking=delta_thinking_content,
-                        ),
+                    yield ChatResponse(
+                        content=[SoloThinkingBlock(type="thinking", thinking=delta_thinking_content)],
+                        usage=usage,
+                        metadata=None,
                     )
                     last_thinking = thinking
                 if text and len(text) > len(last_text):
                     delta_text_content = text[len(last_text):]
-                    contents.append(
-                        SoloTextBlock(
-                            type="text",
-                            text=delta_text_content,
-                        ),
+                    yield ChatResponse(
+                        content=[SoloTextBlock(type="text", text=delta_text_content)],
+                        usage=usage,
+                        metadata=None,
                     )
                     last_text = text
-                
                 for tool_id, tool_call in tool_calls.items():
                     index = list(tool_calls.keys()).index(tool_id)
                     last_call = last_tool_calls.get(tool_id)
@@ -500,22 +505,16 @@ class QwenChatModel(ChatModelBase):
                                 logger.info(f"[Qwen] Tool call args delta: index={index}, delta={delta_args[:50]}...")
                     
                     for chunk_data in tool_call_chunks:
-                        contents.append({
-                            "type": "tool_calls",
-                            "tool_calls": [chunk_data],
-                        })
+                        yield ChatResponse(
+                            content=[{
+                                "type": "tool_calls",
+                                "tool_calls": [chunk_data],
+                            }],
+                            usage=usage,
+                            metadata=None,
+                        )
                 
                 last_tool_calls = OrderedDict(tool_calls)
-                
-                if contents:
-                    res = ChatResponse(
-                        content=contents,
-                        usage=usage,
-                        metadata=None,
-                        stop_reason=stop_reason,
-                        finish_reason=finish_reason,
-                    )
-                    yield res
         finally:
             self._clear_response_ref()
 
@@ -536,7 +535,7 @@ class QwenChatModel(ChatModelBase):
             ChatResponse: The parsed response.
         """
         content_blocks: list[
-            SoloTextBlock | SoloToolUseBlock | SoloThinkingBlock
+            SoloTextBlock | dict | SoloThinkingBlock
         ] = []
         metadata: dict | None = None
 
@@ -560,14 +559,18 @@ class QwenChatModel(ChatModelBase):
                         )
                     elif hasattr(msg, "tool_calls") and msg.tool_calls:
                         for tool_call in msg.tool_calls:
-                            content_blocks.append(
-                                SoloToolUseBlock(
-                                    type="tool_use",
-                                    id=tool_call.get("id", ""),
-                                    name=tool_call.get("function", {}).get("name", ""),
-                                    input=tool_call.get("function", {}).get("arguments", {}),
-                                ),
-                            )
+                            content_blocks.append({
+                                "type": "tool_calls",
+                                "tool_calls": [{
+                                    "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                    "id": tool_call.get("id", ""),
+                                    "type": "function",
+                                    "function": {
+                                        "name": tool_call.get("function", {}).get("name", ""),
+                                        "arguments": json.dumps(tool_call.get("function", {}).get("arguments", {}), ensure_ascii=False),
+                                    },
+                                }],
+                            })
                     elif hasattr(msg, "content") and msg.content:
                         # Handle content blocks
                         for block in msg.content:

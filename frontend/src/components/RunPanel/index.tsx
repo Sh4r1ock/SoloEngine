@@ -62,11 +62,12 @@ import { runProjectApi, RecentProjectInfo, FileInfo } from '../../services/runPr
 
 import MessageList, { type MessageListHandle } from './components/MessageList';
 import MessageInput from './components/MessageInput';
+import QueueBar from './components/QueueBar';
 import ScrollNavigationButtons from './components/ScrollNavigationButtons';
 import SessionList from './components/SessionList';
 import AgenticPanel from './components/AgenticPanel';
 import FileExplorer from './FileExplorer';
-import type { LLMMessage, DataBlock, FileTab, CallRecord, CallType, SubagentOutput } from './types';
+import type { LLMMessage, Message, DataBlock, FileTab, CallRecord, CallType, SubagentOutput, SystemMessage } from './types';
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -255,6 +256,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const [isDragging, setIsDragging] = useState<number | null>(null);
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartRatios, setDragStartRatios] = useState<number[]>([]);
+  const [queueMessages, setQueueMessages] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const messageScrollContainerRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<MessageListHandle>(null);
@@ -362,6 +364,37 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     init();
   }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setFileChangesMap]);
 
+  const createLLMMessage = useCallback((
+    finalData: DataBlock[],
+    messageStatus: 'completed' | 'stopped' | 'error',
+    totalTokens?: number,
+    errorMessage?: string,
+  ): LLMMessage => {
+    const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
+    return {
+      id: msgId,
+      role: 'assistant',
+      content: '',
+      data: finalData,
+      timestamp: new Date().toISOString(),
+      status: messageStatus,
+      tokens: totalTokens,
+      error: errorMessage,
+    };
+  }, []);
+
+  const createSystemMessage = useCallback((
+    errorMessage: string,
+  ): SystemMessage => {
+    return {
+      id: `msg_error_${Date.now()}`,
+      role: 'error',
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+      status: 'error',
+    };
+  }, []);
+
   const handleExecutionEnd = useCallback((
     streamingHook: any,
     messageStatus: 'completed' | 'stopped' | 'error',
@@ -384,27 +417,34 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         : undefined);
 
     // 步骤1：消息创建（仅首次）
+    // 所有 assistant 消息都显示 LLM 回复块（AI 头像/名称/时间/tokens），error 分离为 SystemMessage
     if (!messageAddedRef.current) {
-      const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
-      const endMessage: LLMMessage = {
-        id: msgId,
-        role: 'assistant',
-        content: '',
-        data: finalData,
-        timestamp: new Date().toISOString(),
-        status: messageStatus,
-        tokens: totalTokens,
-        error: messageStatus === 'error' ? (errorMessage || '执行失败') : undefined,
-      };
-      setMessages(prev => [...prev, endMessage]);
-      messageAddedRef.current = true;
+      const newMessages: Message[] = [];
+      
+      // 调用方判断：有LLM输出才创建 assistant 消息
+      const hasLLMOutput = finalData && finalData.length > 0;
+      if (hasLLMOutput) {
+        newMessages.push(createLLMMessage(finalData, messageStatus, totalTokens, errorMessage));
+      }
+
+      // 调用方判断：有错误才创建 SystemMessage
+      if (errorMessage) {
+        newMessages.push(createSystemMessage(errorMessage));
+      }
+
+      if (newMessages.length > 0) {
+        setMessages(prev => [...prev, ...newMessages]);
+        messageAddedRef.current = true;
+      }
     }
 
     // 步骤2：Token 更新（有 tokenData 时始终执行，与正常/停止路径无关）
     if (currentSessionId) {
       setMessages(prev => {
         const lastAssistantIdx = prev.reduce((lastIdx, msg, idx) => {
-          if (msg.role === 'assistant') return idx;
+          if (msg.role === 'assistant') {
+            return idx;
+          }
           return lastIdx;
         }, -1);
         if (lastAssistantIdx === -1) return prev;
@@ -458,7 +498,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     const streamingHook = streamingDataHookRef.current;
 
     switch (event.event_type) {
-      case 'execution_start':
+      case 'execution_start': {
+        // 生成新的 assistant message id，避免队列 drain 场景下复用上一次 id 导致 React key 冲突
+        const newAssistantMsgId = `msg_asst_${Date.now()}`;
+        setCurrentMsgId(newAssistantMsgId);
+        currentMsgIdRef.current = newAssistantMsgId;
+        streamingDataHookRef.current.setCurrentMsgIdRef(newAssistantMsgId);
+
         setCallRecords([]);
         clearSubagentOutputs();
         clearAgentTokens();
@@ -467,6 +513,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         startRunning();
         setIsWaitingReply(true);
         break;
+      }
 
       case 'agent_start':
         break;
@@ -722,13 +769,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
                       messages: updatedMessages.map((m, i): any => ({
                         id: m.id,
                         role: m.role,
-                        content: m.content || '',
-                        reasoning_content: m.reasoning_content,
-                        data: m.data || [],
+                        content: (m as LLMMessage).content || '',
+                        reasoning_content: (m as LLMMessage).reasoning_content,
+                        data: (m as LLMMessage).data || [],
                         message_index: i,
                         timestamp: m.timestamp,
                         created_at: m.timestamp,
-                        tokens: m.tokens,
+                        tokens: (m as LLMMessage).tokens,
                       }))
                     }
                   : s
@@ -744,6 +791,33 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'execution_stopped': {
         const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
         handleExecutionEnd(streamingHook, 'stopped', 'cancelled', tokenData);
+        break;
+      }
+
+      case 'message_queued': {
+        const queuedContent = (event as any).content || '';
+        setQueueMessages(prev => [...prev, queuedContent]);
+        break;
+      }
+
+      case 'queue_drained': {
+        const drainedContent = (event as any).content || '';
+        setQueueMessages([]);
+        // 添加 user message 到消息列表
+        const userMsg: LLMMessage = {
+          id: `msg_user_${Date.now()}`,
+          role: 'user',
+          content: drainedContent,
+          timestamp: new Date().toISOString(),
+          status: 'completed',
+        };
+        setMessages(prev => [...prev, userMsg]);
+        break;
+      }
+
+      case 'queue_returned': {
+        setQueueMessages([]);
+        setInputText((event as any).messages?.join('\n') || '');
         break;
       }
 
@@ -777,7 +851,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     setIsWaitingReply(false);
   }, [stopRunning, setIsWaitingReply]);
 
-  const { isConnected, executeFlow, stopFlow } = useRunWebSocket({
+  const { isConnected, executeFlow, stopFlow, send } = useRunWebSocket({
     agenticFlowId: agenticFlowId || null,
     sessionId: currentSessionId,
     runProjectId: currentProject?.id || null,
@@ -816,23 +890,31 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             : undefined);
 
         if (!messageAddedRef.current) {
-          const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
           const statusMap: Record<string, string> = {
             completed: 'completed',
             failed: 'error',
             stop: 'stopped',
           };
-          const assistantMessage: LLMMessage = {
-            id: msgId,
-            role: 'assistant',
-            content: '',
-            data: finalData,
-            timestamp: new Date().toISOString(),
-            status: (statusMap[sessionStatus] || 'completed') as any,
-            tokens: totalTokens,
-          };
-          setMessages(prev => [...prev, assistantMessage]);
-          messageAddedRef.current = true;
+          const finalStatus = (statusMap[sessionStatus] || 'completed') as any;
+          const errorMessage = sessionStatus === 'failed' ? (sessionData?.error || '执行失败') : undefined;
+
+          const newMessages: Message[] = [];
+
+          // 调用方判断：有LLM输出才创建 assistant 消息
+          const hasLLMOutput = finalData && finalData.length > 0;
+          if (hasLLMOutput) {
+            newMessages.push(createLLMMessage(finalData, finalStatus, totalTokens, errorMessage));
+          }
+
+          // 调用方判断：有错误才创建 SystemMessage
+          if (errorMessage) {
+            newMessages.push(createSystemMessage(errorMessage));
+          }
+
+          if (newMessages.length > 0) {
+            setMessages(prev => [...prev, ...newMessages]);
+            messageAddedRef.current = true;
+          }
         }
 
         stopRunning();
@@ -991,9 +1073,15 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       return;
     }
 
-    // 添加运行状态检查
+    // 运行状态检查：LLM 运行时，消息入队（发送到后端，由后端 run.py 消息队列管理机制管理）
     if (isRunning || isWaitingReply) {
-      message.warning('请等待当前对话完成后再发送新消息');
+      const currentInputText = inputText;
+      setInputText('');
+      if (isConnectedRef.current) {
+        await executeFlow(canvasData, currentInputText, agenticFlowId, currentSessionId || undefined, currentProject?.id);
+      } else {
+        message.warning('WebSocket 未连接，无法加入队列');
+      }
       return;
     }
 
@@ -1357,6 +1445,12 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               </div>
               <ScrollNavigationButtons containerRef={messageScrollContainerRef} messageListRef={messageListRef} />
             </div>
+            {queueMessages.length > 0 && (
+              <QueueBar messages={queueMessages} onRemove={(index) => {
+                send('queue_remove', { index });
+                setQueueMessages(prev => prev.filter((_, i) => i !== index));
+              }} />
+            )}
             <MessageInput
               value={inputText}
               onChange={setInputText}

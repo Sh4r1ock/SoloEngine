@@ -51,9 +51,7 @@ import anthropic
 from anthropic.types import (
     Message,
     TextBlock,
-    ImageBlockParam,
     ToolUseBlock,
-    ToolResultBlockParam,
 )
 
 try:
@@ -68,7 +66,6 @@ from .model_base import ChatModelBase
 from .model_usage import ChatUsage
 from ..message import (
     TextBlock as SoloTextBlock,
-    ToolUseBlock as SoloToolUseBlock,
     ThinkingBlock as SoloThinkingBlock,
 )
 from ..utils.logging import logger
@@ -80,98 +77,6 @@ if TYPE_CHECKING:
 else:
     AsyncStream = "anthropic.AsyncStream"
 
-
-def _convert_anthropic_message_to_solo_format(
-    msg: Message,
-) -> dict:
-    """
-    将 Anthropic 消息转换为 SoloEngine 格式。
-    
-    Anthropic API 返回的消息格式与 SoloEngine 内部格式不同，
-    此函数负责格式转换。
-    
-    Args:
-        msg (Message): Anthropic 消息对象。
-    
-    Returns:
-        dict: SoloEngine 格式的消息字典，包含：
-            - role: 消息角色
-            - content: 内容块列表
-    
-    Note:
-        支持转换的内容块类型：
-        - TextBlock: 文本内容
-        - ImageBlockParam: 图像内容
-        - ThinkingBlock: 思考过程
-        - ToolResultBlockParam: 工具调用结果
-    """
-    content = []
-
-    if hasattr(msg, 'content') and msg.content:
-        for block in msg.content:
-            if isinstance(block, TextBlock):
-                content.append({
-                    "type": "text",
-                    "text": block.text,
-                })
-            elif isinstance(block, ImageBlockParam):
-                source = None
-                if isinstance(block.source, dict):
-                    if "data" in block.source:
-                        source = {
-                            "type": "base64",
-                            "media_type": block.source.get("media_type", "image/jpeg"),
-                            "data": block.source["data"],
-                        }
-                    elif "url" in block.source:
-                        source = {
-                            "type": "url",
-                            "url": block.source["url"],
-                        }
-
-                if source:
-                    content.append({
-                        "type": "image",
-                        "source": source,
-                    })
-            elif HAS_THINKING_BLOCK and isinstance(block, ThinkingBlock):
-                content.append({
-                    "type": "thinking",
-                    "thinking": block.text,
-                })
-
-    if isinstance(msg, dict) and "role" in msg and msg["role"] == "user":
-        if "tool_result_blocks" in msg:
-            for result in msg["tool_result_blocks"]:
-                if isinstance(result, ToolResultBlockParam):
-                    result_block = {
-                        "type": "tool_result",
-                        "id": result.tool_use_id,
-                        "name": result.content[0].text if result.content else "",
-                        "output": None,
-                    }
-                    if result.content:
-                        result_block["output"] = "\n".join(
-                            block.text for block in result.content
-                            if isinstance(block, TextBlock)
-                        )
-                    content.append(result_block)
-
-    if isinstance(msg, dict) and "role" in msg and msg["role"] == "assistant":
-        if "content" in msg:
-            for block in msg["content"]:
-                if isinstance(block, ToolUseBlock):
-                    content.append({
-                        "type": "tool_use",
-                        "id": block.id,
-                        "name": block.name,
-                        "input": block.input if isinstance(block.input, dict) else {},
-                    })
-
-    return {
-        "role": msg.role if hasattr(msg, 'role') else msg.get("role"),
-        "content": content,
-    }
 
 
 class AnthropicChatModel(ChatModelBase):
@@ -307,9 +212,13 @@ class AnthropicChatModel(ChatModelBase):
                 f"Anthropic 'messages' field expected type 'list', "
                 f"got {type(messages)} instead."
             )
+
+        # 将 OpenAI 格式消息转换为 Anthropic 格式
+        messages = self._convert_openai_to_anthropic_messages(messages)
+
         if not all("role" in msg and "content" in msg for msg in messages):
             raise ValueError(
-                "Each message in 'messages' list must contain a 'role' "
+                "Each message in the 'messages' list must contain a 'role' "
                 "and 'content' key for Anthropic API."
             )
 
@@ -430,8 +339,6 @@ class AnthropicChatModel(ChatModelBase):
         tool_calls = OrderedDict()
         metadata: dict | None = None
         current_response_id = None
-        last_text = ""  # 记录上次输出的文本，用于计算增量
-        last_thinking = ""  # 记录上次输出的思考内容，用于计算增量
         stop_reason = None  # 记录停止原因
 
         try:
@@ -439,90 +346,81 @@ class AnthropicChatModel(ChatModelBase):
                 self._save_response_ref(stream)
                 async for event in stream:
                     if cancel_event and cancel_event.is_set():
-                        logger.info("[Anthropic] Cancel event detected")
+                        logger.info("[Anthropic] Cancel event detected, breaking stream loop")
                         self._was_cancelled = True
-                        raise asyncio.CancelledError()
+                        break
                     if event.type == "message_start":
                         current_response_id = event.message.id
                         if hasattr(event.message, "stop_reason"):
                             stop_reason = event.message.stop_reason
+                        # message_start 事件中包含 input_tokens，直接捕获
+                        if hasattr(event.message, "usage") and event.message.usage:
+                            usage = ChatUsage(
+                                input_tokens=getattr(event.message.usage, 'input_tokens', 0) or 0,
+                                output_tokens=getattr(event.message.usage, 'output_tokens', 0) or 0,
+                                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                            )
+                            logger.info(f"[Anthropic Stream] message_start usage: input={usage.input_tokens}")
                     elif event.type == "content_block_start":
                         if event.content_block.type == "text":
                             text = ""
                         elif event.content_block.type == "thinking":
                             thinking = ""
                     elif event.type == "content_block_delta":
-                        if event.content_block.type == "text":
-                            delta_text = event.delta.text
-                            text += delta_text
-                        elif event.content_block.type == "thinking":
-                            delta_thinking = event.delta.text
-                            thinking += delta_thinking
-                        elif event.content_block.type == "input_json":
-                            if event.delta.type == "tool_use":
-                                tool_use_id = event.content_block.index
-                                if tool_use_id not in tool_calls:
-                                    tool_calls[tool_use_id] = {
-                                        "type": "tool_use",
-                                        "id": tool_use_id,
-                                        "name": "",
-                                        "input": {},
-                                    }
-                                if event.delta.partial_json:
-                                    tool_calls[tool_use_id]["input"].update(
-                                        event.delta.partial_json
-                                    )
-                                    tool_calls[tool_use_id]["name"] = event.delta.partial_json.get(
-                                        "name", ""
-                                    )
-                        
-                        # 增量输出
-                        contents = []
-                        if thinking and len(thinking) > len(last_thinking):
-                            delta_thinking_content = thinking[len(last_thinking):]
-                            contents.append(
-                                SoloThinkingBlock(
-                                    type="thinking",
-                                    thinking=delta_thinking_content,
-                                ),
-                            )
-                            last_thinking = thinking
-                        if text and len(text) > len(last_text):
-                            delta_text_content = text[len(last_text):]
-                            contents.append(
-                                SoloTextBlock(
-                                    type="text",
-                                    text=delta_text_content,
-                                ),
-                            )
-                            last_text = text
-                        
-                        if contents:
-                            res = ChatResponse(
-                                content=contents,
+                        if event.delta.type == "text_delta":
+                            # 直接输出 SDK 提供的增量文本，单一 block type
+                            text += event.delta.text
+                            yield ChatResponse(
+                                content=[SoloTextBlock(type="text", text=event.delta.text)],
                                 usage=usage,
                                 metadata=metadata,
                             )
-                            yield res
+                        elif event.delta.type == "thinking_delta":
+                            # 直接输出 SDK 提供的增量思考内容，单一 block type
+                            thinking += event.delta.thinking
+                            yield ChatResponse(
+                                content=[SoloThinkingBlock(type="thinking", thinking=event.delta.thinking)],
+                                usage=usage,
+                                metadata=metadata,
+                            )
+                        elif event.delta.type == "input_json_delta":
+                            # 累积完整 JSON（供 content_block_stop 后执行），同时输出增量
+                            tool_use_id = event.content_block.index
+                            if tool_use_id not in tool_calls:
+                                tool_calls[tool_use_id] = {
+                                    "type": "tool_use",
+                                    "id": tool_use_id,
+                                    "name": "",
+                                    "input": {},
+                                }
+                            if event.delta.partial_json:
+                                tool_calls[tool_use_id]["input"].update(
+                                    event.delta.partial_json
+                                )
+                                tool_calls[tool_use_id]["name"] = event.delta.partial_json.get(
+                                    "name", ""
+                                )
+                            tool_call_delta = {
+                                "index": list(tool_calls.keys()).index(tool_use_id),
+                                "id": tool_use_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_calls[tool_use_id]["name"],
+                                    "arguments": event.delta.partial_json or "",
+                                }
+                            }
+                            yield ChatResponse(
+                                content=[{
+                                    "type": "tool_calls",
+                                    "tool_calls": [tool_call_delta],
+                                }],
+                                usage=usage,
+                                metadata=metadata,
+                            )
                             
                     elif event.type == "content_block_stop":
-                        # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
-                        contents = []
-                        if thinking:
-                            contents.append(
-                                SoloThinkingBlock(
-                                    type="thinking",
-                                    thinking=thinking,
-                                ),
-                            )
-                        if text:
-                            contents.append(
-                                SoloTextBlock(
-                                    type="text",
-                                    text=text,
-                                ),
-                            )
-                        # 工具调用输出增量格式
+                        # 工具调用 block 结束：输出完整的 tool_calls 供 ReActCore 执行
+                        # 每个 tool_call 单独一个 ChatResponse（单一 block type）
                         for tool_id, tool_call in tool_calls.items():
                             tool_call_delta = {
                                 "index": list(tool_calls.keys()).index(tool_id),
@@ -533,41 +431,38 @@ class AnthropicChatModel(ChatModelBase):
                                     "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
                                 }
                             }
-                            contents.append({
-                                "type": "tool_calls",
-                                "tool_calls": [tool_call_delta],
-                            })
-                        if contents:
-                            res = ChatResponse(
-                                content=contents,
+                            yield ChatResponse(
+                                content=[{
+                                    "type": "tool_calls",
+                                    "tool_calls": [tool_call_delta],
+                                }],
                                 usage=usage,
                                 metadata=metadata,
                             )
-                            yield res
                     elif event.type == "message_delta":
                         if event.delta.type == "delta" and event.delta.text:
                             text += event.delta.text
                         if hasattr(event, "delta") and hasattr(event.delta, "stop_reason"):
                             stop_reason = event.delta.stop_reason
                             logger.info(f"[Anthropic Stream] stop_reason detected: {stop_reason}")
+                        # message_delta 事件中包含 output_tokens（累积值）
+                        if hasattr(event, "usage") and event.usage:
+                            usage = ChatUsage(
+                                input_tokens=getattr(usage, 'input_tokens', 0) if usage else 0,
+                                output_tokens=event.usage.output_tokens,
+                                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                            )
+                            logger.info(f"[Anthropic Stream] message_delta usage: output={usage.output_tokens}")
                     elif event.type == "message_stop":
-                        # 不再输出完整 ToolUseBlock，由 ReActCore 从增量数据构建
-                        contents = []
-                        if thinking:
-                            contents.append(
-                                SoloThinkingBlock(
-                                    type="thinking",
-                                    thinking=thinking,
-                                ),
-                            )
-                        if text:
-                            contents.append(
-                                SoloTextBlock(
-                                    type="text",
-                                    text=text,
-                                ),
-                            )
-                        # 工具调用输出增量格式
+                        # 始终 yield 最终 usage（纯文本场景无 tool_calls 时也需要）
+                        yield ChatResponse(
+                            content=[],
+                            usage=usage,
+                            metadata=metadata,
+                            stop_reason=stop_reason,
+                            finish_reason="tool_calls" if tool_calls else stop_reason,
+                        )
+                        # 每个 tool_call 单独一个 ChatResponse
                         for tool_id, tool_call in tool_calls.items():
                             tool_call_delta = {
                                 "index": list(tool_calls.keys()).index(tool_id),
@@ -578,20 +473,13 @@ class AnthropicChatModel(ChatModelBase):
                                     "arguments": json.dumps(tool_call["input"], ensure_ascii=False),
                                 }
                             }
-                            contents.append({
-                                "type": "tool_calls",
-                                "tool_calls": [tool_call_delta],
-                            })
-                        
-                        if contents:
-                            res = ChatResponse(
-                                content=contents,
+                            yield ChatResponse(
+                                content=[{"type": "tool_calls", "tool_calls": [tool_call_delta]}],
                                 usage=usage,
                                 metadata=metadata,
                                 stop_reason=stop_reason,
-                                finish_reason="tool_calls" if tool_calls else stop_reason,
+                                finish_reason="tool_calls",
                             )
-                            yield res
                     elif event.type == "error":
                         logger.error(f"Anthropic stream error: {event.error}")
                         yield ChatResponse(
@@ -629,7 +517,7 @@ class AnthropicChatModel(ChatModelBase):
             ChatResponse: 包含内容块和使用量的响应对象。
         """
         content_blocks: list[
-            SoloTextBlock | SoloToolUseBlock | SoloThinkingBlock
+            SoloTextBlock | dict | SoloThinkingBlock
         ] = []
 
         if response.content:
@@ -649,14 +537,18 @@ class AnthropicChatModel(ChatModelBase):
                         ),
                     )
                 elif isinstance(block, ToolUseBlock):
-                    content_blocks.append(
-                        SoloToolUseBlock(
-                            type="tool_use",
-                            id=block.id,
-                            name=block.name,
-                            input=block.input if block.input else {},
-                        ),
-                    )
+                    content_blocks.append({
+                        "type": "tool_calls",
+                        "tool_calls": [{
+                            "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                            "id": block.id,
+                            "type": "function",
+                            "function": {
+                                "name": block.name,
+                                "arguments": json.dumps(block.input, ensure_ascii=False) if block.input else "{}",
+                            },
+                        }],
+                    })
 
         usage = None
         if response.usage:
@@ -690,3 +582,78 @@ class AnthropicChatModel(ChatModelBase):
             metadata=metadata,
             stop_reason=stop_reason,
         )
+
+    @staticmethod
+    def _convert_openai_to_anthropic_messages(messages: list[dict]) -> list[dict]:
+        """
+        将 OpenAI 格式消息转换为 Anthropic 格式。
+
+        转换规则：
+        1. assistant 消息中的 tool_calls → 转为 content 中的 tool_use 块
+        2. assistant 消息中的 reasoning_content → 转为 thinking 块
+        3. 连续的 role="tool" 消息 → 合并为一个 role="user" 的多个 tool_result 块
+        4. 其他消息保持不变
+
+        Args:
+            messages: OpenAI 格式消息列表
+
+        Returns:
+            Anthropic 格式消息列表
+        """
+        result = []
+        pending_tool_results = []
+
+        for msg in messages:
+            role = msg.get("role")
+
+            if role == "assistant" and "tool_calls" in msg:
+                # 先提交之前累积的 tool_result
+                if pending_tool_results:
+                    result.append({"role": "user", "content": pending_tool_results})
+                    pending_tool_results = []
+
+                # assistant 消息含 tool_calls → 转为 Anthropic content 块格式
+                content = []
+                # reasoning_content → thinking 块
+                reasoning = msg.get("reasoning_content")
+                if reasoning:
+                    content.append({"type": "thinking", "thinking": reasoning})
+                text = msg.get("content")
+                if text:
+                    content.append({"type": "text", "text": text})
+                for tc in msg.get("tool_calls", []):
+                    func = tc.get("function", {})
+                    args = func.get("arguments", "{}")
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args) if args.strip() else {}
+                        except json.JSONDecodeError:
+                            args = {}
+                    content.append({
+                        "type": "tool_use",
+                        "id": tc.get("id", ""),
+                        "name": func.get("name", ""),
+                        "input": args,
+                    })
+                result.append({"role": "assistant", "content": content})
+
+            elif role == "tool":
+                # 累积 tool_result，后续合并
+                pending_tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": msg.get("tool_call_id", ""),
+                    "content": msg.get("content", ""),
+                })
+
+            else:
+                # 先提交之前累积的 tool_result
+                if pending_tool_results:
+                    result.append({"role": "user", "content": pending_tool_results})
+                    pending_tool_results = []
+                result.append(msg)
+
+        # 提交最后的 tool_result
+        if pending_tool_results:
+            result.append({"role": "user", "content": pending_tool_results})
+
+        return result

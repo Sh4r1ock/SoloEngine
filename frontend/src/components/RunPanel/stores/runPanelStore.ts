@@ -10,6 +10,7 @@ import { runProjectApi, SelectOrCreateProjectResponse, FileInfo as ProjectFileIn
 import { insertTreeNode, removeTreeNode, moveTreeNode } from '../utils/treePatchUtils';
 import type {
   LLMMessage,
+  Message,
   DataBlock,
   CallRecord,
   SubagentOutput,
@@ -39,7 +40,7 @@ interface RunPanelState {
   searchQuery: string;
   isRunning: boolean;
 
-  messages: LLMMessage[];
+  messages: Message[];
   streamingData: DataBlock[];
   inputText: string;
   isWaitingReply: boolean;
@@ -94,8 +95,8 @@ interface RunPanelState {
   startRunning: () => void;
   stopRunning: () => void;
 
-  addMessage: (message: LLMMessage) => void;
-  setMessages: (messages: LLMMessage[] | ((prev: LLMMessage[]) => LLMMessage[])) => void;
+  addMessage: (message: Message) => void;
+  setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void;
   clearMessages: () => void;
   setStreamingData: (data: DataBlock[] | ((prev: DataBlock[]) => DataBlock[])) => void;
   clearStreamingData: () => void;
@@ -680,12 +681,20 @@ const _createStore = () => createStore<RunPanelState>()(
           return null;
         }
         const newSessionId = crypto.randomUUID();
-        set({
+        const newSession: ExtendedRunSession = {
+          id: newSessionId,
+          status: 'pending',
+          name: '新任务',
+          createdAt: new Date().toISOString(),
+          messages: [],
+        };
+        set((state) => ({
           currentSessionId: newSessionId,
+          sessions: [newSession, ...state.sessions],
           messages: [],
           fileChangesLoaded: false,
           callRecords: [],
-        });
+        }));
         return newSessionId;
       },
 
@@ -820,7 +829,7 @@ const _createStore = () => createStore<RunPanelState>()(
 
       reset: (mode: 'session' | 'project' | 'full') => {
         const base = {
-          messages: [] as LLMMessage[],
+          messages: [] as Message[],
           streamingData: [] as DataBlock[],
           inputText: '',
           isWaitingReply: false,

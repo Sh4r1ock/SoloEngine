@@ -65,7 +65,7 @@ from .model_usage import ChatUsage
 from ..utils.logging import logger
 from ..utils.common import _json_loads_with_repair
 from ..message import (
-    ToolUseBlock,
+    ToolCallsBlock,
     TextBlock,
     ThinkingBlock,
     AudioBlock,
@@ -418,9 +418,9 @@ class OpenAIChatModel(ChatModelBase):
                 self._save_response_ref(stream)
                 async for item in stream:
                     if cancel_event and cancel_event.is_set():
-                        logger.info("[OpenAI] Cancel event detected")
+                        logger.info("[OpenAI] Cancel event detected, breaking stream loop")
                         self._was_cancelled = True
-                        raise asyncio.CancelledError()
+                        break
                     
                     if structured_model:
                         if item.type != "chunk":
@@ -696,7 +696,7 @@ class OpenAIChatModel(ChatModelBase):
             ChatResponse 的 metadata 字段中。
         """
         content_blocks: List[
-            TextBlock | ToolUseBlock | ThinkingBlock | AudioBlock
+            TextBlock | ToolCallsBlock | ThinkingBlock | AudioBlock
         ] = []
         metadata: dict | None = None
 
@@ -745,16 +745,18 @@ class OpenAIChatModel(ChatModelBase):
                     )
 
             for tool_call in choice.message.tool_calls or []:
-                content_blocks.append(
-                    ToolUseBlock(
-                        type="tool_use",
-                        id=tool_call.id,
-                        name=tool_call.function.name,
-                        input=_json_loads_with_repair(
-                            tool_call.function.arguments,
-                        ),
-                    ),
-                )
+                content_blocks.append({
+                    "type": "tool_calls",
+                    "tool_calls": [{
+                        "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                        "id": tool_call.id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_call.function.name,
+                            "arguments": tool_call.function.arguments or "{}",
+                        },
+                    }],
+                })
 
             if structured_model:
                 metadata = choice.message.parsed.model_dump()

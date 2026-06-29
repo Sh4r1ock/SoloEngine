@@ -35,24 +35,17 @@ export const formatJson = (obj: any, indent: number = 2): string => {
 };
 
 export const copyToClipboard = async (text: string): Promise<boolean> => {
+  // 显式以 text/plain MIME 写入剪贴板，确保 Windows 剪贴板历史(Win+V)能正确捕获
+  // 单条路径：W3C Clipboard API (Baseline 2024) + ClipboardItem，无降级、无 DOM 操纵
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      }),
+    ]);
     return true;
   } catch {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    textArea.style.position = 'fixed';
-    textArea.style.left = '-9999px';
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      return true;
-    } catch {
-      return false;
-    } finally {
-      document.body.removeChild(textArea);
-    }
+    return false;
   }
 };
 

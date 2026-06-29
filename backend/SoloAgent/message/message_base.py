@@ -45,7 +45,7 @@ import shortuuid
 
 from .message_block import (
     TextBlock,
-    ToolUseBlock,
+    ToolCallsBlock,
     ToolResultBlock,
     ImageBlock,
     AudioBlock,
@@ -250,7 +250,6 @@ class Msg:
         self,
         block_type: Literal[
             "text",
-            "tool_use",
             "tool_result",
             "tool_calls",
             "thinking",
@@ -330,8 +329,8 @@ class Msg:
     @overload
     def get_content_blocks(
         self,
-        block_type: Literal["tool_use"],
-    ) -> List[ToolUseBlock]:
+        block_type: Literal["tool_calls"],
+    ) -> List[ToolCallsBlock]:
         ...
 
     @overload
@@ -374,7 +373,6 @@ class Msg:
         block_type: Literal[
             "text",
             "thinking",
-            "tool_use",
             "tool_result",
             "tool_calls",
             "reasoning_content",
@@ -388,7 +386,7 @@ class Msg:
         List[ContentBlock]
         | List[TextBlock]
         | List[ThinkingBlock]
-        | List[ToolUseBlock]
+        | List[ToolCallsBlock]
         | List[ToolResultBlock]
         | List[ImageBlock]
         | List[AudioBlock]

@@ -1,7 +1,8 @@
-import { DataBlock, LLMMessage } from '../types';
+import { DataBlock, LLMMessage, Message } from '../types';
 
-export const convertToLLMMessages = (msgs: any[]): LLMMessage[] => {
-  return msgs.map((msg: any) => {
+export const convertToLLMMessages = (msgs: any[]): Message[] => {
+  const result: Message[] = [];
+  for (const msg of msgs) {
     const data: DataBlock[] = msg.data || [];
     let content = '';
     let reasoningContent: string | undefined;
@@ -14,21 +15,34 @@ export const convertToLLMMessages = (msgs: any[]): LLMMessage[] => {
       }
     }
 
-    return {
+    const timestamp = msg.created_at || msg.timestamp || new Date().toISOString();
+
+    result.push({
       id: msg.id,
       role: msg.role as 'user' | 'assistant' | 'system',
       content: content || msg.content || '',
       reasoning_content: reasoningContent,
       data,
-      timestamp: msg.created_at || msg.timestamp || new Date().toISOString(),
+      timestamp,
       tokens: msg.total_tokens || msg.tokens,
       agent_id: msg.agent_id,
       agent_name: msg.agent_name,
       parent_agent_id: msg.parent_agent_id,
       status: msg.status,
       error: msg.error,
-    };
-  });
+    });
+
+    if (msg.error) {
+      result.push({
+        id: `${msg.id}_error`,
+        role: 'error',
+        error: msg.error,
+        timestamp,
+        status: 'error',
+      });
+    }
+  }
+  return result;
 };
 
 export const formatJson = (obj: any) => {
