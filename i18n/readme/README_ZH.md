@@ -93,7 +93,7 @@ npm run dev
 
 ## Star 趋势
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Sh4r1ock/SoloEngine\&type=Date)](https://star-history.com/#Sh4r1ock/SoloEngine\&Date)
+[![Star History Chart](https://api.star-history.com/chart?repos=Sh4r1ock/SoloEngine&type=date&legend=top-left&sealed_token=NO0tBLhcp8ge8kNLxBHf4eYA1_PaTiWD9Q6TkSVoYFYPg7VLIuucF0XR3TLMGJ8XqlLxPrNLyHDMSMm1ZsdnTU3UlDGU-EfpxGLGEYNy9GpyHPUkkIUenHwqv03I8-anpjb01G-JTXGKQLbTQLbytXMlvwFtpPpYkr6xDalmKdzeCaN-G3cfoW-zf8Do)](https://www.star-history.com/?repos=Sh4r1ock%2FSoloEngine&type=date&legend=top-left)
 
 <p align="center">⭐ <b>如果你觉得 SoloEngine 有用，欢迎给我们点亮 Star——每一颗都是对我们莫大的鼓励！</b></p>
 
