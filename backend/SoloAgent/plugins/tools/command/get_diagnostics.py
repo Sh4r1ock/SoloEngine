@@ -147,6 +147,28 @@ class GetDiagnostics:
             ...     uri="file:///path/to/file.py"
             ... )
         """
+        if not cls._diagnostics_cache:
+            # IDE/语言服务器诊断数据源未注入时，对指定文件运行真实本地静态诊断
+            #（Python 语法检查），确保工具在无 IDE 数据源时也能返回真实诊断。
+            local_diagnostics = cls._run_local_diagnostics(uri) if uri else None
+            if local_diagnostics is not None:
+                cls._diagnostics_cache[uri] = local_diagnostics
+            else:
+                return {
+                    "content": "未接入语言诊断服务（无诊断数据源），无法获取诊断信息。",
+                    "success": False,
+                    "error_message": "未接入语言诊断服务（无诊断数据源）",
+                    "count": 0,
+                    "error_count": 0,
+                    "warning_count": 0,
+                    "information_count": 0,
+                    "hint_count": 0,
+                    "metadata": {
+                        "diagnostics": [],
+                        "resources_used": [uri] if uri else []
+                    }
+                }
+
         if uri:
             diagnostics = cls._get_diagnostics_for_uri(uri)
         else:
@@ -183,6 +205,59 @@ class GetDiagnostics:
             }
         }
     
+    @classmethod
+    def _run_local_diagnostics(cls, uri: str) -> Optional[List[Diagnostic]]:
+        """
+        对本地文件运行真实静态诊断（Python 语法检查）。
+
+        在无 IDE/语言服务器数据源注入时，作为 GetDiagnostics 的真实诊断来源：
+        对 Python 文件执行 py_compile 语法编译，编译错误转为 ERROR 诊断。
+
+        Args:
+            uri (str): 文件 URI（file:///path/to/file.py）或绝对路径。
+
+        Returns:
+            Optional[List[Diagnostic]]: 诊断列表；文件不存在或类型不受支持时返回 None。
+        """
+        import os
+
+        path = uri
+        if uri.startswith("file://"):
+            path = uri[len("file://"):]
+            # file:///C:/... → C:/...
+            if path.startswith("/") and len(path) > 2 and path[2] == ":":
+                path = path[1:]
+
+        if not os.path.exists(path) or not os.path.isfile(path):
+            return None
+
+        if not path.lower().endswith(".py"):
+            return None
+
+        import py_compile
+        import re as _re
+
+        try:
+            py_compile.compile(path, doraise=True)
+            return []
+        except py_compile.PyCompileError as e:
+            message = str(e)
+            match = _re.search(r'line (\d+)', message)
+            line = int(match.group(1)) - 1 if match else 0
+            return [
+                Diagnostic(
+                    uri=uri,
+                    severity=DiagnosticSeverity.ERROR,
+                    message=f"Python 语法错误: {message.split(chr(10))[-1] if chr(10) in message else message}",
+                    range_start_line=line,
+                    range_start_character=0,
+                    range_end_line=line,
+                    range_end_character=0,
+                    source="py_compile",
+                    code="PY_SYNTAX_ERROR",
+                )
+            ]
+
     @classmethod
     def _get_all_diagnostics(cls) -> List[Diagnostic]:
         """

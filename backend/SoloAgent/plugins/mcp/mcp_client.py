@@ -185,6 +185,18 @@ class MCPClient(IMCPClient):
             )
         except Exception as e:
             logger.error(f"Failed to connect MCP client: {e}")
+            # 根因修复：连接/初始化失败时，已创建的 client_context（stdio/sse/http 传输的
+            # 异步上下文管理器）内部持有 async generator（read/write stream）。若不关闭，
+            # 事件循环清理时会对泄漏的 async generator 调用 athrow，触发
+            # "Attempted to exit cancel scope in a different task than it was entered in"
+            # 与 "Task exception was never retrieved" 未捕获异常。
+            # 此处显式 __aexit__ 清理并置 None；清理自身异常不覆盖原始连接错误，raise 保留。
+            if self._client_context is not None:
+                try:
+                    await self._client_context.__aexit__(type(e), e, e.__traceback__)
+                except Exception:
+                    pass
+                self._client_context = None
             raise
 
     async def _create_session(self, read_stream, write_stream):

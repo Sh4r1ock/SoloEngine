@@ -119,6 +119,7 @@ class LLMService:
             stream=False,
             api_key=api_key,
             client_kwargs={"base_url": base_url} if base_url else {},
+            is_full_url=bool(getattr(config, 'is_full_url', False)),
         )
 
     @staticmethod

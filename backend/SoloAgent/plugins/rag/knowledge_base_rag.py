@@ -108,19 +108,19 @@ class KnowledgeBaseConfig:
     similarity_threshold: float = 0.6
     """最小相似度分数用于检索"""
 
-    embedding_provider: str = "openai"
+    embedding_provider: str = field(default_factory=lambda: settings.EMBEDDING_PROVIDER)
     """嵌入服务提供商: openai, ollama"""
 
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = field(default_factory=lambda: settings.EMBEDDING_MODEL)
     """嵌入模型名称"""
 
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = field(default_factory=lambda: settings.EMBEDDING_DIMENSIONS)
     """向量维度"""
 
-    embedding_api_key: Optional[str] = None
+    embedding_api_key: Optional[str] = field(default_factory=lambda: settings.EMBEDDING_API_KEY)
     """嵌入服务API密钥"""
 
-    embedding_base_url: Optional[str] = None
+    embedding_base_url: Optional[str] = field(default_factory=lambda: settings.EMBEDDING_BASE_URL)
     """嵌入服务基础URL"""
 
     chunk_size: int = field(default_factory=lambda: settings.CHUNK_SIZE)

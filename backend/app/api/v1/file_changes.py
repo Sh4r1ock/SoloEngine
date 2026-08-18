@@ -632,6 +632,23 @@ async def delete_messages(
     if not deleted_message_ids:
         return {"code": 200, "message": "No messages to delete", "data": {"deleted_ids": []}}
 
+    # 4.5 级联恢复：撤回点之前存在已压缩消息（is_compressed=1）时恢复它们，供用户继续编辑。
+    # 新架构下压缩摘要是普通 assistant 消息（无 __compaction__ 标记），
+    # 已压缩消息都在摘要之前，直接基于 is_compressed 状态恢复
+    compressed_before = db.query(SessionMessageModel).filter(
+        SessionMessageModel.session_id == request.session_id,
+        SessionMessageModel.message_index < target_index,
+        SessionMessageModel.is_compressed == True,
+        SessionMessageModel.is_deleted == False,
+    ).first()
+    if compressed_before:
+        db.query(SessionMessageModel).filter(
+            SessionMessageModel.session_id == request.session_id,
+            SessionMessageModel.message_index < target_index,
+            SessionMessageModel.is_compressed == True,
+            SessionMessageModel.is_deleted == False,
+        ).update({"is_compressed": False}, synchronize_session=False)
+
     # 5. 清理关联的file_changes和blob
     file_change_manager.delete_file_changes_and_cleanup(
         db, FileChangeModel.message_id.in_(deleted_message_ids)

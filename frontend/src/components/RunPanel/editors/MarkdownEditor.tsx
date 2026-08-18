@@ -3,6 +3,7 @@ import { Button, Tooltip, Spin } from 'antd';
 import { EditOutlined, EyeOutlined, ColumnWidthOutlined, CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
 import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { copyToClipboard } from '../utils/dataBlockUtils';
 
 interface MarkdownEditorProps {
   instanceId: string;
@@ -168,7 +169,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const CodeBlockComponent: React.FC<{ language: string; value: string }> = ({ language, value }) => {
     const [copied, setCopied] = useState(false);
     const handleCopy = () => {
-      navigator.clipboard.writeText(value);
+      copyToClipboard(value);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     };

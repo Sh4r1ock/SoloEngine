@@ -42,4 +42,9 @@ class DictMixin(dict):
     """
 
     __setattr__ = dict.__setitem__
-    __getattr__ = dict.__getitem__
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")

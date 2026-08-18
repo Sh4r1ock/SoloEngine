@@ -51,9 +51,22 @@ from dataclasses import dataclass, field
 
 from ..config import SoloAgentConfig
 from ..agent import SoloAgent
+from ...message import Msg
 from app.core.config import settings
 
 logger = logging.getLogger("SoloEngine")
+
+
+# 压缩后 resume 续接指令（参考 Claude Code getCompactUserSummaryMessage 的
+# suppressFollowUpQuestions 语义：直接恢复、不复述、不提问、不确认摘要）
+RESUME_PROMPT = """[上下文压缩已完成。基于以上摘要继续执行之前的任务。]
+
+直接恢复——不要确认摘要、不要复述之前发生了什么、不要以"我将继续"或类似内容开头。就像中断从未发生过一样，接着完成最后一个任务。
+
+如果根据摘要判断最后一个任务已经全部完成（所有步骤已执行、结果已产出并交付），则立即结束执行并输出最终结果。禁止重新探索工作目录、禁止重新读取已读过的文件、禁止执行与任务无关的操作。"""
+
+# 自动压缩熔断器：连续失败次数上限（参考 Claude Code MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES=3）
+MAX_CONSECUTIVE_COMPACTION_FAILURES = 3
 
 
 @dataclass
@@ -90,8 +103,7 @@ class ExecutionEvent:
     tool_args: Optional[Dict[str, Any]] = None
     tool_result: Optional[Any] = None
     tool_call_id: Optional[str] = None
-    subagent_id: Optional[str] = None
-    subagent_name: Optional[str] = None
+    parent_message_id: Optional[str] = None  # 改动 3 文件 E：subagent 消息的 parent_message_id
     status: Optional[str] = None
     error: Optional[str] = None
     file_changes: Optional[List[Dict]] = None
@@ -100,24 +112,21 @@ class ExecutionEvent:
 
     def to_dict(self) -> dict:
         return {
-            "type": self.event_type,
-            "data": {
-                "agent_id": self.agent_id,
-                "agent_name": self.agent_name,
-                "agent_type": self.metadata.get("agent_type") if self.metadata else None,
-                "content": self.content,
-                "tool_name": self.tool_name,
-                "tool_type": self.tool_type,
-                "tool_args": self.tool_args,
-                "tool_result": self.tool_result,
-                "tool_call_id": self.tool_call_id,
-                "subagent_id": self.subagent_id,
-                "subagent_name": self.subagent_name,
-                "status": self.status,
-                "error": self.error,
-                "timestamp": self.timestamp,
-                "metadata": self.metadata,
-            },
+            "event_type": self.event_type,
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "agent_type": self.metadata.get("agent_type") if self.metadata else None,
+            "content": self.content,
+            "tool_name": self.tool_name,
+            "tool_type": self.tool_type,
+            "tool_args": self.tool_args,
+            "tool_result": self.tool_result,
+            "tool_call_id": self.tool_call_id,
+            "parent_message_id": self.parent_message_id,
+            "status": self.status,
+            "error": self.error,
+            "timestamp": self.timestamp,
+            "metadata": self.metadata,
         }
 
 
@@ -178,10 +187,8 @@ class CompiledFlow:
         # Host层MCP Client管理
         self._mcp_client_manager = mcp_client_manager
 
-        # 执行计时与token统计
+        # 执行计时（会话级 token 统计改由 run.py 从 session_messages 聚合，2026-08-04）
         self._start_time: Optional[datetime] = None
-        self._token_usage: Dict[str, int] = {}
-        self._token_usage_recorded: set = set()  # 新增：记录已计算的 message_id，防止重复计算
         self._event_callback: Optional[Callable[[ExecutionEvent], None]] = None
         self._stream_callback: Optional[Callable[[str], None]] = None
         self._agent_memories: Dict[str, List[Dict]] = {}
@@ -189,7 +196,22 @@ class CompiledFlow:
         self._is_new: bool = True
         self._active_models: Dict[str, Any] = {}
         self._cancel_event: asyncio.Event = asyncio.Event()
-        
+        # 压缩熔断器状态：agent_id -> 连续压缩失败次数（成功清零；≥MAX 后跳过压缩轮）
+        self._compaction_failures: Dict[str, int] = {}
+
+        # 〇·3 并发方案（第 2 层·实例层隔离）：
+        # _agent_configs：编译期 agent 配置快照（create_agent_instance 每次新建独立实例用，
+        # 同一 agent 并发 N 次调用 = N 个独立实例，消除编译期单实例共享状态冲突）。
+        # _execution_instances：execution_key -> SoloAgent 执行实例注册表（创建即注册、
+        # 执行结束清理），保存链路 _get_agent_token_usage（run.py）按此取用实例 usage——
+        # 并发实例不在 agents 字典，必须按注册表取。
+        self._agent_configs: Dict[str, Any] = {aid: a.config for aid, a in agents.items()}
+        self._execution_instances: Dict[str, SoloAgent] = {}
+
+        # 方案 G 改动 1：给每个 agent 设置反向引用，方便被 task 调用的 agent 通过 _parent_agent._compiled_flow 访问 CompiledFlow
+        for agent in agents.values():
+            agent._compiled_flow = self
+
         logger.info(
             f"[CompiledFlow] Initialized with {len(agents)} agents, "
             f"mcp_clients={len(mcp_client_manager.get_all_clients()) if mcp_client_manager else 0}"
@@ -221,7 +243,8 @@ class CompiledFlow:
             "status": status,
             "output": output or "",  # ★ 只用 output，不用 error 填充，避免 error 污染 output
             "tokens": tokens,
-            "token_usage": self._token_usage if self._token_usage else None,
+            # 剪枝（P7）：原 "token_usage": None 为死字段（run.py 已不再读取，
+            # 会话级 token_usage 由 run.py 从 session_messages 聚合）
             "duration_ms": duration_ms,
         }
         if error:
@@ -229,21 +252,9 @@ class CompiledFlow:
         result.update(extra_fields)
         return result
 
-    def _accumulate_token_usage(self, tokens, message_id=None):
-        if message_id and message_id in self._token_usage_recorded:
-            return
-        if tokens and tokens.get("prompt_tokens") is not None:
-            self._token_usage["prompt_tokens"] = self._token_usage.get("prompt_tokens", 0) + (tokens.get("prompt_tokens") or 0)
-            self._token_usage["completion_tokens"] = self._token_usage.get("completion_tokens", 0) + (tokens.get("completion_tokens") or 0)
-            self._token_usage["total_tokens"] = self._token_usage.get("total_tokens", 0) + (tokens.get("total_tokens") or 0)
-            self._token_usage["duration_ms"] = self._token_usage.get("duration_ms", 0) + (tokens.get("duration_ms") or 0)
-            if message_id:
-                self._token_usage_recorded.add(message_id)
-
     def _finalize_result(self, result):
         result["status"] = result.get("status", "completed")
         result["duration_ms"] = self._calc_duration_ms()
-        result["token_usage"] = self._token_usage if self._token_usage else None
 
     async def close(self):
         """关闭 CompiledFlow 并清理资源（MCP Client 等）"""
@@ -295,8 +306,48 @@ class CompiledFlow:
         for child_ids in self.edges.values():
             target_nodes.update(child_ids)
         return [node_id for node_id in self.agents.keys() if node_id not in target_nodes]
+
+    def _new_execution_key(self, agent_id: str) -> str:
+        """生成每次 _execute_agent 调用唯一的执行标识（〇·3，必填无兜底）。
+
+        格式 f"{agent_id}#{uuid.uuid4().hex[:8]}"：同一 agent 并发 N 实例时各实例键唯一。
+        execution_key 是每次 _execute_agent 调用必备的唯一标识（可空无语义价值），
+        贯穿 ChunkCollector 收集 / 保存字典 / _active_models / _compaction_failures /
+        stream_callback / 前端 agent 栈。全部 4 处 _execute_agent 调用方统一调用本方法
+        生成并显式传入，无重复代码、无 if None 兜底。
+        """
+        import uuid
+        return f"{agent_id}#{uuid.uuid4().hex[:8]}"
+
+    def create_agent_instance(self, agent_id: str, execution_key: str) -> SoloAgent:
+        """为每次 _execute_agent 调用创建独立 SoloAgent 实例（〇·3 第 2 层·实例层隔离）。
+
+        同一 subagent 并发 N 次 Task 调用 = N 个独立实例（独立 _conversation_history/
+        _accumulated_usage/_interrupted/_compaction_failures），消除编译期单实例共享冲突。
+        - SoloAgent(config) 新建模型/工具配置（MCP 连接 Host 层共享不重建）
+        - 补设 _compiled_flow=self（方案 G 改动 1 反向引用，与 __init__ 对模板的处理一致）
+        - _mcp_servers_info 取模板（agents[agent_id]），MCP 连接 Host 层共享
+        - set_subagents(模板._subagents, 模板._subagents_info)：仅传递子 agent 配置关系；
+          子 subagent 的实际执行实例由 Task 工具内统一走本方法惰性创建（嵌套并发同样
+          实例隔离），无需递归克隆（"所有 agent 一套逻辑"在嵌套场景的体现）。
+        - 创建后注册进 _execution_instances（保存链路 _get_agent_token_usage 按此取用）；
+          注册键与传入的 execution_key 一致，create_agent_instance → 执行 → 事件 →
+          保存时序保证取用必命中，取不到即 bug（严禁回退 agents[agent_id]）。
+        """
+        if agent_id not in self.agents:
+            raise ValueError(f"[create_agent_instance] Unknown agent_id: {agent_id}")
+        template = self.agents[agent_id]
+        instance = SoloAgent(config=template.config)
+        instance._compiled_flow = self
+        if hasattr(template, '_mcp_servers_info'):
+            instance._mcp_servers_info = template._mcp_servers_info
+        if hasattr(template, '_subagents') and hasattr(template, '_subagents_info'):
+            instance.set_subagents(template._subagents, template._subagents_info)
+        self._execution_instances[execution_key] = instance
+        logger.info(f"[CompiledFlow] create_agent_instance agent_id={agent_id} execution_key={execution_key}")
+        return instance
     
-    async def run(self, input_message: str, context: Dict[str, Any] = None, cancel_event: asyncio.Event = None) -> Dict[str, Any]:
+    async def run(self, input_message: Msg, context: Dict[str, Any] = None, cancel_event: asyncio.Event = None) -> Dict[str, Any]:
         """运行 AgenticFlow，返回完整执行结果
         
         Args:
@@ -309,8 +360,6 @@ class CompiledFlow:
         """
         context = context or {}
         self._start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-        self._token_usage = {}
-        self._token_usage_recorded = set()
         
         logger.info(f"[CompiledFlow.run] Starting run with session_id={self.session_id}, user_id={self.user_id}, run_project_id={self.run_project_id}, agentic_flow_id={self.agentic_flow_id}")
 
@@ -325,13 +374,15 @@ class CompiledFlow:
                 run_project_id=self.run_project_id,
             )
     
-    async def _run_internal(self, input_message: str, context: Dict[str, Any], cancel_event: asyncio.Event = None) -> Dict[str, Any]:
+    async def _run_internal(self, input_message: Msg, context: Dict[str, Any], cancel_event: asyncio.Event = None) -> Dict[str, Any]:
         orchestrator = self.get_orchestrator()
         
         if orchestrator is None:
             if len(self.agents) == 1:
                 agent = list(self.agents.values())[0]
-                result = await self._execute_agent(agent, input_message, context, cancel_event=cancel_event)
+                result = await self._execute_agent(agent, input_message, context,
+                                                   execution_key=self._new_execution_key(agent.agent_id),
+                                                   cancel_event=cancel_event)
                 
                 if isinstance(result, dict):
                     self._finalize_result(result)
@@ -343,21 +394,25 @@ class CompiledFlow:
                     entry_nodes = list(self.agents.keys())
                 
                 results = {}
-                has_failed = False
                 error_messages = []
                 for entry_id in entry_nodes:
                     agent = self.agents.get(entry_id)
                     if agent:
-                        result = await self._execute_agent(agent, input_message, context, cancel_event=cancel_event)
+                        result = await self._execute_agent(agent, input_message, context,
+                                                           execution_key=self._new_execution_key(agent.agent_id),
+                                                           cancel_event=cancel_event)
                         results[entry_id] = result
-                        if isinstance(result, dict) and result.get("status") == "failed":
-                            has_failed = True
-                            if result.get("error"):
-                                error_messages.append(result["error"])
+                        if isinstance(result, dict) and result.get("status") == "failed" and result.get("error"):
+                            error_messages.append(result["error"])
                 
                 output = self._aggregate_results(results)
+                # flow 自身终态 = entry agents 实际执行状态的聚合（failed > stop > completed）。
+                # 状态聚合是 flow 确定终态的唯一逻辑：任一 entry 失败 → failed；
+                # 任一 entry 被暂停（用户停止）→ stop；全部正常 → completed。
+                # 此前多 agent 分支硬编码 completed，用户暂停的 stop 状态被覆盖丢失。
+                final_status = self._aggregate_execution_status(results)
                 
-                if has_failed:
+                if final_status == "failed":
                     combined_error = "; ".join(error_messages) if error_messages else "部分Agent执行失败"
                     self._emit_event(ExecutionEvent(
                         event_type="agent_error",
@@ -367,6 +422,17 @@ class CompiledFlow:
                     ))
                     return self._build_result_dict(
                         "failed", output=output, error=combined_error,
+                        session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
+                        run_project_id=self.run_project_id, node_results=results,
+                        duration_ms=self._calc_duration_ms(),
+                    )
+                
+                if final_status == "stop":
+                    # 用户暂停：保持 stop 终态，不 emit execution_complete
+                    #（由 run.py on_execution_done 发 execution_stopped）。
+                    logger.info(f"[_run_internal] Entry agent stopped, keeping status='stop'")
+                    return self._build_result_dict(
+                        "stop", output=output,
                         session_id=self.session_id, agentic_flow_id=self.agentic_flow_id,
                         run_project_id=self.run_project_id, node_results=results,
                         duration_ms=self._calc_duration_ms(),
@@ -385,7 +451,9 @@ class CompiledFlow:
                     duration_ms=self._calc_duration_ms(),
                 )
         else:
-            result = await self._execute_agent(orchestrator, input_message, context, cancel_event=cancel_event)
+            result = await self._execute_agent(orchestrator, input_message, context,
+                                               execution_key=self._new_execution_key(orchestrator.agent_id),
+                                               cancel_event=cancel_event)
             
             if isinstance(result, dict):
                 self._finalize_result(result)
@@ -393,33 +461,65 @@ class CompiledFlow:
             return result
     
     async def _execute_agent(
-        self, 
-        agent: SoloAgent, 
-        input_message: str,
+        self,
+        agent: SoloAgent,
+        input_message: Msg,
         context: Dict[str, Any],
-        cancel_event: asyncio.Event = None
+        execution_key: str,
+        cancel_event: asyncio.Event = None,
+        parent_agent_id: str = None,
+        parent_agent_name: str = None,
+        task_content: str = None,
     ) -> Dict[str, Any]:
         
         agent_id = agent.agent_id
         agent_name = agent.name
-        
+
+        # str→Msg: 提取文本内容用于事件和内存
+        input_text = input_message.get_text_content() if hasattr(input_message, 'get_text_content') else str(input_message)
+
         # 生成消息ID（用于关联文件变更）
         import uuid
         message_id = str(uuid.uuid4())
-        
+
         # 获取工作目录
         working_dir = agent.config.work_dir if hasattr(agent.config, 'work_dir') else None
-        
+
+        # 统一 agent_start：所有 agent（mainagent + subagent）统一事件，metadata 携带 message_id + parent 信息
+        # execution_key（〇·3）：每次 _execute_agent 调用唯一，随事件透传前端 agent 栈
+        #（并发实例同 agent_id 时栈元素按 execution_key 区分）与 run.py 保存链路。
+        # parent_execution_key：被 Task 调用时携带调用方实例的执行键（task 消息的
+        # parent_message_id 定位依据——_pending_agent_message_ids 键为 execution_key）。
         self._emit_event(ExecutionEvent(
             event_type="agent_start",
             agent_id=agent_id,
             agent_name=agent_name,
             agent_type=agent.agent_type,
-            content=input_message,
+            content=input_text,
+            metadata={
+                "message_id": message_id,
+                "parent_agent_id": parent_agent_id,
+                "parent_agent_name": parent_agent_name,
+                "task_content": task_content or input_text,
+                "execution_key": execution_key,
+                "parent_execution_key": getattr(agent, '_parent_execution_key', None),
+            }
         ))
         
+        # 跟踪该 agent 在本次执行中是否产生过流式输出（collector 有数据）：
+        # 压缩轮"保存 pre-compaction 输出"的判断依据——只要该 agent 有过 LLM 流式输出
+        #（无论最后一次 reply 返回的 Msg 是否为空），collector 中就有 pre-compaction 内容，
+        # 就必须在压缩轮 ① 保存为 stop 记录（否则旧输出会残留进 compacted 摘要记录）。
+        flow_agent_output = {"has_output": False}
         if self._stream_callback and hasattr(agent, 'set_stream_callback'):
-            agent.set_stream_callback(self._stream_callback)
+            flow_orig_stream = self._stream_callback
+
+            def flow_tracked_stream(block, **kwargs):
+                flow_agent_output["has_output"] = True
+                if flow_orig_stream:
+                    flow_orig_stream(block, **kwargs)
+
+            agent.set_stream_callback(flow_tracked_stream)
         
         if self._event_callback and hasattr(agent, '_event_callback'):
             agent._event_callback = self._event_callback
@@ -455,15 +555,32 @@ class CompiledFlow:
         else:
             logger.warning(f"[_execute_agent] agent._core={agent._core is not None}, hasattr _on_tool_executed={hasattr(agent, '_on_tool_executed')}")
         
-        # 注册 agent.model 到 _active_models 注册表
+        # 〇·3：写入 execution_key 到 ReActCore（_core 在 initialize 后才存在）。
+        # react_core 全部 6 处 stream_callback 调用据此携带 execution_key，
+        # ChunkCollector 按 execution_key 独立收集（同一 agent 并发 N 实例互不混淆）。
+        # agent._execution_key 同步设置：嵌套 Task 工具据此读取父实例执行键
+        #（task 消息 parent_message_id 定位）。
+        if hasattr(agent, '_core') and agent._core is not None and hasattr(agent._core, 'set_execution_key'):
+            agent._core.set_execution_key(execution_key)
+            logger.info(f"[_execute_agent] Set execution_key={execution_key} on core for agent {agent_id}")
+        agent._execution_key = execution_key
+
+        # 〇·3：统一注册执行实例（main/sub 同一路径：mainagent 直接 _execute_agent 的模板
+        # 实例、subagent 经 create_agent_instance 的独立实例，均按 execution_key 注册），
+        # 保存链路 _get_agent_token_usage 按此取用 take_token_usage（取不到 = bug 直接报错）
+        self._execution_instances[execution_key] = agent
+
+        # 注册 agent.model 到 _active_models 注册表（键改 execution_key：并发实例独立取消）
         if hasattr(agent, '_core') and hasattr(agent._core, 'model'):
-            self._active_models[agent_id] = agent._core.model
-            logger.info(f"[_execute_agent] Registered model for agent {agent_id}")
+            self._active_models[execution_key] = agent._core.model
+            logger.info(f"[_execute_agent] Registered model for agent {agent_id} (execution_key={execution_key})")
         
         try:
             original_reply = agent.reply
             
-            async def wrapped_reply(message: str) -> str:
+            async def wrapped_reply(message: Msg) -> str:
+                # 每次 reply 独立跟踪流式输出（resume 轮从头计数）
+                flow_agent_output["has_output"] = False
                 response = await original_reply(message, cancel_event=cancel_event or self._cancel_event)
                 
                 if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
@@ -492,30 +609,135 @@ class CompiledFlow:
                 
                 return response
             
+            # 后端聚合改造（3.2-1）：agent_core 取值统一提前到 wrapped_reply 之前，
+            # 并重置 agent 级整轮累计（_agent_accumulated_usage 不随 take_accumulated_usage
+            # 消费清空，由本次 _execute_agent 执行开始处重置；跨压缩轮 stop/compacted/resume
+            # 全部阶段持续累计，是消息头/组头"整轮"显示的数据源）。
+            agent_core = agent._core if hasattr(agent, '_core') else None
+            if agent_core and hasattr(agent_core, 'reset_agent_usage'):
+                agent_core.reset_agent_usage()
+            
             response = await wrapped_reply(input_message)
 
-            agent_core = agent._core if hasattr(agent, '_core') else None
             was_interrupted = agent_core.is_interrupted() if agent_core else False
+            logger.info(f"[_execute_agent] agent_id={agent_id}, was_interrupted={was_interrupted}")
+
+            # ★ 压缩轮次：停止 且 非用户停止（用户停止时 cancel_event 必已 set，见 stop_execution 顺序）
+            # 完全复用用户手动停止路径：emit agent_complete(stop) → 保存 pre-compaction 输出
+            # → 生成摘要并独立保存（压缩轮次）→ 批量标记旧消息 → 恢复执行（while 支持多次压缩）
+            while was_interrupted and not (cancel_event and cancel_event.is_set()):
+                # 熔断器：连续压缩失败 ≥ MAX 后跳过后续压缩轮（历史完整保留，以 stop 结束）
+                # 键改 execution_key（〇·3）：并发实例失败计数隔离
+                if not self._compaction_allowed(execution_key):
+                    logger.warning(
+                        f"[_execute_agent] Compaction skipped for agent {agent_id} "
+                        f"(circuit breaker: {self._compaction_failures.get(execution_key, 0)} consecutive failures)"
+                    )
+                    break
+
+                logger.info(f"[_execute_agent] Compaction round for agent {agent_id}")
+
+                # ① emit agent_complete(status="stop") → event_callback 保存 pre-compaction 输出
+                # 仅属于"有实际输出的轮次"：压缩检测在调用 LLM 之前完成（_reasoning 内 L864-870，
+                # 超阈值 return None 不调用 LLM）。判断依据 = 该 agent 在本轮执行中是否产生过
+                # 流式输出（collector 有该 agent 的 blocks）——有输出则保存为 stop 记录（压缩前
+                # 的 LLM 块），同时清空 collector，保证 compacted 摘要记录为纯摘要；未调用 LLM
+                # 的无输出压缩轮从流程上不产生空 stop 保存（流程设计使然：无输出实体 → 无空记录；
+                # 而非"跳过保存空记录"式补丁）。
+                if flow_agent_output["has_output"]:
+                    save_done_event = asyncio.Event()
+                    # 压缩前 stop 轮的 usage（查询不消费；消息保存时 run.py take 消费）
+                    stop_tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
+                    self._emit_event(ExecutionEvent(
+                        event_type="agent_complete",
+                        agent_id=agent_id,
+                        agent_name=agent_name,
+                        content=response,
+                        message=agent.get_last_openai_message() if hasattr(agent, 'get_last_openai_message') else {"role": "assistant", "content": response, "reasoning_content": None},
+                        status="stop",
+                        metadata={
+                            "parent_agent_id": parent_agent_id,
+                            "parent_agent_name": parent_agent_name,
+                            "tokens": stop_tokens,
+                            "agent_usage": agent.get_agent_usage() if hasattr(agent, 'get_agent_usage') else None,
+                            "save_done_event": save_done_event,
+                            "compaction_round": True,
+                            "execution_key": execution_key,
+                        }
+                    ))
+                    # ② 等待 pre-compaction 保存完成（防止 remove_agent_data 未执行导致重复保存）
+                    await save_done_event.wait()
+                else:
+                    logger.info(
+                        f"[_execute_agent] No pre-compaction output for agent {agent_id}, "
+                        f"skip empty stop save (compaction triggered before LLM call)"
+                    )
+                # ③ 生成压缩摘要（正常 stream，进 collector + 前端）
+                # 失败保护：compact() 抛异常时不标记旧消息、不丢历史（熔断器计数）
+                try:
+                    if agent_core:
+                        await agent_core.compact(cancel_event=cancel_event)
+                    self._compaction_failures[execution_key] = 0
+                except Exception as e:
+                    self._compaction_failures[execution_key] = self._compaction_failures.get(execution_key, 0) + 1
+                    logger.error(
+                        f"[_execute_agent] Compaction failed for agent {agent_id}: {e} "
+                        f"(consecutive_failures={self._compaction_failures[execution_key]})"
+                    )
+                    break
+                # ④ 摘要独立保存（status="compacted"）：压缩轮次作为独立消息，前端块中断、轮次可见
+                save_done_event = asyncio.Event()
+                # 方案 B（独立快照）：摘要轮 usage = 当前累计（stop 保存时已 take 消费清空），
+                # 查询不消费；compacted 消息保存时 run.py take 消费。
+                compacted_tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
+                self._emit_event(ExecutionEvent(
+                    event_type="agent_complete",
+                    agent_id=agent_id,
+                    agent_name=agent_name,
+                    content=None,
+                    message=None,
+                    status="compacted",
+                    metadata={
+                        "parent_agent_id": parent_agent_id,
+                        "parent_agent_name": parent_agent_name,
+                        "tokens": compacted_tokens,
+                        "agent_usage": agent.get_agent_usage() if hasattr(agent, 'get_agent_usage') else None,
+                        "save_done_event": save_done_event,
+                        "compaction_round": True,
+                        "execution_key": execution_key,
+                    }
+                ))
+                await save_done_event.wait()
+                # ⑤ 批量标记旧消息 is_compressed=1（仅在摘要保存成功后执行，防失败丢历史）
+                # 〇·5 统一规则：main/sub 完全同一规则，无 mark_user_msgs 分支
+                await self._batch_mark_compressed(agent_id)
+                # ⑥ resume：用续接指令继续执行（避免 user_msg 重复；不复述、不提问）
+                continue_msg = Msg(name="user", content=RESUME_PROMPT, role="user")
+                response = await wrapped_reply(continue_msg)
+                was_interrupted = agent_core.is_interrupted() if agent_core else False
+
             if agent_core and hasattr(agent_core, '_conversation_history'):
+                # 原有逻辑：追加本轮历史
                 history = agent_core.get_conversation_history()
                 last_user_idx = None
                 for i in range(len(history) - 1, -1, -1):
                     if history[i].role == "user" and i < len(history) - 1:
                         last_user_idx = i
                         break
-                
+
                 if last_user_idx is not None:
                     for msg in history[last_user_idx:]:
                         msg_dict = self._msg_to_memory_dict(msg)
                         if msg_dict:
                             agent_memory.append(msg_dict)
                 else:
-                    agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
+                    agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_text}]})
                     agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
+                self._agent_memories[agent_id] = agent_memory
             else:
-                agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_message}]})
+                agent_memory.append({"role": "user", "data": [{"type": "content", "content": input_text}]})
                 agent_memory.append({"role": "assistant", "data": [{"type": "content", "content": response}]})
-            self._agent_memories[agent_id] = agent_memory
+                self._agent_memories[agent_id] = agent_memory
             
             tool_calls = []
             if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
@@ -525,8 +747,8 @@ class CompiledFlow:
             
             tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
             
-            if tokens and message_id and message_id not in self._token_usage_recorded:
-                logger.info(f"[Token Usage] Accumulated: {tokens}, message_id: {message_id}")
+            if tokens:
+                logger.info(f"[Token Usage] Final: {tokens}")
             
             result = self._build_result_dict(
                 "stop" if was_interrupted else "completed", agent_id=agent_id, agent_name=agent_name,
@@ -537,6 +759,13 @@ class CompiledFlow:
                 tool_calls=tool_calls,
             )
             
+            # 统一 agent_complete：所有 agent 统一事件，metadata 携带 parent 信息和 tokens
+            # agent_usage（3.2-3）：agent 级整轮累计（消息头/组头整轮显示，与 tokens 的本阶段语义正交）
+            # execution_key（〇·3）：前端 agent 栈按此弹出实例（并发实例独立出栈）
+            # save_done_event（〇·3 竞态修复）：最终完成轮与压缩轮 stop/compacted 保存同一
+            # 等待语义——保存完成后 finally 才清理 _execution_instances（run.py 异步保存任务
+            # 执行时注册表仍可用，_get_agent_token_usage 按 execution_key 取用不落空）
+            save_done_event = asyncio.Event()
             self._emit_event(ExecutionEvent(
                 event_type="agent_complete",
                 agent_id=agent_id,
@@ -544,10 +773,19 @@ class CompiledFlow:
                 content=openai_message.get("content", response) if openai_message else response,
                 message=openai_message,
                 status="stop" if was_interrupted else "completed",
+                metadata={
+                    "parent_agent_id": parent_agent_id,
+                    "parent_agent_name": parent_agent_name,
+                    "tokens": tokens,
+                    "agent_usage": agent.get_agent_usage() if hasattr(agent, 'get_agent_usage') else None,
+                    "save_done_event": save_done_event,
+                    "execution_key": execution_key,
+                }
             ))
-            
+            await save_done_event.wait()
+
             return result
-            
+
         except Exception as e:
             import traceback
             logger.error(f"Agent execution failed: {agent_name} - {e}")
@@ -557,24 +795,105 @@ class CompiledFlow:
             if partial_tokens:
                 logger.info(f"[Token Usage] Partial tokens from failed agent: {partial_tokens}")
 
+            # 统一 agent_error：所有 agent 统一事件，metadata 携带 parent 信息
+            # execution_key（〇·3）+ save_done_event：与 agent_complete 同一保存等待语义
+            #（错误消息也走 _save_agent_messages 统一保存路径，注册表清理前必须等待保存完成）
+            save_done_event = asyncio.Event()
             self._emit_event(ExecutionEvent(
                 event_type="agent_error",
                 agent_id=agent_id,
                 agent_name=agent_name,
                 error=str(e),
-                status="failed",
+                status="error",
+                metadata={
+                    "parent_agent_id": parent_agent_id,
+                    "parent_agent_name": parent_agent_name,
+                    "execution_key": execution_key,
+                    "save_done_event": save_done_event,
+                }
             ))
+            await save_done_event.wait()
             
             return self._build_result_dict(
                 "failed", agent_id=agent_id, agent_name=agent_name,
                 error=str(e),
             )
         finally:
+            # 会话级 token 累计已改由 run.py 从 session_messages 聚合（2026-08-04），
+            # 此处不再内存累计；tokens 仅保留日志用途
             tokens = agent.get_token_usage() if hasattr(agent, 'get_token_usage') else None
-            self._accumulate_token_usage(tokens, message_id=message_id)
-            self._active_models.pop(agent_id, None)
-            logger.info(f"[_execute_agent] Unregistered model for agent {agent_id}")
+            # 键改 execution_key（〇·3）：并发实例独立取消/清理
+            self._active_models.pop(execution_key, None)
+            self._execution_instances.pop(execution_key, None)
+            self._compaction_failures.pop(execution_key, None)
+            logger.info(f"[_execute_agent] Unregistered model for agent {agent_id} (execution_key={execution_key})")
     
+    def _compaction_allowed(self, execution_key: str) -> bool:
+        """熔断器：连续压缩失败是否已达上限（参考 Claude Code MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES）。
+
+        键为 execution_key（〇·3）：同一 agent 并发实例失败计数隔离。
+        """
+        return self._compaction_failures.get(execution_key, 0) < MAX_CONSECUTIVE_COMPACTION_FAILURES
+
+    async def _batch_mark_compressed(self, agent_id: str = None):
+        """批量标记被压缩 agent 的旧消息为 is_compressed=True（〇·5 无分支统一规则）。
+
+        压缩语义核心（见 run.py load_and_distribute_memories 的 is_compressed=False 查询）：
+        旧消息被摘要覆盖后标记为已压缩，不再进入 LLM 上下文；
+        摘要与压缩后新增消息保持 is_compressed=0。
+
+        标记范围（〇·5 统一规则，main/sub 完全同一规则）：
+        压缩 agent A 时，标记 A 上下文内压缩前的所有消息：
+        - assistant：A 的全部未压缩消息（含 pre-compaction 输出）
+        - user：A 的 user 消息中，message_index < 最后一条 user 的消息
+          （最后一条 user = 压缩时刻该 agent 上下文内 message_index 最大的 user 消息，
+          保持 is_compressed=0 作为压缩后 resume 的上下文锚点——LLM 直接看到当前
+          任务原始指令）
+        - 摘要消息（status='compacted'）**排除**（它刚保存，必须保持 is_compressed=0 供下轮加载）
+        mainagent 的人类输入 user（on_flow_created 回填后 agent_id=入口 agent）与
+        subagent 的 task user（agent_id=subagent）同一规则处理，无任何区分分支。
+
+        依赖：标记端按 agent_id == A 命中 user 消息的前提是 run.py on_flow_created
+        回填已完成（〇·5 保存端改造先行实施）。
+
+        仅在摘要保存成功后调用（见 _execute_agent 压缩循环 ⑤），压缩失败时不标记、不丢历史。
+        """
+        from sqlalchemy import func, or_, and_
+        from app.core.database import get_db_context, SessionMessageModel
+        try:
+            with get_db_context() as db:
+                # 1) 先查该 agent 的 user 消息最大 message_index（最后一条 user = resume 锚点）
+                last_user_idx = db.query(
+                    func.max(SessionMessageModel.message_index)
+                ).filter(
+                    SessionMessageModel.session_id == self.session_id,
+                    SessionMessageModel.agent_id == agent_id,
+                    SessionMessageModel.role == "user",
+                ).scalar()
+                # 2) 统一 UPDATE：assistant 全部 + user 除最后一条（无 user 消息时 last_user_idx
+                #    为 None，user 条件 message_index < -1 恒 false → 只标 assistant，天然正确）
+                query = db.query(SessionMessageModel).filter(
+                    SessionMessageModel.session_id == self.session_id,
+                    SessionMessageModel.is_compressed == False,
+                    SessionMessageModel.status != "compacted",
+                    SessionMessageModel.agent_id == agent_id,
+                    or_(
+                        SessionMessageModel.role == "assistant",
+                        and_(
+                            SessionMessageModel.role == "user",
+                            SessionMessageModel.message_index < (last_user_idx if last_user_idx is not None else -1),
+                        ),
+                    ),
+                )
+                updated = query.update({"is_compressed": True}, synchronize_session=False)
+                db.commit()
+                logger.info(
+                    f"[CompiledFlow] Marked {updated} messages as compressed in session "
+                    f"{self.session_id} for agent {agent_id} (last_user_idx={last_user_idx})"
+                )
+        except Exception as e:
+            logger.error(f"[CompiledFlow] Failed to batch mark compressed: {e}", exc_info=True)
+
     def _aggregate_results(self, results: Dict[str, Any]) -> str:
         outputs = []
         for agent_id, result in results.items():
@@ -586,8 +905,27 @@ class CompiledFlow:
                     outputs.append(f"[{name}]: {output}")
         
         return "\n\n".join(outputs) if outputs else "Execution completed"
+
+    def _aggregate_execution_status(self, results: Dict[str, Any]) -> str:
+        """聚合 entry agents 执行状态，确定 flow 自身终态（多 agent 分支）。
+
+        优先级：failed > stop > completed。flow 的终态由实际执行的 entry agents
+        状态决定——任一失败则整体 failed；任一被暂停（用户停止）则整体 stop；
+        全部正常才 completed。此前多 agent 分支硬编码 completed，
+        用户暂停的 stop 状态在聚合时被覆盖丢失。
+        """
+        final_status = "completed"
+        for agent_id, result in results.items():
+            if not isinstance(result, dict):
+                continue
+            status = result.get("status")
+            if status == "failed":
+                return "failed"
+            if status == "stop":
+                final_status = "stop"
+        return final_status
     
-    async def run_agent(self, agent_id: str, message: str) -> str:
+    async def run_agent(self, agent_id: str, message: Msg) -> str:
         """运行指定的 Agent"""
         agent = self.get_agent(agent_id)
         if agent is None:
@@ -902,13 +1240,27 @@ class AgenticFlowCompiler:
         cached = CompiledFlowFactory.get(user_id, agentic_flow_id, session_id, run_project_id)
         if cached:
             current_llm_configs = self._load_llm_configs(user_id)
-            
+
+            # 修复：只比较 cached agents 实际使用的 config 的版本，而不是所有配置
+            cached_llm_config_ids = set()
+            for agent in cached.agents.values():
+                if hasattr(agent.config, '_llm_config_id') and agent.config._llm_config_id:
+                    cached_llm_config_ids.add(agent.config._llm_config_id)
+
+            # cached_config_versions 从 agent.config._llm_config_version（编译时快照）读取
+            # current_config_versions 从当前数据库按 cached_llm_config_ids 过滤读取
+            # 恢复"快照 vs 当前"的比较语义，保留"收窄比较范围"的本地意图
             cached_config_versions = set()
             for agent in cached.agents.values():
                 if hasattr(agent.config, '_llm_config_version') and agent.config._llm_config_version:
                     cached_config_versions.add(agent.config._llm_config_version)
-            
-            current_config_versions = {cfg.version for cfg in current_llm_configs.values() if cfg.version}
+
+            current_config_versions = set()
+            for cfg_id in cached_llm_config_ids:
+                if cfg_id in current_llm_configs:
+                    cfg = current_llm_configs[cfg_id]
+                    if cfg.version:
+                        current_config_versions.add(cfg.version)
 
             canvas_hash = hashlib.md5(json.dumps(flow_data, sort_keys=True).encode()).hexdigest()
             canvas_changed = getattr(cached, '_canvas_hash', None) != canvas_hash
@@ -1373,32 +1725,46 @@ Working Directory: {work_dir}
         provider = config.provider
         model = config.model_name
         base_url = config.base_url
+        is_full_url = bool(getattr(config, 'is_full_url', False))
         api_key = encryption_service.decrypt(config.api_key) if config.api_key else None
         timeout = config.timeout
         extra_params = config.extra_params if hasattr(config, 'extra_params') else None
 
-        required_params = ["temperature", "max_tokens", "frequency_penalty", "presence_penalty"]
-        missing_params = [p for p in required_params if p not in model_config]
-        if missing_params:
+        # ★ 模型参数只能从 canvas node 的 model_config 中获取
+        #    model_config 是默认值 → 填入 canvas → 运行时从 canvas 获取
+        #    只有 api_key、base_url、provider、model_name 从 DB llm_configs 表获取
+        node_name = node_data.get('name', node_id)
+        
+        temperature = model_config.get("temperature")
+        if temperature is None:
+            raise ValueError(f"节点 '{node_name}' 未设置 temperature。请在画布中配置后重新保存。")
+        
+        max_output_tokens = model_config.get("max_output_tokens")
+        if max_output_tokens is None:
+            raise ValueError(f"节点 '{node_name}' 未设置 max_output_tokens。请在画布中配置后重新保存。")
+        
+        max_input_tokens = model_config.get("max_input_tokens")
+        if max_input_tokens is None:
+            raise ValueError(f"节点 '{node_name}' 未设置 max_input_tokens。请在画布中配置后重新保存。")
+        
+        top_p = model_config.get("top_p")
+        frequency_penalty = model_config.get("frequency_penalty", 0)
+        presence_penalty = model_config.get("presence_penalty", 0)
+        
+        # ★ 工具调用轮次：必须从画布节点 model_config 获取（默认值来自 llm_config 并写入 canvas），
+        #   禁止降级到默认值；缺失/非法时直接报错，让用户明确得知配置问题（与 max_input_tokens 同规则）。
+        max_tool_calls = model_config.get("max_tool_calls")
+        if max_tool_calls is None or max_tool_calls <= 0:
             raise ValueError(
-                f"节点 '{node_data.get('name', node_id)}' 的模型参数缺失: {', '.join(missing_params)}。"
-                f"请在画布中打开该节点，重新选择模型并保存。"
+                f"节点 '{node_name}' 未设置 max_tool_calls（工具调用轮次）。"
+                f"请在画布中为该节点配置 max_tool_calls 后重新保存。"
             )
+        
+        logger.info(f"Using LLM config: {config.name} ({config.provider}/{config.model_name}), config_id={llm_config_id}")
+        logger.info(f"LLM params from selected config: temperature={temperature}, max_output_tokens={max_output_tokens}, max_input_tokens={max_input_tokens}, frequency_penalty={frequency_penalty}, presence_penalty={presence_penalty}, max_tool_calls={max_tool_calls}")
+        
+        # ★ 任务3：删除 api_key 强制检查，让 LLM API 自己检查 api_key
 
-        temperature = model_config["temperature"]
-        max_tokens = model_config["max_tokens"]
-        top_p = model_config.get("top_p", 1.0)
-        frequency_penalty = model_config["frequency_penalty"]
-        presence_penalty = model_config["presence_penalty"]
-        logger.info(f"Using LLM config: {config.name} ({provider}/{model}), config_id={llm_config_id}")
-        logger.info(f"LLM params from node model_config: temperature={temperature}, max_tokens={max_tokens}, frequency_penalty={frequency_penalty}, presence_penalty={presence_penalty}")
-        
-        if not api_key:
-            raise ValueError(
-                f"未配置 LLM API Key。请在设置中配置模型（节点: {node_data.get('name', node_id)}）。"
-                f"您可以在「设置 > LLM配置」中添加 API Key。"
-            )
-        
         skills = node_data.get("skills", [])
         enriched_skills = []
         logger.info(f"[Skills DEBUG] node_id={node_id}, raw skills={skills}")
@@ -1482,6 +1848,7 @@ Working Directory: {work_dir}
             "todo_write": "TodoWrite",
             "ask_user_question": "AskUserQuestion",
             "open_preview": "OpenPreview",
+            "enter_plan_mode": "EnterPlanMode",
             "exit_plan_mode": "ExitPlanMode",
         }
         mapped_tools = set(tool_name_map.values())
@@ -1499,6 +1866,7 @@ Working Directory: {work_dir}
             model=model,
             api_key=api_key,
             base_url=base_url,
+            is_full_url=is_full_url,
             system_prompt=self._build_system_prompt_with_work_dir(
                 base_prompt=node_data.get("system_prompt", ""),
                 work_dir=work_dir,
@@ -1514,15 +1882,17 @@ Working Directory: {work_dir}
             agent_id=node_id,
             session_id=session_id,
             max_memory_length=node_data.get("max_memory_length"),
-            max_iters=(
-                (canvas_data or {}).get("globalSettings", {}).get("maxIterations")
-                or node_data.get("max_iters")
-                or settings.DEFAULT_MAX_ITERS
-            ),
+            # ★ 工具调用轮次（max_tool_calls）：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限。
+            #   只能从画布节点 model_config 获取（默认值来自 llm_config 并写入 canvas），禁止降级到默认值。
+            #   同时作为 react_core 循环上限（max_iters），保证两者一致。
+            max_tool_calls=max_tool_calls,
+            max_iters=max_tool_calls,
             stream=node_data.get("stream", True),
             agent_type=node_data.get("agentType", "executor"),
             work_dir=work_dir,
-            max_tokens=max_tokens,
+            max_tokens=max_output_tokens,
+            max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
             temperature=temperature,
             top_p=top_p,
             frequency_penalty=frequency_penalty,
@@ -1565,7 +1935,7 @@ class FlowRunner:
     @staticmethod
     async def run_from_json(
         json_data: Dict[str, Any], 
-        input_message: str,
+        input_message: Msg,
         user_id: str = None,
         agentic_flow_id: str = None,
         session_id: str = None,
@@ -1631,7 +2001,7 @@ class FlowRunner:
     async def run_node(
         json_data: Dict[str, Any], 
         node_id: str,
-        input_message: str,
+        input_message: Msg,
         user_id: str = None,
         agentic_flow_id: str = None,
         session_id: str = None,
@@ -1710,7 +2080,7 @@ class FlowRunner:
     @staticmethod
     async def stream_run_from_json(
         json_data: Dict[str, Any], 
-        input_message: str,
+        input_message: Msg,
         user_id: str = None,
         agentic_flow_id: str = None,
         session_id: str = None,

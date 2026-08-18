@@ -46,6 +46,7 @@ from .plugins.tools import (
     WebFetch,
     TodoWrite,
     AskUserQuestion,
+    EnterPlanMode,
     ExitPlanMode,
     OpenPreview,
 )
@@ -77,6 +78,7 @@ __all__ = [
     "WebFetch",
     "TodoWrite",
     "AskUserQuestion",
+    "EnterPlanMode",
     "ExitPlanMode",
     "OpenPreview",
 ]

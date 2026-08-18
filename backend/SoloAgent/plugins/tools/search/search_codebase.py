@@ -107,6 +107,7 @@ class CodeIndex:
         index_dir: Optional[str] = None,
         chunk_size: int = 500,
         chunk_overlap: int = 50,
+        config: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         初始化代码索引。
@@ -115,10 +116,13 @@ class CodeIndex:
             index_dir (Optional[str], optional): 索引存储目录。默认为 None
             chunk_size (int, optional): 代码块大小（字符数）。默认为 500
             chunk_overlap (int, optional): 代码块重叠大小。默认为 50
+            config (Optional[Dict], optional): 嵌入服务配置（含 embedding_config）。
+                默认为 None（使用默认嵌入服务）。
         """
         self._index_dir = index_dir
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
+        self._config = config
         self._snippets: List[CodeSnippet] = []
         self._embeddings: List[List[float]] = []
         self._file_hashes: Dict[str, str] = {}
@@ -133,7 +137,17 @@ class CodeIndex:
                 if embedding_config:
                     self._embedding_service = get_embedding_service(embedding_config)
                 else:
-                    self._embedding_service = get_embedding_service()
+                    # 未显式传入配置时，从系统 settings 读取全局 embedding 配置
+                    #（默认本机 Ollama bge-m3，无需 API Key；见 config.py EMBEDDING_* 注释）
+                    from app.core.config import settings as app_settings
+                    embedding_config = {
+                        "provider": app_settings.EMBEDDING_PROVIDER,
+                        "model_name": app_settings.EMBEDDING_MODEL,
+                        "dimensions": app_settings.EMBEDDING_DIMENSIONS,
+                        "api_key": app_settings.EMBEDDING_API_KEY,
+                        "base_url": app_settings.EMBEDDING_BASE_URL,
+                    }
+                    self._embedding_service = get_embedding_service(embedding_config)
             except ImportError:
                 logger.warning("Embedding service not available")
                 return None
@@ -299,39 +313,35 @@ class CodeIndex:
         
         Returns:
             List[SearchResult]: 搜索结果列表
+        
+        Raises:
+            RuntimeError: 当 embedding 服务不可用时抛出
         """
         if not self._snippets:
             return []
         
         embedding_service = await self._get_embedding_service()
         
-        if embedding_service and embedding_service.is_available:
-            query_embedding = await embedding_service.embed(query)
-            query_vec = query_embedding.tolist()
+        if not embedding_service or not embedding_service.is_available:
+            raise RuntimeError(
+                "embedding 服务不可用（未配置 api_key 或 ollama 未运行），无法进行语义搜索"
+            )
+        
+        query_embedding = await embedding_service.embed(query)
+        query_vec = query_embedding.tolist()
+        
+        results = []
+        for snippet in self._snippets:
+            if snippet.embedding is None:
+                continue
             
-            results = []
-            for snippet in self._snippets:
-                if snippet.embedding is None:
-                    continue
-                
-                score = self._cosine_similarity(query_vec, snippet.embedding)
-                
-                if score >= threshold:
-                    results.append(SearchResult(snippet=snippet, score=score))
+            score = self._cosine_similarity(query_vec, snippet.embedding)
             
-            results.sort(key=lambda x: x.score, reverse=True)
-            return results[:top_k]
-        else:
-            results = []
-            query_lower = query.lower()
-            
-            for snippet in self._snippets:
-                if query_lower in snippet.content.lower():
-                    score = 0.5
-                    results.append(SearchResult(snippet=snippet, score=score))
-            
-            results.sort(key=lambda x: x.score, reverse=True)
-            return results[:top_k]
+            if score >= threshold:
+                results.append(SearchResult(snippet=snippet, score=score))
+        
+        results.sort(key=lambda x: x.score, reverse=True)
+        return results[:top_k]
     
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """计算余弦相似度。"""

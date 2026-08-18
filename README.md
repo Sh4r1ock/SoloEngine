@@ -10,7 +10,7 @@
 
 ***
 
-<p align="center"><b>SoloEngine</b> is the first low-code platform that runs Agentic AI. Staff a team of Agents like a startup — drag them onto the canvas, connect the org chart, run — they plan, act, and deliver on their own.</p>
+<p align="center"><b>SoloEngine</b> is the first low-code platform for Agentic AI. Drag an Agent onto the canvas, wire it to a teammate, and hit run — your Agentic AI plans, acts, observes, and iterates on its own until the work is done.</p>
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
@@ -66,6 +66,11 @@ All Agents share the same underlying architecture — just configured differentl
 2. **One ReAct engine** — Every Agent runs the same Think → Act → Observe → Repeat loop.
 3. **Progressive disclosure** — Agents only load what they use at runtime, making low-code agentic AI practical.
 
+<div align="center">
+  <img src="docs/images/Canvas.gif" alt="SoloEngine visual canvas demo" width="100%"/>
+  <p><sub>Compose Agents on the visual canvas and compile the team configuration into an executable Agent DAG</sub></p>
+</div>
+
 ## Quick Start
 
 ```bash
@@ -90,6 +95,11 @@ Open **<http://localhost:8991>** and build your first Agent team.
 - **VibeLawing** — A lawyer drags search, filing, and formatting Agents onto the canvas in sequence, then hits run. AI will automatically break down and plan the legal work: parsing facts, locating statutes, organizing cases, structuring arguments, and formatting documents — all you need to do is review and fine-tune before delivery. The whole process feels as natural as a developer vibe-coding in Cursor.
 - **VibeMarketing** — A marketer drags research, copywriting, and asset Agents onto the canvas, then hits run. SoloEngine will automatically analyze the audience, then research relevant product approaches based on the findings, and benchmark against competitors to craft marketing strategies — delivering a polished marketing plan to you.
 - **One-click package** — Build your Agent team, hit package, one product ready for anyone.
+
+<div align="center">
+  <img src="docs/images/RunPanel.gif" alt="SoloEngine run demo" width="100%"/>
+  <p><sub>Observe Agent planning, actions, tool calls, and iteration in real time from the run panel</sub></p>
+</div>
 
 ## Star History
 

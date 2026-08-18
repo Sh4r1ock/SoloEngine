@@ -10,7 +10,7 @@
 
 ***
 
-<p align="center"><b>SoloEngine</b> 是第一款低代码 Agentic AI 开发平台。你只需像组建一支创业团队那样：将所需的 Agent 拖入画布，连接协作关系，点击运行——此后的规划、执行与交付，全部由 Agent 自主完成。</p>
+<p align="center"><b>SoloEngine</b> 是首个专为 Agentic AI 打造的开源低代码平台。只需将 Agent 拖入画布，连接另一位成员，点击运行——它便会自主规划、行动、观察、迭代，直至任务完成。</p>
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
@@ -66,6 +66,11 @@ Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成
 2. **统一的 ReAct 引擎** —— 每个 Agent 均运行相同的「思考 → 行动 → 观察 → 重复」循环。
 3. **按需加载** —— 得益于编译机制，Agent 在运行时仅加载指定模型、配置的内容与工具，这让低代码环境下的 Agentic AI 变得切实可行。
 
+<div align="center">
+  <img src="../../docs/images/Canvas.gif" alt="SoloEngine 可视化画布演示" width="100%"/>
+  <p><sub>通过可视化画布编排 Agent，并将团队配置编译为可执行的 Agent DAG</sub></p>
+</div>
+
 ## 快速开始
 
 ```bash
@@ -90,6 +95,11 @@ npm run dev
 - **VibeLawing** —— 律师将搜索 Agent、归档 Agent、排版 Agent 依次拖入画布，点击运行。AI 将自动拆解并规划法律工作：解析事实、定位法条、整理案例、论证与整理、格式化文档，您只需审核和微调即可交付——整个过程就像开发者在 Cursor 中进行 vibe coding 一样自然流畅。
 - **VibeMarketing** —— 营销人员将调研 Agent、文案 Agent、素材 Agent 拖入画布，点击运行。SoloEngine将自动对受众进行分析，并在此基础上查询相关产品方案，对标竞品编写营销策略，交付给您完美的营销方案。
 - **一键打包** —— 搭建好 Agent 团队后，点击一键打包，即可输出一个可供任何人直接使用的完整产品。
+
+<div align="center">
+  <img src="../../docs/images/RunPanel.gif" alt="SoloEngine 运行演示" width="100%"/>
+    <p><sub>在运行面板中实时观察 Agent 的规划、行动、工具调用与迭代过程</sub></p>
+</div>
 
 ## Star 趋势
 

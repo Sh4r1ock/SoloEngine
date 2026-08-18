@@ -56,6 +56,7 @@ import { useRunWebSocket, ExecutionEvent } from '../../hooks/useRunWebSocket';
 import { useProjectWatcher } from '../../hooks/useProjectWatcher';
 import { runApi } from '../../services/runApi';
 import { loadMessages } from './utils/loadMessagesWithFileChanges';
+import { buildLLMMessage } from './utils/messageUtils';
 import { formatSmartTime } from '../../utils/timezone';
 import { agenticFlowApi } from '../../services/agenticFlowApi';
 import { runProjectApi, RecentProjectInfo, FileInfo } from '../../services/runProjectApi';
@@ -67,7 +68,7 @@ import ScrollNavigationButtons from './components/ScrollNavigationButtons';
 import SessionList from './components/SessionList';
 import AgenticPanel from './components/AgenticPanel';
 import FileExplorer from './FileExplorer';
-import type { LLMMessage, Message, DataBlock, FileTab, CallRecord, CallType, SubagentOutput, SystemMessage } from './types';
+import type { LLMMessage, Message, DataBlock, FileTab, CallRecord, CallType, SubagentOutput, SystemMessage, TokenTotals } from './types';
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -75,6 +76,20 @@ const { Text } = Typography;
 interface RunPanelProps {
   agenticFlowId?: string;
 }
+
+/**
+ * 终态事件 → (消息状态, 会话状态) 单一映射（路径合并核心）：
+ * 暂停（execution_stopped）与正常完成（execution_complete）、执行错误（execution_error）
+ * 只差 status 一个点，其余收尾逻辑全部走 finalizeExecution 同一路径。
+ * 删除散落的 statusMap / isCancelled 三元等临时映射。
+ */
+const TERMINAL_MAP = {
+  execution_complete: { messageStatus: 'completed', sessionStatus: 'completed' },
+  execution_stopped: { messageStatus: 'stopped', sessionStatus: 'cancelled' },
+  execution_error: { messageStatus: 'error', sessionStatus: 'error' },
+} as const;
+
+type TerminalEvent = keyof typeof TERMINAL_MAP;
 
 const ResizableDivider: React.FC<{
   dividerIndex: number;
@@ -120,15 +135,6 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const store = useMemo(() => getRunPanelStore(agenticFlowId!), [agenticFlowId]);
   setCurrentRunPanelStore(store);
 
-  const accumulateTokenUsage = (existing: any, delta: any) => {
-    if (!delta) return existing;
-    if (!existing) return delta;
-    return {
-      prompt_tokens: (existing.prompt_tokens || 0) + (delta.prompt_tokens || 0),
-      completion_tokens: (existing.completion_tokens || 0) + (delta.completion_tokens || 0),
-      total_tokens: (existing.total_tokens || 0) + (delta.total_tokens || 0),
-    };
-  };
   const navigate = useNavigate();
   const { message } = App.useApp();
 
@@ -150,8 +156,6 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     setCallRecords,
     setSubagentOutputs,
     clearSubagentOutputs,
-    setAgentTokens,
-    clearAgentTokens,
     editorTabs,
     documentTabs,
     activeEditorTabId,
@@ -199,9 +203,18 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
   const isConnectedRef = useRef(false);
   const messageAddedRef = useRef<boolean>(false);
+  const executionStartedRef = useRef<boolean>(false);
   const currentMsgIdRef = useRef<string>('');
+  // 后端聚合改造（4.4-1）：消息级 token 由后端 agent_usage 聚合（agentUsageMap），
+  // rootAgentTokensRef 前端累计已删除（不再前端拼接）。
   const fileExplorerActionsRef = useRef<{ refresh: () => void; applyIncrementalChanges: (changes: FileSystemChange[]) => void; openNewFileDialog: () => void; openNewFolderDialog: () => void; navigateToFile: (path: string) => Promise<void> } | null>(null);
   const isStoppingRef = useRef(false);
+  // 轮次级 rootAgentId（路径合并/解耦核心）：本轮执行的消息级归属 agent。
+  // 与 useStreamingData 状态机内的 rootAgentIdRef 解耦——后者被 finalizeStream 清空
+  //（暂停路径提前 finalize 后 getRootAgentId 返回 null，导致 token_totals 丢失的根因 R2）；
+  // 本引用由组件掌控生命周期：execution_start 清空、root agent_start 写入，
+  // finalizeExecution 读取（?? getRootAgentId 兜底），finalize 不影响归属。
+  const roundRootAgentIdRef = useRef<string | null>(null);
   const safetyTimerRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const firstChunkTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -257,6 +270,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
   const [dragStartX, setDragStartX] = useState(0);
   const [dragStartRatios, setDragStartRatios] = useState<number[]>([]);
   const [queueMessages, setQueueMessages] = useState<string[]>([]);
+  // Plan 模式状态（plan_mode_changed 事件驱动）：RunPanel 顶部徽标显示 计划模式/执行模式
+  const [planMode, setPlanMode] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const messageScrollContainerRef = useRef<HTMLDivElement>(null);
   const messageListRef = useRef<MessageListHandle>(null);
@@ -364,23 +379,40 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     init();
   }, [agenticFlowId, currentProject?.id, setCurrentSessionId, setMessages, setFileChangesMap]);
 
-  const createLLMMessage = useCallback((
-    finalData: DataBlock[],
-    messageStatus: 'completed' | 'stopped' | 'error',
-    totalTokens?: number,
-    errorMessage?: string,
-  ): LLMMessage => {
+  const createLLMMessage = useCallback((options: {
+    finalData: DataBlock[];
+    messageStatus: 'completed' | 'stopped' | 'error' | 'compacted';
+    totalTokens?: number;
+    agentId?: string;
+    agentName?: string;
+    tokenHistory?: any[];
+    tokenTotals?: TokenTotals;
+  }): LLMMessage => {
+    const { finalData, messageStatus, totalTokens, agentId, agentName, tokenHistory, tokenTotals } = options;
     const msgId = currentMsgIdRef.current || `msg_${Date.now()}`;
-    return {
+    // 未显式传入时从 blocks 推断：流式路径 blocks 均带 WS 透传的 agent_id/agent_name，
+    // 保证消息级 agent 信息与回显路径一致（extractAgentName 依赖 msg.agent_id/agent_name）
+    const inferredAgentId = agentId || finalData.find(b => b.agent_id)?.agent_id;
+    const inferredAgentName = agentName || finalData.find(b => b.agent_name)?.agent_name;
+    // 去重（t6）：流式 commit 与回显 convertToMessages 共用统一构造器 buildLLMMessage
+    return buildLLMMessage({
       id: msgId,
-      role: 'assistant',
       content: '',
       data: finalData,
       timestamp: new Date().toISOString(),
       status: messageStatus,
+      // 后端聚合改造（4.4-8）：token_totals 透传后端 agent_usage 聚合 5 字段
+      //（agentUsageMap[rootAgentId].totals），使流式 commit 消息头 hover 与回显
+      //（loadMessagesWithFileChanges token_totals: msg.token_usage）完全一致。
+      token_totals: tokenTotals,
+      // 统一修复：流式 commit 注入消息级 token_usage_history（= mainagent 全部阶段块 history
+      // 去重拼接，与回显 loadMessagesWithFileChanges allHistory 合并同构），
+      // 使消息头 TokenBadge hover 详情与回显完全一致。
+      token_usage_history: tokenHistory,
       tokens: totalTokens,
-      error: errorMessage,
-    };
+      agent_id: inferredAgentId,
+      agent_name: inferredAgentName,
+    });
   }, []);
 
   const createSystemMessage = useCallback((
@@ -391,17 +423,73 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       role: 'error',
       error: errorMessage,
       timestamp: new Date().toISOString(),
-      status: 'error',
     };
   }, []);
 
-  const handleExecutionEnd = useCallback((
-    streamingHook: any,
-    messageStatus: 'completed' | 'stopped' | 'error',
-    sessionStatus: string,
-    tokenData: any,
-    errorMessage?: string,
-  ) => {
+  /**
+   * 统一消息提交 - 唯一入口
+   * 与历史回显同构：有LLM创建LLM块，有error创建SystemMessage块
+   * hasLLM 必填，不允许默认值（防止"忘算 hasLLM"导致兜底 push LLMMessage）
+   *
+   * 〇·6 解耦修复：全部参数改为命名 options 对象——此前 11 个位置参数导致
+   * handleStopExecution 调用时把第 7 位（isCompaction）误写为 true（意图是 force），
+   * 造成暂停消息被渲染为「上下文已压缩」气泡、流式内容被折叠隐藏的 bug。
+   * 压缩标记 isCompaction 与提交控制完全解耦，杜绝位置错位。
+   * 路径合并剪枝：force（恒 false）与 commit 路径 isCompaction（恒 false）已删除——
+   * 防重复提交由 messageAddedRef 单一守卫承担，暂停/完成/错误全部走 finalizeExecution。
+   */
+  const commitExecutionMessages = useCallback((options: {
+    assistantBlocks: DataBlock[];
+    messageStatus: 'completed' | 'stopped' | 'error' | 'compacted';
+    hasLLM: boolean;
+    errorMessage?: string;
+    totalTokens?: number;
+    agentId?: string;
+    agentName?: string;
+    tokenHistory?: any[];
+    tokenTotals?: TokenTotals;
+  }) => {
+    const { assistantBlocks, messageStatus, hasLLM, errorMessage, totalTokens, agentId, agentName, tokenHistory, tokenTotals } = options;
+    if (messageAddedRef.current) return;
+    const newMessages: Message[] = [];
+
+    // 有 LLM → 创建 LLMMessage
+    if (hasLLM) {
+      newMessages.push(createLLMMessage({ finalData: assistantBlocks, messageStatus, totalTokens, agentId, agentName, tokenHistory, tokenTotals }));
+    }
+
+    // 有 error → 创建 SystemMessage
+    if (errorMessage) {
+      newMessages.push(createSystemMessage(errorMessage));
+    }
+
+    if (newMessages.length > 0) {
+      setMessages(prev => [...prev, ...newMessages]);
+      messageAddedRef.current = true;
+    }
+  }, [setMessages, createLLMMessage, createSystemMessage]);
+
+  /**
+   * 统一执行终态收尾（路径合并核心，替代原 handleExecutionEnd）：
+   * 正常完成（execution_complete）/ 用户暂停（execution_stopped）/ 执行错误
+   * （execution_error）/ 重连终态 / 暂停 3s 兜底，全部只走本函数。
+   * 暂停与完成唯一区别 = TERMINAL_MAP 中的 status 字符串，其余完全一致。
+   *
+   * 关键修复（R1/R2/R4）：
+   * - 消息归属用轮次级 roundRootAgentIdRef（独立于流式状态机，finalizeStream 清空
+   *   rootAgentIdRef 不影响归属）——暂停路径提前 finalize 后 token 不再丢失；
+   * - commit 必传 totalTokens/tokenTotals/tokenHistory；
+   * - token 更新仅在"新值可用"时覆盖，不把 undefined 写回已设好的值。
+   */
+  const finalizeExecution = useCallback(({
+    terminal,
+    tokenData,
+    errorMessage,
+  }: {
+    terminal: TerminalEvent;
+    tokenData: any;
+    errorMessage?: string;
+  }) => {
     setIsWaitingReply(false);
 
     // 清除安全计时器，防止安全计时器在真实事件处理完成后再次触发
@@ -410,32 +498,44 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       safetyTimerRef.current = null;
     }
 
+    const streamingHook = streamingDataHookRef.current;
+    // 消息级 agent 归属 = 轮次级 rootAgentId（roundRootAgentIdRef，组件职责）；
+    // getRootAgentId 仅作无 agent_start 事件时的兜底。
+    const rootAgentId = roundRootAgentIdRef.current ?? streamingHook.getRootAgentId();
     const finalData = streamingHook.finalizeStream();
-    const totalTokens = tokenData?.total_tokens ||
-      (tokenData?.prompt_tokens && tokenData?.completion_tokens
-        ? tokenData.prompt_tokens + tokenData.completion_tokens
-        : undefined);
+    // 后端聚合改造（4.4-6）：消息级 token_usage_history / total 由后端 agent_usage 聚合
+    //（agentUsageMap，agent_token_usage 推送 / agent_complete metadata.agent_usage 写入），
+    // 前端不再 mergeTokenHistories(finalData.filter(agent_level===0)) 拼接。
+    // 读取不到（重连/终态等无流式事件场景）时走回显路径（loadMessages 已在初始化调用）。
+    const agentUsageMap = useRunPanelStore.getState().agentUsageMap;
+    const rootUsage = rootAgentId ? agentUsageMap[rootAgentId] : undefined;
+    const tokenHistory = rootUsage?.history || [];
+    // B8 修复：优先用 mainagent（root）级 tokens（agent_complete agent_usage 累计，
+    // 与回显 token_usage_history 求和同构）；tokenData（终态事件携带的会话级聚合）
+    // 仅用于 agentUsageMap 为空的无流式事件兜底路径。
+    const totalTokens =
+      rootUsage?.tokens ??
+      (tokenData?.total_tokens ||
+        (tokenData?.prompt_tokens && tokenData?.completion_tokens
+          ? tokenData.prompt_tokens + tokenData.completion_tokens
+          : undefined));
+    // R3：终态事件 token_totals（后端 5 字段视图）作为 agent 级数据缺失时的兜底
+    const tokenTotals = rootUsage?.totals ?? tokenData?.token_totals;
 
-    // 步骤1：消息创建（仅首次）
-    // 所有 assistant 消息都显示 LLM 回复块（AI 头像/名称/时间/tokens），error 分离为 SystemMessage
+    // 步骤1：消息创建（统一入口，messageAddedRef 单一守卫防重复提交）
     if (!messageAddedRef.current) {
-      const newMessages: Message[] = [];
-      
-      // 调用方判断：有LLM输出才创建 assistant 消息
-      const hasLLMOutput = finalData && finalData.length > 0;
-      if (hasLLMOutput) {
-        newMessages.push(createLLMMessage(finalData, messageStatus, totalTokens, errorMessage));
-      }
-
-      // 调用方判断：有错误才创建 SystemMessage
-      if (errorMessage) {
-        newMessages.push(createSystemMessage(errorMessage));
-      }
-
-      if (newMessages.length > 0) {
-        setMessages(prev => [...prev, ...newMessages]);
-        messageAddedRef.current = true;
-      }
+      // 有LLM = 有数据 或 execution_start已收到
+      const hasLLM = finalData.length > 0 || executionStartedRef.current;
+      commitExecutionMessages({
+        assistantBlocks: finalData,
+        messageStatus: TERMINAL_MAP[terminal].messageStatus,
+        hasLLM,
+        errorMessage,
+        totalTokens,
+        tokenTotals,
+        agentId: rootAgentId || undefined,
+        tokenHistory,
+      });
     }
 
     // 步骤2：Token 更新（有 tokenData 时始终执行，与正常/停止路径无关）
@@ -448,11 +548,19 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           return lastIdx;
         }, -1);
         if (lastAssistantIdx === -1) return prev;
-        return prev.map((m, idx) =>
-          idx === lastAssistantIdx
-            ? { ...m, tokens: totalTokens }
-            : m
-        );
+        return prev.map((m, idx) => {
+          if (idx !== lastAssistantIdx) return m;
+          // B8 修复：totalTokens 为空时禁止覆盖消息 tokens——重复终态事件场景下，
+          // 第二次 finalizeExecution 时若 rootUsage 取不到 → totalTokens=null，若直接
+          // 写入会把首次已正确写入的消息头 token 清空（流式 mainagent 消息头 token 丢失根因）。
+          // R4 修复：token_totals/token_usage_history 同样仅在新值可用时覆盖。
+          return {
+            ...m,
+            ...(totalTokens != null ? { tokens: totalTokens } : {}),
+            ...(tokenTotals != null ? { token_totals: tokenTotals } : {}),
+            ...(tokenHistory.length > 0 ? { token_usage_history: tokenHistory } : {}),
+          };
+        });
       });
 
       setSessions(sessionsState => {
@@ -462,9 +570,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           const firstAssistantContent = contentBlock?.content?.substring(0, 50) || undefined;
           const updatedSession: any = {
             ...s,
-            status: sessionStatus,
+            status: TERMINAL_MAP[terminal].sessionStatus,
             firstAssistantContent: s.firstAssistantContent || firstAssistantContent,
-            token_usage: accumulateTokenUsage(s.token_usage, tokenData),
+            // fix-session-token 修复后 tokenData 是终态事件携带的**会话级完整聚合值**
+            //（后端从全部消息 token_usage_history 聚合，含本次执行，字段全量），直接覆盖 session
+            // token_usage。旧 accumulateTokenUsage 累加会把完整聚合值叠加到已有值上（双重计数，
+            // 如 437.3k+444.5k=881.9k）。透传完整对象保留 system/user/assistant 各字段。
+            token_usage: tokenData ? { ...tokenData } : s.token_usage,
             updated_at: new Date().toISOString(),
           };
           // 同步更新 session 内嵌 messages 的最后一条 assistant 消息的 tokens
@@ -476,7 +588,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             if (lastMsgIdx >= 0) {
               updatedSession.messages = s.messages.map((msg: any, idx: number) =>
                 idx === lastMsgIdx
-                  ? { ...msg, tokens: totalTokens, prompt_tokens: tokenData?.prompt_tokens, completion_tokens: tokenData?.completion_tokens, total_tokens: tokenData?.total_tokens }
+                  ? { ...msg, tokens: totalTokens }
                   : msg
               );
             }
@@ -492,10 +604,64 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
     stopRunning();
     clearTimeouts();
-  }, [setIsWaitingReply, setMessages, setSessions, stopRunning, currentSessionId, clearTimeouts]);
+  }, [setIsWaitingReply, setMessages, setSessions, stopRunning, currentSessionId, clearTimeouts, commitExecutionMessages]);
 
   const handleExecutionEvent = useCallback((event: ExecutionEvent) => {
     const streamingHook = streamingDataHookRef.current;
+
+    // 显式工具→面板映射（替代原 includes 模糊匹配，修复 RunCommand 等匹配不到的 bug）。
+    // 联动方式（对齐「工具独立 + 事件关联」）：工具层零前端逻辑，react_core 统一发出
+    // tool_call 事件（含完整 args），前端捕获后在此展示对应 agentic 操作区内容——
+    // read/write 等文件工具经 handleFileClickByPath 打开对应文件（isCode 自动选择
+    // 编辑器/文档面板），RunCommand 等命令工具切换到终端面板。
+    const openPanelForTool = (toolName: string, toolArgs?: Record<string, any>) => {
+      const name = (toolName || '').toLowerCase();
+      // 打开对应文件：复用现有 handleFileClickByPath → handleFileSelect → openOrNavigateFile
+      // 路径（打开 tab + 读取内容填充），不新建任何文件打开逻辑。
+      const openLinkedFile = (argPath?: unknown) => {
+        // 兼容 DeleteFile 等数组参数（file_paths）与单路径参数（file_path/path）
+        const p = Array.isArray(argPath) ? argPath[0] : argPath;
+        if (typeof p !== 'string' || !p.trim()) return;
+        handleFileClickByPathRef.current?.(p.trim());
+      };
+      // 删除类联动：文件已被删除，无面板展示对象——不打开任何面板；
+      // 若该文件 tab 已在编辑器/文档面板中打开，则关闭对应 tab（联动方向与"打开"相反）。
+      const closeDeletedFileTabs = (filePath: string) => {
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        const tabId = `tab_${normalizedPath}`;
+        const store = useRunPanelStore.getState();
+        if (store.editorTabs.some(t => t.id === tabId)) store.closeEditorTabs([tabId]);
+        if (store.documentTabs.some(t => t.id === tabId)) store.closeDocumentTabs([tabId]);
+      };
+      if (['runcommand', 'stopcommand', 'checkcommandstatus', 'getdiagnostics'].includes(name)) {
+        openAgenticPanel('terminal');
+      } else if (['write', 'searchreplace', 'write_file', 'search_replace', 'create_file', 'edit_file'].includes(name)) {
+        // 写入类：编辑器面板 + 对应文件（write 联动：显示编辑器 + 对应文件）
+        openAgenticPanel('editor');
+        openLinkedFile(toolArgs?.file_path ?? toolArgs?.file_paths ?? toolArgs?.path);
+      } else if (name === 'deletefile' || name === 'delete_file') {
+        // 删除类：文件已消失，不打开面板；已打开的对应 tab 关闭（见 closeDeletedFileTabs）
+        const p = Array.isArray(toolArgs?.file_paths)
+          ? toolArgs.file_paths[0]
+          : (toolArgs?.file_path ?? toolArgs?.path);
+        if (typeof p === 'string' && p.trim()) closeDeletedFileTabs(p.trim());
+      } else if (['read', 'read_file'].includes(name)) {
+        // 读取类：handleFileClickByPath 按 isCode 自动打开对应面板（代码文件→编辑器）
+        // 与对应文件；参数缺失（stream 开始块，arguments 为流式增量）时兜底切文档面板，
+        // 保证"调用 read 时 agentic 操作区立即展示对应面板"（文件由 tool_call 事件打开）。
+        if (toolArgs?.file_path) {
+          openLinkedFile(toolArgs.file_path);
+        } else {
+          openAgenticPanel('document');
+        }
+      } else if (name === 'ls') {
+        // 目录浏览类：结果含文件路径列表，弱联动文档面板
+        openAgenticPanel('document');
+      } else if (['openpreview', 'browser_navigate', 'navigate', 'open_browser'].includes(name) || name.includes('preview')) {
+        // OpenPreview：携带 preview_url 使浏览器面板导航到预览地址（browserUrl + 导航信号）
+        openAgenticPanel('browser', toolArgs?.preview_url ?? toolArgs?.url);
+      }
+    };
 
     switch (event.event_type) {
       case 'execution_start': {
@@ -505,21 +671,70 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         currentMsgIdRef.current = newAssistantMsgId;
         streamingDataHookRef.current.setCurrentMsgIdRef(newAssistantMsgId);
 
+        // 新一轮开始：清空轮次级归属（由 root agent_start 事件重新写入）
+        roundRootAgentIdRef.current = null;
         setCallRecords([]);
         clearSubagentOutputs();
-        clearAgentTokens();
         streamingHook.resetStream();
         messageAddedRef.current = false;
+        executionStartedRef.current = true;
+        // 后端聚合改造（4.4-8）：执行开始清空 agent 级 token 状态（与 stream 重置同步）
+        useRunPanelStore.getState().clearAgentUsage();
         startRunning();
         setIsWaitingReply(true);
         break;
       }
 
-      case 'agent_start':
+      case 'agent_start': {
+        // 层级信息：parent_agent_id 为空 = mainagent（root），非空 = subagent。
+        // 用 agent_start 事件驱动 agent 栈（enterRootAgent/enterSubAgent），
+        // 不依赖「第一个 WS 块 = root」的流式顺序推断（mainagent 无流式输出时 subagent 不再误判为 root）
+        // execution_key（〇·3）：栈元素为 executionKey（并发实例独立层级/出栈）
+        const startParentAgentId = (event as any).metadata?.parent_agent_id;
+        const startAgentId = (event as any).agent_id;
+        const startExecutionKey = (event as any).metadata?.execution_key;
+        if (startAgentId && startExecutionKey) {
+          if (startParentAgentId) {
+            streamingHook.enterSubAgent(startAgentId, (event as any).agent_name, startExecutionKey);
+          } else {
+            // root（mainagent）：同时记录轮次级归属（finalizeExecution 读取，
+            // 与流式状态机解耦——finalizeStream 清空 rootAgentIdRef 不影响此归属）
+            roundRootAgentIdRef.current = startAgentId;
+            streamingHook.enterRootAgent(startAgentId, startExecutionKey);
+          }
+        }
         break;
+      }
 
-      case 'agent_complete':
+      case 'agent_complete': {
+        const completeTokens = (event as any).metadata?.tokens || (event as any).tokens;
+        const completeAgentId = (event as any).agent_id;
+        const completeAgentName = (event as any).agent_name;
+        const parentAgentId = (event as any).metadata?.parent_agent_id;
+        const isCompactionRound = (event as any).metadata?.compaction_round === true;
+        const completeExecutionKey = (event as any).metadata?.execution_key;
+        const completeAgentUsage = (event as any).metadata?.agent_usage;
+        // 压缩轮次与正常轮次完全相同：不打断流式、不 commit 独立消息（移除原 finalizeStream+commit），
+        // 所有块持续累积，最终由 execution_complete / 用户 stop 统一 commit。
+        // 此处仅将 token 注入流式块（供压缩气泡/组级 token 显示），与回显（后端注入）同构。
+        if (completeTokens?.total_tokens && completeAgentId) {
+          // 统一注入路径：agent_complete 的 tokens 与 agent_token_usage 同源
+          //（后端 _accumulated_usage 快照，均携带 usage_phase），复用 updateAgentTokens
+          // 完成块级 token 注入（含压缩轮 stop 拦截阶段——该阶段无迭代推送，仅由此补写，
+          // 值含 intercepted_entry 与回显一致；不再需要独立的 injectAgentTokens）。
+          // 后端聚合改造（4.4-3）：metadata.agent_usage（agent 级整轮）同步写入
+          // agentUsageMap（消息头/组头整轮显示）；execution_key 用于块级 token 匹配。
+          streamingHook.updateAgentTokens(completeAgentId, completeTokens, completeAgentUsage, completeExecutionKey);
+          // B8 修复删除：mainagent 消息级 token 不再前端累计（rootAgentTokensRef 已删），
+          // 由 agentUsageMap[rootAgentId] 提供整轮聚合（4.4-1/4.4-6）。
+        }
+        // subagent 完成（非压缩轮、status=completed、有 parent_agent_id）：pop 回父级层级
+        // （〇·3：栈元素为 executionKey，按此出栈）
+        if (!isCompactionRound && (event as any).status === 'completed' && parentAgentId && completeExecutionKey) {
+          streamingHook.exitAgent(completeExecutionKey);
+        }
         break;
+      }
 
       case 'tool_call':
         setCallRecords((prev: CallRecord[]) => {
@@ -551,16 +766,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           }];
         });
         
-        const toolName = event.tool_name?.toLowerCase() || '';
-        if (toolName.includes('write') || toolName.includes('edit')) {
-          openAgenticPanel('editor');
-        } else if (toolName.includes('browser') || toolName.includes('navigate')) {
-          openAgenticPanel('browser');
-        } else if (toolName.includes('read') || toolName.includes('file')) {
-          openAgenticPanel('document');
-        } else if (toolName.includes('terminal') || toolName.includes('shell') || toolName.includes('bash')) {
-          openAgenticPanel('terminal');
-        }
+        // 工具执行完成事件：更新调用记录 + 打开对应面板（显式映射，时序兜底）
+        // tool_args 为完整参数（flow_compiler 转发 call.args），文件类工具据此打开对应文件
+        openPanelForTool(event.tool_name || '', event.tool_args);
         break;
 
       case 'tool_result':
@@ -615,9 +823,6 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         break;
 
       case 'subagent_complete':
-        if ((event as any).tokens?.total_tokens) {
-          setAgentTokens((event as any).subagent_id, (event as any).tokens.total_tokens);
-        }
         setSubagentOutputs((prev: SubagentOutput[]) => {
           const endTime = Date.now();
           return prev.map(sa => {
@@ -696,12 +901,40 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       case 'stream':
         try {
           const delta = event.delta || {} as any;
+          // 问题 1 修复：实时 token 更新事件（后端每次 LLM 迭代结束推送）。
+          // 非消息块，仅更新该 agent 的流式 token 详情，不进入内容渲染路径。
+          // 后端聚合改造（4.4-4）：delta.agent_usage（agent 级整轮）同步写 agentUsageMap；
+          // delta.execution_key 用于块级 token 匹配（并发实例独立）。
+          if ((delta as any).type === 'agent_token_usage' && (delta as any).usage) {
+            streamingHook.updateAgentTokens(
+              (event as any).agent_id,
+              (delta as any).usage,
+              (delta as any).agent_usage,
+              (event as any).execution_key,
+            );
+            lastStreamActivityRef.current = Date.now();
+            break;
+          }
+          // 面板联动（tool_calls_start）：工具调用开始时（stream 块 type=tool_calls 且 status=start）
+          // 即打开对应面板——时序正确（区别于 tool_call 完成事件，避免"工具执行完才打开面板"的滞后）
+          if ((delta as any).type === 'tool_calls' && Array.isArray((delta as any).tool_calls)) {
+            const startedCall = (delta as any).tool_calls.find((tc: any) => tc && (tc.status === 'start' || tc.status === undefined));
+            if (startedCall) {
+              const fnName = startedCall?.function?.name || '';
+              if (fnName) {
+                openPanelForTool(fnName);
+              }
+            }
+          }
           const hasContent = (delta as any).reasoning_content !== undefined && (delta as any).reasoning_content !== null
             || (delta as any).tool_calls !== undefined && (delta as any).tool_calls !== null
-            || (delta as any).content !== undefined && (delta as any).content !== null;
+            || (delta as any).content !== undefined && (delta as any).content !== null
+            || (delta as any).text !== undefined && (delta as any).text !== null;
           const hasLegacyContent = event.content !== undefined && event.content_type !== undefined;
           if (hasContent) {
-            streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name);
+            // 〇·3（4.4-5）：stream 块归属 execution_key（从 WS 消息 execution_key 读），
+            // 注入块级 execution_key（并发栈/块级 token 匹配依据）
+            streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name, (event as any).execution_key);
             setIsWaitingReply(false);
           } else if (hasLegacyContent) {
             streamingHook.processLegacyStream(event.content!, event.content_type!);
@@ -736,7 +969,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           });
         }
 
-        handleExecutionEnd(streamingHook, 'completed', 'completed', tokenData);
+        // 路径合并：正常完成与暂停/错误共用 finalizeExecution
+        finalizeExecution({ terminal: 'execution_complete', tokenData });
         break;
       }
 
@@ -790,13 +1024,27 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
       case 'execution_stopped': {
         const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
-        handleExecutionEnd(streamingHook, 'stopped', 'cancelled', tokenData);
+        // 路径合并：用户暂停与正常完成共用 finalizeExecution，仅 status 不同
+        finalizeExecution({ terminal: 'execution_stopped', tokenData });
         break;
       }
 
       case 'message_queued': {
         const queuedContent = (event as any).content || '';
         setQueueMessages(prev => [...prev, queuedContent]);
+        break;
+      }
+
+      // 工具交互回答已被工具消费：从"排队消息"显示中移除该回答
+      case 'interaction_answer_received': {
+        const consumedContent = (event as any).content || '';
+        setQueueMessages(prev => prev.filter(m => m !== consumedContent));
+        break;
+      }
+
+      // Plan 模式状态变更（EnterPlanMode/ExitPlanMode 推送）：更新 RunPanel 顶部徽标
+      case 'plan_mode_changed': {
+        setPlanMode((event as any).plan_mode === true);
         break;
       }
 
@@ -821,22 +1069,16 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         break;
       }
 
-      case 'execution_cancelled':
+      // 执行错误（execution_cancelled 已剪枝：后端无生产者，删除该分支与 isCancelled 三元）
       case 'agent_error':
       case 'execution_error': {
-        const isCancelled = event.event_type === 'execution_cancelled';
-        const messageStatus = isCancelled ? 'stopped' : 'error';
-        const sessionStatus = isCancelled ? 'cancelled' : 'error';
         const tokenData = event.tokens || event.data?.tokens || event.data?.token_usage || null;
-        const errorMessage = !isCancelled ? (event.error || '执行失败') : undefined;
-        handleExecutionEnd(streamingHook, messageStatus, sessionStatus, tokenData, errorMessage);
-        if (!isCancelled) {
-          message.error(event.error || '执行失败');
-        }
+        finalizeExecution({ terminal: 'execution_error', tokenData, errorMessage: event.error || '执行失败' });
+        message.error(event.error || '执行失败');
         break;
       }
     }
-  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, clearSubagentOutputs, setSubagentOutputs, currentSessionId, incrementFileChangeRefreshKey, clearTimeouts]);
+  }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, clearSubagentOutputs, setSubagentOutputs, currentSessionId, incrementFileChangeRefreshKey, clearTimeouts, finalizeExecution]);
 
   const handleWebSocketMessage = useCallback((msg: any) => {
     if (msg.type === 'execution_result') {
@@ -861,6 +1103,15 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     autoReconnect: true,
   });
 
+  // 终端激活状态上报：前端持有"用户正在查看哪个终端"，经 WS 通知后端 run_context，
+  // RunCommand 据此选择命令执行的 PTY 终端（前端与工具联动独立，工具不感知前端）
+  const handleActiveTerminalChange = useCallback(
+    (terminalId: string) => {
+      send('terminal_attach', { terminal_id: terminalId || undefined });
+    },
+    [send],
+  );
+
   useProjectWatcher(currentProject?.id || null, useCallback((changes: FileSystemChange[]) => {
     fileExplorerActionsRef.current?.applyIncrementalChanges(changes);
     handleExternalFileChanges(changes);
@@ -882,44 +1133,16 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       const sessionStatus = sessionData?.status;
 
       if (sessionStatus === 'completed' || sessionStatus === 'failed' || sessionStatus === 'stop') {
-        const finalData = streamingDataHookRef.current.finalizeStream();
-        const tokenData = sessionData?.token_usage;
-        const totalTokens = tokenData?.total_tokens ||
-          (tokenData?.prompt_tokens && tokenData?.completion_tokens
-            ? tokenData.prompt_tokens + tokenData.completion_tokens
-            : undefined);
-
-        if (!messageAddedRef.current) {
-          const statusMap: Record<string, string> = {
-            completed: 'completed',
-            failed: 'error',
-            stop: 'stopped',
-          };
-          const finalStatus = (statusMap[sessionStatus] || 'completed') as any;
-          const errorMessage = sessionStatus === 'failed' ? (sessionData?.error || '执行失败') : undefined;
-
-          const newMessages: Message[] = [];
-
-          // 调用方判断：有LLM输出才创建 assistant 消息
-          const hasLLMOutput = finalData && finalData.length > 0;
-          if (hasLLMOutput) {
-            newMessages.push(createLLMMessage(finalData, finalStatus, totalTokens, errorMessage));
-          }
-
-          // 调用方判断：有错误才创建 SystemMessage
-          if (errorMessage) {
-            newMessages.push(createSystemMessage(errorMessage));
-          }
-
-          if (newMessages.length > 0) {
-            setMessages(prev => [...prev, ...newMessages]);
-            messageAddedRef.current = true;
-          }
-        }
-
-        stopRunning();
-        setIsWaitingReply(false);
-        clearTimeouts();
+        // 路径合并：重连终态与正常完成/暂停/错误共用 finalizeExecution
+        //（stopRunning / setIsWaitingReply / clearTimeouts 均在 finalizeExecution 内完成）
+        const terminalMap: Record<string, TerminalEvent> = {
+          completed: 'execution_complete',
+          failed: 'execution_error',
+          stop: 'execution_stopped',
+        };
+        const terminal = terminalMap[sessionStatus] || 'execution_complete';
+        const errorMessage = sessionStatus === 'failed' ? (sessionData?.error || '执行失败') : undefined;
+        finalizeExecution({ terminal, tokenData: sessionData?.token_usage ?? null, errorMessage });
 
         try {
           const { messages: restoredMessages, fileChangesMap } = await loadMessages(sessionId);
@@ -936,7 +1159,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       setIsWaitingReply(false);
       clearTimeouts();
     }
-  }, [stopRunning, setIsWaitingReply, setMessages, setFileChangesMap, incrementFileChangeRefreshKey, clearTimeouts]);
+  }, [stopRunning, setIsWaitingReply, setMessages, setFileChangesMap, incrementFileChangeRefreshKey, clearTimeouts, finalizeExecution]);
 
   useEffect(() => {
     if (isConnected && !prevIsConnectedRef.current) {
@@ -1138,6 +1361,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     ));
     
     setInputText('');
+    executionStartedRef.current = false;
     startRunning();
     setIsWaitingReply(true);
 
@@ -1178,6 +1402,22 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
       }
 
       if (isConnectedRef.current) {
+        // HITL 交互挂起判断：消息/流式数据中存在未完成（无 result）的 tool_calls 块。
+        // AskUserQuestion / ExitPlanMode / RunCommand 审批 / DeleteFile 等待用户回答期间，
+        // 后端不产生流式事件，且助手消息在交互完成前未 finalize 到 messages（交互卡片渲染自
+        // streamingData），因此必须同时检查 messages + streamingData；firstChunkTimeout /
+        // streamActivityCheck 的"超时自动停止"在交互挂起时豁免，否则用户未及时回答执行即被误取消。
+        const hasPendingHITLInteraction = (): boolean => {
+          const st = useRunPanelStore.getState();
+          const allBlocks: any[] = [
+            ...((st.messages || []).flatMap((m: any) => (m.data || [])) as any[]),
+            ...(st.streamingData || []),
+          ];
+          return allBlocks.some((b: any) =>
+            b.type === 'tool_calls' && Array.isArray(b.tool_calls) && b.tool_calls.some((tc: any) => !tc.result)
+          );
+        };
+
         // 从canvasData获取第一个agent节点的llm_config_id
         await executeFlow(currentCanvasData, currentInputText, agenticFlowId, sessionId, currentProject?.id);
 
@@ -1192,7 +1432,8 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
 
         firstChunkTimeoutRef.current = setTimeout(() => {
           const currentIsWaiting = useRunPanelStore.getState().isWaitingReply;
-          if (currentIsWaiting) {
+          // HITL 交互挂起时模型在等用户回答，无 chunk 属正常，不判"等待响应超时"
+          if (currentIsWaiting && !hasPendingHITLInteraction()) {
             message.error('等待响应超时，请检查后端服务是否正常');
             stopFlow();
             stopRunning();
@@ -1202,7 +1443,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         lastStreamActivityRef.current = Date.now();
         streamActivityCheckRef.current = setInterval(() => {
           const { isRunning: checkRunning } = useRunPanelStore.getState();
-          if (checkRunning && lastStreamActivityRef.current > 0) {
+          // 交互等待期间后端无流式事件，不得触发"无活动自动停止"（否则用户 60s 内未回答即被取消）。
+          // 普通工具执行中也有流式事件刷新 lastStreamActivityRef，不会误伤 60s 判定。
+          if (checkRunning && !hasPendingHITLInteraction() && lastStreamActivityRef.current > 0) {
             const elapsed = Date.now() - lastStreamActivityRef.current;
             if (elapsed > 60000) {
               stopFlow();
@@ -1219,33 +1462,62 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   };
 
-  const handleStopExecution = async () => {
+  // 工具交互回答：AskUserQuestion / ExitPlanMode 等待用户回答时，
+  // 交互面板点击选项/批准后调用。复用执行通道（executeFlow → WS execute），
+  // 后端在执行任务未完成时将回答消息入队，工具 await 消息队列拿到回答。
+  const handleUserAnswer = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    if (!agenticFlowId || !currentProject?.id) {
+      message.warning('请先选择项目和流程');
+      return;
+    }
+    if (isConnectedRef.current) {
+      await executeFlow(canvasData, text, agenticFlowId, currentSessionId || undefined, currentProject?.id);
+    } else {
+      message.warning('WebSocket 未连接，无法发送回答');
+    }
+  }, [agenticFlowId, currentProject?.id, canvasData, currentSessionId, executeFlow]);
+
+  // 注入工具交互回答发送器（供 ToolCallsBlock 交互面板调用）
+  useEffect(() => {
+    useRunPanelStore.setState({ userAnswerSender: handleUserAnswer });
+    return () => {
+      useRunPanelStore.setState({ userAnswerSender: null });
+    };
+  }, [handleUserAnswer]);
+
+  // 路径合并：暂停不再"提前 finalize + 独立 commit"（这是 R1/R2 根因——commit 缺 token、
+  // finalize 清空归属导致 token_totals 丢失）。
+  // 现在只做两件事：① 立即停止"正在思考"（纯 UI）；② 通知后端 stopFlow。
+  // 收尾（finalize + commit + token）统一由 finalizeExecution 承担：
+  // - execution_stopped 事件到达 → handleExecutionEvent → finalizeExecution（权威路径）
+  // - 3s 内事件未到（后端慢/断连）→ safetyTimer → 同一 finalizeExecution（幂等，messageAddedRef 防重）
+  const handleStopExecution = useCallback(async () => {
     if (isStoppingRef.current) return;
     isStoppingRef.current = true;
 
-    const safetyTimer = setTimeout(() => {
-      const stillRunning = useRunPanelStore.getState().isRunning || useRunPanelStore.getState().isWaitingReply;
-      if (stillRunning) {
-        handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
-      }
+    // 立即停止 UI（隐藏"正在思考"、按钮立即恢复为发送按钮）
+    setIsWaitingReply(false);
+    setCallRecords([]);
+
+    // 3s safetyTimer 兜底（后端迟迟未确认/断连时本地同一路径收尾；finalizeExecution 幂等防重）
+    safetyTimerRef.current = setTimeout(() => {
+      finalizeExecution({ terminal: 'execution_stopped', tokenData: null });
     }, 3000);
-    safetyTimerRef.current = safetyTimer;
 
     try {
       const sent = await stopFlow();
       if (!sent) {
-        clearTimeout(safetyTimer);
-        handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
+        finalizeExecution({ terminal: 'execution_stopped', tokenData: null });
       }
     } catch {
-      clearTimeout(safetyTimer);
-      handleExecutionEnd(streamingDataHookRef.current, 'stopped', 'cancelled', null);
+      finalizeExecution({ terminal: 'execution_stopped', tokenData: null });
     } finally {
       setTimeout(() => {
         isStoppingRef.current = false;
       }, 500);
     }
-  };
+  }, [setIsWaitingReply, setCallRecords, finalizeExecution, stopFlow]);
 
   const handleFileSelect = async (file: FileInfo) => {
     const isCode = isCodeFile(file.name);
@@ -1281,12 +1553,16 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   };
 
+  // 最新 handleFileClickByPath 引用（工具联动打开文件用）：handleExecutionEvent 为 useCallback，
+  // 经 ref 取最新渲染闭包（currentProject 等依赖不随事件回调过期）。
+  const handleFileClickByPathRef = useRef<(filePath: string) => void>(() => {});
   const handleFileClickByPath = (filePath: string) => {
     const name = filePath.split(/[\\/]/).pop() || filePath;
     const projectFolder = currentProject?.folder_path;
     const resolvedPath = resolveFilePath(filePath, projectFolder);
     handleFileSelect({ name, path: resolvedPath, is_dir: false, size: 0, modified: new Date().toISOString() });
   };
+  handleFileClickByPathRef.current = handleFileClickByPath;
 
   const toRelativePath = useCallback((absolutePath: string): string => {
     const projectFolder = currentProject?.folder_path;
@@ -1404,6 +1680,12 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               <LockOutlined style={{ fontSize: 12, color: 'var(--success)' }} />
               <Text style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.6)' }}>安全沙箱</Text>
             </div>
+            {/* Plan 模式状态徽标：plan_mode_changed 事件驱动（计划模式=紫色 / 执行模式=默认） */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 6, background: planMode ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.04)', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+              <Tag color={planMode ? 'purple' : 'default'} style={{ marginRight: 0, fontSize: 12, lineHeight: '18px' }}>
+                {planMode ? '计划模式' : '执行模式'}
+              </Tag>
+            </div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 180, justifyContent: 'flex-end' }}>
@@ -1480,6 +1762,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
               onEditorContentChange={handleEditorContentChange}
               onDocumentContentChange={handleDocumentContentChange}
               onAutoSave={handleAutoSave}
+              onActiveTerminalChange={handleActiveTerminalChange}
             />
             <ResizableDivider dividerIndex={2} isDragging={isDragging} onMouseDown={handleMouseDown} />
           </div>

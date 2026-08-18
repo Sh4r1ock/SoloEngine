@@ -1,6 +1,6 @@
 import { runApi } from '../../../services/runApi';
 import { fileChangesApi } from '../../../services/fileChangesApi';
-import { convertToLLMMessages } from './messageUtils';
+import { convertToMessages } from './messageUtils';
 import type { LLMMessage, Message, DataBlock, FileChangeInfo, SessionMessage, MessageFileChangesMap } from '../types';
 
 const mapFileChange = (c: any): FileChangeInfo => ({
@@ -22,7 +22,7 @@ export const loadMessages = async (sessionId: string): Promise<{ messages: Messa
     fileChangesApi.getSessionFileChanges(sessionId, { limit: 500, diff_type: 'net' } as any).catch(() => null),
   ]);
 
-  const rawMessages: SessionMessage[] = (msgs || []).map((msg: any, index: number) => ({
+  let rawMessages: SessionMessage[] = (msgs || []).map((msg: any, index: number) => ({
     id: msg.id,
     role: msg.role,
     content: msg.content || '',
@@ -33,13 +33,20 @@ export const loadMessages = async (sessionId: string): Promise<{ messages: Messa
     message_index: msg.message_index ?? index,
     timestamp: msg.created_at || new Date().toISOString(),
     created_at: msg.created_at,
-    tokens: msg.total_tokens,
-    prompt_tokens: msg.prompt_tokens,
-    completion_tokens: msg.completion_tokens,
-    total_tokens: msg.total_tokens,
+    // 后端聚合改造（4.6-1）：mainagent 合并已由后端完成（run.py get_session_messages：
+    // 同一 user 下 stop/compacted/completed 合并为一条），tokens 直接读后端聚合字段
+    // token_usage.total——前端不再求和（删除 pendingMain 合并逻辑）
+    tokens: msg.token_usage?.total,
+    // 后端聚合改造（4.6-2）：token_totals 透传后端聚合字段 token_usage（消息头 hover 数据源）
+    token_totals: msg.token_usage,
+    token_usage_history: msg.token_usage_history,
+    agent_id: msg.agent_id,
+    agent_name: msg.agent_name,
+    parent_agent_id: msg.parent_agent_id,
+    parent_message_id: msg.parent_message_id,
   }));
 
-  const restoredMessages: Message[] = convertToLLMMessages(rawMessages);
+  const restoredMessages: Message[] = convertToMessages(rawMessages);
 
   const fileChangesMap: MessageFileChangesMap = {};
 

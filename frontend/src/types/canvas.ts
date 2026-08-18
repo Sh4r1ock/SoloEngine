@@ -43,9 +43,12 @@ export interface NodeData {
     model_config?: {
       llm_config_id?: string;
       temperature: number;
-      max_tokens: number;
+      max_output_tokens: number;
+      max_input_tokens: number;
       frequency_penalty: number;
       presence_penalty: number;
+      /** 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限（默认值来自 llm_config，写入画布） */
+      max_tool_calls?: number;
     };
     skills?: string[];
     mcp_tools?: string[];
@@ -86,17 +89,28 @@ export interface EdgeData {
 }
 
 /**
- * 全局设置接口
+ * 全局设置接口（agenticflow 画布设置）
  *
- * 属性:
- *     - maxContextLength: 最大上下文长度
- *     - maxIterations: 最大迭代次数
- *     - timeout: 超时时间
+ * 说明：maxContextLength / maxIterations / timeout 等 agent 级参数
+ * 已迁移至 LLM 配置（llm_config 默认值 → 画布节点 model_config → canvas_data），
+ * 此处仅保留画布级运行行为设置。
  */
 export interface GlobalSettings {
-  maxContextLength: number;
-  maxIterations: number;
-  timeout: number;
+  /**
+   * 命令运行模式（agenticflow 画布设置）：
+   * - 'auto'：自动运行，命令直接执行（等价 Claude Code bypassPermissions / Cursor Run Everything）
+   * - 'ask'：每次询问，所有命令执行前请求用户批准（等价 Claude Code default / Cursor Ask）
+   * - 'allowlist'：白名单模式，白名单内命令自动执行，白名单外请求用户批准（等价 Cursor Allowlist）
+   */
+  runMode?: 'auto' | 'ask' | 'allowlist';
+  /** 命令白名单（命令前缀列表，用户可自行添加；仅 allowlist 模式生效） */
+  commandAllowlist?: string[];
+  /**
+   * 实时跟随（agentic 操作区联动）：
+   * - true（默认）：工具调用时 agentic 操作区自动跳转到对应标签页（终端/编辑器/文档/浏览器）
+   * - false：只打开对应页面与文件，不强制跳转（保留用户当前查看的标签页）
+   */
+  followMode?: boolean;
 }
 
 /**
@@ -123,15 +137,6 @@ export interface ToolData {
   id: string;
   name: string;
   description: string;
-}
-
-export interface WebSocketEvent {
-  type: 'agent-update' | 'tool-call' | 'response-streaming' | 'execution-complete' | 'error';
-  node_id?: string;
-  status?: string;
-  message?: string;
-  session_id?: string;
-  result?: any;
 }
 
 export interface AgentType {

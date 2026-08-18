@@ -234,6 +234,35 @@ class AuthService:
             logger.error(f"Failed to decode token: {e}")
             return None
 
+    async def verify_access_token(self, token: str) -> tuple[bool, Optional[str]]:
+        """
+        验证 access token 完整性（用于 WebSocket 等无法走 Depends 的场景）
+
+        包含 4 项检查（与 v0.3.0.1 websocket.py verify_token 一致）：
+        1. token 非空
+        2. decode_token 成功
+        3. payload.get("type") == "access"（拒绝 refresh token）
+        4. get_user(user_id) 用户存在且 is_active
+
+        Args:
+            token: JWT 令牌字符串
+
+        Returns:
+            (valid, user_id) 元组：valid=True 且 user_id 为用户 ID 时通过
+        """
+        if not token:
+            return False, None
+        payload = self.decode_token(token)
+        if not payload or payload.get("type") != "access":
+            return False, None
+        user_id = payload.get("sub")
+        if not user_id:
+            return False, None
+        user = await self.get_user(user_id)
+        if user is None or not user.is_active:
+            return False, None
+        return True, user_id
+
     async def register_user(
         self,
         username: str,

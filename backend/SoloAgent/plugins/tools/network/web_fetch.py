@@ -48,7 +48,7 @@ class HTMLToMarkdownConverter(HTMLParser):
         >>> markdown = converter.convert("<h1>Title</h1><p>Content</p>")
     """
     
-    SKIP_TAGS = {"script", "style", "nav", "footer", "header", "aside", "noscript"}
+    SKIP_TAGS = {"script", "style", "nav", "footer", "header", "aside", "noscript", "head"}
     
     def __init__(self) -> None:
         """初始化转换器。"""
@@ -142,8 +142,10 @@ class HTMLToMarkdownConverter(HTMLParser):
         
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
             level = int(tag[1])
+            # _add_text 已以 "\n" 开头提供标题前的换行，
+            # 不能再用 _add_newlines 设置 pending，否则标题文本前会被插入换行，
+            # 导致 "# " 与标题文本分离（Markdown 标题为空）。
             self._add_text("\n" + "#" * level + " ")
-            self._add_newlines(1)
         
         elif tag == "p":
             self._add_newlines(2)

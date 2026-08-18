@@ -54,14 +54,10 @@ ALLOWED_COMMANDS = {
 }
 
 
+# 危险模式检测（分级：命中即"危险命令"，由运行模式决定转人工审批，不直接拒绝）。
+# 注意：`;` `&&` `||` `>` `<` 等为正常 shell 复合/重定向语法，**不列入危险模式**
+#（主流 AI IDE 从不因这些语法拒绝命令），仅保留真正破坏性/不可恢复的操作。
 DANGEROUS_PATTERNS = [
-    r';',
-    r'&&',
-    r'\|\|',
-    r'`',
-    r'\$\(',
-    r'>',
-    r'<',
     r'rm\s+-rf',
     r'rm\s+-fr',
     r'chmod\s+777',
@@ -314,22 +310,62 @@ class BaseCommandTool:
     _registry: CommandRegistry = CommandRegistry()
     
     @staticmethod
+    def is_command_dangerous(command: str) -> Tuple[bool, str]:
+        """
+        检测命令是否命中危险模式（分级：危险 = 转人工审批，不直接拒绝）。
+
+        Returns:
+            Tuple[bool, str]: (是否危险, 命中的危险模式)。
+        """
+        if not command or not command.strip():
+            return False, ""
+        command = command.strip()
+        for pattern in DANGEROUS_PATTERNS:
+            if re.search(pattern, command, re.IGNORECASE):
+                return True, f"检测到危险模式: {pattern}"
+        return False, ""
+
+    @staticmethod
+    def is_command_allowlisted(command: str, allowlist) -> bool:
+        """
+        判断命令是否命中运行模式白名单（前缀匹配，与 Cursor allowlist 语义一致）。
+
+        Args:
+            command (str): 命令字符串。
+            allowlist (List[str]): 白名单前缀列表（用户可自行添加）。
+
+        Returns:
+            bool: True=白名单内（自动执行）。
+        """
+        if not command:
+            return False
+        command = command.strip()
+        for prefix in allowlist or []:
+            prefix = str(prefix).strip()
+            if not prefix:
+                continue
+            # 前缀匹配：`git` 匹配 `git status`/`git diff` 等
+            if command.startswith(prefix) or command.split()[0].lower().startswith(prefix.lower()):
+                return True
+        return False
+
+    @staticmethod
     def is_command_safe(command: str) -> Tuple[bool, str]:
         """
         检查命令是否安全。
-        
+
         执行两层安全检查：
-        1. 命令白名单验证：检查基础命令是否在允许列表中
-        2. 危险模式检测：检测已知的危险命令模式
-        
+        1. 危险模式检测：命中危险模式（rm -rf / sudo / shutdown 等破坏性操作）判定不安全
+        2. 命令白名单验证：检查基础命令是否在允许列表中
+
         Args:
             command (str): 要检查的命令字符串。
-        
+
         Returns:
             Tuple[bool, str]: 
                 - bool: 命令是否安全
                 - str: 不安全原因（如果安全则为空字符串）
-        
+
         Example:
             >>> is_safe, reason = BaseCommandTool.is_command_safe("ls -la")
             >>> print(is_safe)  # True
@@ -341,11 +377,12 @@ class BaseCommandTool:
         if not command or not command.strip():
             return False, "命令为空"
         
-        command = command.strip()
+        # 危险模式分级检测（危险命令由运行模式决定转人工审批）
+        dangerous, reason = BaseCommandTool.is_command_dangerous(command)
+        if dangerous:
+            return False, reason
         
-        for pattern in DANGEROUS_PATTERNS:
-            if re.search(pattern, command, re.IGNORECASE):
-                return False, f"检测到危险模式: {pattern}"
+        command = command.strip()
         
         base_command = command.split()[0] if command.split() else ""
         base_command_lower = base_command.lower()

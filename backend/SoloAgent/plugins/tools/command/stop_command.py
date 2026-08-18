@@ -27,6 +27,7 @@
 """
 
 import asyncio
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, Any
@@ -125,16 +126,21 @@ class StopCommand(BaseCommandTool):
             }
         
         try:
-            process.terminate()
-            
-            try:
-                await asyncio.wait_for(
-                    process.wait(),
-                    timeout=cls.TERMINATE_TIMEOUT_SECONDS
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
+            if sys.platform == 'win32':
+                # Windows：进程由 cmd.exe（shell）启动，命令可能是其子进程。
+                # 仅 terminate/kill cmd.exe 会导致子进程成为孤儿继续运行，
+                # 必须终止整个进程树（taskkill /T）才能真正停止命令。
+                await cls._terminate_process_tree(process)
+            else:
+                process.terminate()
+                try:
+                    await asyncio.wait_for(
+                        process.wait(),
+                        timeout=cls.TERMINATE_TIMEOUT_SECONDS
+                    )
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
             
             cmd_info.state = CommandState.STOPPED
             cmd_info.finished_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
@@ -167,6 +173,52 @@ class StopCommand(BaseCommandTool):
             cmd_info.stderr_buffer = str(e)
             raise CommandToolError(f"停止命令失败: {e}", command_id=command_id)
     
+    @classmethod
+    async def _terminate_process_tree(cls, process: asyncio.subprocess.Process) -> None:
+        """
+        在 Windows 上终止整个进程树。
+        
+        cmd.exe（shell）启动的命令可能是其子进程，仅终止 shell 会让
+        子进程成为孤儿继续运行。taskkill /T 会递归终止指定进程及其
+        所有子进程，/F 为强制终止。
+        
+        流程：
+            1. 先优雅终止进程树（taskkill /T，不带 /F）
+            2. 等待进程退出；超时后强制终止进程树（taskkill /T /F）
+        
+        Args:
+            process (asyncio.subprocess.Process): 要终止的进程。
+        """
+        pid = process.pid
+        await cls._run_taskkill(pid, force=False)
+        try:
+            await asyncio.wait_for(
+                process.wait(),
+                timeout=cls.TERMINATE_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            await cls._run_taskkill(pid, force=True)
+            await process.wait()
+
+    @classmethod
+    async def _run_taskkill(cls, pid: int, force: bool) -> None:
+        """
+        执行 taskkill 终止进程树。
+        
+        Args:
+            pid (int): 进程 ID。
+            force (bool): 是否强制终止（/F）。
+        """
+        cmd = ["taskkill", "/PID", str(pid), "/T"]
+        if force:
+            cmd.append("/F")
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await proc.wait()
+
     @staticmethod
     def get_tool_spec() -> Dict[str, Any]:
         """

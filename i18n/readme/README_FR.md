@@ -10,7 +10,7 @@
 
 ***
 
-<p align="center"><b>SoloEngine</b> est la première plateforme de développement Agentic AI low-code. C'est comme constituer une équipe de startup : glissez les Agents dont vous avez besoin sur le canevas, connectez leurs relations de collaboration, puis exécutez. À partir de là, ils planifient, agissent et livrent de manière totalement autonome.</p>
+<p align="center"><b>SoloEngine</b> est la première plateforme low-code dédiée à l’IA agentique. Déposez un Agent sur le canevas, reliez-le à un autre membre de l’équipe et lancez-le : il planifie, agit, observe et itère en toute autonomie jusqu’à l’accomplissement de la tâche.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -67,6 +67,11 @@ Tous les Agents partagent la même architecture sous-jacente ; seule leur config
 2. **Moteur ReAct unifié** — Chaque Agent exécute le même cycle « penser → agir → observer → répéter ».
 3. **Chargement à la demande** — Grâce au mécanisme de compilation, les Agents ne chargent à l'exécution que le modèle, la configuration et les outils spécifiés. C'est ce qui rend l'Agentic AI viable en environnement low-code.
 
+<div align="center">
+  <img src="../../docs/images/Canvas.gif" alt="Démonstration du canevas visuel de SoloEngine" width="100%"/>
+  <p><sub>Composez des Agents sur le canevas visuel et compilez la configuration de l’équipe en un Agent DAG exécutable</sub></p>
+</div>
+
 ## Démarrage rapide
 
 ```bash
@@ -91,6 +96,11 @@ Ouvrez **<http://localhost:8991>** dans votre navigateur et construisez votre pr
 - **VibeLawing** — Un avocat glisse successivement un Agent de recherche, un Agent d'archivage et un Agent de mise en forme sur le canevas, puis exécute. SoloEngine décompose et planifie automatiquement le travail juridique : analyse des faits, localisation des textes de loi, organisation de la jurisprudence, structuration des arguments et mise en forme des documents — il ne vous reste qu'à vérifier et ajuster avant livraison. L'ensemble du processus est aussi fluide qu'un développeur pratiquant le vibe coding dans Cursor.
 - **VibeMarketing** — Un spécialiste marketing glisse un Agent d'étude, un Agent de rédaction et un Agent de création sur le canevas, puis exécute. SoloEngine analyse automatiquement l'audience, recherche des stratégies produit pertinentes, effectue une veille concurrentielle et rédige une stratégie marketing — vous livrant un plan de campagne abouti.
 - **Packaging en un clic** — Une fois votre équipe d'Agents prête, un seul clic génère un produit complet que n'importe qui peut utiliser directement.
+
+<div align="center">
+  <img src="../../docs/images/RunPanel.gif" alt="Démonstration de l’exécution dans SoloEngine" width="100%"/>
+  <p><sub>Suivez en temps réel la planification, les actions, les appels d’outils et les itérations des Agents dans le panneau d’exécution</sub></p>
+</div>
 
 ## Tendance des Stars
 

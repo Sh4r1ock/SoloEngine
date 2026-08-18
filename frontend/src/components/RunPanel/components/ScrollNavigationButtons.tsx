@@ -58,21 +58,6 @@ const ScrollNavigationButtons: React.FC<ScrollNavigationButtonsProps> = ({ conta
     };
   }, [containerRef]);
 
-  const getCurrentVisibleUserIndex = useCallback(() => {
-    const el = containerRef.current;
-    if (!el) return -1;
-    const userMessages = el.querySelectorAll('[data-message-role="user"]');
-    if (userMessages.length === 0) return -1;
-    const containerTop = el.getBoundingClientRect().top;
-    for (let i = 0; i < userMessages.length; i++) {
-      const msgRect = userMessages[i].getBoundingClientRect();
-      if (msgRect.top >= containerTop - 10) {
-        return i;
-      }
-    }
-    return userMessages.length - 1;
-  }, [containerRef]);
-
   const scrollUserMessageToOffset = useCallback((targetElement: HTMLElement) => {
     const el = containerRef.current;
     if (!el) return;
@@ -88,15 +73,42 @@ const ScrollNavigationButtons: React.FC<ScrollNavigationButtonsProps> = ({ conta
     messageListRef.current?.disableAutoScroll();
     const userMessages = el.querySelectorAll('[data-message-role="user"]');
     if (userMessages.length === 0) return;
-    const currentIndex = getCurrentVisibleUserIndex();
-    const delta = direction === 'prev' ? -1 : 1;
-    const targetIndex = Math.max(0, Math.min(userMessages.length - 1, currentIndex + delta));
-    if (targetIndex !== currentIndex && userMessages[targetIndex]) {
-      scrollUserMessageToOffset(userMessages[targetIndex] as HTMLElement);
-    } else if (direction === 'next' && targetIndex === userMessages.length - 1) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+
+    const containerTop = el.getBoundingClientRect().top;
+    let targetElement: HTMLElement | null = null;
+
+    if (direction === 'prev') {
+      // 找当前视口上方最近的 user 消息（跳过着陆区内的消息）
+      for (let i = userMessages.length - 1; i >= 0; i--) {
+        const rect = userMessages[i].getBoundingClientRect();
+        if (rect.top < containerTop + TOP_OFFSET - 2) {
+          targetElement = userMessages[i] as HTMLElement;
+          break;
+        }
+      }
+      if (targetElement) {
+        scrollUserMessageToOffset(targetElement);
+      } else {
+        // 边界：上方没有 user 消息，滚到顶部
+        el.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else {
+      // 找当前视口下方最近的 user 消息（跳过着陆区内的消息）
+      for (let i = 0; i < userMessages.length; i++) {
+        const rect = userMessages[i].getBoundingClientRect();
+        if (rect.top > containerTop + TOP_OFFSET + 2) {
+          targetElement = userMessages[i] as HTMLElement;
+          break;
+        }
+      }
+      if (targetElement) {
+        scrollUserMessageToOffset(targetElement);
+      } else {
+        // 边界：下方没有 user 消息，滚到底部
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      }
     }
-  }, [containerRef, messageListRef, getCurrentVisibleUserIndex, scrollUserMessageToOffset]);
+  }, [containerRef, messageListRef, scrollUserMessageToOffset]);
 
   return (
     <>

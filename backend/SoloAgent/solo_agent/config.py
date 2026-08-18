@@ -93,12 +93,19 @@ class SoloAgentConfig:
     max_memory_length: Optional[int] = None
     
     max_iters: int = 10
+    # 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限。
+    # 必须从画布节点 model_config 获取（默认值来自 llm_config 并写入 canvas），禁止降级到默认值。
+    max_tool_calls: Optional[int] = None
     stream: bool = True
     
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    # 完整 URL 开关：True 表示 base_url 为完整请求地址（含 /chat/completions）
+    is_full_url: bool = False
     temperature: float = 0.7
-    max_tokens: int = 128000
+    max_tokens: Optional[int] = None
+    max_input_tokens: Optional[int] = None  # 新增：最大输入 token 数，必须从 canvas_data 传入
+    max_output_tokens: Optional[int] = None  # 新增：最大输出 token 数，必须从 canvas_data 传入
     top_p: float = 1.0
     frequency_penalty: float = 0.0
     presence_penalty: float = 0.0
@@ -139,8 +146,11 @@ class SoloAgentConfig:
             stream=data.get("stream", True),
             api_key=data.get("api_key"),
             base_url=data.get("base_url"),
+            is_full_url=data.get("is_full_url", False),
             temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens", 128000),
+            max_tokens=data.get("max_tokens"),
+            max_input_tokens=data.get("max_input_tokens"),  # 新增
+            max_output_tokens=data.get("max_output_tokens"),  # 新增
             top_p=data.get("top_p", 1.0),
             frequency_penalty=data.get("frequency_penalty", 0.0),
             presence_penalty=data.get("presence_penalty", 0.0),
@@ -171,8 +181,11 @@ class SoloAgentConfig:
             "stream": self.stream,
             "api_key": self.api_key,
             "base_url": self.base_url,
+            "is_full_url": self.is_full_url,
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
+            "max_input_tokens": self.max_input_tokens,  # 新增
+            "max_output_tokens": self.max_output_tokens,  # 新增
             "top_p": self.top_p,
             "frequency_penalty": self.frequency_penalty,
             "presence_penalty": self.presence_penalty,

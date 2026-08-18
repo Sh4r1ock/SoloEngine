@@ -39,6 +39,7 @@ import tempfile
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from app.core.config import settings
+from app.core.mcp_config import build_mcp_config
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -78,15 +79,6 @@ def fill_server_data(server, server_data: dict):
         server_data["headers"] = server.sse_config.headers or {}
         server_data["timeout"] = server.sse_config.timeout or 30
 
-
-def build_mcp_config(server) -> dict:
-    if server.transport_type == "stdio" and server.stdio_config:
-        return {"transport": server.transport_type, "command": server.stdio_config.command, "args": server.stdio_config.args, "env": server.stdio_config.env}
-    elif server.transport_type == "http" and server.http_config:
-        return {"transport": server.transport_type, "url": server.http_config.url, "headers": server.http_config.headers, "timeout": server.http_config.timeout}
-    elif server.transport_type == "sse" and server.sse_config:
-        return {"transport": server.transport_type, "url": server.sse_config.url, "headers": server.sse_config.headers, "timeout": server.sse_config.timeout}
-    return {"transport": server.transport_type}
 
 class MCPServerCreate(BaseModel):
     name: str = Field(..., description="服务器名称")

@@ -50,4 +50,7 @@ console_handler.setFormatter(formatter)
 # Add console handler to logger
 logger.addHandler(console_handler)
 
+# 阻止日志向 root logger 传播，避免被 basicConfig 配置的 root handler 重复输出
+logger.propagate = False
+
 __all__ = ["logger"]

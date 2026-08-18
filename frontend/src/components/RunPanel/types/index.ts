@@ -31,11 +31,23 @@ export interface FileChangeInfo {
   _preview?: boolean;
 }
 
+/** 后端聚合的 5 字段 token 统计（后端聚合改造：前端只显示，不再求和）。
+ *  后端 get_session_messages 返回的 token_usage 与本类型逐字段一致；
+ *  流式 agent_token_usage 推送的 agent_usage 经 updateAgentTokens 映射后写入块级/消息级。 */
+export interface TokenTotals {
+  system_prompt: number;
+  user_prompt: number;
+  assistant_prompt: number;
+  completion: number;
+  total: number;
+}
+
 export interface DataBlock {
   id?: string;
   type: DataBlockType;
   content?: string;
   reasoning_content?: string;
+  text?: string;
   tool_calls?: ToolCall[];
   file_changes?: FileChangeInfo[];
   agent_id?: string;
@@ -44,25 +56,50 @@ export interface DataBlock {
   agent_tokens?: number;
   agent_prompt_tokens?: number;
   agent_completion_tokens?: number;
+  /** agent 级 token_usage_history（subagent 组头/压缩气泡 hover 详情数据源，
+   *  流式由 updateAgentTokens 注入、回显由 build_flattened_blocks 注入，两端同构） */
+  agent_token_history?: any[];
+  /** 块级本阶段聚合（后端聚合改造 4.1-1，压缩气泡 hover 用；回显由
+   *  build_flattened_blocks 注入 agent_token_totals、流式由 updateAgentTokens 写入） */
+  agent_token_totals?: TokenTotals;
+  /** 组级整轮累计（后端聚合改造：subagent 组头回显用。该 subagent 本次 task 调用
+   *  下全部消息 history 求和，与流式 agentUsageMap[agent_id] 整轮累计同构；
+   *  mainagent 不注入，组头走消息级 token_usage 聚合） */
+  group_agent_tokens?: number;
+  group_agent_totals?: TokenTotals;
+  group_agent_history?: any[];
+  /** 流式块实例归属键（〇·3 并发方案 4.1-2）：流式由 processStreamChunk 注入、
+   *  回显由 build_flattened_blocks 按消息 agent 归属注入——并发栈/块级 token
+   *  匹配依据（同一 agent 多实例时块级 token 不混写） */
+  execution_key?: string;
   name?: string;
   arguments?: string;
   _isExpanding?: boolean;
   _userToggled?: boolean;
+  parent_message_id?: string;
+  /** 压缩摘要块标记：嵌套在 subagent 层级内的压缩块，前端渲染为折叠气泡 */
+  _is_compaction?: boolean;
+  /** 流式 token 阶段完成标记（问题 1 修复）：阶段切换时锁定，保持块级阶段值 */
+  _stageDone?: boolean;
 }
 
 export interface LLMMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
   reasoning_content?: string;
   data?: DataBlock[];
   timestamp: string;
   tokens?: number;
+  token_usage_history?: TokenUsageHistoryEntry[];
+  /** 消息级聚合（后端聚合改造 4.1-3，消息头 hover 用；回显后端 token_usage 映射而来） */
+  token_totals?: TokenTotals;
   agent_id?: string;
   agent_name?: string;
   parent_agent_id?: string;
-  status?: 'completed' | 'error' | 'stopped' | 'running';
-  error?: string;
+  parent_message_id?: string;
+  status?: 'completed' | 'error' | 'stopped' | 'running' | 'compacted' | 'stop';
+  isCompaction?: boolean;
 }
 
 export interface SystemMessage {
@@ -70,7 +107,6 @@ export interface SystemMessage {
   role: 'error';
   error: string;
   timestamp: string;
-  status?: 'error' | 'warning' | 'info';
 }
 
 export type Message = LLMMessage | SystemMessage;
@@ -182,6 +218,19 @@ export interface ToolCallRecord {
   duration?: number;
 }
 
+export interface TokenUsageHistoryEntry {
+  iteration: number;
+  timestamp: string;
+  system_prompt_token: number;
+  user_prompt_token: number;
+  assistant_prompt_token: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  duration_ms: number;
+  finish_reason: string;
+}
+
 export interface SessionMessage {
   id: string;
   role: string;
@@ -191,12 +240,17 @@ export interface SessionMessage {
   error?: string;
   data: DataBlock[];
   message_index: number;
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
+  parent_message_id?: string;
+  token_usage_history?: TokenUsageHistoryEntry[];
+  /** 消息级聚合（后端聚合改造 4.1-5）：后端 get_session_messages 返回的
+   *  token_usage 映射为 token_totals（4.6/4.7 透传数据源） */
+  token_totals?: TokenTotals;
   created_at?: string;
   timestamp?: string;
   tokens?: number;
+  agent_id?: string;
+  agent_name?: string;
+  parent_agent_id?: string;
 }
 
 export interface FileInfo {

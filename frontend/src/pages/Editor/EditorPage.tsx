@@ -42,6 +42,7 @@ import Canvas from '../../components/Canvas/Canvas';
 import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
 import Preview from '../../components/Preview/Preview';
 import { useCanvasStore } from '../../store/canvasStore';
+import SettingsModal from '../../components/Settings/SettingsModal';
 
 import { agenticFlowApi } from '../../services/agenticFlowApi';
 
@@ -64,6 +65,8 @@ const EditorPage: React.FC = () => {
     setSelectedNode,
     isPreviewOpen,
     setPreviewOpen,
+    isSettingsOpen,
+    setSettingsOpen,
   } = useCanvasStore();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -483,6 +486,9 @@ const EditorPage: React.FC = () => {
         visible={isPreviewOpen} 
         onClose={() => setPreviewOpen(false)} 
       />
+
+      {/* agenticflow 画布设置弹窗：全局设置（含命令运行模式/白名单）+ LLM 配置 */}
+      <SettingsModal visible={isSettingsOpen} onClose={() => setSettingsOpen(false)} />
     </Layout>
   );
 };

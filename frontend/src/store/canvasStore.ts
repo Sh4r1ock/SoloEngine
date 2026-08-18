@@ -35,6 +35,7 @@ import { CanvasData, NodeData, EdgeData, ProjectData, GlobalSettings } from '../
 import { APP_CONFIG } from '../config/index';
 
 import { MarkerType } from 'reactflow';
+import { message } from 'antd';
 import { agenticFlowApi } from '../services/agenticFlowApi';
 import { llmApi, LLMConfig } from '../services/llmApi';
 
@@ -98,9 +99,12 @@ interface CanvasStore {
 }
 
 const defaultSettings: GlobalSettings = {
-  maxContextLength: APP_CONFIG.CANVAS_DEFAULT_MAX_CONTEXT_LENGTH,
-  maxIterations: APP_CONFIG.CANVAS_DEFAULT_MAX_ITERATIONS,
-  timeout: APP_CONFIG.CANVAS_DEFAULT_TIMEOUT,
+  // 运行模式默认"每次询问"（最安全，与主流 AI IDE 默认一致）；
+  // 白名单默认取 .env 配置的综合安全命令列表（用户可自行增删，保存后覆盖画布值）
+  runMode: 'ask',
+  commandAllowlist: [...APP_CONFIG.DEFAULT_COMMAND_ALLOWLIST],
+  // 实时跟随默认开启：工具调用时 agentic 操作区自动跳转对应标签页
+  followMode: true,
 };
 
 let debouncedPushHistory: (() => void) | null = null;
@@ -237,10 +241,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     try {
       const defaultConfig = await llmApi.getDefaultConfig();
       if (defaultConfig) {
+        // canvas 从 llm_config 获取默认值并写入 canvas；llm_config 缺必填字段必须直接报错，禁止静默降级
+        if (defaultConfig.max_input_tokens == null) {
+          message.error(`LLM 配置「${defaultConfig.name}」缺少 max_input_tokens，无法应用到节点，请在模型管理中修复`);
+          return;
+        }
         node.data.model_config = {
           llm_config_id: defaultConfig.id,
           temperature: defaultConfig.temperature,
-          max_tokens: defaultConfig.max_tokens,
+          max_output_tokens: defaultConfig.max_output_tokens ?? defaultConfig.max_tokens,
+          max_input_tokens: defaultConfig.max_input_tokens,
           frequency_penalty: defaultConfig.frequency_penalty,
           presence_penalty: defaultConfig.presence_penalty,
         };
@@ -300,9 +310,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   setSelectedNode: (node) => set({ selectedNode: node }),
 
-  setGlobalSettings: (settings) => set((state) => ({ 
-    globalSettings: { ...state.globalSettings, ...settings } 
-  })),
+  setGlobalSettings: (settings) => {
+    set((state) => ({
+      globalSettings: { ...state.globalSettings, ...settings },
+    }));
+    // 画布设置变更立即持久化（autoSave 含 globalSettings）
+    get().autoSave();
+  },
 
   setPreviewOpen: (open) => set({ isPreviewOpen: open }),
 
@@ -327,6 +341,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set({
       nodes: canvasData.nodes,
       edges: canvasData.edges,
+      // 加载画布时同步加载已保存的全局设置（运行模式/白名单）；缺失用默认值
+      globalSettings: canvasData.globalSettings
+        ? { ...defaultSettings, ...canvasData.globalSettings }
+        : defaultSettings,
     });
   },
 

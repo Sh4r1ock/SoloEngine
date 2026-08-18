@@ -35,8 +35,10 @@ SoloEngine : 聊天模型基类模块，定义所有聊天模型的抽象基类�
 
 from abc import abstractmethod
 from typing import AsyncGenerator, Any
+import asyncio
 
 from .model_response import ChatResponse
+from ..utils.logging import logger
 
 
 _TOOL_CHOICE_MODES = ["auto", "none", "required"]
@@ -111,6 +113,12 @@ class ChatModelBase:
         self.stream = stream
         self._active_response = None
         self._was_cancelled = False
+        # create() 阶段（等待 HTTP 响应头）的 asyncio.Task 引用（阻塞根因修复）：
+        # 流式调用中 `await client.create(...)` 在响应头返回前不可被 cancel_event 检查、
+        # _active_response 也未设置（_save_response_ref 在进入流循环后才调用），
+        # 服务端接受连接但不返回响应头时该 await 最长阻塞至 SDK 默认超时（openai/
+        # anthropic 600s）。保存 task 引用后，cancel() 通过 task.cancel() 直接中断。
+        self._create_task = None
 
     @abstractmethod
     async def __call__(
@@ -206,21 +214,74 @@ class ChatModelBase:
 
         尝试 aclose()（适用于 OpenAI AsyncStream、Qwen async generator、Ollama httpx.Response），
         回退到 close()（适用于 Anthropic MessageStream）。
+
+        aclose() 加超时保护（0.5s）：OpenAI AsyncStream 的 aclose 在底层响应等待数据时
+        可能阻塞数秒（实测约 1.5s），导致暂停/停止延迟；超时后尝试强制关闭底层
+        httpx 连接（stream 内部持有的 _response），确保停滞连接真正断开而非仅置标志。
+
+        阻塞根因修复（create 阶段）：流式调用的 `await client.create(...)`（等待响应头）
+        期间 _active_response 未设置、cancel_event 检查不可达——先取消 _create_task
+        （各 model __call__ 用 asyncio.ensure_future 保存），使等待响应头的协程被
+        CancelledError 中断（httpx 连接随之关闭），再走原有 aclose/强断路径。
         """
-        if self._active_response:
-            # 先尝试异步 aclose()
+        create_task = self._create_task
+        if create_task is not None and not create_task.done():
+            create_task.cancel()
+        resp = self._active_response
+        if resp:
             try:
-                await self._active_response.aclose()
-            except (AttributeError, NotImplementedError):
-                # 回退到同步 close()（Anthropic MessageStream 等）
                 try:
-                    self._active_response.close()
-                except Exception:
-                    pass
+                    await asyncio.wait_for(resp.aclose(), timeout=0.5)
+                except (AttributeError, NotImplementedError):
+                    # 回退到同步 close()（Anthropic MessageStream 等）
+                    try:
+                        resp.close()
+                    except Exception:
+                        pass
+            except asyncio.TimeoutError:
+                logger.warning("Model cancel: aclose() timed out after 0.5s, forcing close of underlying connection")
+                # aclose 超时说明底层响应仍在等待数据（流停滞）。强制关闭流内部持有的
+                # httpx Response（openai AsyncStream._response / qwen 等同构），
+                # 使停滞的 __anext__ 能收到结束信号，事件循环不再被永久阻塞。
+                inner = getattr(resp, '_response', None) or getattr(resp, 'response', None)
+                if inner is not None:
+                    try:
+                        if hasattr(inner, 'aclose'):
+                            await asyncio.wait_for(inner.aclose(), timeout=1.0)
+                        elif hasattr(inner, 'close'):
+                            inner.close()
+                    except Exception:
+                        pass
             except Exception:
                 pass
             self._active_response = None
         self._was_cancelled = True
+
+    async def _anext_stall_protected(self, iterator, timeout: float):
+        """对流迭代器 __anext__ 加 stall 超时保护（根因修复：model 层阻塞问题）。
+
+        此前所有 model 的流解析用 `async for item in stream`，cancel_event 检查在
+        循环体内——当 LLM 服务发送响应头后停止发送数据（连接未关闭）时，
+        `__anext__()` 永久阻塞，循环体（含 cancel_event 检查）永不执行，导致
+        暂停/停止无法中断 LLM 调用（实测 subagent resume 流停滞 408s）。本方法用
+        asyncio.wait_for 包裹 __anext__，超时（流停滞）抛出 StopAsyncIteration
+        结束流循环，使上游 cancel_event 检查得以执行、执行任务得以结束。
+
+        调用方按 `while True` + 捕获 StopAsyncIteration 改写循环（不能再用 async for）。
+
+        Args:
+            iterator: 支持 __anext__ 的异步迭代器（AsyncStream / async generator）。
+            timeout: stall 超时秒数（两次 chunk 之间最大允许间隔）。
+
+        Raises:
+            StopAsyncIteration: 流正常结束或 stall 超时（视为异常结束）。
+        """
+        try:
+            return await asyncio.wait_for(iterator.__anext__(), timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"Model stream stalled (no chunk within {timeout}s), aborting stream")
+            raise StopAsyncIteration
+        # StopAsyncIteration（正常结束）原样传播给调用方循环
 
     def _save_response_ref(self, response):
         self._active_response = response

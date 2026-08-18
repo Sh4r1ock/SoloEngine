@@ -45,6 +45,11 @@ export default defineConfig(({ mode }) => {
       port: FRONTEND_PORT,
       strictPort: true,
       proxy: {
+        '/browser-proxy': {
+          target: `http://localhost:${BACKEND_PORT}`,
+          // 保留原始 Host（localhost:8991），后端据此重写 Location 为浏览器可访问的同源代理地址
+          changeOrigin: false
+        },
         '/api': {
           target: `http://localhost:${BACKEND_PORT}`,
           changeOrigin: true,
@@ -56,6 +61,10 @@ export default defineConfig(({ mode }) => {
       port: FRONTEND_PORT,
       strictPort: true,
       proxy: {
+        '/browser-proxy': {
+          target: `http://localhost:${BACKEND_PORT}`,
+          changeOrigin: false
+        },
         '/api': {
           target: `http://localhost:${BACKEND_PORT}`,
           changeOrigin: true,

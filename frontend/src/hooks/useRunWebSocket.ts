@@ -5,7 +5,8 @@ export type ExecutionEventType =
   | 'execution_start'
   | 'execution_complete'
   | 'execution_error'
-  | 'execution_cancelled'
+  // 已剪枝：execution_cancelled 后端无生产者（grep backend 无匹配），终态取消统一由
+  // execution_stopped 承载（暂停）或 execution_error 承载（异常）
   | 'execution_stopped'
   | 'message_ids_updated'
   | 'message_queued'
@@ -24,7 +25,9 @@ export type ExecutionEventType =
   | 'observation'
   | 'file_change_preview'
   | 'file_changes_ready'
-  | 'file_system_event';
+  | 'file_system_event'
+  | 'interaction_answer_received'
+  | 'plan_mode_changed';
 
 export interface FileChange {
   file_path: string;
@@ -41,6 +44,8 @@ export interface ExecutionEvent {
   event_type: ExecutionEventType;
   agent_id?: string;
   agent_name?: string;
+  /** 〇·3：执行实例唯一标识（流式块级 token 注入 / agent_token_usage 块匹配键） */
+  execution_key?: string;
   agent_type?: string;
   content?: string;
   content_type?: string;
@@ -295,6 +300,8 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
               delta: (message as any).delta,
               agent_id: (message as any).agent_id,
               agent_name: (message as any).agent_name,
+              // 〇·3：execution_key 透传（流式块级 token 注入 / agent_token_usage 块匹配键）
+              execution_key: (message as any).execution_key,
               timestamp: (message as any).timestamp || new Date().toISOString(),
             };
             onEventRef.current?.(streamEvent);
@@ -321,16 +328,8 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
             return;
           }
 
-          if (message.type === 'execution_cancelled') {
-            const cancelledEvent: ExecutionEvent = {
-              event_type: 'execution_cancelled',
-              status: 'cancelled',
-              error: 'Execution cancelled',
-              timestamp: (message as any).timestamp || new Date().toISOString(),
-            };
-            onEventRef.current?.(cancelledEvent);
-            return;
-          }
+          // execution_cancelled 分支已剪枝：后端无生产者（grep backend 无匹配），
+          // 该消息类型不会到达，保留即为误导性死分支。
 
           if (message.type === 'file_system_event') {
             const fsEvent: ExecutionEvent = {

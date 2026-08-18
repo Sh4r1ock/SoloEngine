@@ -1041,16 +1041,13 @@ async def project_watcher_ws(
 
     URL 格式: /api/v1/run-project/ws/watch/{project_id}?token=xxx
     """
-    from app.api.v1.websocket import verify_token
+    # token 验证：复用 AuthService.verify_access_token（含 type==access + user.is_active 完整检查）
+    from app.core.auth import auth_service
     from app.services.file_system_push import ws_registry
     from app.services.workspace_watcher import workspace_watcher
     from app.core.database import get_db_context
 
-    if not token:
-        await websocket.close(code=4001, reason="Missing authentication token")
-        return
-
-    valid, user_id = await verify_token(token)
+    valid, user_id = await auth_service.verify_access_token(token)
     if not valid:
         await websocket.close(code=4001, reason="Invalid or expired token")
         return

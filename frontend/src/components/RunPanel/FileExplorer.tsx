@@ -24,6 +24,7 @@ import { useRunPanelStore } from './stores/runPanelStore';
 import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 import type { FileSystemChange } from './types';
 import { insertTreeNode, removeTreeNode, moveTreeNode } from './utils/treePatchUtils';
+import { copyToClipboard } from './utils/dataBlockUtils';
 import ConfirmDialog from '../common/ConfirmDialog';
 
 const { Text } = Typography;
@@ -232,7 +233,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
               onClick: () => {
                 menuActionPendingRef.current = true;
                 setTimeout(() => { menuActionPendingRef.current = false; }, 100);
-                navigator.clipboard.writeText(file.path);
+                copyToClipboard(file.path);
                 message.success('路径已复制');
               },
             },
