@@ -42,12 +42,17 @@ export interface LLMConfig {
   provider: string;
   model_name: string;
   base_url?: string;
+  is_full_url?: boolean;
   temperature: number;
   max_tokens: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
   top_p: number;
   frequency_penalty: number;
   presence_penalty: number;
   timeout: number;
+  /** 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限 */
+  max_tool_calls?: number;
   extra_params: Record<string, any>;
   is_default: boolean;
   is_active: boolean;
@@ -63,12 +68,16 @@ export interface CreateLLMConfigRequest {
   model_name: string;
   api_key?: string;
   base_url?: string;
+  is_full_url?: boolean;
   temperature?: number;
   max_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
   timeout?: number;
+  max_tool_calls?: number;
   extra_params?: Record<string, any>;
   is_default?: boolean;
 }
@@ -78,12 +87,16 @@ export interface UpdateLLMConfigRequest {
   model_name?: string;
   api_key?: string;
   base_url?: string;
+  is_full_url?: boolean;
   temperature?: number;
   max_tokens?: number;
+  max_input_tokens?: number;
+  max_output_tokens?: number;
   top_p?: number;
   frequency_penalty?: number;
   presence_penalty?: number;
   timeout?: number;
+  max_tool_calls?: number;
   extra_params?: Record<string, any>;
   is_default?: boolean;
   version?: number;

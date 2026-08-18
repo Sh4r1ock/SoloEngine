@@ -35,6 +35,7 @@ from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
 from .config import SoloAgentConfig
 from ..utils.message_utils import MessageBlockExtractor
 from ..model.model_response import ChatResponse
+from ..message import Msg
 
 if TYPE_CHECKING:
     from ..core.react_core import ReActCore
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from ..plugins.tools.agent.mcp import MCPServerInfo
 
 logger = logging.getLogger("SoloEngine")
+
 
 
 class SoloAgent:
@@ -145,7 +147,9 @@ class SoloAgent:
             file_paths = self._extract_all_file_paths(tool_call)
             for fp in file_paths:
                 abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
-                if os.path.exists(abs_path):
+                # 仅对文件存储 CAS（LS 等工具返回的路径可能为目录，
+                # 目录 open('rb') 会抛 PermissionError）
+                if os.path.exists(abs_path) and os.path.isfile(abs_path):
                     from app.core.content_addressable_storage import cas
                     from app.utils.file_utils import normalize_file_path
                     before_hash = cas.store_file(abs_path)
@@ -156,7 +160,8 @@ class SoloAgent:
             file_paths = self._extract_mcp_file_paths(tool_call)
             for fp in file_paths:
                 abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
-                if os.path.exists(abs_path):
+                # 仅对文件存储 CAS（MCP 工具返回的路径可能为目录）
+                if os.path.exists(abs_path) and os.path.isfile(abs_path):
                     from app.core.content_addressable_storage import cas
                     from app.utils.file_utils import normalize_file_path
                     before_hash = cas.store_file(abs_path)
@@ -320,7 +325,9 @@ class SoloAgent:
                     before_hash = self._pre_tool_hashes.get(rel_path)
                     content_type = get_content_type(rel_path)
 
-                    if os.path.exists(abs_path):
+                    # 仅对文件存储 CAS（LS 等工具返回的路径可能为目录，
+                    # 目录 open('rb') 会抛 PermissionError）
+                    if os.path.exists(abs_path) and os.path.isfile(abs_path):
                         after_hash = cas.store_file(abs_path)
                         if before_hash and before_hash != after_hash:
                             change_list.append({
@@ -412,13 +419,8 @@ class SoloAgent:
         
         for subagent in self._subagents.values():
             subagent._stream_callback = callback
-            if subagent._core:
-                subagent._core.stream_callback = callback
-                subagent._core.agent_id = subagent.agent_id
-                if hasattr(subagent._core, '_tool_call_event_manager') and subagent._core._tool_call_event_manager:
-                    subagent._core._tool_call_event_manager.stream_callback = callback
-                    subagent._core._tool_call_event_manager.agent_id = subagent.agent_id
-                    subagent._core._tool_call_event_manager.agent_name = subagent.name
+            if subagent._core and hasattr(subagent, 'set_stream_callback'):
+                subagent.set_stream_callback(callback)
     
     def set_message_history(self, history: List[Dict[str, Any]]) -> None:
         """
@@ -574,54 +576,40 @@ class SoloAgent:
         from ..core.react_core import ReActCore
         from ..formatter.openai_formatter import OpenAIChatFormatter
         from ..plugins.tools.toolkit_executor import ToolkitExecutor
-        from .loader import ConfigLoader
         from .tools import ToolRegistry
-        
-        llm_config = await ConfigLoader.load_llm_config(
-            provider=self.config.provider,
-            model=self.config.model,
-            user_id=self.config.user_id,
-            api_key=self.config.api_key,
-            base_url=self.config.base_url,
-            max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
-            frequency_penalty=self.config.frequency_penalty,
-            presence_penalty=self.config.presence_penalty,
-            timeout=self.config.timeout if hasattr(self.config, 'timeout') and self.config.timeout else 60,
-        )
-        
-        provider = llm_config.get("provider", self.config.provider).lower()
-        
+
+        provider = self.config.provider.lower()
+
         openai_compatible_providers = ["deepseek", "zhipu", "qwen"]
-        
+
         if provider in openai_compatible_providers:
-            self._llm = self._create_openai_compatible_model(llm_config, stream=True)
+            self._llm = self._create_openai_compatible_model(stream=True)
         else:
             factory_kwargs = {}
             client_kwargs_holder = {}
-            if llm_config.get("base_url"):
-                client_kwargs_holder["base_url"] = llm_config.get("base_url")
-            if llm_config.get("timeout"):
+            if self.config.base_url:
+                client_kwargs_holder["base_url"] = self.config.base_url
+            if self.config.timeout:
                 import httpx
-                client_kwargs_holder["timeout"] = httpx.Timeout(float(llm_config["timeout"]), connect=10.0)
+                client_kwargs_holder["timeout"] = httpx.Timeout(float(self.config.timeout), connect=10.0)
             if client_kwargs_holder:
                 factory_kwargs["client_kwargs"] = client_kwargs_holder
             generate_kwargs = {}
-            if llm_config.get("max_tokens"):
-                generate_kwargs["max_tokens"] = llm_config["max_tokens"]
-            if llm_config.get("temperature") is not None:
-                generate_kwargs["temperature"] = llm_config["temperature"]
-            if llm_config.get("frequency_penalty") is not None:
-                generate_kwargs["frequency_penalty"] = llm_config["frequency_penalty"]
-            if llm_config.get("presence_penalty") is not None:
-                generate_kwargs["presence_penalty"] = llm_config["presence_penalty"]
+            if self.config.max_tokens is not None:
+                generate_kwargs["max_tokens"] = self.config.max_tokens
+            if self.config.temperature is not None:
+                generate_kwargs["temperature"] = self.config.temperature
+            if self.config.frequency_penalty is not None:
+                generate_kwargs["frequency_penalty"] = self.config.frequency_penalty
+            if self.config.presence_penalty is not None:
+                generate_kwargs["presence_penalty"] = self.config.presence_penalty
             if generate_kwargs:
                 factory_kwargs["generate_kwargs"] = generate_kwargs
             
             self._llm = LLMFactory.create_model(
                 provider=provider,
-                model_name=llm_config.get("model", self.config.model),
-                api_key=llm_config.get("api_key"),
+                model_name=self.config.model,
+                api_key=self.config.api_key,
                 stream=True,
                 **factory_kwargs,
             )
@@ -726,6 +714,9 @@ class SoloAgent:
             max_iters=self.config.max_iters,
             stream_callback=self._stream_callback,
             agent_id=self.agent_id,
+            provider=self.config.provider,
+            max_input_tokens=self.config.max_input_tokens,
+            max_tool_calls=self.config.max_tool_calls,
         )
         
         if toolkit_executor:
@@ -747,35 +738,36 @@ class SoloAgent:
         self._initialized = True
         logger.info(f"SoloAgent '{self.name}' initialized with {len(tool_configs)} tools")
     
-    def _create_openai_compatible_model(self, llm_config: Dict[str, Any], stream: bool = False):
+    def _create_openai_compatible_model(self, stream: bool = False):
         from ..model.openai_model import OpenAIChatModel
-        
+
         generate_kwargs = {}
-        if "max_tokens" in llm_config:
-            generate_kwargs["max_tokens"] = llm_config["max_tokens"]
-        if "temperature" in llm_config:
-            generate_kwargs["temperature"] = llm_config["temperature"]
-        if "frequency_penalty" in llm_config:
-            generate_kwargs["frequency_penalty"] = llm_config["frequency_penalty"]
-        if "presence_penalty" in llm_config:
-            generate_kwargs["presence_penalty"] = llm_config["presence_penalty"]
+        if self.config.max_tokens is not None:
+            generate_kwargs["max_tokens"] = self.config.max_tokens
+        if self.config.temperature is not None:
+            generate_kwargs["temperature"] = self.config.temperature
+        if self.config.frequency_penalty is not None:
+            generate_kwargs["frequency_penalty"] = self.config.frequency_penalty
+        if self.config.presence_penalty is not None:
+            generate_kwargs["presence_penalty"] = self.config.presence_penalty
         
         client_kwargs = {}
-        if llm_config.get("base_url"):
-            client_kwargs["base_url"] = llm_config.get("base_url")
-        if llm_config.get("timeout"):
+        if self.config.base_url:
+            client_kwargs["base_url"] = self.config.base_url
+        if self.config.timeout:
             import httpx
-            client_kwargs["timeout"] = httpx.Timeout(float(llm_config["timeout"]), connect=10.0)
+            client_kwargs["timeout"] = httpx.Timeout(float(self.config.timeout), connect=10.0)
         
         return OpenAIChatModel(
-            model_name=llm_config.get("model", self.config.model),
-            api_key=llm_config.get("api_key"),
+            model_name=self.config.model,
+            api_key=self.config.api_key,
             stream=stream,
             client_kwargs=client_kwargs if client_kwargs else None,
             generate_kwargs=generate_kwargs if generate_kwargs else None,
+            is_full_url=self.config.is_full_url,
         )
     
-    async def reply(self, message: str, cancel_event: asyncio.Event = None) -> str:
+    async def reply(self, message: Msg, cancel_event: asyncio.Event = None) -> str:
         """
         处理用户消息并生成回复
 
@@ -828,18 +820,7 @@ class SoloAgent:
             return ChatResponse(content=content_list).get_text_content() or "任务执行被取消"
         except Exception as e:
             logger.error(f"Agent reply error: {e}")
-            core = self._core
-            content_list = getattr(core, '_last_collected_content', []) if core else []
-            if not content_list and core:
-                for msg in reversed(getattr(core, '_conversation_history', [])):
-                    if getattr(msg, 'role', None) == "assistant":
-                        content = getattr(msg, 'content', "")
-                        if isinstance(content, str):
-                            return content
-                        if isinstance(content, list):
-                            content_list = content
-                            break
-            return ChatResponse(content=content_list).get_text_content() or f"执行失败: {str(e)}"
+            raise
     
     def get_last_openai_message(self) -> dict:
         if self._last_response is None:
@@ -856,18 +837,34 @@ class SoloAgent:
         return {"role": "assistant", "content": str(self._last_response), "reasoning_content": None}
     
     def get_token_usage(self) -> Optional[Dict]:
+        # 剪枝（P8）：删除 _last_response.usage 遗留回退分支——core 无数据时（take 消费后）
+        # 回退到最后一次响应 usage 会静默返回过期值（用户规则：错误直接暴露，禁止静默回退）。
+        # 调用方（flow_compiler agent_complete metadata.tokens 等）均处理 None。
         if self._core:
             result = self._core.get_accumulated_usage()
             if result:
                 return result
-        if self._last_response and hasattr(self._last_response, 'usage') and self._last_response.usage:
-            usage = self._last_response.usage
-            return {
-                "prompt_tokens": getattr(usage, 'input_tokens', None),
-                "completion_tokens": getattr(usage, 'output_tokens', None),
-                "total_tokens": (getattr(usage, 'input_tokens', 0) or 0) + (getattr(usage, 'output_tokens', 0) or 0),
-                "duration_ms": int(getattr(usage, 'time', 0) * 1000) if hasattr(usage, 'time') else 0,
-            }
+        return None
+
+    def get_agent_usage(self) -> Optional[Dict]:
+        """返回 agent 级整轮累计（后端聚合改造 3.2-2 透传方法）。
+
+        透传 _core.get_agent_usage()：本次 _execute_agent 调用（整轮，含压缩轮
+        stop/compacted/resume 各阶段）的完整累计。由 flow_compiler 在 agent_complete
+        事件 metadata 中采集（agent_usage 字段）。
+        """
+        if self._core:
+            return self._core.get_agent_usage()
+        return None
+
+    def take_token_usage(self) -> Optional[Dict]:
+        """取走当前累计 usage 并清空（消息保存时消费，方案 B 独立快照）。
+
+        替代 compact() 的主动重置：消息保存后调用，使下一条消息的 usage 从 0
+        开始累计——压缩轮 stop / compacted / resume 与正常轮完全同路径。
+        """
+        if self._core:
+            return self._core.take_accumulated_usage()
         return None
     
     async def stream(self, message: str) -> AsyncGenerator[str, None]:
@@ -897,21 +894,8 @@ class SoloAgent:
         
         from ..formatter.openai_formatter import OpenAIChatFormatter
         from ..message import Msg
-        from .loader import ConfigLoader
-        
-        llm_config = await ConfigLoader.load_llm_config(
-            provider=self.config.provider,
-            model=self.config.model,
-            user_id=self.config.user_id,
-            api_key=self.config.api_key,
-            base_url=self.config.base_url,
-            max_tokens=self.config.max_tokens,
-            temperature=self.config.temperature,
-            frequency_penalty=self.config.frequency_penalty,
-            presence_penalty=self.config.presence_penalty,
-        )
-        
-        stream_model = self._create_openai_compatible_model(llm_config, stream=True)
+
+        stream_model = self._create_openai_compatible_model(stream=True)
         
         formatter = OpenAIChatFormatter()
         messages = [
@@ -1013,7 +997,9 @@ class SoloAgent:
         if not subagent._initialized:
             await subagent.initialize()
         
-        result = await subagent.reply(task)
+        task_msg = Msg(name="user", content=task, role="user")
+        cancel_event = getattr(self._core, '_current_cancel_event', None) if self._core else None
+        result = await subagent.reply(task_msg, cancel_event=cancel_event)
         
         if hasattr(result, 'content'):
             content = result.content

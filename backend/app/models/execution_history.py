@@ -129,6 +129,14 @@ class ExecutionRecord:
     output_message: Optional[str] = None
     steps: List[ExecutionStep] = field(default_factory=list)
     tool_calls: List[ToolCallRecord] = field(default_factory=list)
+    # Token 使用统计。包含以下 key：
+    # - prompt_tokens: 输入 token 总和（API 精确值累加）
+    # - completion_tokens: 输出 token（API 精确值累加）
+    # - total_tokens: 总 token（prompt + completion，reply 周期累加消耗）
+    # - duration_ms: 调用时长（毫秒）
+    # - system_prompt_token: system 提示词 token（tiktoken 估算累加）
+    # - user_prompt_token: user 输入 token（tiktoken 估算累加）
+    # - assistant_prompt_token: 历史 assistant 消息 token（tiktoken 估算累加）
     token_usage: Dict[str, int] = field(default_factory=dict)
     error: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)

@@ -24,6 +24,7 @@ SoloEngine : 工具系统模块入口，统一导出各类工具
     - SearchReplace: 搜索替换工具
     - WebSearch: 网络搜索工具
     - WebFetch: 网页获取工具
+    - EnterPlanMode: 进入计划模式工具
     - ExitPlanMode: 退出计划模式工具
     - OpenPreview: 打开预览工具
     - SearchCodebase: 代码库搜索工具
@@ -62,7 +63,7 @@ from .agent import Skill, Task, MCP
 from .command import RunCommand, CheckCommandStatus, StopCommand, GetDiagnostics
 from .file import Read, Write, DeleteFile, LS, SearchReplace
 from .network import WebSearch, WebFetch
-from .other import ExitPlanMode, OpenPreview
+from .other import EnterPlanMode, ExitPlanMode, OpenPreview
 from .search import SearchCodebase, Grep, Glob
 from .task import TodoWrite, AskUserQuestion
 
@@ -83,6 +84,7 @@ __all__ = [
     "SearchReplace",
     "WebSearch",
     "WebFetch",
+    "EnterPlanMode",
     "ExitPlanMode",
     "OpenPreview",
     "SearchCodebase",

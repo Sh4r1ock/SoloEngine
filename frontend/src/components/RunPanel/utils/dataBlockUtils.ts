@@ -34,19 +34,25 @@ export const formatJson = (obj: any, indent: number = 2): string => {
   }
 };
 
-export const copyToClipboard = async (text: string): Promise<boolean> => {
-  // 显式以 text/plain MIME 写入剪贴板，确保 Windows 剪贴板历史(Win+V)能正确捕获
-  // 单条路径：W3C Clipboard API (Baseline 2024) + ClipboardItem，无降级、无 DOM 操纵
-  try {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/plain': new Blob([text], { type: 'text/plain' }),
-      }),
-    ]);
-    return true;
-  } catch {
-    return false;
-  }
+/**
+ * 将文本写入系统剪贴板，确保 Windows 剪贴板历史(Win+V)能正确捕获。
+ *
+ * 原理：execCommand('copy') 走 WM_COPY → SetClipboardData → WM_CLIPBOARDUPDATE
+ * 传统路径，与 Ctrl+C 完全一致，Windows 剪贴板历史服务一定能捕获。
+ *
+ * 注：navigator.clipboard.write() / writeText() 使用 Chromium 内部 HWND 作为
+ * clipboard owner，Windows 剪贴板历史服务不识别该 owner，导致 Win+V 不记录。
+ */
+export const copyToClipboard = (text: string): boolean => {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none;left:-9999px;top:-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+  return ok;
 };
 
 export const truncateText = (text: string, maxLength: number = 100): string => {
@@ -104,71 +110,4 @@ export const getBlockColor = (block: DataBlock): string => {
     default:
       return '#8c8c8c';
   }
-};
-
-export const mergeDataBlocks = (existing: DataBlock[], newBlocks: DataBlock[]): DataBlock[] => {
-  const merged = [...existing];
-  
-  for (const newBlock of newBlocks) {
-    const existingIndex = merged.findIndex(
-      b => b.type === newBlock.type && b.id === newBlock.id
-    );
-    
-    if (existingIndex >= 0) {
-      merged[existingIndex] = {
-        ...merged[existingIndex],
-        ...newBlock,
-        content: (merged[existingIndex].content || '') + (newBlock.content || ''),
-      };
-    } else {
-      merged.push(newBlock);
-    }
-  }
-  
-  return merged;
-};
-
-export const parseStreamChunk = (chunk: string): DataBlock[] => {
-  const blocks: DataBlock[] = [];
-  
-  try {
-    const data = JSON.parse(chunk);
-    
-    if (data.reasoning_content) {
-      blocks.push({
-        id: `reasoning_${Date.now()}`,
-        type: 'reasoning',
-        content: data.reasoning_content,
-      });
-    }
-    
-    if (data.tool_calls) {
-      for (const toolCall of data.tool_calls) {
-        blocks.push({
-          id: toolCall.id || `tool_${Date.now()}`,
-          type: 'tool_call',
-          name: toolCall.function?.name,
-          arguments: toolCall.function?.arguments,
-        });
-      }
-    }
-    
-    if (data.content) {
-      blocks.push({
-        id: `content_${Date.now()}`,
-        type: 'content',
-        content: data.content,
-      });
-    }
-  } catch {
-    if (chunk.trim()) {
-      blocks.push({
-        id: `content_${Date.now()}`,
-        type: 'content',
-        content: chunk,
-      });
-    }
-  }
-  
-  return blocks;
 };

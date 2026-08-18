@@ -35,7 +35,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import tools, websocket, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers, file_changes
+from app.api.v1 import tools, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers, file_changes, browser_proxy, terminal_ws
 import logging
 
 logger = logging.getLogger(__name__)
@@ -132,7 +132,6 @@ app.include_router(config.router)
 app.include_router(run.router)
 app.include_router(skills.router)
 app.include_router(tools.router)
-app.include_router(websocket.router)
 app.include_router(auth.router)
 app.include_router(export.router)
 app.include_router(package.router)
@@ -143,3 +142,5 @@ app.include_router(run_project.router)
 app.include_router(settings.router)
 app.include_router(mcp_servers.router)
 app.include_router(file_changes.router)
+app.include_router(browser_proxy.router)
+app.include_router(terminal_ws.router)

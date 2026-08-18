@@ -147,12 +147,15 @@ class LLMFactory:
             )
 
         provider_kwargs = {}
+        # 完整 URL 开关：True 表示 base_url 已含 /chat/completions，模型层剥离避免 SDK 重复补全
+        is_full_url = kwargs.pop("is_full_url", False)
 
         if provider_lower == LLMProvider.OPENAI:
             provider_kwargs["api_key"] = api_key
             provider_kwargs["reasoning_effort"] = kwargs.pop("reasoning_effort", None)
             provider_kwargs["organization"] = kwargs.pop("organization", None)
             provider_kwargs["client_kwargs"] = kwargs.pop("client_kwargs", {})
+            provider_kwargs["is_full_url"] = is_full_url
 
         elif provider_lower == LLMProvider.ANTHROPIC:
             provider_kwargs["api_key"] = api_key
@@ -174,6 +177,7 @@ class LLMFactory:
         elif provider_lower in [LLMProvider.DEEPSEEK, LLMProvider.ZHIPU, LLMProvider.MIMO]:
             provider_kwargs["api_key"] = api_key
             provider_kwargs["client_kwargs"] = kwargs.pop("client_kwargs", {})
+            provider_kwargs["is_full_url"] = is_full_url
 
         try:
             return model_class(

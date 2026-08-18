@@ -63,6 +63,7 @@ class MCPHostClientManager:
         self._server_configs: Dict[str, Dict] = {}
         self._connection_events: Dict[str, asyncio.Event] = {}  # 连接完成事件
         self._connection_tasks: Dict[str, asyncio.Task] = {}  # 连接任务跟踪
+        self._shutdown_events: Dict[str, asyncio.Event] = {}  # 关闭信号事件（连接任务等待）
         self._server_data: Dict[str, Dict] = {}  # 保存server_id和user_id用于重连
     
     async def register_servers(
@@ -196,7 +197,7 @@ class MCPHostClientManager:
             raise
     
     def _build_client_config(self, server) -> Dict[str, Any]:
-        from app.api.v1.mcp_servers import build_mcp_config
+        from app.core.mcp_config import build_mcp_config
         return build_mcp_config(server)
     
     def get_client(self, server_name: str) -> Optional[MCPClient]:
@@ -239,38 +240,44 @@ class MCPHostClientManager:
     
     async def close_client(self, server_name: str):
         """关闭指定Client
-        
+
+        通过关闭信号触发连接任务，在该任务中执行 disconnect，
+        保证 anyio cancel scope 同任务退出。
+
         Args:
             server_name: 服务器名称
         """
-        client = self._clients.pop(server_name, None)
-        # 同时清理server_configs
-        self._server_configs.pop(server_name, None)
-        if client:
+        event = self._shutdown_events.get(server_name)
+        if event:
+            event.set()
+        task = self._connection_tasks.get(server_name)
+        if task is not None:
             try:
-                await client.disconnect()
-                logger.info(f"[MCPHost] Closed client for '{server_name}'")
+                await task
             except Exception as e:
-                logger.warning(f"[MCPHost] Error closing client '{server_name}': {e}")
+                logger.warning(f"[MCPHost] Error waiting close task for '{server_name}': {e}")
+        self._shutdown_events.pop(server_name, None)
+        self._connection_tasks.pop(server_name, None)
     
     async def close_all(self):
-        """关闭所有Client连接"""
+        """关闭所有Client连接（在各自连接任务中执行 disconnect）"""
         logger.info(f"[MCPHost] Closing all {len(self._clients)} MCP clients...")
         
-        errors = []
-        for server_name, client in list(self._clients.items()):
-            try:
-                await client.disconnect()
-                logger.info(f"[MCPHost] Closed client for '{server_name}'")
-            except Exception as e:
-                errors.append((server_name, str(e)))
-                logger.error(f"[MCPHost] Error closing client '{server_name}': {e}")
+        # 触发所有关闭信号，连接任务收到后在同一任务中执行 disconnect
+        for event in self._shutdown_events.values():
+            event.set()
+        
+        pending = [
+            t for t in self._connection_tasks.values()
+            if t is not None and not t.done()
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
         
         self._clients.clear()
         self._server_configs.clear()
-        
-        if errors:
-            logger.warning(f"[MCPHost] Errors during close: {errors}")
+        self._shutdown_events.clear()
+        self._connection_tasks.clear()
     
     def load_server_configs(self, mcp_configs: Dict[str, Any]):
         """加载MCP服务器配置（不连接）
@@ -296,11 +303,18 @@ class MCPHostClientManager:
         all_mcp_servers: Dict[str, Dict],
         user_id: Optional[str] = None
     ):
-        """后台异步连接所有MCP服务器
+        """后台异步连接所有MCP服务器（生命周期任务模式）
 
         Args:
             all_mcp_servers: 所有Agent配置的mcp_servers的并集
             user_id: 用户ID
+
+        设计说明：
+            每个服务器的连接任务在成功连接后保持存活，等待关闭信号；
+            disconnect 在与 connect 相同的任务中执行，确保 anyio
+            cancel scope（mcp SDK stdio_client 内部）在同一任务中退出，
+            避免 "Attempted to exit cancel scope in a different task than
+            it was entered in" 与 "Task exception was never retrieved"。
         """
         logger.info(f"[MCPHost] Starting async connection for {len(all_mcp_servers)} servers...")
 
@@ -308,20 +322,26 @@ class MCPHostClientManager:
             try:
                 await self._create_client(server_name, server_data, user_id)
                 logger.info(f"[MCPHost] Async connected '{server_name}'")
+                # 等待关闭信号，在同一任务中执行 disconnect
+                await self._shutdown_events[server_name].wait()
+                client = self._clients.pop(server_name, None)
+                self._server_configs.pop(server_name, None)
+                if client is not None:
+                    try:
+                        await client.disconnect()
+                        logger.info(f"[MCPHost] Closed client for '{server_name}' (in connect task)")
+                    except Exception as e:
+                        logger.error(f"[MCPHost] Error closing client '{server_name}' in connect task: {e}")
             except Exception as e:
                 logger.error(f"[MCPHost] Async connection failed for '{server_name}': {e}")
 
-        # 创建连接任务并保存
-        tasks = []
+        # 创建连接任务并保存（任务生命周期化，不在此处 await 等待完成）
         for name, data in all_mcp_servers.items():
+            self._shutdown_events[name] = asyncio.Event()
             task = asyncio.create_task(_connect_one(name, data))
             self._connection_tasks[name] = task
-            tasks.append(task)
 
-        # 并发执行所有连接
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-        logger.info(f"[MCPHost] Async connection completed. Connected: {len(self._clients)}/{len(all_mcp_servers)}")
+        logger.info(f"[MCPHost] Async connection tasks scheduled for {len(all_mcp_servers)} servers")
 
     async def wait_for_connection(self, server_name: str, timeout: float = 30.0) -> bool:
         """等待指定服务器连接完成

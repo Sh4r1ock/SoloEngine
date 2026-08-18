@@ -10,7 +10,7 @@
 
 ***
 
-<p align="center"><b>SoloEngine</b> ist die erste Low-Code Agentic AI-Entwicklungsplattform. Stell es dir wie das Zusammenstellen eines Startup-Teams vor: Ziehe die benötigten Agents auf die Arbeitsfläche, verbinde ihre Zusammenarbeit, starte — ab diesem Moment planen, handeln und liefern sie eigenständig.</p>
+<p align="center"><b>SoloEngine</b> ist die erste Low-Code-Plattform für Agentic AI. Ziehen Sie einen Agent auf die Arbeitsfläche, verbinden Sie ihn mit einem weiteren Teammitglied und starten Sie ihn – er plant, handelt, beobachtet und iteriert selbstständig, bis die Aufgabe erledigt ist.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -67,6 +67,11 @@ Alle Agents teilen sich dieselbe zugrunde liegende Architektur; sie unterscheide
 2. **Einheitliche ReAct-Engine** — Jeder Agent durchläuft denselben Zyklus: „Denken → Handeln → Beobachten → Wiederholen".
 3. **Bedarfsgerechtes Laden** — Dank des Kompilierungsmechanismus laden Agents zur Laufzeit nur den konfigurierten Modell, die Inhalte und Werkzeuge. Das macht Agentic AI in einer Low-Code-Umgebung überhaupt erst praktisch umsetzbar.
 
+<div align="center">
+  <img src="../../docs/images/Canvas.gif" alt="Demo des visuellen Canvas von SoloEngine" width="100%"/>
+  <p><sub>Agents auf dem visuellen Canvas zusammenstellen und die Teamkonfiguration in einen ausführbaren Agent DAG kompilieren</sub></p>
+</div>
+
 ## Schnellstart
 
 ```bash
@@ -91,6 +96,11 @@ npm run dev
 - **VibeLawing** — Ein Anwalt zieht nacheinander einen Recherche-Agenten, einen Archivierungs-Agenten und einen Formatierungs-Agenten auf die Arbeitsfläche und startet. SoloEngine zerlegt und plant die juristische Arbeit automatisch: Sachverhalte werden analysiert, Gesetzestexte ermittelt, Fälle aufbereitet, Argumentationen strukturiert und Dokumente formatiert — Sie müssen nur noch prüfen und gegebenenfalls nachjustieren, bevor Sie abliefern. Der gesamte Ablauf verläuft so natürlich, als würde ein Entwickler in Cursor vibe coding betreiben.
 - **VibeMarketing** — Eine Marketingfachkraft zieht einen Recherche-Agenten, einen Texter-Agenten und einen Asset-Agenten auf die Arbeitsfläche und startet. SoloEngine analysiert automatisch die Zielgruppe, recherchiert passende Produktstrategien, vergleicht mit der Wettbewerb und erstellt eine Marketingstrategie — das Ergebnis ist ein ausgereifter Marketingplan, direkt zur Übergabe bereit.
 - **Ein-Klick-Paketierung** — Sobald das Agent-Team steht, genügt ein Klick auf „Paketieren", um ein vollständiges Produkt auszugeben, das jeder sofort nutzen kann.
+
+<div align="center">
+  <img src="../../docs/images/RunPanel.gif" alt="SoloEngine RunPanel-Demo" width="100%"/>
+  <p><sub>Planung, Aktionen, Tool-Aufrufe und Iterationen von Agents im RunPanel in Echtzeit verfolgen</sub></p>
+</div>
 
 ## Star-Verlauf
 

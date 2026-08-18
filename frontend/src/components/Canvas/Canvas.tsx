@@ -53,7 +53,8 @@ import ReactFlow, {
   Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Dropdown, Menu, Button, Input, Modal, App, Tooltip } from 'antd';
+import { Dropdown, Button, Input, Modal, App, Tooltip } from 'antd';
+import type { MenuProps } from 'antd';
 import { 
   UserOutlined, 
   TeamOutlined, 
@@ -300,9 +301,9 @@ const Canvas: React.FC = () => {
     const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
     if (!reactFlowBounds || !reactFlowInstance) return;
 
-    const position = reactFlowInstance.project({
-      x: event.clientX - reactFlowBounds.left,
-      y: event.clientY - reactFlowBounds.top,
+    const position = reactFlowInstance.screenToFlowPosition({
+      x: event.clientX,
+      y: event.clientY,
     });
 
     setContextMenu({
@@ -398,55 +399,51 @@ const Canvas: React.FC = () => {
     message.success(`已复制 ${nodesToDuplicate.length} 个节点`);
   }, [selectedNodeIds]);
 
-  const contextMenuContent = (
-    <Menu
-      items={[
-        {
-          key: 'header',
-          label: <span style={{ fontWeight: 600, color: 'var(--text-100)' }}>添加节点</span>,
-          disabled: true,
-        },
-        { type: 'divider' },
-        ...getPresets().map(preset => ({
-          key: preset.id,
-          icon: getPresetIcon(preset.icon),
-          label: <span style={{ color: preset.color || '#3F51B5', fontWeight: 500 }}>{preset.name}</span>,
-          onClick: () => addNodeByType(preset.id),
-        })),
-        { type: 'divider' as const },
-        {
-          key: 'annotation',
-          icon: <CommentOutlined style={{ color: '#ffc107' }} />,
-          label: <span style={{ fontWeight: 500 }}>添加注释</span>,
-          onClick: () => setAnnotationModalVisible(true),
-        },
-        ...(selectedNodeIds.length > 0 ? [
-          { type: 'divider' as const },
-          {
-            key: 'delete-selected',
-            icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
-            label: <span style={{ color: '#ff4d4f' }}>删除选中节点 ({selectedNodeIds.length})</span>,
-            onClick: handleDeleteSelected,
-          },
-          {
-            key: 'duplicate-selected',
-            icon: <CopyOutlined />,
-            label: <span>复制选中 ({selectedNodeIds.length})</span>,
-            onClick: handleDuplicateSelected,
-          },
-        ] : []),
-        ...(selectedEdgeIds.length > 0 ? [
-          { type: 'divider' as const },
-          {
-            key: 'delete-selected-edges',
-            icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
-            label: <span style={{ color: '#ff4d4f' }}>删除选中连线 ({selectedEdgeIds.length})</span>,
-            onClick: handleDeleteSelectedEdges,
-          },
-        ] : []),
-      ]}
-    />
-  );
+  const contextMenuItems: MenuProps['items'] = [
+    {
+      key: 'header',
+      label: <span style={{ fontWeight: 600, color: 'var(--text-100)' }}>添加节点</span>,
+      disabled: true,
+    },
+    { type: 'divider' },
+    ...getPresets().map(preset => ({
+      key: preset.id,
+      icon: getPresetIcon(preset.icon),
+      label: <span style={{ color: preset.color || '#3F51B5', fontWeight: 500 }}>{preset.name}</span>,
+      onClick: () => addNodeByType(preset.id),
+    })),
+    { type: 'divider' as const },
+    {
+      key: 'annotation',
+      icon: <CommentOutlined style={{ color: '#ffc107' }} />,
+      label: <span style={{ fontWeight: 500 }}>添加注释</span>,
+      onClick: () => setAnnotationModalVisible(true),
+    },
+    ...(selectedNodeIds.length > 0 ? [
+      { type: 'divider' as const },
+      {
+        key: 'delete-selected',
+        icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+        label: <span style={{ color: '#ff4d4f' }}>删除选中节点 ({selectedNodeIds.length})</span>,
+        onClick: handleDeleteSelected,
+      },
+      {
+        key: 'duplicate-selected',
+        icon: <CopyOutlined />,
+        label: <span>复制选中 ({selectedNodeIds.length})</span>,
+        onClick: handleDuplicateSelected,
+      },
+    ] : []),
+    ...(selectedEdgeIds.length > 0 ? [
+      { type: 'divider' as const },
+      {
+        key: 'delete-selected-edges',
+        icon: <DeleteOutlined style={{ color: '#ff4d4f' }} />,
+        label: <span style={{ color: '#ff4d4f' }}>删除选中连线 ({selectedEdgeIds.length})</span>,
+        onClick: handleDeleteSelectedEdges,
+      },
+    ] : []),
+  ];
 
   const onDrop = useCallback(
     async (event: React.DragEvent) => {
@@ -460,9 +457,9 @@ const Canvas: React.FC = () => {
       const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
       if (!reactFlowBounds) return;
 
-      const position = reactFlowInstance?.project({
-        x: event.clientX - reactFlowBounds.left,
-        y: event.clientY - reactFlowBounds.top,
+      const position = reactFlowInstance?.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
       });
 
       if (!position) return;
@@ -563,16 +560,20 @@ const Canvas: React.FC = () => {
     <>
       <div ref={reactFlowWrapper} style={{ width: '100%', height: '100%' }}>
         <Dropdown
-          overlay={contextMenuContent}
-          visible={!!contextMenu}
-          onVisibleChange={(visible) => !visible && setContextMenu(null)}
+          menu={{ items: contextMenuItems }}
+          open={!!contextMenu}
+          onOpenChange={(open) => !open && setContextMenu(null)}
           trigger={['contextMenu']}
-          overlayStyle={{ 
-            position: 'fixed', 
-            left: contextMenu?.x || 0, 
-            top: contextMenu?.y || 0,
-            zIndex: 1000,
-          }}
+          popupRender={(menu) => (
+            <div style={{
+              position: 'fixed',
+              left: contextMenu?.x || 0,
+              top: contextMenu?.y || 0,
+              zIndex: 1000,
+            }}>
+              {menu}
+            </div>
+          )}
         >
           <div style={{ width: '100%', height: '100%' }}>
             <ReactFlow

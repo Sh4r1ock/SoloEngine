@@ -35,6 +35,7 @@ import {
   StarFilled,
   ApiOutlined,
   ReloadOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { llmApi, LLMConfig, ProviderConfig, CreateLLMConfigRequest } from '../../services/llmApi';
 import { formatDateTime } from '../../utils/timezone';
@@ -93,11 +94,15 @@ const ModelManager: React.FC = () => {
     form.setFieldsValue({
       temperature: LLM_DEFAULTS.TEMPERATURE,
       max_tokens: LLM_DEFAULTS.MAX_TOKENS,
+      max_input_tokens: LLM_DEFAULTS.MAX_TOKENS,
+      max_output_tokens: LLM_DEFAULTS.MAX_TOKENS,
       top_p: LLM_DEFAULTS.TOP_P,
       frequency_penalty: LLM_DEFAULTS.FREQUENCY_PENALTY,
       presence_penalty: LLM_DEFAULTS.PRESENCE_PENALTY,
       timeout: LLM_DEFAULTS.TIMEOUT,
+      max_tool_calls: LLM_DEFAULTS.MAX_TOOL_CALLS,
       is_default: false,
+      is_full_url: false,
     });
     setModalVisible(true);
     setTestResult({ status: 'idle', message: '' });
@@ -112,13 +117,17 @@ const ModelManager: React.FC = () => {
       provider: record.provider,
       model_name: record.model_name,
       base_url: record.base_url,
+      is_full_url: record.is_full_url ?? false,
       api_key: record.has_api_key ? MASKED_API_KEY : undefined,
       temperature: record.temperature,
       max_tokens: record.max_tokens,
+      max_input_tokens: record.max_input_tokens ?? record.max_tokens,
+      max_output_tokens: record.max_output_tokens ?? record.max_tokens,
       top_p: record.top_p,
       frequency_penalty: record.frequency_penalty,
       presence_penalty: record.presence_penalty,
       timeout: record.timeout,
+      max_tool_calls: record.max_tool_calls ?? LLM_DEFAULTS.MAX_TOOL_CALLS,
       is_default: record.is_default,
       version: record.version,
     });
@@ -180,6 +189,7 @@ const ModelManager: React.FC = () => {
         model_name: values.model_name,
         api_key: values.api_key,
         base_url: values.base_url,
+        is_full_url: values.is_full_url,
       });
       
       if (result.status === 'success') {
@@ -197,7 +207,7 @@ const ModelManager: React.FC = () => {
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      
+
       if (editingConfig) {
         const submitValues = { ...values };
         if (submitValues.api_key === MASKED_API_KEY) {
@@ -460,7 +470,7 @@ const ModelManager: React.FC = () => {
                   filterOption={(inputValue, option) =>
                     (option?.label as string).toLowerCase().includes(inputValue.toLowerCase())
                   }
-                  dropdownRender={(menu) => (
+                  popupRender={(menu) => (
                     <>
                       {menu}
                       <div style={{ padding: '8px', borderTop: '1px solid #e8e8e8', color: '#999', fontSize: 12 }}>
@@ -485,9 +495,40 @@ const ModelManager: React.FC = () => {
             </Col>
           </Row>
 
+          {/* Base URL + 完整URL 开关（并入标签行）：
+              布局：Base URL 靠左；「完整URL + 问号 + 开关」整体靠右，space-between 撑开。
+              两侧均不显示 (optional)：requiredMark 是 Form 级配置（Form.Item 无法单独关），
+              本字段与「设为默认」的 optional 后缀统一由 index.css 规则隐藏。
+              完整URL 开关采用与「设为默认」完全一致的受控写法：包一层
+              Form.Item name="is_full_url" valuePropName="checked" noStyle，
+              checked/onChange 由 Form 数据域接管，点击必然翻转表单值。
+              另：Switch 位于 <label htmlFor="base_url"> 内部，浏览器 label 激活行为
+              会把点击转发给关联控件；若关联控件退化为 Switch 自身会导致双重翻转
+              （看似无法选择），故 onClick 中 preventDefault 阻断该默认行为。 */}
           <Form.Item
             name="base_url"
-            label="Base URL"
+            className="base-url-field"
+            label={
+              <span className="base-url-label-row">
+                <span className="base-url-label-left">Base URL</span>
+                <span className="base-url-label-right">
+                  <span>完整URL</span>
+                  <Tooltip title="开启后，Base URL 即为完整请求地址（含 /chat/completions），系统不再自动补全；关闭时由系统自动补全 /chat/completions">
+                    <QuestionCircleOutlined style={{ marginLeft: 4, fontSize: 13, color: 'var(--text-tertiary)', cursor: 'help' }} />
+                  </Tooltip>
+                  <Form.Item name="is_full_url" valuePropName="checked" noStyle>
+                    <Switch
+                      size="small"
+                      style={{ marginLeft: 8 }}
+                      onClick={(_, e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                    />
+                  </Form.Item>
+                </span>
+              </span>
+            }
             extra="支持自定义OpenAI兼容的API地址，如DeepSeek、智谱AI等"
           >
             <Input placeholder="例如: https://api.deepseek.com/v1" />
@@ -507,6 +548,22 @@ const ModelManager: React.FC = () => {
             />
           )}
 
+          {/* 上下文窗口分组（与「高级参数」同级别）：下设 输入/输出 两个 key */}
+          <Divider>上下文窗口</Divider>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="max_input_tokens" label="输入" tooltip="单次请求中可发送给模型的内容上限（token）">
+                <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="max_output_tokens" label="输出" tooltip="模型单次回复可生成的内容上限（token）">
+                <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+
           <Divider>高级参数</Divider>
 
           <Row gutter={16}>
@@ -516,23 +573,18 @@ const ModelManager: React.FC = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="max_tokens" label="最大Token">
-                <InputNumber min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} style={{ width: '100%' }} />
-              </Form.Item>
-            </Col>
-            <Col span={8}>
               <Form.Item name="top_p" label="Top P">
                 <InputNumber min={0} max={1} step={0.1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="frequency_penalty" label="频率惩罚">
                 <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={8}>
               <Form.Item name="presence_penalty" label="存在惩罚">
                 <InputNumber min={-2} max={2} step={0.1} style={{ width: '100%' }} />
@@ -543,10 +595,16 @@ const ModelManager: React.FC = () => {
                 <InputNumber min={1} max={600} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item name="max_tool_calls" label="工具调用轮次" tooltip="一次 react_core 循环中，该 Agent 允许调用 LLM API 的次数上限。作为画布节点的默认值，可在节点属性中修改。">
+                <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
           </Row>
 
           <Form.Item 
             name="is_default" 
+            className="is-default-field"
             label="设为默认" 
             valuePropName="checked"
             extra="设为默认后，新创建的节点将自动使用此模型配置。每个用户只能有一个默认配置。"

@@ -478,21 +478,135 @@ pre {
 
 .react-flow__node {
   cursor: grab;
-  box-shadow: var(--shadow-sm);
   transition: all var(--duration-fast) var(--ease-in-out);
-  background-color: var(--bg-100);
-  border-radius: var(--radius-base);
-  border: 1px solid var(--border-color);
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .react-flow__node:hover {
-  box-shadow: var(--shadow-base);
-  transform: translateY(-2px);
+  /* 悬停态由节点组件自身阴影表达，容器不再叠加位移/阴影 */
 }
 
 .react-flow__node.selected {
-  box-shadow: 0 0 0 2px var(--primary-100);
-  border-color: var(--primary-100);
+  /* 选中态由节点组件自身边框/光晕表达，容器不再叠加 */
+  border: none;
+  box-shadow: none;
+}
+
+/* ==========================================================================
+   HITL 交互卡片公共样式（AskUserQuestion / ExitPlanMode 共用）
+   下划线输入框：Ant Design v5 TextArea+showCount DOM 为
+   span.ant-input-affix-wrapper.ant-input-outlined（默认全边框）
+     → textarea.ant-input（输入区） + span.ant-input-suffix（计数 0/1000）
+   关键原则：
+     1) 下划线只画在 textarea 自身的底部，suffix 换行到下划线**下方**右侧；
+     2) affix-wrapper 完全透明、无边框；
+     3) 使用 autoSize（而非固定 rows）使高度紧凑自适应，消除空行；
+     4) overflow/resize 全部禁用，消灭滚动条和右下角调整手柄。
+   ========================================================================== */
+/* ---------- 外层 affix-wrapper：完全透明、无任何边框 ---------- */
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper {
+  background: transparent !important;
+  border: 0 !important;
+  border-inline: 0 !important;
+  border-block: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;  /* 关键：允许 suffix 换到下一行 */
+  align-items: flex-start !important;
+  width: 100% !important;
+  transition: none !important;
+}
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper:hover,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper:hover,
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper:focus-within,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper:focus-within,
+.hitl-card .hitl-underlined-input-wrap .ant-input-focused,
+.hitl-card .hitl-supplement-wrap .ant-input-focused {
+  border: 0 !important;
+  border-inline: 0 !important;
+  border-block: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  background: transparent !important;
+}
+
+/* ---------- 核心：下划线只画在 textarea 自身底部 ---------- */
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper textarea.ant-input,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper textarea.ant-input {
+  background: transparent !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--border-color, #cccccc) !important;
+  border-radius: 0 !important;
+  padding: 2px 0 4px 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  resize: none !important;            /* 消灭 resize 手柄 */
+  overflow: hidden !important;        /* 消灭所有滚动条 */
+  overflow-y: hidden !important;
+  overflow-x: hidden !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+  color: var(--text-100, #333333) !important;
+  flex: 1 1 100% !important;          /* 占满 flex-wrap 第一行 */
+  min-width: 0 !important;
+  width: 100% !important;
+  transition: border-color 0.2s ease !important;
+}
+/* focus：下划线变主题色，绝不出现外框高亮 */
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper textarea.ant-input:focus,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper textarea.ant-input:focus,
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper textarea.ant-input:focus-visible,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper textarea.ant-input:focus-visible {
+  border-bottom: 1px solid var(--ant-primary-color, #1677ff) !important;
+  box-shadow: none !important;
+  outline: none !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  border-top: 0 !important;
+}
+.hitl-card .hitl-underlined-input-wrap .ant-input-affix-wrapper textarea.ant-input:hover,
+.hitl-card .hitl-supplement-wrap .ant-input-affix-wrapper textarea.ant-input:hover {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* ---------- showCount suffix：自然换行到下划线**下方**右侧 ---------- */
+.hitl-card .hitl-underlined-input-wrap .ant-input-suffix,
+.hitl-card .hitl-supplement-wrap .ant-input-suffix {
+  padding: 0 !important;
+  margin: 0 !important;
+  margin-left: auto !important;
+  margin-top: 2px !important;
+  background: transparent !important;
+  display: flex !important;
+  justify-content: flex-end !important;
+  width: 100% !important;
+  min-height: 14px !important;
+}
+.hitl-card .hitl-underlined-input-wrap .ant-input-data-count,
+.hitl-card .hitl-supplement-wrap .ant-input-data-count {
+  font-size: 11px !important;
+  color: var(--text-300, #64748b) !important;
+  line-height: 14px !important;
+}
+
+/* ---------- 错误状态：下划线变红（只在 textarea 上） ---------- */
+.hitl-card .hitl-underlined-input-wrap .ant-input-status-error textarea.ant-input,
+.hitl-card .hitl-supplement-wrap .ant-input-status-error textarea.ant-input {
+  border-bottom: 1px solid #ff4d4f !important;
+}
+.hitl-card .hitl-underlined-input-wrap .ant-input-status-error,
+.hitl-card .hitl-supplement-wrap .ant-input-status-error {
+  border: 0 !important;
+  border-inline: 0 !important;
+  border-block: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 .react-flow__node:active {
@@ -500,11 +614,10 @@ pre {
 }
 
 .react-flow__handle {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  border: 2px solid #ffffff;
-  box-shadow: var(--shadow-xs);
+  border: 3px solid #ffffff;
 }
 
 .react-flow__edge-path {
@@ -806,6 +919,35 @@ pre {
 }
 
 /* ===== 模型配置统一面板 ===== */
+/* Base URL 标签行：label 容器撑满整行，内部左右两块用 space-between 撑开。
+   左侧：Base URL；右侧：完整URL + 问号 + 开关。
+   antd 默认给 label 外包一层 .ant-form-item-label > label，需让其宽度 100%。
+   「完整URL」「设为默认」两项必有值（开关默认 false），不显示 (optional)：
+   requiredMark 是 Form 级配置（Form.Item 无法单独关），非必填字段会被全局
+   requiredMark="optional" 追加 optional 后缀，此处按 class 隐藏（加 !important
+   防止被其他样式覆盖）。 */
+.base-url-field .ant-form-item-label {
+  width: 100%;
+}
+.base-url-field .ant-form-item-label > label {
+  width: 100%;
+}
+.base-url-field .ant-form-item-optional,
+.is-default-field .ant-form-item-optional {
+  display: none !important;
+}
+.base-url-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.base-url-label-right {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  font-weight: normal;
+}
 .property-panel-model-config {
   background: var(--bg-surface);
   border: 1px solid var(--border-color-light);

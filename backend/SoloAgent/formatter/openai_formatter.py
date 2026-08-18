@@ -309,7 +309,7 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                     elif "content" in block:
                         reasoning_content = block.get("content", "")
 
-                if typ == "tool_calls":
+                elif typ == "tool_calls":
                     for tc in block.get("tool_calls", []):
                         tool_calls.append(tc)
 
@@ -475,8 +475,9 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
             if msg.get('role') == 'tool':
                 logger.info(f"    Message {i} tool_call_id: {msg.get('tool_call_id')}")
             if 'tool_calls' in msg and 'reasoning_content' not in msg:
-                logger.error(f"  !!! ERROR: Message {i} has tool_calls but NO reasoning_content!")
-                logger.error(f"  Message {i} full: {msg}")
+                # 工具轮无 reasoning_content 属正常（模型可能未启用思考，如 thinking disabled）；
+                # 仅当模型确实输出了 reasoning 但未回传时才异常（to_openai_message 已保证有则必传）。
+                logger.info(f"  Message {i} has tool_calls without reasoning_content (model reasoning disabled or empty)")
         
         # 验证并修复 tool_calls 和 tool 消息的配对关系
         tool_call_ids = set()

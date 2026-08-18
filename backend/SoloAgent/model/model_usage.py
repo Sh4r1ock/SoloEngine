@@ -79,9 +79,47 @@ class ChatUsage(DictMixin):
     time: float
     """
     API 响应时间（秒）。
-    
+
     从发送请求到收到完整响应的时间。
     用于性能监控和优化。
+    """
+
+    duration_ms: int = 0
+    """
+    调用时长（毫秒）。
+
+    与 time（秒）区分：time 用于响应时间监控，duration_ms 用于累计耗时统计。
+    避免 float→int 转换损失精度。
+    """
+
+    system_prompt_token: int = 0
+    """
+    system 提示词 token 数（tiktoken 估算累加值）。
+
+    reply 周期内累加的 system 消息 token 数。
+    """
+
+    user_prompt_token: int = 0
+    """
+    user 输入 token 数（tiktoken 估算累加值）。
+
+    reply 周期内累加的 user 消息 token 数。
+    """
+
+    assistant_prompt_token: int = 0
+    """
+    历史 assistant 消息 token 数（tiktoken 估算累加值）。
+
+    reply 周期内累加的 assistant 消息 token 数。
+    """
+
+    token_usage_history: list = field(default_factory=list)
+    """
+    每次 LLM API 调用的 token 消耗明细列表。
+
+    每个 entry 包含：iteration, timestamp, system_prompt_token,
+    user_prompt_token, assistant_prompt_token, prompt_tokens,
+    completion_tokens, total_tokens, duration_ms, finish_reason。
     """
 
     type: Literal["chat"] = field(default_factory=lambda: "chat")

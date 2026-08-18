@@ -21,6 +21,7 @@ import type {
   RecentProjectInfo,
   MessageFileChangesMap,
   FileSystemChange,
+  TokenTotals,
 } from '../types';
 
 const generateId = () => `id_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -46,6 +47,16 @@ interface RunPanelState {
   isWaitingReply: boolean;
   currentMsgId: string;
 
+  // 后端聚合改造（4.2）：agent 级整轮 token 状态（消息头/组头整轮显示数据源）。
+  // 由 updateAgentTokens 写入（agent_token_usage 推送的 agent_usage / agent_complete
+  // metadata.agent_usage），执行开始时 clearAgentUsage 清空。
+  // 〇·3 并发修复：同一 agent 多次调用（多个 execution_key 实例，如 subagent 被 Task
+  // 调用两次）时，键控维度区分实例——executionKey 键（实例准确值，组头用）+ agentId 键
+  // （mainagent 消息头兼容，单实例场景），后写入不覆盖不同实例的组级聚合。
+  agentUsageMap: Record<string, { tokens: number; totals: TokenTotals; history: any[] }>;
+  setAgentUsage: (agentId: string, usage: any, executionKey?: string) => void;
+  clearAgentUsage: () => void;
+
   callRecords: CallRecord[];
   subagentOutputs: SubagentOutput[];
 
@@ -57,6 +68,10 @@ interface RunPanelState {
 
   agenticPanels: AgenticPanel[];
   activeAgenticTab: string | null;
+  /** 浏览器面板当前显示的 URL（OpenPreview 可跳转块点击后写入，AgenticPanel 浏览器 iframe 渲染） */
+  browserUrl: string | null;
+  /** 浏览器外部导航信号（OpenPreview 点击时递增，BrowserPanel 依赖其变化触发导航，解决同 URL 重复点击不触发的问题） */
+  browserNavSeq: number;
   panelRatios: number[];
   isDragging: number | null;
 
@@ -85,9 +100,10 @@ interface RunPanelState {
   expandedBlockKeys: Record<string, boolean>;
   toggleBlockExpand: (blockKey: string, currentIsExpanding: boolean) => void;
 
-  agentTokensMap: Record<string, number>;
-  setAgentTokens: (agentId: string, tokens: number) => void;
-  clearAgentTokens: () => void;
+  // 工具交互回答发送器：AskUserQuestion / ExitPlanMode 交互面板点击后调用。
+  // 由 RunPanel 注入（内部调用 executeFlow 发送回答），避免逐层传 props。
+  userAnswerSender: ((text: string) => void) | null;
+  setUserAnswerSender: (fn: ((text: string) => void) | null) => void;
 
   setCurrentSessionId: (sessionId: string | null) => void;
   setSessions: (sessions: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
@@ -117,6 +133,7 @@ interface RunPanelState {
   addEditorTab: (tab: FileTab) => void;
   updateEditorTab: (id: string, updates: Partial<FileTab>) => void;
   closeEditorTab: (id: string) => void;
+  closeEditorTabs: (ids: string[]) => void;
   setActiveEditorTabId: (id: string | null) => void;
   setTabContent: (tabId: string, content: string) => void;
   getTabContent: (tabId: string) => string;
@@ -124,12 +141,14 @@ interface RunPanelState {
   addDocumentTab: (tab: FileTab) => void;
   updateDocumentTab: (id: string, updates: Partial<FileTab>) => void;
   closeDocumentTab: (id: string) => void;
+  closeDocumentTabs: (ids: string[]) => void;
   setActiveDocumentTabId: (id: string | null) => void;
 
   openOrNavigateFile: (params: { filePath: string; fileName: string; isCode: boolean; isBinary: boolean; projectFolderPath: string | null }) => { tab: FileTab; existed: boolean };
 
-  openAgenticPanel: (type: string) => void;
+  openAgenticPanel: (type: string, url?: string) => void;
   closeAgenticPanel: (id: string) => void;
+  closeAgenticPanels: (ids: string[]) => void;
   setActiveAgenticTab: (tab: string | null) => void;
   setPanelRatios: (ratios: number[]) => void;
   setIsDragging: (index: number | null) => void;
@@ -234,6 +253,8 @@ const _createStore = () => createStore<RunPanelState>()(
         { id: 'changes', type: 'changes', title: '文件变更', isOpen: false },
       ],
       activeAgenticTab: null,
+      browserUrl: null,
+      browserNavSeq: 0,
       panelRatios: [1, 4, 4, 1],
       isDragging: null,
 
@@ -244,6 +265,9 @@ const _createStore = () => createStore<RunPanelState>()(
       currentPath: '',
 
       canvasData: null,
+
+      // 后端聚合改造（4.2-3）：agent 级整轮 token 累计（setAgentUsage 写入）
+      agentUsageMap: {} as Record<string, { tokens: number; totals: TokenTotals; history: any[] }>,
 
       hoveredMessageId: null,
 
@@ -269,13 +293,8 @@ const _createStore = () => createStore<RunPanelState>()(
         }));
       },
 
-      agentTokensMap: {},
-      setAgentTokens: (agentId: string, tokens: number) => {
-        set((state) => ({
-          agentTokensMap: { ...state.agentTokensMap, [agentId]: tokens },
-        }));
-      },
-      clearAgentTokens: () => set({ agentTokensMap: {} }),
+      userAnswerSender: null,
+      setUserAnswerSender: (fn) => set({ userAnswerSender: fn }),
 
       setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
       setSessions: (sessionsOrUpdater) => {
@@ -326,6 +345,34 @@ const _createStore = () => createStore<RunPanelState>()(
       }),
       setCurrentMsgId: (id) => set({ currentMsgId: id }),
 
+      // 后端聚合改造（4.2）：写入 agent 级整轮累计（tokens=total、totals=5 字段、history=全数组）。
+      // 消息头/组头整轮显示的数据源（与块级本阶段 usage 正交）。
+      // 〇·3 并发修复：executionKey 与 agentId 双键写入——executionKey 键为实例准确值
+      //（subagent 组头按实例查询，同 agent 多实例互不覆盖）；agentId 键兼容 mainagent
+      // 消息头（index.tsx 按 rootAgentId 查询）与单实例场景。
+      setAgentUsage: (agentId, usage, executionKey) => {
+        if (!agentId || !usage) return;
+        const value = {
+          tokens: usage.total_tokens ?? usage.total ?? 0,
+          totals: {
+            system_prompt: usage.system_prompt_token ?? usage.system_prompt ?? 0,
+            user_prompt: usage.user_prompt_token ?? usage.user_prompt ?? 0,
+            assistant_prompt: usage.assistant_prompt_token ?? usage.assistant_prompt ?? 0,
+            completion: usage.completion_tokens ?? usage.completion ?? 0,
+            total: usage.total_tokens ?? usage.total ?? 0,
+          },
+          history: usage.token_usage_history ?? [],
+        };
+        set((state) => ({
+          agentUsageMap: {
+            ...state.agentUsageMap,
+            [agentId]: value,
+            ...(executionKey && executionKey !== agentId ? { [executionKey]: value } : {}),
+          },
+        }));
+      },
+      clearAgentUsage: () => set({ agentUsageMap: {} }),
+
       addCallRecord: (record) => set((state) => ({ callRecords: [...state.callRecords, record] })),
       updateCallRecord: (id, updates) => set((state) => ({
         callRecords: state.callRecords.map((r) => (r.id === id ? { ...r, ...updates } : r)),
@@ -356,14 +403,21 @@ const _createStore = () => createStore<RunPanelState>()(
       updateEditorTab: (id, updates) => set((state) => ({
         editorTabs: state.editorTabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       })),
-      closeEditorTab: (id) => {
+      closeEditorTab: (id) => get().closeEditorTabs([id]),
+      closeEditorTabs: (ids) => {
         const state = get();
-        const tabIndex = state.editorTabs.findIndex((t) => t.id === id);
-        const newTabs = state.editorTabs.filter((t) => t.id !== id);
+        if (!ids || ids.length === 0) return;
+        const closingSet = new Set(ids);
+        // 被关 tab 的最小索引：激活 tab 被关闭时，落点取该位置（与单个关闭行为一致）
+        let minClosedIndex = Infinity;
+        state.editorTabs.forEach((t, i) => {
+          if (closingSet.has(t.id)) minClosedIndex = Math.min(minClosedIndex, i);
+        });
+        const newTabs = state.editorTabs.filter((t) => !closingSet.has(t.id));
         let newActiveId = state.activeEditorTabId;
-        if (state.activeEditorTabId === id) {
+        if (state.activeEditorTabId && closingSet.has(state.activeEditorTabId)) {
           if (newTabs.length > 0) {
-            const newIndex = Math.min(tabIndex, newTabs.length - 1);
+            const newIndex = Math.min(minClosedIndex, newTabs.length - 1);
             newActiveId = newTabs[newIndex].id;
           } else {
             newActiveId = null;
@@ -401,14 +455,20 @@ const _createStore = () => createStore<RunPanelState>()(
       updateDocumentTab: (id, updates) => set((state) => ({
         documentTabs: state.documentTabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       })),
-      closeDocumentTab: (id) => {
+      closeDocumentTab: (id) => get().closeDocumentTabs([id]),
+      closeDocumentTabs: (ids) => {
         const state = get();
-        const tabIndex = state.documentTabs.findIndex((t) => t.id === id);
-        const newTabs = state.documentTabs.filter((t) => t.id !== id);
+        if (!ids || ids.length === 0) return;
+        const closingSet = new Set(ids);
+        let minClosedIndex = Infinity;
+        state.documentTabs.forEach((t, i) => {
+          if (closingSet.has(t.id)) minClosedIndex = Math.min(minClosedIndex, i);
+        });
+        const newTabs = state.documentTabs.filter((t) => !closingSet.has(t.id));
         let newActiveId = state.activeDocumentTabId;
-        if (state.activeDocumentTabId === id) {
+        if (state.activeDocumentTabId && closingSet.has(state.activeDocumentTabId)) {
           if (newTabs.length > 0) {
-            const newIndex = Math.min(tabIndex, newTabs.length - 1);
+            const newIndex = Math.min(minClosedIndex, newTabs.length - 1);
             newActiveId = newTabs[newIndex].id;
           } else {
             newActiveId = null;
@@ -424,6 +484,10 @@ const _createStore = () => createStore<RunPanelState>()(
         const state = get();
         const panelType = isCode ? 'editor' : 'document';
         const tabs = isCode ? state.editorTabs : state.documentTabs;
+        // 实时跟随（画布设置 globalSettings.followMode）：开启（默认）时自动跳转到文件所属
+        // 标签页（activeAgenticTab）；关闭时仅打开文件 tab 并展开对应面板，不强制跳转。
+        const follow = state.canvasData?.globalSettings?.followMode ?? true;
+        const followState = follow ? { activeAgenticTab: panelType } : {};
         
         const existingTab = tabs.find(t => t.id === tabId);
         
@@ -432,8 +496,8 @@ const _createStore = () => createStore<RunPanelState>()(
             p.type === panelType ? { ...p, isOpen: true } : p
           );
           isCode
-            ? set({ activeEditorTabId: tabId, agenticPanels: newPanels, activeAgenticTab: panelType })
-            : set({ activeDocumentTabId: tabId, agenticPanels: newPanels, activeAgenticTab: panelType });
+            ? set({ activeEditorTabId: tabId, agenticPanels: newPanels, ...followState })
+            : set({ activeDocumentTabId: tabId, agenticPanels: newPanels, ...followState });
           return { tab: existingTab, existed: true };
         }
         
@@ -458,33 +522,54 @@ const _createStore = () => createStore<RunPanelState>()(
               editorTabs: [...state.editorTabs, newTab],
               activeEditorTabId: tabId,
               agenticPanels: newPanels,
-              activeAgenticTab: panelType,
+              ...followState,
             })
           : set({
               documentTabs: [...state.documentTabs, newTab],
               activeDocumentTabId: tabId,
               agenticPanels: newPanels,
-              activeAgenticTab: panelType,
+              ...followState,
             });
         
         return { tab: newTab, existed: false };
       },
 
-      openAgenticPanel: (type) => set((state) => {
+      openAgenticPanel: (type, url) => set((state) => {
         const newPanels = state.agenticPanels.map((p) =>
           p.type === type ? { ...p, isOpen: true } : p
         );
-        return { agenticPanels: newPanels, activeAgenticTab: type };
+        // 实时跟随（画布设置 globalSettings.followMode）：开启（默认）时自动跳转对应标签页；
+        // 关闭时仅展开对应面板（isOpen=true），不强制跳转，保留用户当前查看的标签页。
+        const follow = state.canvasData?.globalSettings?.followMode ?? true;
+        const followState = follow ? { activeAgenticTab: type } : {};
+        // 浏览器面板支持携带 URL：OpenPreview 可跳转块点击后写入 browserUrl，
+        // 同时递增 browserNavSeq（导航信号，BrowserPanel 依赖其变化触发导航——
+        // 解决重复点击同一 URL 时 browserUrl 值不变导致 useEffect 不触发的问题）。
+        // AgenticPanel 浏览器 iframe 据此渲染对应页面（非 browser 类型忽略 url 参数）。
+        if (type === 'browser' && url !== undefined) {
+          return {
+            agenticPanels: newPanels,
+            browserUrl: url,
+            browserNavSeq: state.browserNavSeq + 1,
+            ...followState,
+          };
+        }
+        return { agenticPanels: newPanels, ...followState };
       }),
-      closeAgenticPanel: (id) => set((state) => {
-        const panel = state.agenticPanels.find((p) => p.id === id);
+      closeAgenticPanel: (id) => get().closeAgenticPanels([id]),
+      closeAgenticPanels: (ids) => set((state) => {
+        if (!ids || ids.length === 0) return {};
+        const closingSet = new Set(ids);
         const newPanels = state.agenticPanels.map((p) =>
-          p.id === id ? { ...p, isOpen: false } : p
+          closingSet.has(p.id) ? { ...p, isOpen: false } : p
         );
         let newActiveTab = state.activeAgenticTab;
-        if (state.activeAgenticTab === panel?.type) {
-          const remainingOpen = newPanels.filter((p) => p.isOpen);
-          newActiveTab = remainingOpen.length > 0 ? remainingOpen[0].type : null;
+        if (state.activeAgenticTab) {
+          const activePanel = state.agenticPanels.find((p) => p.type === state.activeAgenticTab);
+          if (activePanel && closingSet.has(activePanel.id)) {
+            const remainingOpen = newPanels.filter((p) => p.isOpen);
+            newActiveTab = remainingOpen.length > 0 ? remainingOpen[0].type : null;
+          }
         }
         return { agenticPanels: newPanels, activeAgenticTab: newActiveTab };
       }),
@@ -834,6 +919,8 @@ const _createStore = () => createStore<RunPanelState>()(
           inputText: '',
           isWaitingReply: false,
           currentMsgId: '',
+          // 后端聚合改造（4.2-4）：执行/切换 session 时清空，避免跨 session 残留
+          agentUsageMap: {} as Record<string, { tokens: number; totals: TokenTotals; history: any[] }>,
           callRecords: [] as CallRecord[],
           subagentOutputs: [] as SubagentOutput[],
           hoveredMessageId: null as string | null,
@@ -916,6 +1003,7 @@ const _createStore = () => createStore<RunPanelState>()(
           const documentTabs = (data.documentTabs || []).map((t: any) => ({
             ...t, content: '', isLoading: true, isModified: false, hasExternalChange: false,
           }));
+          const loadedPanels = data.agenticPanels || DEFAULT_PANELS;
           set({
             currentSessionId: data.currentSessionId || null,
             inputText: data.inputText || '',
@@ -923,13 +1011,7 @@ const _createStore = () => createStore<RunPanelState>()(
             documentTabs,
             activeEditorTabId: data.activeEditorTabId || null,
             activeDocumentTabId: data.activeDocumentTabId || null,
-            agenticPanels: data.agenticPanels || [
-              { id: 'editor', type: 'editor', title: '编辑器', isOpen: false },
-              { id: 'terminal', type: 'terminal', title: '终端', isOpen: false },
-              { id: 'browser', type: 'browser', title: '浏览器', isOpen: false },
-              { id: 'document', type: 'document', title: '文档', isOpen: false },
-              { id: 'changes', type: 'changes', title: '文件变更', isOpen: false },
-            ],
+            agenticPanels: loadedPanels,
             activeAgenticTab: data.activeAgenticTab || null,
             panelRatios: data.panelRatios || [1, 4, 4, 1],
           });

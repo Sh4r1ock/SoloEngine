@@ -126,22 +126,28 @@ class OllamaChatModel(ChatModelBase):
         Returns:
             ChatResponse | AsyncGenerator[ChatResponse, None]: The response.
         """
+        # ★ 任务1：重置 _was_cancelled 标志，避免上次调用的 cancel 状态污染本次调用
+        self._was_cancelled = False
+
         # Check messages format
         if not isinstance(messages, list):
             raise ValueError(
                 f"Ollama 'messages' field expected type 'list', "
                 f"got {type(messages)} instead."
             )
-        if not all("role" in msg and "content" in msg for msg in messages):
+        # ★ 任务2：放宽 messages 校验，assistant 消息可能只有 tool_calls 而无 content
+        if not all("role" in msg for msg in messages):
             raise ValueError(
-                "Each message in 'messages' list must contain a 'role' "
-                "and 'content' key for Ollama API."
+                "Each message in 'messages' list must contain a 'role' key for Ollama API."
             )
+
+        # ★ 任务3：转换 messages 为 Ollama 格式
+        ollama_messages = self._convert_messages_for_ollama(messages)
 
         # Prepare request payload
         payload = {
             "model": self.model_name,
-            "messages": messages,
+            "messages": ollama_messages,
             "stream": self.stream,
             **self.generate_kwargs,
             **kwargs,
@@ -163,15 +169,24 @@ class OllamaChatModel(ChatModelBase):
 
         try:
             if self.stream:
-                response = await self.client.stream(
-                    f"{self.base_url}/api/chat",
-                    json=payload,
-                )
-                return self._parse_ollama_stream_response(
-                    start_datetime,
-                    response,
-                    cancel_event,
-                )
+                async def stream_generator():
+                    async with self.client.stream(
+                        "POST",
+                        f"{self.base_url}/api/chat",
+                        json=payload,
+                    ) as response:
+                        if response.status_code < 200 or response.status_code >= 300:
+                            error_body = await response.aread()
+                            error_text = error_body.decode(errors="replace") if error_body else ""
+                            logger.error(f"Ollama API returned HTTP {response.status_code}: {error_text[:500]}")
+                            yield ChatResponse(
+                                content=[], usage=None,
+                                metadata={"error": f"Ollama API HTTP {response.status_code}: {error_text[:200]}"},
+                            )
+                            return
+                        async for resp in self._parse_ollama_stream_response(start_datetime, response, cancel_event):
+                            yield resp
+                return stream_generator()
             else:
                 response = await self.client.post(
                     f"{self.base_url}/api/chat",
@@ -214,6 +229,80 @@ class OllamaChatModel(ChatModelBase):
             return []
         return tools
 
+    def _convert_messages_for_ollama(self, messages: list[dict]) -> list[dict]:
+        """Convert OpenAI-format messages to Ollama-format messages.
+
+        Ollama API 与 OpenAI 格式有 4 处差异：
+        1. content 必须是字符串（OpenAI 可能是 list[dict]）
+        2. tool_calls arguments 必须是 dict（OpenAI 是 JSON string）
+        3. tool 结果消息用 tool_name 而非 tool_call_id
+        4. 不支持 reasoning_content（需过滤 thinking blocks）
+        """
+        # 构建 tool_call_id → tool_name 的映射
+        tool_id_to_name: dict[str, str] = {}
+        for msg in messages:
+            if msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    tc_id = tc.get("id") or (tc.get("function", {}).get("name"))
+                    tc_name = tc.get("function", {}).get("name")
+                    if tc_id and tc_name:
+                        tool_id_to_name[tc_id] = tc_name
+
+        ollama_messages: list[dict] = []
+        for msg in messages:
+            ollama_msg: dict = {"role": msg["role"]}
+            # content: list[dict] → str
+            content = msg.get("content")
+            if isinstance(content, list):
+                text_parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "thinking":
+                            pass
+                    elif isinstance(block, str):
+                        text_parts.append(block)
+                ollama_msg["content"] = "\n".join(text_parts) if text_parts else ""
+            elif content is None:
+                ollama_msg["content"] = ""
+            else:
+                ollama_msg["content"] = str(content)
+
+            # tool_calls: arguments string → dict
+            if msg.get("tool_calls"):
+                ollama_tool_calls = []
+                for tc in msg["tool_calls"]:
+                    func = tc.get("function", {})
+                    args = func.get("arguments")
+                    if isinstance(args, str):
+                        try:
+                            args_dict = json.loads(args) if args else {}
+                        except json.JSONDecodeError:
+                            args_dict = {}
+                    elif isinstance(args, dict):
+                        args_dict = args
+                    else:
+                        args_dict = {}
+                    ollama_tool_calls.append({
+                        "type": "function",
+                        "function": {"name": func.get("name", ""), "arguments": args_dict},
+                    })
+                ollama_msg["tool_calls"] = ollama_tool_calls
+
+            # tool 结果消息：name → tool_name，移除 tool_call_id
+            if msg["role"] == "tool":
+                tool_name = msg.get("name")
+                if not tool_name and msg.get("tool_call_id"):
+                    tool_name = tool_id_to_name.get(msg["tool_call_id"], "")
+                if tool_name:
+                    ollama_msg["tool_name"] = tool_name
+            elif msg.get("name"):
+                ollama_msg["name"] = msg["name"]
+
+            ollama_messages.append(ollama_msg)
+        return ollama_messages
+
     async def _parse_ollama_stream_response(
         self,
         start_datetime: datetime,
@@ -240,7 +329,14 @@ class OllamaChatModel(ChatModelBase):
 
         self._save_response_ref(response)
         try:
-            async for line in response.aiter_lines():
+            lines = response.aiter_lines()
+            while True:
+                # stall 超时保护（根因修复）：流停滞时 __anext__ 永久阻塞使 cancel_event
+                # 检查不可达，暂停/停止无法中断 LLM 调用。超时视为异常结束。
+                try:
+                    line = await self._anext_stall_protected(lines, settings.STREAM_STALL_TIMEOUT)
+                except StopAsyncIteration:
+                    break
                 if cancel_event and cancel_event.is_set():
                     logger.info("[Ollama] Cancel event detected, breaking stream loop")
                     self._was_cancelled = True
@@ -257,26 +353,44 @@ class OllamaChatModel(ChatModelBase):
 
                 # Handle different response fields
                 if "done" in data:
-                    # Final response
-                    if "message" in data and "content" in data["message"]:
-                        final_content = data["message"]["content"]
-                        if isinstance(final_content, str):
-                            text += final_content
-                        elif isinstance(final_content, list):
-                            for block in final_content:
-                                if isinstance(block, str):
-                                    text += block
-                                elif isinstance(block, dict):
-                                    if block.get("type") == "text":
-                                        text += block.get("text", "")
-                                    elif block.get("type") == "tool_calls":
-                                        for tool_call in block.get("tool_calls", []):
-                                            tool_calls[tool_call.get("id", "")] = {
-                                                "type": "tool_use",
-                                                "id": tool_call.get("id", ""),
-                                                "name": tool_call.get("function", {}).get("name", ""),
-                                                "input": tool_call.get("arguments", {}),
-                                            }
+                    # Final response or intermediate chunk
+                    if "message" in data:
+                        msg_data = data["message"]
+                        # 1. content
+                        if "content" in msg_data:
+                            final_content = msg_data["content"]
+                            if isinstance(final_content, str):
+                                text += final_content
+                            elif isinstance(final_content, list):
+                                for block in final_content:
+                                    if isinstance(block, str):
+                                        text += block
+                                    elif isinstance(block, dict):
+                                        if block.get("type") == "text":
+                                            text += block.get("text", "")
+                                        elif block.get("type") == "tool_calls":
+                                            for tool_call in block.get("tool_calls", []):
+                                                tc_id = tool_call.get("id", "")
+                                                tool_calls[tc_id] = {
+                                                    "type": "tool_use",
+                                                    "id": tc_id,
+                                                    "name": tool_call.get("function", {}).get("name", ""),
+                                                    "input": tool_call.get("arguments", {}),
+                                                }
+                        # 2. thinking
+                        if msg_data.get("thinking"):
+                            thinking += msg_data["thinking"]
+                        # 3. message.tool_calls 独立字段
+                        if msg_data.get("tool_calls"):
+                            for idx, tool_call in enumerate(msg_data["tool_calls"]):
+                                func = tool_call.get("function", {})
+                                tc_id = tool_call.get("id") or f"ollama_tc_{idx}_{id(tool_call)}"
+                                tool_calls[tc_id] = {
+                                    "type": "tool_use",
+                                    "id": tc_id,
+                                    "name": func.get("name", ""),
+                                    "input": func.get("arguments", {}) if isinstance(func.get("arguments"), dict) else {},
+                                }
 
                     if "prompt_eval_count" in data and "eval_count" in data:
                         usage = ChatUsage(
@@ -370,6 +484,30 @@ class OllamaChatModel(ChatModelBase):
                     
                     last_tool_calls = OrderedDict(tool_calls)
 
+                    # ★ 任务6：done=true 时设置 stop_reason / finish_reason
+                    if data.get("done") is True:
+                        done_reason = data.get("done_reason", "stop")
+                        if tool_calls:
+                            final_stop_reason = "tool_use"
+                            final_finish_reason = "tool_calls"
+                        elif done_reason == "stop":
+                            final_stop_reason = "end_turn"
+                            final_finish_reason = "stop"
+                        elif done_reason == "tool_calls":
+                            final_stop_reason = "tool_use"
+                            final_finish_reason = "tool_calls"
+                        elif done_reason == "length":
+                            final_stop_reason = "max_tokens"
+                            final_finish_reason = "length"
+                        else:
+                            final_stop_reason = done_reason
+                            final_finish_reason = done_reason
+
+                        yield ChatResponse(
+                            content=[], usage=usage, metadata=None,
+                            stop_reason=final_stop_reason, finish_reason=final_finish_reason,
+                        )
+
         except Exception as e:
             logger.error(f"Error parsing Ollama stream: {e}")
             yield ChatResponse(
@@ -408,54 +546,83 @@ class OllamaChatModel(ChatModelBase):
             SoloTextBlock | dict | SoloThinkingBlock
         ] = []
         metadata: dict | None = None
+        usage = None  # ★ 任务7：初始化 usage，避免无 prompt_eval_count 时 NameError
 
-        if "message" in data and "content" in data["message"]:
-            content = data["message"]["content"]
-            if isinstance(content, str):
-                content_blocks.append(
-                    SoloTextBlock(
-                        type="text",
-                        text=content,
-                    ),
-                )
-            elif isinstance(content, list):
-                for block in content:
-                    if isinstance(block, str):
-                        content_blocks.append(
-                            SoloTextBlock(
-                                type="text",
-                                text=block,
-                            ),
-                        )
-                    elif isinstance(block, dict):
-                        if block.get("type") == "text":
+        if "message" in data:
+            msg_data = data["message"]
+            # 1. content
+            if "content" in msg_data:
+                content = msg_data["content"]
+                if isinstance(content, str):
+                    content_blocks.append(
+                        SoloTextBlock(
+                            type="text",
+                            text=content,
+                        ),
+                    )
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, str):
                             content_blocks.append(
                                 SoloTextBlock(
                                     type="text",
-                                    text=block.get("text", ""),
+                                    text=block,
                                 ),
                             )
-                        elif block.get("type") == "thinking":
-                            content_blocks.append(
-                                SoloThinkingBlock(
-                                    type="thinking",
-                                    thinking=block.get("text", ""),
-                                ),
-                            )
-                        elif block.get("type") == "tool_calls":
-                            for tool_call in block.get("tool_calls", []):
-                                content_blocks.append({
-                                    "type": "tool_calls",
-                                    "tool_calls": [{
-                                        "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
-                                        "id": tool_call.get("id", ""),
-                                        "type": "function",
-                                        "function": {
-                                            "name": tool_call.get("function", {}).get("name", ""),
-                                            "arguments": json.dumps(tool_call.get("arguments", {}), ensure_ascii=False),
-                                        },
-                                    }],
-                                })
+                        elif isinstance(block, dict):
+                            if block.get("type") == "text":
+                                content_blocks.append(
+                                    SoloTextBlock(
+                                        type="text",
+                                        text=block.get("text", ""),
+                                    ),
+                                )
+                            elif block.get("type") == "thinking":
+                                content_blocks.append(
+                                    SoloThinkingBlock(
+                                        type="thinking",
+                                        thinking=block.get("text", ""),
+                                    ),
+                                )
+                            elif block.get("type") == "tool_calls":
+                                for tool_call in block.get("tool_calls", []):
+                                    content_blocks.append({
+                                        "type": "tool_calls",
+                                        "tool_calls": [{
+                                            "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                            "id": tool_call.get("id", ""),
+                                            "type": "function",
+                                            "function": {
+                                                "name": tool_call.get("function", {}).get("name", ""),
+                                                "arguments": json.dumps(tool_call.get("arguments", {}), ensure_ascii=False),
+                                            },
+                                        }],
+                                    })
+            # 2. thinking
+            if msg_data.get("thinking"):
+                content_blocks.append(SoloThinkingBlock(type="thinking", thinking=msg_data["thinking"]))
+            # 3. message.tool_calls 独立字段
+            if msg_data.get("tool_calls"):
+                for idx, tool_call in enumerate(msg_data["tool_calls"]):
+                    func = tool_call.get("function", {})
+                    tc_id = tool_call.get("id") or f"ollama_tc_{idx}"
+                    args = func.get("arguments", {})
+                    if isinstance(args, dict):
+                        args_str = json.dumps(args, ensure_ascii=False)
+                    else:
+                        args_str = str(args) if args else ""
+                    content_blocks.append({
+                        "type": "tool_calls",
+                        "tool_calls": [{
+                            "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                            "id": tc_id,
+                            "type": "function",
+                            "function": {
+                                "name": func.get("name", ""),
+                                "arguments": args_str,
+                            },
+                        }],
+                    })
 
         if "prompt_eval_count" in data and "eval_count" in data:
             usage = ChatUsage(

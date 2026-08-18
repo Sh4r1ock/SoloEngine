@@ -71,9 +71,7 @@ export interface SessionMessage {
   content?: string;
   data: DataBlock[];
   message_index: number;
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
+  token_usage_history?: any[];
   created_at?: string;
   timestamp?: string;
   reasoning_content?: string;
@@ -167,7 +165,8 @@ export const runApi = {
     onError: (error: string) => void,
     agenticFlowId?: string,
     sessionId?: string,
-    context?: Record<string, any>
+    context?: Record<string, any>,
+    signal?: AbortSignal
   ): Promise<void> {
     const token = localStorage.getItem('access_token');
     const response = await fetch('/api/v1/run/stream', {
@@ -183,6 +182,7 @@ export const runApi = {
         session_id: sessionId,
         context: context,
       }),
+      signal,
     });
 
     if (!response.ok) {

@@ -33,8 +33,11 @@ SoloEngine : 程序入口模块
 import sys
 import asyncio
 
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+# 使用 Windows 默认的 ProactorEventLoop（Python 3.8+ 默认）：
+# 历史遗留的 WindowsSelectorEventLoop 不支持 asyncio.create_subprocess_shell，
+# 会导致 RunCommand 非阻塞模式（_execute_non_blocking → create_subprocess_shell）
+# 无法创建子进程（Python 3.14 实测抛 NotImplementedError，工具执行卡死）。
+# ProactorEventLoop 完全支持子进程，且 Python 3.14 中 WindowsSelectorEventLoopPolicy 已 deprecated。
 
 import uvicorn
 from app.core.config import settings

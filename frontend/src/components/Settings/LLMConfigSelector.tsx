@@ -143,7 +143,7 @@ const LLMConfigSelector: React.FC<LLMConfigSelectorProps> = ({
         style={{ width: '100%' }}
         optionLabelProp="label"
         virtual={false}
-        dropdownRender={(menu) => (
+        popupRender={(menu) => (
           <div className="llm-config-dropdown-inner">
             {menu}
             <Divider className="llm-config-dropdown-divider" />

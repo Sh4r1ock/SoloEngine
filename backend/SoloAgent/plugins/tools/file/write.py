@@ -18,6 +18,7 @@ SoloEngine : 文件写入工具模块，提供文件写入功能
 from typing import Dict, Any
 
 from .base import BaseFileTool, FileToolError
+from .._hitl import plan_mode_guard
 
 
 class Write(BaseFileTool):
@@ -77,6 +78,11 @@ class Write(BaseFileTool):
             ... )
             >>> print(result["success"])  # True
         """
+        # Plan 模式守卫（read-only 锁定）：处于计划模式时拒绝写入（特殊点位处理，非 plan 模式返回 None 放行原路径）
+        guard = plan_mode_guard(__class__.__name__)
+        if guard:
+            return guard
+
         self.validate_absolute_path(file_path)
         
         self.ensure_directory_exists(file_path)

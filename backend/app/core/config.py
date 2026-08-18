@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "500"))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "50"))
     TOKEN_COUNTER_TIMEOUT: int = int(os.getenv("TOKEN_COUNTER_TIMEOUT", "10"))
+    # LLM 流式响应 stall 超时（秒）：两次 chunk 之间超过该时间视为流停滞
+    # （LLM 服务发送响应头后停止发送数据、连接未关闭）。此前无 stall 保护，
+    # `__anext__()` 永久阻塞导致 cancel_event 检查不可达，暂停/停止无法中断
+    # LLM 调用（实测 subagent resume 流停滞 408s）。60s 远超正常 chunk 间隔。
+    STREAM_STALL_TIMEOUT: int = int(os.getenv("STREAM_STALL_TIMEOUT", "60"))
     WEBSOCKET_TASK_CANCEL_TIMEOUT: float = float(os.getenv("WEBSOCKET_TASK_CANCEL_TIMEOUT", "5.0"))
     WEBSOCKET_GRACE_PERIOD_SECONDS: int = int(os.getenv("WEBSOCKET_GRACE_PERIOD_SECONDS", "15"))
     WEBSOCKET_STREAM_QUEUE_TIMEOUT: float = float(os.getenv("WEBSOCKET_STREAM_QUEUE_TIMEOUT", "1.0"))
@@ -108,6 +113,10 @@ class Settings(BaseSettings):
     SEARCH_TOOL_TIMEOUT: int = int(os.getenv("SEARCH_TOOL_TIMEOUT", "15"))
     GREP_TOOL_TIMEOUT: int = int(os.getenv("GREP_TOOL_TIMEOUT", "60"))
     GREP_MAX_FILES: int = int(os.getenv("GREP_MAX_FILES", "1000"))
+    # GetDiagnostics 工具：单次扫描的最大文件数限制（防止超大工作区卡死）
+    DIAGNOSTICS_MAX_FILES: int = int(os.getenv("DIAGNOSTICS_MAX_FILES", "200"))
+    # 交互类工具（AskUserQuestion/ExitPlanMode）等待用户响应的超时时间（秒）
+    INTERACTION_TIMEOUT: int = int(os.getenv("INTERACTION_TIMEOUT", "300"))
     WEB_FETCH_MAX_CONTENT_LENGTH: int = int(os.getenv("WEB_FETCH_MAX_CONTENT_LENGTH", "10000"))
     TOOL_REGISTRY_BODY_TRUNCATE: int = int(os.getenv("TOOL_REGISTRY_BODY_TRUNCATE", "5000"))
     WEBSOCKET_ERROR_BACKOFF_BASE: float = float(os.getenv("WEBSOCKET_ERROR_BACKOFF_BASE", "0.1"))
@@ -115,6 +124,15 @@ class Settings(BaseSettings):
     MCP_SERVICE_KEEPALIVE_INTERVAL: int = int(os.getenv("MCP_SERVICE_KEEPALIVE_INTERVAL", "3600"))
     EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "2048"))
     EMBEDDING_MAX_TOKENS_PER_BATCH: int = int(os.getenv("EMBEDDING_MAX_TOKENS_PER_BATCH", "8191"))
+    # ===== Embedding 服务配置（SearchCodebase 语义搜索 / 向量记忆 / RAG 统一使用） =====
+    # 默认指向本机 Ollama（无需 API Key）：provider=ollama, model=bge-m3（1024 维）。
+    # 使用 OpenAI 时：provider=openai, model=text-embedding-3-small, dimensions=1536,
+    # 并配置 EMBEDDING_API_KEY（或数据库 LLM 配置中对应密钥）。
+    EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "bge-m3")
+    EMBEDDING_DIMENSIONS: int = int(os.getenv("EMBEDDING_DIMENSIONS", "1024"))
+    EMBEDDING_BASE_URL: Optional[str] = os.getenv("EMBEDDING_BASE_URL", "http://localhost:11434")
+    EMBEDDING_API_KEY: Optional[str] = os.getenv("EMBEDDING_API_KEY")
 
     MCP_FILE_PATH_PARAMS: str = os.getenv(
         "MCP_FILE_PATH_PARAMS",

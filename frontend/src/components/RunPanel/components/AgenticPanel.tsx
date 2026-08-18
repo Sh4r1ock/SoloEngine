@@ -12,11 +12,14 @@ import {
   ClearOutlined,
   UpOutlined,
   DownOutlined,
+  MoreOutlined,
 } from '@ant-design/icons';
 import type { AgenticPanel as AgenticPanelType, FileTab } from '../types';
 import EditorLoader, { getEditorForFile } from '../editors';
 import { useOfficeConfigStore } from '../stores/officeConfigStore';
 import { useRunPanelStore } from '../stores/runPanelStore';
+import BrowserPanel from './BrowserPanel';
+import TerminalPanel from './TerminalPanel';
 import { fileChangesApi } from '../../../services/fileChangesApi';
 import FileDiffViewer from './FileDiffViewer';
 import { getFileCategory, getFileColor } from '../utils/fileTypeUtils';
@@ -175,6 +178,8 @@ interface AgenticPanelProps {
   onEditorContentChange: (tabId: string, content: string) => void;
   onDocumentContentChange: (tabId: string, content: string) => void;
   onAutoSave: (tab: FileTab) => void;
+  /** 当前激活终端变化回调（透传给 TerminalPanel，由 RunPanel 上报后端） */
+  onActiveTerminalChange?: (terminalId: string) => void;
 }
 
 const AgenticPanel: React.FC<AgenticPanelProps> = ({
@@ -194,6 +199,7 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
   onEditorContentChange,
   onDocumentContentChange,
   onAutoSave,
+  onActiveTerminalChange,
 }) => {
   const { message } = App.useApp();
   const [verticalSplitRatio, setVerticalSplitRatio] = useState(0.5);
@@ -294,50 +300,75 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
     isActive: boolean, 
     onSelect: () => void, 
     onClose: (e: React.MouseEvent) => void,
-    icon: React.ReactNode
-  ) => (
-    <div
-      key={tab.id}
-      onClick={onSelect}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '4px 10px',
-        cursor: 'pointer',
-        background: isActive ? 'var(--bg-100)' : 'transparent',
-        borderRight: '1px solid var(--bg-300)',
-        minWidth: 80,
-        maxWidth: 150,
-      }}
-    >
-      {icon}
-      <Text style={{ 
-        fontSize: 11, 
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        flex: 1,
-      }}>
-        {tab.name}
-      </Text>
-      {tab.fileSize && tab.fileSize > 100 * 1024 && (
-        <span style={{ fontSize: 9, color: 'var(--text-300)', flexShrink: 0 }}>
-          {(tab.fileSize / 1024).toFixed(0)}KB
-        </span>
-      )}
-      {tab.hasExternalChange && (
-        <Tag color="warning" style={{ margin: '0 2px', fontSize: 9, padding: '0 4px', lineHeight: '14px' }}>
-          外部修改
-        </Tag>
-      )}
-      {tab.isModified && <span style={{ color: 'var(--warning)', fontSize: 10 }}>●</span>}
-      <ClearOutlined 
-        style={{ fontSize: 9, color: 'var(--text-300)', marginLeft: 2 }}
-        onClick={onClose}
-      />
-    </div>
-  );
+    icon: React.ReactNode,
+    tabList: FileTab[],
+    closeTabs: (ids: string[]) => void
+  ) => {
+    const tabIndex = tabList.findIndex(t => t.id === tab.id);
+    // 右键菜单：关闭 / 关闭其他 / 关闭左侧 / 关闭右侧 / 关闭全部（批量删除设计）
+    const contextItems: MenuProps['items'] = [
+      { key: 'close', label: '关闭' },
+      { key: 'closeOthers', label: '关闭其他' },
+      { key: 'closeLeft', label: '关闭左侧' },
+      { key: 'closeRight', label: '关闭右侧' },
+      { type: 'divider' },
+      { key: 'closeAll', label: '关闭全部' },
+    ];
+    const onContextClick = ({ key }: { key: string }) => {
+      const ids = tabList.map(t => t.id);
+      switch (key) {
+        case 'close': closeTabs([tab.id]); break;
+        case 'closeOthers': closeTabs(ids.filter(id => id !== tab.id)); break;
+        case 'closeLeft': closeTabs(ids.slice(0, tabIndex)); break;
+        case 'closeRight': closeTabs(ids.slice(tabIndex + 1)); break;
+        case 'closeAll': closeTabs(ids); break;
+      }
+    };
+    return (
+      <Dropdown key={tab.id} menu={{ items: contextItems, onClick: onContextClick }} trigger={['contextMenu']}>
+        <div
+          onClick={onSelect}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            cursor: 'pointer',
+            background: isActive ? 'var(--bg-100)' : 'transparent',
+            borderRight: '1px solid var(--bg-300)',
+            minWidth: 80,
+            maxWidth: 150,
+          }}
+        >
+          {icon}
+          <Text style={{ 
+            fontSize: 11, 
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flex: 1,
+          }}>
+            {tab.name}
+          </Text>
+          {tab.fileSize && tab.fileSize > 100 * 1024 && (
+            <span style={{ fontSize: 9, color: 'var(--text-300)', flexShrink: 0 }}>
+              {(tab.fileSize / 1024).toFixed(0)}KB
+            </span>
+          )}
+          {tab.hasExternalChange && (
+            <Tag color="warning" style={{ margin: '0 2px', fontSize: 9, padding: '0 4px', lineHeight: '14px' }}>
+              外部修改
+            </Tag>
+          )}
+          {tab.isModified && <span style={{ color: 'var(--warning)', fontSize: 10 }}>●</span>}
+          <ClearOutlined 
+            style={{ fontSize: 9, color: 'var(--text-300)', marginLeft: 2 }}
+            onClick={onClose}
+          />
+        </div>
+      </Dropdown>
+    );
+  };
 
   const activeEditorTab = useMemo(() => 
     editorTabs.find(t => t.id === activeEditorTabId),
@@ -366,7 +397,9 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
               activeEditorTabId === tab.id,
               () => onSetActiveEditorTabId(tab.id),
               (e) => onCloseEditorTab(tab.id, e),
-              <EditOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />
+              <EditOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />,
+              editorTabs,
+              (ids) => useRunPanelStore.getState().closeEditorTabs(ids)
             ))}
             {activeEditorTab?.hasExternalChange && (
               <Tooltip title="重新加载磁盘内容（放弃当前修改）">
@@ -380,6 +413,36 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
                 </Button>
               </Tooltip>
             )}
+            {/* 批量删除：关闭全部 / 关闭其他 / 关闭未修改 */}
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'all', label: '关闭全部' },
+                  { key: 'others', label: '关闭其他' },
+                  { type: 'divider' },
+                  { key: 'unmodified', label: '关闭未修改的文件' },
+                ],
+                onClick: ({ key }) => {
+                  const store = useRunPanelStore.getState();
+                  const ids = editorTabs.map(t => t.id);
+                  switch (key) {
+                    case 'all': store.closeEditorTabs(ids); break;
+                    case 'others': store.closeEditorTabs(ids.filter(id => id !== activeEditorTabId)); break;
+                    case 'unmodified': store.closeEditorTabs(ids.filter(id => !editorTabs.find(t => t.id === id)?.isModified)); break;
+                  }
+                },
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                title="批量关闭"
+                style={{ color: 'var(--text-300)', flexShrink: 0, width: 24, height: 24 }}
+              />
+            </Dropdown>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {activeEditorTab ? (
@@ -430,7 +493,9 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
               activeDocumentTabId === tab.id,
               () => onSetActiveDocumentTabId(tab.id),
               (e) => onCloseDocumentTab(tab.id, e),
-              <FileTextOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />
+              <FileTextOutlined style={{ fontSize: 10, color: getFileColor(tab.name) }} />,
+              documentTabs,
+              (ids) => useRunPanelStore.getState().closeDocumentTabs(ids)
             ))}
             {activeDocumentTab?.hasExternalChange && (
               <Tooltip title="重新加载磁盘内容（放弃当前修改）">
@@ -444,6 +509,36 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
                 </Button>
               </Tooltip>
             )}
+            {/* 批量删除：关闭全部 / 关闭其他 / 关闭未修改 */}
+            <Dropdown
+              menu={{
+                items: [
+                  { key: 'all', label: '关闭全部' },
+                  { key: 'others', label: '关闭其他' },
+                  { type: 'divider' },
+                  { key: 'unmodified', label: '关闭未修改的文件' },
+                ],
+                onClick: ({ key }) => {
+                  const store = useRunPanelStore.getState();
+                  const ids = documentTabs.map(t => t.id);
+                  switch (key) {
+                    case 'all': store.closeDocumentTabs(ids); break;
+                    case 'others': store.closeDocumentTabs(ids.filter(id => id !== activeDocumentTabId)); break;
+                    case 'unmodified': store.closeDocumentTabs(ids.filter(id => !documentTabs.find(t => t.id === id)?.isModified)); break;
+                  }
+                },
+              }}
+              trigger={['click']}
+              placement="bottomRight"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                title="批量关闭"
+                style={{ color: 'var(--text-300)', flexShrink: 0, width: 24, height: 24 }}
+              />
+            </Dropdown>
           </div>
           <div style={{ flex: 1, overflow: 'hidden' }}>
             {activeDocumentTab ? (
@@ -507,37 +602,58 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
             paddingLeft: 8,
           }}>
             {openPanels.map(panel => (
-              <div
+              <Dropdown
                 key={panel.id}
-                onClick={() => onSetActiveTab(panel.type)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 12px',
-                  cursor: 'pointer',
-                  background: activeTab === panel.type ? 'var(--bg-200)' : 'transparent',
-                  borderRadius: 6,
-                  marginRight: 4,
-                  transition: 'background 0.15s',
+                menu={{
+                  items: [
+                    { key: 'close', label: '关闭' },
+                    { key: 'closeOthers', label: '关闭其他' },
+                    { type: 'divider' },
+                    { key: 'closeAll', label: '关闭全部' },
+                  ],
+                  onClick: ({ key }) => {
+                    const store = useRunPanelStore.getState();
+                    const openIds = openPanels.map(p => p.id);
+                    switch (key) {
+                      case 'close': store.closeAgenticPanel(panel.id); break;
+                      case 'closeOthers': store.closeAgenticPanels(openIds.filter(id => id !== panel.id)); break;
+                      case 'closeAll': store.closeAgenticPanels(openIds); break;
+                    }
+                  },
                 }}
+                trigger={['contextMenu']}
               >
-                {getAgenticPanelIcon(panel.type)}
-                <Text style={{ 
-                  fontSize: 12, 
-                  color: activeTab === panel.type ? 'var(--text-100)' : 'var(--text-300)',
-                  fontWeight: activeTab === panel.type ? 500 : 400,
-                }}>
-                  {panel.title}
-                </Text>
-                <ClearOutlined 
-                  style={{ fontSize: 10, color: 'var(--text-300)' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onClosePanel(panel.id);
+                <div
+                  onClick={() => onSetActiveTab(panel.type)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    cursor: 'pointer',
+                    background: activeTab === panel.type ? 'var(--bg-200)' : 'transparent',
+                    borderRadius: 6,
+                    marginRight: 4,
+                    transition: 'background 0.15s',
                   }}
-                />
-              </div>
+                >
+                  {getAgenticPanelIcon(panel.type)}
+                  <Text style={{ 
+                    fontSize: 12, 
+                    color: activeTab === panel.type ? 'var(--text-100)' : 'var(--text-300)',
+                    fontWeight: activeTab === panel.type ? 500 : 400,
+                  }}>
+                    {panel.title}
+                  </Text>
+                  <ClearOutlined 
+                    style={{ fontSize: 10, color: 'var(--text-300)' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClosePanel(panel.id);
+                    }}
+                  />
+                </div>
+              </Dropdown>
             ))}
           </div>
         )}
@@ -627,21 +743,11 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
               height: `${(1 - verticalSplitRatio) * 100}%`, 
               overflow: 'hidden',
               background: 'var(--bg-100)',
+              display: 'flex',
+              flexDirection: 'column',
             }}>
-              <div style={{ 
-                padding: '8px 12px', 
-                borderBottom: '1px solid var(--bg-300)',
-                background: 'var(--bg-200)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}>
-                <CodeOutlined style={{ fontSize: 12, color: 'var(--accent-100)' }} />
-                <Text style={{ fontSize: 11, fontWeight: 500 }}>终端</Text>
-              </div>
-              <div style={{ padding: 12 }}>
-                <Text type="secondary" style={{ fontSize: 11 }}>终端命令行区域</Text>
-              </div>
+              {/* 终端半屏：真实多终端（自动建终端 + 多标签） */}
+              <TerminalPanel onActiveTerminalChange={onActiveTerminalChange} />
             </div>
           </div>
         ) : (
@@ -654,43 +760,11 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
                 case 'editor':
                   return renderEditorPanel();
                 case 'terminal':
-                  return (
-                    <>
-                      <div style={{ 
-                        padding: '8px 12px', 
-                        borderBottom: '1px solid var(--bg-300)',
-                        background: 'var(--bg-200)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}>
-                        <CodeOutlined style={{ fontSize: 12, color: 'var(--accent-100)' }} />
-                        <Text style={{ fontSize: 11, fontWeight: 500 }}>终端</Text>
-                      </div>
-                      <div style={{ padding: 12 }}>
-                        <Text type="secondary" style={{ fontSize: 11 }}>终端命令行区域</Text>
-                      </div>
-                    </>
-                  );
+                  // 真实多终端：打开自动创建终端页，支持 + 新建多个终端（xterm.js + 后端 PTY）
+                  return <TerminalPanel onActiveTerminalChange={onActiveTerminalChange} />;
                 case 'browser':
-                  return (
-                    <>
-                      <div style={{ 
-                        padding: '8px 12px', 
-                        borderBottom: '1px solid var(--bg-300)',
-                        background: 'var(--bg-200)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}>
-                        <GlobalOutlined style={{ fontSize: 12, color: 'var(--primary-100)' }} />
-                        <Text style={{ fontSize: 11, fontWeight: 500 }}>浏览器</Text>
-                      </div>
-                      <div style={{ padding: 12 }}>
-                        <Text type="secondary" style={{ fontSize: 11 }}>浏览器预览区域</Text>
-                      </div>
-                    </>
-                  );
+                  // 浏览器面板：无外层 header（标签栏 + 网址栏自解释，与 editor/document 结构对齐）
+                  return <BrowserPanel />;
                 case 'document':
                   return renderDocumentPanel();
                 case 'changes':

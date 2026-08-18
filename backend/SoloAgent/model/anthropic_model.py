@@ -152,15 +152,16 @@ class AnthropicChatModel(ChatModelBase):
                 "These will be ignored."
             )
 
-        if not api_key:
-            raise ValueError(
-                "Anthropic API key not provided. "
-                "Please configure your API key in Settings > LLM Configuration."
-            )
+        # ★ 任务3：删除 api_key 强制检查，让 LLM API 自己检查 api_key
 
+        # 阻塞根因修复（create 阶段兜底）：未配置 timeout 时 anthropic SDK 默认超时
+        # 较长，服务端接受连接但不返回响应头时 messages.create()（等待响应头）阻塞且
+        # cancel 无法中断。显式设置 timeout（秒）= STREAM_STALL_TIMEOUT，保证有界结束。
+        final_client_kwargs = dict(client_kwargs or {})
+        final_client_kwargs.setdefault("timeout", settings.STREAM_STALL_TIMEOUT)
         self.client = anthropic.AsyncAnthropic(
             api_key=api_key,
-            **(client_kwargs or {}),
+            **final_client_kwargs,
         )
 
         self.generate_kwargs = generate_kwargs or {}
@@ -344,7 +345,13 @@ class AnthropicChatModel(ChatModelBase):
         try:
             async with response as stream:
                 self._save_response_ref(stream)
-                async for event in stream:
+                while True:
+                    # stall 超时保护（根因修复）：流停滞时 __anext__ 永久阻塞使 cancel_event
+                    # 检查不可达，暂停/停止无法中断 LLM 调用。超时视为异常结束。
+                    try:
+                        event = await self._anext_stall_protected(stream, settings.STREAM_STALL_TIMEOUT)
+                    except StopAsyncIteration:
+                        break
                     if cancel_event and cancel_event.is_set():
                         logger.info("[Anthropic] Cancel event detected, breaking stream loop")
                         self._was_cancelled = True

@@ -82,19 +82,19 @@ class VectorMemoryConfig:
     similarity_threshold: float = field(default_factory=lambda: settings.VECTOR_MEMORY_SIMILARITY_THRESHOLD)
     """相似度阈值，范围 0-1，越高要求越严格"""
     
-    embedding_provider: str = "openai"
+    embedding_provider: str = field(default_factory=lambda: settings.EMBEDDING_PROVIDER)
     """嵌入服务提供商：openai, ollama"""
     
-    embedding_model: str = "text-embedding-3-small"
+    embedding_model: str = field(default_factory=lambda: settings.EMBEDDING_MODEL)
     """嵌入模型名称"""
     
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = field(default_factory=lambda: settings.EMBEDDING_DIMENSIONS)
     """向量维度，需与模型匹配"""
     
-    embedding_api_key: Optional[str] = None
+    embedding_api_key: Optional[str] = field(default_factory=lambda: settings.EMBEDDING_API_KEY)
     """API 密钥，未提供时从环境变量读取"""
     
-    embedding_base_url: Optional[str] = None
+    embedding_base_url: Optional[str] = field(default_factory=lambda: settings.EMBEDDING_BASE_URL)
     """自定义 API 基础 URL"""
 
 

@@ -40,7 +40,7 @@ class WebSocketRunContext:
     def _make_stream_send_callback(self):
         """创建流式发送回调，每次调用时动态获取最新 websocket"""
         ctx = self
-        def stream_send_callback(delta, agent_id=None, agent_name=None):
+        def stream_send_callback(delta, agent_id=None, agent_name=None, execution_key=None):
             try:
                 exec_ctx = execution_context_manager.get(
                     user_id=ctx.user_id,
@@ -59,6 +59,7 @@ class WebSocketRunContext:
                                     "delta": delta,
                                     "agent_id": agent_id,
                                     "agent_name": agent_name,
+                                    "execution_key": execution_key,
                                     "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
                                 })
                             except Exception:

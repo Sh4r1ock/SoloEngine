@@ -234,10 +234,8 @@ export const useRunStore = create<RunState>()(
             message_index: msg.message_index ?? index,
             timestamp: msg.created_at || new Date().toISOString(),
             created_at: msg.created_at,
-            tokens: msg.total_tokens,
-            prompt_tokens: msg.prompt_tokens,
-            completion_tokens: msg.completion_tokens,
-            total_tokens: msg.total_tokens,
+            tokens: (msg.token_usage_history || []).reduce((sum: number, h: any) => sum + (h.total_tokens || 0), 0) || undefined,
+            token_usage_history: msg.token_usage_history,
           }));
           
           set((state) => ({

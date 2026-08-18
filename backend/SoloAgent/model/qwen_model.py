@@ -143,11 +143,7 @@ class QwenChatModel(ChatModelBase):
                 "These will be ignored."
             )
 
-        if not api_key:
-            raise ValueError(
-                "Qwen API key not provided. "
-                "Please configure your API key in Settings > LLM Configuration."
-            )
+        # ★ 任务3：删除 api_key 强制检查，让 LLM API 自己检查 api_key
 
         from dashscope import AsyncDashScope
         self.client = AsyncDashScope(
@@ -278,6 +274,10 @@ class QwenChatModel(ChatModelBase):
             **self.generate_kwargs,
             **kwargs,
         }
+        # 阻塞根因修复（create 阶段兜底）：未配置 timeout 时 dashscope 默认请求超时
+        # 较长，服务端接受连接但不返回响应头时 call()（等待响应头）阻塞且 cancel 无法
+        # 中断。显式设置 timeout（秒）= STREAM_STALL_TIMEOUT，保证 create 阶段有界结束。
+        gen_kwargs.setdefault("timeout", settings.STREAM_STALL_TIMEOUT)
 
         # Handle tools
         if tools:
@@ -373,7 +373,13 @@ class QwenChatModel(ChatModelBase):
 
         self._save_response_ref(response)
         try:
-            async for chunk in response:
+            while True:
+                # stall 超时保护（根因修复）：流停滞时 __anext__ 永久阻塞使 cancel_event
+                # 检查不可达，暂停/停止无法中断 LLM 调用。超时视为异常结束。
+                try:
+                    chunk = await self._anext_stall_protected(response, settings.STREAM_STALL_TIMEOUT)
+                except StopAsyncIteration:
+                    break
                 if cancel_event and cancel_event.is_set():
                     logger.info("[Qwen] Cancel event detected, breaking stream loop")
                     self._was_cancelled = True

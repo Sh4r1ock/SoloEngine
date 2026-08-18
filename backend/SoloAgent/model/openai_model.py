@@ -156,6 +156,7 @@ class OpenAIChatModel(ChatModelBase):
         organization: str = None,
         client_kwargs: dict[str, JSONSerializableObject] | None = None,
         generate_kwargs: dict[str, JSONSerializableObject] | None = None,
+        is_full_url: bool = False,
         **kwargs: Any,
     ) -> None:
         """
@@ -211,15 +212,43 @@ class OpenAIChatModel(ChatModelBase):
         super().__init__(model_name, stream)
 
         import openai
+        import httpx
 
+        # 完整 URL 开关：base_url 已含 /chat/completions 时，SDK 会自动在 base_url 后
+        # 追加 /chat/completions（openai.chat.completions.create），导致双份路径。
+        # 剥离已存在的后缀，使 SDK 补全后的最终请求地址 = 用户填写的完整 URL。
+        if is_full_url and client_kwargs:
+            _base = client_kwargs.get("base_url")
+            if _base and str(_base).rstrip("/").endswith("/chat/completions"):
+                client_kwargs = {
+                    **client_kwargs,
+                    "base_url": str(_base).rstrip("/")[: -len("/chat/completions")],
+                }
+
+        # 阻塞根因修复（create 阶段兜底）：未配置 timeout 时 openai SDK 默认 600s——
+        # 服务端接受连接但不返回响应头时，create() 最长阻塞 600s 且 cancel 无法中断。
+        # 配置 httpx 级 timeout（connect/read/write/pool = STREAM_STALL_TIMEOUT，与
+        # _anext_stall_protected 的流停滞阈值一致）：响应头不返回 / 流中途无数据超过
+        # 该阈值即超时抛出（ReadTimeout/ConnectTimeout），任务有界结束而非无限阻塞。
+        final_client_kwargs = dict(client_kwargs or {})
+        final_client_kwargs.setdefault(
+            "timeout",
+            httpx.Timeout(
+                connect=settings.STREAM_STALL_TIMEOUT,
+                read=settings.STREAM_STALL_TIMEOUT,
+                write=settings.STREAM_STALL_TIMEOUT,
+                pool=settings.STREAM_STALL_TIMEOUT,
+            ),
+        )
         self.client = openai.AsyncClient(
             api_key=api_key,
             organization=organization,
-            **(client_kwargs or {}),
+            **final_client_kwargs,
         )
 
         self.reasoning_effort = reasoning_effort
         self.generate_kwargs = generate_kwargs or {}
+        self.is_full_url = is_full_url
 
     @trace_llm
     async def __call__(
@@ -348,7 +377,15 @@ class OpenAIChatModel(ChatModelBase):
             kwargs.pop("tool_choice", None)
             kwargs["response_format"] = structured_model
             if not self.stream:
-                response = await self.client.chat.completions.parse(**kwargs)
+                self._create_task = asyncio.ensure_future(
+                    self.client.chat.completions.parse(**kwargs)
+                )
+                try:
+                    response = await self._create_task
+                except asyncio.CancelledError:
+                    self._create_task = None
+                    raise
+                self._create_task = None
             else:
                 response = self.client.chat.completions.stream(**kwargs)
                 return self._parse_openai_stream_response(
@@ -358,7 +395,20 @@ class OpenAIChatModel(ChatModelBase):
                     cancel_event,
                 )
         else:
-            response = await self.client.chat.completions.create(**kwargs)
+            # 阻塞根因修复（create 阶段）：`await create()` 在响应头返回前无 cancel_event
+            # 检查、_active_response 也未设置（_save_response_ref 在进入流循环后才调用），
+            # 服务端接受连接但不返回响应头时该 await 无法被暂停中断（最长阻塞至 SDK
+            # 默认 600s）。用 ensure_future 保存 task 引用，cancel() 通过 task.cancel()
+            # 立即中断；另已配置 client 级 httpx timeout（STREAM_STALL_TIMEOUT）兜底。
+            self._create_task = asyncio.ensure_future(
+                self.client.chat.completions.create(**kwargs)
+            )
+            try:
+                response = await self._create_task
+            except asyncio.CancelledError:
+                self._create_task = None
+                raise
+            self._create_task = None
 
         if self.stream:
             return self._parse_openai_stream_response(
@@ -416,7 +466,26 @@ class OpenAIChatModel(ChatModelBase):
         try:
             async with response as stream:
                 self._save_response_ref(stream)
-                async for item in stream:
+                while True:
+                    # stall 超时保护（根因修复）：此前 async for 的 __anext__ 在流停滞
+                    # （服务端发完响应头后停止发送数据、连接未关闭）时永久阻塞，cancel_event
+                    # 检查不可达，暂停/停止无法中断 LLM 调用（实测 408s）。wait_for 超时后
+                    # 抛 StopAsyncIteration 结束循环；先强制断开底层连接，避免 __aexit__ 的
+                    # aclose 继续阻塞。
+                    try:
+                        item = await self._anext_stall_protected(
+                            stream, settings.STREAM_STALL_TIMEOUT)
+                    except StopAsyncIteration:
+                        try:
+                            inner = getattr(stream, '_response', None) or getattr(stream, 'response', None)
+                            if inner is not None:
+                                if hasattr(inner, 'aclose'):
+                                    await asyncio.wait_for(inner.aclose(), timeout=1.0)
+                                elif hasattr(inner, 'close'):
+                                    inner.close()
+                        except Exception:
+                            pass
+                        break
                     if cancel_event and cancel_event.is_set():
                         logger.info("[OpenAI] Cancel event detected, breaking stream loop")
                         self._was_cancelled = True

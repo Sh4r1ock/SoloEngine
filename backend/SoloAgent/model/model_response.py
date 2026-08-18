@@ -200,20 +200,22 @@ class ChatResponse(DictMixin):
     def to_openai_message(self) -> dict:
         """
         转换为 OpenAI 格式的消息对象。
-        
+
+        reasoning_content 携带规则（2026-08-04 通用兼容设计）：
+        - 仅当消息含 tool_calls 时携带 reasoning_content（交错思维链协议：
+          DeepSeek V4 / OpenAI o1/o3 / GLM / Kimi / MiniMax / Anthropic 均要求
+          工具调用轮必须完整回传推理内容，否则 400 或思维链断裂）。
+        - 纯文本轮完全不带该字段（主流模型均不将历史思维链拼入上下文；
+          DeepSeek v3 旧版传入 reasoning_content 反而 400）。
+
         Returns:
-            dict: OpenAI 格式的消息，包含 role, content, reasoning_content, tool_calls 字段
+            dict: OpenAI 格式的消息，包含 role, content, tool_calls 字段
         """
         reasoning = self.get_reasoning_content()
-        has_thinking_blocks = any(
-            (isinstance(b, dict) and b.get("type") in ("thinking", "reasoning_content"))
-            or hasattr(b, 'thinking')
-            for b in self.content
-        )
+        text = self.get_text_content()
         msg = {
             "role": "assistant",
-            "content": self.get_text_content(),
-            "reasoning_content": reasoning if reasoning else ("" if has_thinking_blocks else None)
+            "content": text,
         }
         
         tool_calls = []
@@ -238,19 +240,40 @@ class ChatResponse(DictMixin):
                     if isinstance(tc, dict):
                         tc_id = tc.get("id", "")
                         if tc_id and tc_id not in [t.get("id", "") for t in tool_calls]:
+                            # 清洗（Hermes 案例）：重建干净结构，仅保留
+                            # id/type/function{name, arguments}，剔除
+                            # call_id/response_item_id/function.parameters 等非标准字段
+                            func_raw = tc.get("function", {})
+                            if isinstance(func_raw, dict):
+                                func_name = func_raw.get("name")
+                                func_args = func_raw.get("arguments")
+                            else:
+                                func_name = str(func_raw) if func_raw else ""
+                                func_args = None
                             clean_tc = {
                                 "id": tc_id,
                                 "type": tc.get("type", "function"),
-                                "function": tc.get("function", {})
+                                "function": {"name": func_name, "arguments": func_args},
                             }
-                            if not isinstance(clean_tc["function"], dict):
-                                clean_tc["function"] = {"name": str(clean_tc["function"]), "arguments": ""}
-                            if "arguments" not in clean_tc["function"]:
+                            if not func_name:
+                                clean_tc["function"]["name"] = ""
+                            args = clean_tc["function"]["arguments"]
+                            if args is None:
                                 clean_tc["function"]["arguments"] = ""
+                            elif not isinstance(args, str):
+                                # OpenAI 兼容协议要求 arguments 必须是合法 JSON 字符串
+                                clean_tc["function"]["arguments"] = json.dumps(args, ensure_ascii=False) if args else "{}"
                             tool_calls.append(clean_tc)
         
         if tool_calls:
             msg["tool_calls"] = tool_calls
+            # 工具轮 content 为空 → null（OpenAI 官方 assistant content 为 nullable；
+            # "" 会被严格 OpenAI 兼容 shim 以 "text content blocks must be non-empty" 拒绝）
+            if not text:
+                msg["content"] = None
+            # 工具调用轮：交错思维链协议要求回传 reasoning_content（DeepSeek 强制，其余厂商推荐）
+            if reasoning:
+                msg["reasoning_content"] = reasoning
         
         return msg
     

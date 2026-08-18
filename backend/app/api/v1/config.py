@@ -70,12 +70,16 @@ class LLMConfigCreate(BaseModel):
     model_name: str = Field(..., description="模型名称")
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="自定义API地址")
+    is_full_url: Optional[bool] = Field(False, description="完整URL开关：True表示base_url为完整请求地址（含/chat/completions），系统不再重复追加")
     temperature: float = Field(0.7, ge=0, le=2, description="温度参数")
     max_tokens: int = Field(128000, ge=1, description="最大Token数")
+    max_input_tokens: Optional[int] = Field(None, ge=1, description="最大输入Token数（上下文窗口大小）")
+    max_output_tokens: Optional[int] = Field(None, ge=1, description="最大输出Token数")
     top_p: float = Field(1.0, ge=0, le=1, description="Top P参数")
     frequency_penalty: float = Field(0.0, ge=-2, le=2, description="频率惩罚")
     presence_penalty: float = Field(0.0, ge=-2, le=2, description="存在惩罚")
     timeout: int = Field(60, ge=1, le=600, description="超时时间(秒)")
+    max_tool_calls: Optional[int] = Field(None, ge=1, description="工具调用轮次（一次 react_core 循环中 agent 允许调用 LLM API 的次数上限）")
     extra_params: Optional[dict] = Field(None, description="额外参数")
     is_default: bool = Field(False, description="是否设为默认")
 
@@ -86,12 +90,16 @@ class LLMConfigUpdate(BaseModel):
     model_name: Optional[str] = None
     api_key: Optional[str] = None
     base_url: Optional[str] = None
+    is_full_url: Optional[bool] = Field(None, description="完整URL开关")
     temperature: Optional[float] = Field(None, ge=0, le=2)
     max_tokens: Optional[int] = Field(None, ge=1)
+    max_input_tokens: Optional[int] = Field(None, ge=1)
+    max_output_tokens: Optional[int] = Field(None, ge=1)
     top_p: Optional[float] = Field(None, ge=0, le=1)
     frequency_penalty: Optional[float] = Field(None, ge=-2, le=2)
     presence_penalty: Optional[float] = Field(None, ge=-2, le=2)
     timeout: Optional[int] = Field(None, ge=1, le=600)
+    max_tool_calls: Optional[int] = Field(None, ge=1)
     extra_params: Optional[dict] = None
     is_default: Optional[bool] = None
     version: Optional[int] = Field(None, description="乐观锁版本号")
@@ -105,12 +113,16 @@ class LLMConfigResponse(BaseModel):
     provider: str
     model_name: str
     base_url: Optional[str]
+    is_full_url: bool
     temperature: float
     max_tokens: int
+    max_input_tokens: Optional[int]
+    max_output_tokens: Optional[int]
     top_p: float
     frequency_penalty: float
     presence_penalty: float
     timeout: int
+    max_tool_calls: Optional[int]
     extra_params: dict
     is_default: bool
     is_active: bool
@@ -193,12 +205,16 @@ async def list_configs(
                 "provider": c.provider,
                 "model_name": c.model_name,
                 "base_url": c.base_url,
+                "is_full_url": bool(getattr(c, 'is_full_url', False)),
                 "temperature": c.temperature,
                 "max_tokens": c.max_tokens,
+                "max_input_tokens": c.max_input_tokens,
+                "max_output_tokens": c.max_output_tokens,
                 "top_p": c.top_p,
                 "frequency_penalty": c.frequency_penalty,
                 "presence_penalty": c.presence_penalty,
                 "timeout": c.timeout,
+                "max_tool_calls": getattr(c, 'max_tool_calls', None),
                 "extra_params": c.extra_params or {},
                 "is_default": c.is_default,
                 "is_active": c.is_active,
@@ -232,12 +248,16 @@ async def list_active_configs(
                 "provider": c.provider,
                 "model_name": c.model_name,
                 "base_url": c.base_url,
+                "is_full_url": bool(getattr(c, 'is_full_url', False)),
                 "temperature": c.temperature,
                 "max_tokens": c.max_tokens,
+                "max_input_tokens": c.max_input_tokens,
+                "max_output_tokens": c.max_output_tokens,
                 "top_p": c.top_p,
                 "frequency_penalty": c.frequency_penalty,
                 "presence_penalty": c.presence_penalty,
                 "timeout": c.timeout,
+                "max_tool_calls": getattr(c, 'max_tool_calls', None),
                 "extra_params": c.extra_params or {},
                 "is_default": c.is_default,
                 "is_active": c.is_active,
@@ -279,10 +299,13 @@ async def get_default_config(
             "base_url": config.base_url,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
+            "max_input_tokens": config.max_input_tokens,
+            "max_output_tokens": config.max_output_tokens,
             "top_p": config.top_p,
             "frequency_penalty": config.frequency_penalty,
             "presence_penalty": config.presence_penalty,
             "timeout": config.timeout,
+            "max_tool_calls": getattr(config, 'max_tool_calls', None),
             "extra_params": config.extra_params or {},
             "is_default": config.is_default,
             "has_api_key": bool(config.api_key),
@@ -300,10 +323,10 @@ async def get_config(
     """获取指定的LLM配置。"""
     user_id = current_user.id
     config = db_manager.get_llm_config(db, config_id, user_id)
-    
+
     if not config:
         raise HTTPException(status_code=404, detail=f"Config '{config_id}' not found")
-    
+
     return {
         "code": 200,
         "message": "success",
@@ -316,10 +339,13 @@ async def get_config(
             "base_url": config.base_url,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
+            "max_input_tokens": config.max_input_tokens,
+            "max_output_tokens": config.max_output_tokens,
             "top_p": config.top_p,
             "frequency_penalty": config.frequency_penalty,
             "presence_penalty": config.presence_penalty,
             "timeout": config.timeout,
+            "max_tool_calls": getattr(config, 'max_tool_calls', None),
             "extra_params": config.extra_params or {},
             "is_default": config.is_default,
             "is_active": config.is_active,
@@ -349,12 +375,16 @@ async def create_config(
             model_name=request.model_name,
             api_key=request.api_key,
             base_url=request.base_url,
+            is_full_url=request.is_full_url,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
+            max_input_tokens=request.max_input_tokens,
+            max_output_tokens=request.max_output_tokens,
             top_p=request.top_p,
             frequency_penalty=request.frequency_penalty,
             presence_penalty=request.presence_penalty,
             timeout=request.timeout,
+            max_tool_calls=request.max_tool_calls,
             extra_params=request.extra_params,
             is_default=request.is_default,
         )
@@ -464,6 +494,7 @@ async def test_config(request: LLMConfigCreate, db: Session = Depends(get_db)) -
             stream=False,
             api_key=request.api_key,
             client_kwargs={"base_url": request.base_url} if request.base_url else {},
+            is_full_url=request.is_full_url,
         )
         
         return {

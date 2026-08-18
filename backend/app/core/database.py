@@ -204,12 +204,13 @@ class SessionMessageModel(Base):
     message_index = Column(Integer, nullable=False)
     parent_message_id = Column(String(36), nullable=True)
     
-    prompt_tokens = Column(Integer, nullable=True)
-    completion_tokens = Column(Integer, nullable=True)
-    total_tokens = Column(Integer, nullable=True)
-    duration_ms = Column(Integer, nullable=True)
+    # token 统计：仅保留细粒度历史，总值由前端/后端从 history 求和
+    token_usage_history = Column(JSON, nullable=True)
     llm_config_id = Column(String(36), nullable=True)
     is_deleted = Column(Boolean, nullable=False, default=False, index=True)
+    
+    # ★ 新增：上下文压缩标记
+    is_compressed = Column(Boolean, nullable=False, default=False, index=True)
     
     timestamp = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)), nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)))
@@ -258,12 +259,20 @@ class LLMConfigModel(Base):
     model_name = Column(String(255), nullable=False)
     api_key = Column(Text, nullable=True)
     base_url = Column(String(500), nullable=True)
+    # 完整 URL 开关：True 表示 base_url 为完整请求地址（含 /chat/completions），
+    # 系统不再重复追加路径（SDK 会自动补全 /chat/completions，需剥离已存在后缀）
+    is_full_url = Column(Boolean, default=False)
     temperature = Column(Float, default=0.7)
     max_tokens = Column(Integer, default=128000)
+    max_input_tokens = Column(Integer, nullable=True)
+    max_output_tokens = Column(Integer, nullable=True)
     top_p = Column(Float, default=1.0)
     frequency_penalty = Column(Float, default=0.0)
     presence_penalty = Column(Float, default=0.0)
     timeout = Column(Integer, default=60)
+    # 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限。
+    # 作为 llm_config 默认值 → 填入画布节点 model_config → 运行时仅从 canvas_data 获取。
+    max_tool_calls = Column(Integer, nullable=True)
     extra_params = Column(JSON, nullable=True)
     is_default = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
@@ -300,9 +309,20 @@ class RunProjectModel(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # #14 修复：恢复 _ensure_column_exists 迁移机制
+    # create_all 不会为已存在的表添加新列，旧数据库缺列会导致查询崩溃
     _ensure_column_exists(engine, 'session_messages', 'error', 'TEXT')
-    _ensure_column_exists(engine, 'session_messages', 'duration_ms', 'INTEGER')
+    _ensure_column_exists(engine, 'session_messages', 'is_compressed', 'BOOLEAN DEFAULT 0')
+    _ensure_column_exists(engine, 'session_messages', 'token_usage_history', 'JSON')
+    # llm_configs 表：补齐 max_input_tokens / max_output_tokens 列
+    _ensure_column_exists(engine, 'llm_configs', 'max_input_tokens', 'INTEGER')
+    _ensure_column_exists(engine, 'llm_configs', 'max_output_tokens', 'INTEGER')
+    # llm_configs 表：补齐 is_full_url 列（完整 URL 开关）
+    _ensure_column_exists(engine, 'llm_configs', 'is_full_url', 'BOOLEAN DEFAULT 0')
+    # llm_configs 表：补齐 max_tool_calls 列（工具调用轮次）
+    _ensure_column_exists(engine, 'llm_configs', 'max_tool_calls', 'INTEGER')
     logger.info(f"Database initialized at {DATABASE_PATH}")
+
 
 def _ensure_column_exists(engine, table_name, column_name, column_type):
     with engine.connect() as conn:
@@ -662,23 +682,25 @@ class DatabaseManager:
     def add_session_message(self, db: Session, session_id: str, user_id: str,
                             role: str, data: list = None, agent_id: str = "default",
                             parent_message_id: str = None, parent_agent_id: str = None,
-                            prompt_tokens: int = None, completion_tokens: int = None,
-                            total_tokens: int = None, duration_ms: int = None,
+                            token_usage_history: Any = None,
                             llm_config_id: str = None,
-                            status: str = "completed", error: str = None) -> SessionMessageModel:
+                            status: str = "completed", error: str = None,
+                            is_compressed: bool = False,
+                            id: str = None) -> SessionMessageModel:
         if not agent_id:
             agent_id = "default"
         if data is None:
             data = []
-        
+
         max_index = db.query(func.max(SessionMessageModel.message_index)).filter(
             SessionMessageModel.session_id == session_id,
             SessionMessageModel.is_deleted == False
         ).scalar()
         if max_index is None:
             max_index = -1
-        
-        message = SessionMessageModel(
+
+        # #17 改4：支持传入预生成 id（用于 mainagent 第一个 block 与 subagent task 消息的 parent 链对齐）
+        kwargs = dict(
             session_id=session_id,
             user_id=user_id,
             agent_id=agent_id,
@@ -689,13 +711,14 @@ class DatabaseManager:
             error=error,
             message_index=max_index + 1,
             parent_message_id=parent_message_id,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total_tokens,
-            duration_ms=duration_ms,
+            token_usage_history=token_usage_history,
             llm_config_id=llm_config_id,
+            is_compressed=is_compressed,
             timestamp=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
         )
+        if id:
+            kwargs["id"] = id
+        message = SessionMessageModel(**kwargs)
         db.add(message)
         db.commit()
         db.refresh(message)
@@ -726,25 +749,34 @@ class DatabaseManager:
         return query.order_by(SessionMessageModel.message_index).all()
 
     def update_session_token_usage(self, db: Session, session_id: str,
-                                   prompt_tokens: int = 0, completion_tokens: int = 0) -> Optional[AgenticFlowSessionModel]:
-        """更新会话 token 统计。"""
+                                   prompt_tokens: int = 0, completion_tokens: int = 0,
+                                   system_prompt_token: int = 0, user_prompt_token: int = 0,
+                                   assistant_prompt_token: int = 0) -> Optional[AgenticFlowSessionModel]:
+        """更新会话 token 统计。
+
+        统一入口：database_memory.py 和 run.py 都调用此方法。
+        """
         session = self.get_session(db, session_id)
         if not session:
             return None
-        
+
         current_usage = session.token_usage or {}
         new_usage = {
             "prompt_tokens": current_usage.get("prompt_tokens", 0) + prompt_tokens,
             "completion_tokens": current_usage.get("completion_tokens", 0) + completion_tokens,
             "total_tokens": current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens,
+            "system_prompt_token": current_usage.get("system_prompt_token", 0) + system_prompt_token,
+            "user_prompt_token": current_usage.get("user_prompt_token", 0) + user_prompt_token,
+            "assistant_prompt_token": current_usage.get("assistant_prompt_token", 0) + assistant_prompt_token,
+            "duration_ms": current_usage.get("duration_ms", 0),
         }
-        
+
         session.token_usage = new_usage
         session.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-        
+
         from sqlalchemy.orm.attributes import flag_modified
         flag_modified(session, "token_usage")
-        
+
         db.commit()
         db.refresh(session)
         return session
@@ -858,9 +890,11 @@ class DatabaseManager:
     def create_llm_config(self, db: Session, user_id: str, name: str, provider: str,
                           model_name: str, api_key: str = None, base_url: str = None,
                           temperature: float = 0.7, max_tokens: int = 2048,
+                          max_input_tokens: int = None, max_output_tokens: int = None,
                           top_p: float = 1.0, frequency_penalty: float = 0.0,
                           presence_penalty: float = 0.0, timeout: int = 60,
-                          extra_params: Dict = None, is_default: bool = False) -> LLMConfigModel:
+                          max_tool_calls: int = None, extra_params: Dict = None,
+                          is_default: bool = False, is_full_url: bool = False) -> LLMConfigModel:
         """创建LLM配置。"""
         if is_default:
             db.query(LLMConfigModel).filter(
@@ -876,12 +910,16 @@ class DatabaseManager:
             model_name=model_name,
             api_key=encrypted_api_key,
             base_url=base_url,
+            is_full_url=is_full_url,
             temperature=temperature,
             max_tokens=max_tokens,
+            max_input_tokens=max_input_tokens,
+            max_output_tokens=max_output_tokens,
             top_p=top_p,
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty,
             timeout=timeout,
+            max_tool_calls=max_tool_calls,
             extra_params=extra_params or {},
             is_default=is_default,
         )

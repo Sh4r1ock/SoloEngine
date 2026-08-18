@@ -17,7 +17,6 @@ const ExportModal: React.FC<ExportModalProps> = ({
   onExport,
 }) => {
   const { message } = App.useApp();
-  const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
   const handleExport = async (values: any) => {
@@ -72,7 +71,6 @@ const ExportModal: React.FC<ExportModalProps> = ({
       width={500}
     >
       <Form
-        form={form}
         layout="vertical"
         initialValues={{
           format: 'json',

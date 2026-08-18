@@ -63,6 +63,7 @@ const SOLOAGENT_TOOLS = [
   { name: 'TodoWrite', description: '管理待办事项' },
   { name: 'AskUserQuestion', description: '询问用户问题' },
   { name: 'OpenPreview', description: '打开预览' },
+  { name: 'EnterPlanMode', description: '进入计划模式' },
   { name: 'ExitPlanMode', description: '退出计划模式' },
 ];
 
@@ -142,8 +143,11 @@ const PropertyPanel: React.FC = () => {
   }, [selectedLLMConfig]);
 
   useEffect(() => {
-    form.setFieldsValue({ agentType: agentTypeValue });
-  }, [agentTypeValue, form]);
+    // 仅在节点选中（Form 已挂载连接）时同步 agentType，避免 form 未连接告警
+    if (selectedNode) {
+      form.setFieldsValue({ agentType: agentTypeValue });
+    }
+  }, [agentTypeValue, form, selectedNode]);
 
   useEffect(() => {
     selectedNodeRef.current = selectedNode;
@@ -167,9 +171,12 @@ const PropertyPanel: React.FC = () => {
         mcp_servers: selectedNode.data.mcp_servers || [],
         tools: selectedNode.data.tools || [],
         temperature: nodeModelConfig.temperature,
-        max_tokens: nodeModelConfig.max_tokens,
+        // 回显 canvas 真实值：canvas 有 max_output_tokens 就用 canvas 的，缺失不降级到 max_tokens（直接显示空，由用户配置）
+        max_output_tokens: nodeModelConfig.max_output_tokens,
+        max_input_tokens: nodeModelConfig.max_input_tokens,
         frequency_penalty: nodeModelConfig.frequency_penalty,
         presence_penalty: nodeModelConfig.presence_penalty,
+        max_tool_calls: nodeModelConfig.max_tool_calls,
       });
       setTimeout(() => { isInternalUpdateRef.current = false; }, 0);
       setAgentTypeValue(selectedNode.data.agentType || 'executor');
@@ -294,9 +301,11 @@ const PropertyPanel: React.FC = () => {
         updateData.model_config = {
           llm_config_id: llmConfigId,
           temperature: values.temperature,
-          max_tokens: values.max_tokens,
+          max_output_tokens: values.max_output_tokens,
+          max_input_tokens: values.max_input_tokens,
           frequency_penalty: values.frequency_penalty,
           presence_penalty: values.presence_penalty,
+          max_tool_calls: values.max_tool_calls,
         };
       }
 
@@ -406,11 +415,22 @@ const PropertyPanel: React.FC = () => {
     setParamsExpanded(true);
 
     if (config) {
+      // canvas 从 llm_config 获取默认值；llm_config 缺必填字段必须直接报错，禁止静默降级
+      if (config.max_input_tokens == null) {
+        message.error(`LLM 配置「${config.name}」缺少 max_input_tokens，无法应用到节点，请在模型管理中修复`);
+        return;
+      }
+      if (config.max_tool_calls == null) {
+        message.error(`LLM 配置「${config.name}」缺少 max_tool_calls（工具调用轮次），无法应用到节点，请在模型管理中修复`);
+        return;
+      }
       const params = {
-        temperature: config.temperature ?? LLM_DEFAULTS.TEMPERATURE,
-        max_tokens: config.max_tokens ?? LLM_DEFAULTS.MAX_TOKENS,
-        frequency_penalty: config.frequency_penalty ?? LLM_DEFAULTS.FREQUENCY_PENALTY,
-        presence_penalty: config.presence_penalty ?? LLM_DEFAULTS.PRESENCE_PENALTY,
+        temperature: config.temperature,
+        max_output_tokens: config.max_output_tokens ?? config.max_tokens,
+        max_input_tokens: config.max_input_tokens,
+        frequency_penalty: config.frequency_penalty,
+        presence_penalty: config.presence_penalty,
+        max_tool_calls: config.max_tool_calls,
       };
       form.setFieldsValue(params);
 
@@ -431,10 +451,10 @@ const PropertyPanel: React.FC = () => {
 
   if (!selectedNode) {
     return (
-      <div style={{ 
-        textAlign: 'center', 
-        color: '#5c5c5c', 
-        marginTop: 100 
+      <div style={{
+        textAlign: 'center',
+        color: '#5c5c5c',
+        marginTop: 100
       }}>
         <Text>请选择一个节点以编辑其属性</Text>
       </div>
@@ -533,8 +553,14 @@ const PropertyPanel: React.FC = () => {
                   </Form.Item>
                 </div>
                 <div className="property-panel-model-config-param">
-                  <span className="property-panel-model-config-param-label">最大Token</span>
-                  <Form.Item name="max_tokens" noStyle>
+                  <span className="property-panel-model-config-param-label">最大输入</span>
+                  <Form.Item name="max_input_tokens" noStyle>
+                    <StepperInput min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} step={1000} />
+                  </Form.Item>
+                </div>
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">最大输出</span>
+                  <Form.Item name="max_output_tokens" noStyle>
                     <StepperInput min={1} max={LLM_DEFAULTS.MAX_TOKENS_LIMIT} step={1000} />
                   </Form.Item>
                 </div>
@@ -548,6 +574,12 @@ const PropertyPanel: React.FC = () => {
                   <span className="property-panel-model-config-param-label">存在惩罚 (-2~2)</span>
                   <Form.Item name="presence_penalty" noStyle>
                     <StepperInput min={-2} max={2} step={0.1} />
+                  </Form.Item>
+                </div>
+                <div className="property-panel-model-config-param">
+                  <span className="property-panel-model-config-param-label">工具调用轮次 (1~1000)</span>
+                  <Form.Item name="max_tool_calls" noStyle>
+                    <StepperInput min={1} max={1000} step={1} />
                   </Form.Item>
                 </div>
               </div>

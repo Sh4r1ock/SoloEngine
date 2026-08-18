@@ -22,14 +22,12 @@
  */
 import React from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Typography, Tag, Tooltip } from 'antd';
-import { StarFilled } from '@ant-design/icons';
+import { Typography, Tooltip } from 'antd';
 import { useCanvasStore } from '../../store/canvasStore';
 
 const { Text } = Typography;
 
 const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
-  const color = data.color || '#3F51B5';
   const configMap = useCanvasStore((s) => s.configMap);
   const llmInfo = data.model_config?.llm_config_id
     ? configMap.get(data.model_config.llm_config_id)
@@ -40,36 +38,48 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
     const modelName = llmInfo?.model_name;
     const provider = llmInfo?.provider;
 
+    const tagStyle: React.CSSProperties = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 5,
+      marginTop: 4,
+      padding: '2px 10px',
+      borderRadius: 6,
+      fontSize: 12,
+      fontWeight: 500,
+      lineHeight: '20px',
+      whiteSpace: 'nowrap',
+      maxWidth: 196,
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    };
+
     if (displayName || modelName) {
       return (
         <Tooltip title={provider ? `${provider} - ${modelName}` : modelName}>
-          <Tag
-            color="blue"
+          <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              marginTop: 4,
+              ...tagStyle,
+              background: '#EFF6FF',
+              color: '#1D4ED8',
             }}
           >
-            {displayName || modelName || '未配置模型'}
-          </Tag>
+            ● {displayName || modelName}
+          </span>
         </Tooltip>
       );
     }
-    
+
     return (
-      <Tag 
-        color="error"
-        style={{ 
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          marginTop: 4,
+      <span
+        style={{
+          ...tagStyle,
+          background: '#FEF2F2',
+          color: '#DC2626',
         }}
       >
-        未配置模型
-      </Tag>
+        ● 未配置模型
+      </span>
     );
   };
 
@@ -78,11 +88,11 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
       style={{
         width: 220,
         backgroundColor: '#FFFFFF',
-        borderRadius: 8,
+        borderRadius: 12,
         border: `1px solid ${selected ? '#3F51B5' : '#cccccc'}`,
-        boxShadow: selected 
-          ? '0 0 0 3px rgba(63, 81, 181, 0.2), 0 4px 12px rgba(63, 81, 181, 0.15)' 
-          : '0 2px 8px rgba(0, 0, 0, 0.05)',
+        boxShadow: selected
+          ? '0 0 0 5px rgba(63, 81, 181, 0.2), 0 6px 20px rgba(63, 81, 181, 0.15)'
+          : '0 4px 12px rgba(0, 0, 0, 0.05)',
         transition: 'all 0.2s ease-in-out',
       }}
     >
@@ -90,10 +100,10 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
         type="target"
         position={Position.Top}
         style={{
-          width: 10,
-          height: 10,
-          background: color,
-          border: '2px solid #ffffff',
+          width: 14,
+          height: 14,
+          background: '#10B981',
+          border: '3px solid #ffffff',
         }}
       />
       
@@ -134,10 +144,10 @@ const AgentNode: React.FC<NodeProps> = ({ data, selected }) => {
         type="source"
         position={Position.Bottom}
         style={{
-          width: 10,
-          height: 10,
-          background: color,
-          border: '2px solid #ffffff',
+          width: 14,
+          height: 14,
+          background: '#3F51B5',
+          border: '3px solid #ffffff',
         }}
       />
     </div>

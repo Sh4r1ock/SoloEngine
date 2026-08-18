@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Modal, Input, Button, Space, Alert, Spin, Typography } from 'antd';
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
 import { agenticFlowApi } from '../../services/agenticFlowApi';
-import { wsService } from '../../services/websocket';
-import { WebSocketEvent } from '../../types/canvas';
+import { runApi } from '../../services/runApi';
 
 const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
@@ -14,12 +13,22 @@ interface PreviewProps {
   onClose: () => void;
 }
 
+interface PreviewLog {
+  type: 'stream' | 'execution_complete' | 'error' | 'status';
+  delta?: any;
+  result?: any;
+  message?: string;
+  status?: string;
+  timestamp: string;
+}
+
 const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
   const { currentProject } = useCanvasStore();
   const [input, setInput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const [logs, setLogs] = useState<WebSocketEvent[]>([]);
+  const [logs, setLogs] = useState<PreviewLog[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleStart = async () => {
     if (!currentProject) {
@@ -29,32 +38,63 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
     setIsRunning(true);
     setLogs([]);
     setShowLogs(true);
+    // 每次开始执行前创建新的 AbortController
+    abortControllerRef.current = new AbortController();
 
     try {
-      const result = await agenticFlowApi.runFlow(currentProject.id, input);
-      const newSessionId = result.id;
+      const canvasData = await agenticFlowApi.getCanvas(currentProject.id);
 
-      await wsService.connect(newSessionId);
-
-      wsService.onMessage((event: WebSocketEvent) => {
-        setLogs((prev) => [...prev, event]);
-
-        if (event.type === 'execution-complete' || event.type === 'error') {
+      await runApi.executeWorkflowStream(
+        canvasData,
+        input,
+        (delta) => {
+          setLogs((prev) => [...prev, {
+            type: 'stream',
+            delta,
+            timestamp: new Date().toISOString()
+          }]);
+        },
+        (result) => {
+          setLogs((prev) => [...prev, {
+            type: 'execution_complete',
+            result,
+            timestamp: new Date().toISOString()
+          }]);
           setIsRunning(false);
-          wsService.disconnect();
-        }
-      });
-
-      wsService.startExecution(currentProject.id, input);
+        },
+        (error) => {
+          setLogs((prev) => [...prev, {
+            type: 'error',
+            message: error,
+            timestamp: new Date().toISOString()
+          }]);
+          setIsRunning(false);
+        },
+        currentProject.id,
+        undefined,
+        undefined,
+        abortControllerRef.current?.signal,
+      );
     } catch (error) {
+      // 用户主动停止（AbortController.abort）时不显示错误日志
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setIsRunning(false);
+        return;
+      }
       console.error('Execution error:', error);
+      setLogs((prev) => [...prev, {
+        type: 'error',
+        message: error instanceof Error ? error.message : '执行失败',
+        timestamp: new Date().toISOString()
+      }]);
       setIsRunning(false);
     }
   };
 
   const handleStop = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setIsRunning(false);
-    wsService.disconnect();
   };
 
   const handleClear = () => {
@@ -129,13 +169,17 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
                 message={
                   <div>
                     <Text strong>{log.type}</Text>
-                    {log.node_id && <Text type="secondary"> - 节点: {log.node_id}</Text>}
                     {log.status && <Text type="secondary"> - 状态: {log.status}</Text>}
                   </div>
                 }
                 description={
                   <div>
                     {log.message && <Paragraph>{log.message}</Paragraph>}
+                    {log.delta && (
+                      <pre style={{ fontSize: 12, maxHeight: 200, overflow: 'auto', backgroundColor: '#f5f5f5', padding: 8, borderRadius: 4 }}>
+                        {JSON.stringify(log.delta, null, 2)}
+                      </pre>
+                    )}
                     {log.result && (
                       <pre style={{ fontSize: 12, maxHeight: 200, overflow: 'auto', backgroundColor: '#f5f5f5', padding: 8, borderRadius: 4 }}>
                         {JSON.stringify(log.result, null, 2)}
@@ -146,7 +190,7 @@ const Preview: React.FC<PreviewProps> = ({ visible, onClose }) => {
                 type={
                   log.type === 'error'
                     ? 'error'
-                    : log.type === 'execution-complete'
+                    : log.type === 'execution_complete'
                     ? 'success'
                     : 'info'
                 }

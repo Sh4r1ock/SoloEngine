@@ -10,7 +10,7 @@
 
 ***
 
-<p align="center"><b>SoloEngine</b> es la primera plataforma de desarrollo Agentic AI de bajo código. Es como formar un equipo de startup: arrastra los Agents que necesites al lienzo, conecta sus relaciones de colaboración y ejecuta. A partir de ese momento, planifican, ejecutan y entregan de forma totalmente autónoma.</p>
+<p align="center"><b>SoloEngine</b> es la primera plataforma low-code para IA agéntica. Arrastra un agente al lienzo, conéctalo con otro miembro del equipo y ponlo en marcha: planificará, actuará, observará e iterará por sí solo hasta completar la tarea.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -67,6 +67,11 @@ Todos los Agents comparten la misma arquitectura subyacente; la diferencia está
 2. **Motor ReAct unificado**: cada Agent ejecuta el mismo ciclo «pensar → actuar → observar → repetir».
 3. **Carga bajo demanda** — Gracias al mecanismo de compilación, los Agents solo cargan en tiempo de ejecución el modelo, la configuración y las herramientas especificados. Es lo que hace viable la Agentic AI en entornos de bajo código.
 
+<div align="center">
+  <img src="../../docs/images/Canvas.gif" alt="Demostración del lienzo visual de SoloEngine" width="100%"/>
+  <p><sub>Organiza Agents en el lienzo visual y compila la configuración del equipo en un Agent DAG ejecutable</sub></p>
+</div>
+
 ## Inicio rápido
 
 ```bash
@@ -91,6 +96,11 @@ Abre **<http://localhost:8991>** en el navegador y construye tu primer equipo de
 - **VibeLawing**: un abogado arrastra Agents de búsqueda, archivo y formato al lienzo y ejecuta. SoloEngine desglosará y planificará automáticamente el trabajo legal: analizará los hechos, localizará las normas, organizará la jurisprudencia, estructurará los argumentos y formateará los documentos. Solo necesitas revisar y hacer ajustes antes de entregar — todo el proceso resulta tan natural como cuando un desarrollador hace vibe coding en Cursor.
 - **VibeMarketing**: un especialista en marketing arrastra Agents de investigación, redacción y diseño al lienzo y ejecuta. SoloEngine analizará automáticamente a la audiencia, investigará estrategias de producto relevantes, comparará con la competencia y elaborará una estrategia de marketing — entregándote un plan de campaña impecable.
 - **Empaquetado en un clic**: cuando tu equipo de Agents está listo, un solo clic genera un producto completo que cualquiera puede usar directamente.
+
+<div align="center">
+  <img src="../../docs/images/RunPanel.gif" alt="Demostración de ejecución de SoloEngine" width="100%"/>
+  <p><sub>Observa en tiempo real la planificación, las acciones, las llamadas a herramientas y las iteraciones de los Agents en el panel de ejecución</sub></p>
+</div>
 
 ## Tendencias de Stars
 

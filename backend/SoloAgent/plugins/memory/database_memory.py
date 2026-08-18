@@ -180,6 +180,10 @@ class DatabaseMemoryPlugin(IMemory):
                         "prompt_tokens": record.prompt_tokens,
                         "completion_tokens": record.completion_tokens,
                         "total_tokens": record.total_tokens,
+                        "system_prompt_token": record.system_prompt_token,
+                        "user_prompt_token": record.user_prompt_token,
+                        "assistant_prompt_token": record.assistant_prompt_token,
+                        "token_usage_history": record.token_usage_history,
                         "message_index": record.message_index,
                         "created_at": format_iso(record.created_at) if record.created_at else None,
                     }
@@ -221,17 +225,24 @@ class DatabaseMemoryPlugin(IMemory):
                     prompt_tokens=message_data.get("prompt_tokens"),
                     completion_tokens=message_data.get("completion_tokens"),
                     total_tokens=message_data.get("total_tokens"),
+                    system_prompt_token=message_data.get("system_prompt_token"),
+                    user_prompt_token=message_data.get("user_prompt_token"),
+                    assistant_prompt_token=message_data.get("assistant_prompt_token"),
+                    token_usage_history=message_data.get("token_usage_history"),
                 )
-                
+
                 db.add(record)
                 db.commit()
                 db.refresh(record)
-                
+
                 if message_data.get("prompt_tokens") or message_data.get("completion_tokens"):
                     self._update_session_token_usage(
                         db,
                         message_data.get("prompt_tokens", 0),
-                        message_data.get("completion_tokens", 0)
+                        message_data.get("completion_tokens", 0),
+                        message_data.get("system_prompt_token", 0),
+                        message_data.get("user_prompt_token", 0),
+                        message_data.get("assistant_prompt_token", 0),
                     )
                 
                 logger.debug(f"Saved message {record.id} at index {next_index}")
@@ -244,27 +255,24 @@ class DatabaseMemoryPlugin(IMemory):
             traceback.print_exc()
             return None
     
-    def _update_session_token_usage(self, db, prompt_tokens: int, completion_tokens: int) -> None:
-        """更新会话的 token 使用统计。"""
-        AgenticFlowSessionModel = _get_session_model()
-        
+    def _update_session_token_usage(self, db, prompt_tokens: int, completion_tokens: int,
+                                      system_prompt_token: int = 0, user_prompt_token: int = 0,
+                                      assistant_prompt_token: int = 0) -> None:
+        """更新会话的 token 使用统计。
+
+        统一委托给 db_manager.update_session_token_usage，避免重复实现。
+        """
+        from app.core.database import db_manager
         try:
-            session = db.query(AgenticFlowSessionModel).filter(
-                AgenticFlowSessionModel.id == self._session_id
-            ).first()
-            
-            if not session:
-                logger.warning(f"Session {self._session_id} not found, skipping token usage update")
-                return
-            
-            current_usage = session.token_usage or {}
-            current_usage["prompt_tokens"] = current_usage.get("prompt_tokens", 0) + prompt_tokens
-            current_usage["completion_tokens"] = current_usage.get("completion_tokens", 0) + completion_tokens
-            current_usage["total_tokens"] = current_usage.get("total_tokens", 0) + prompt_tokens + completion_tokens
-            
-            session.token_usage = current_usage
-            session.updated_at = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-            db.commit()
+            db_manager.update_session_token_usage(
+                db=db,
+                session_id=self._session_id,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                system_prompt_token=system_prompt_token,
+                user_prompt_token=user_prompt_token,
+                assistant_prompt_token=assistant_prompt_token,
+            )
         except Exception as e:
             logger.warning(f"Failed to update session token usage: {e}")
     

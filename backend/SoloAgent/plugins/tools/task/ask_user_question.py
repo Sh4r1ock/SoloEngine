@@ -21,8 +21,15 @@ AskUserQuestion 工具模块。
 状态: ✅ 模块初始化完成
 """
 
+import asyncio
+import json
+import logging
 from typing import Dict, Any, List, Optional
+
 from .base import BaseTaskTool
+from .._hitl import get_run_context, await_user_message
+
+logger = logging.getLogger(__name__)
 
 
 class AskUserQuestion(BaseTaskTool):
@@ -200,10 +207,14 @@ class AskUserQuestion(BaseTaskTool):
         
         return "\n".join(lines)
     
-    def execute(self, questions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def execute(self, questions: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        执行问题格式化。
-        
+        执行提问，等待用户真实回答。
+
+        工具本身是暂停的：execute 被 toolkit_executor await 调用，
+        内部通过 run_context 的业务消息队列等待用户在工具调用面板中选择/输入，
+        收到回答后才返回给 LLM 继续执行。
+
         Args:
             questions (List[Dict[str, Any]]): 问题列表，每个问题包含：
                 - header (str): 问题标题（最多12个字符）
@@ -212,10 +223,11 @@ class AskUserQuestion(BaseTaskTool):
                     - label (str): 选项标签
                     - description (str): 选项描述
                 - multiSelect (bool): 是否多选
-        
+
         Returns:
             Dict[str, Any]: 执行结果，包含：
                 - success: 是否成功
+                - answers: 用户回答列表 [{question, answer}]
                 - questions: 格式化后的问题列表
                 - formatted_text: 格式化的文本输出
                 - error: 错误信息（如果失败）
@@ -223,10 +235,10 @@ class AskUserQuestion(BaseTaskTool):
         validation_error = self.validate_questions(questions)
         if validation_error:
             return self.format_error(validation_error, "VALIDATION_ERROR")
-        
+
         formatted_questions = []
         formatted_texts = []
-        
+
         for question in questions:
             formatted_q = {
                 "header": question["header"],
@@ -242,19 +254,95 @@ class AskUserQuestion(BaseTaskTool):
             }
             formatted_questions.append(formatted_q)
             formatted_texts.append(self.format_question(question))
-        
-        result = {
-            "content": "\n\n".join(formatted_texts),
-            "questions": formatted_questions,
-            "formatted_text": "\n\n".join(formatted_texts),
-            "question_count": len(formatted_questions),
-            "success": True,
-            "error_message": None,
-            "metadata": {}
-        }
-        
+
+        formatted_text = "\n\n".join(formatted_texts)
+
+        # 真实交互：等待用户在工具调用面板中选择/输入回答。
+        # 用户回答经前端 → WS execute → run.py enqueue_message 进入业务消息队列，
+        # await_user_message 内部 await 该队列即实现"工具暂停等待用户回答"。
+        run_context = get_run_context()
+        if run_context is not None:
+            try:
+                answers = await self._await_user_answers(run_context, formatted_questions)
+            except asyncio.TimeoutError:
+                return {
+                    "content": "User response timed out; no answer was provided.",
+                    "success": False,
+                    "error_message": "等待用户回答超时",
+                    "questions": formatted_questions,
+                    "formatted_text": formatted_text,
+                    "question_count": len(formatted_questions),
+                    "metadata": {},
+                }
+
+            # content 为结构化 JSON（question → answer 映射），供 LLM 直接消费，
+            # 与主流 Agent SDK（Claude Agent SDK user-input）的 answers 结构一致。
+            content = json.dumps({"answers": answers}, ensure_ascii=False)
+
+            return {
+                "content": content,
+                "answers": answers,
+                "questions": formatted_questions,
+                "formatted_text": formatted_text,
+                "question_count": len(formatted_questions),
+                "success": True,
+                "error_message": None,
+                "metadata": {},
+            }
+
+        # 无 run_context（非 Web 执行场景）：直接报错，严禁回退。
+        # 工具必须真实等待用户回答，失败即显式报错（对齐 _hitl.await_user_input）。
+        raise RuntimeError(
+            "无运行上下文（run_context）：无法等待用户回答，"
+            "AskUserQuestion 工具必须在 AgenticFlow 执行环境中使用"
+        )
+
+    async def _await_user_answers(
+        self,
+        run_context,
+        questions: List[Dict[str, Any]],
+    ) -> Dict[str, str]:
+        """
+        等待用户对全部问题的回答（一次性接收）。
+
+        前端分页卡片在最后一题点击「确认」后，一次性提交全部答案（JSON，
+        {answers: {question_text: answer}}，未作答的题为 null 即跳过），
+        此处只取一条消息并解析为 question → answer 映射。
+
+        Args:
+            run_context: 当前执行的 run_context。
+            questions (List[Dict]): 格式化后的问题列表。
+
+        Returns:
+            Dict[str, str]: 回答映射 {question_text: answer_text}（未作答为 None）
+
+        Raises:
+            asyncio.TimeoutError: 等待回答超时。
+        """
+        answer_text = await await_user_message(run_context, "用户问答")
+
+        answers: Dict[str, Any] = {}
+        try:
+            data = json.loads(answer_text)
+            raw = data.get("answers", data) if isinstance(data, dict) else {}
+            if isinstance(raw, dict):
+                answers = raw
+        except (json.JSONDecodeError, AttributeError):
+            logger.warning(f"[AskUserQuestion] 用户回答非 JSON，按空答案处理: {answer_text[:80]}")
+
+        # 按问题顺序规整为 question → answer（缺失即 None=跳过），保证结构稳定
+        result: Dict[str, Any] = {}
+        for question in questions:
+            result[question["question"]] = answers.get(question["question"])
+
+        # 保留前端额外提交的答案（前端自动附加的"补充信息"等题不在后端 questions 中），
+        # 避免用户填写的补充信息丢失——LLM 应能看到补充内容
+        for key, value in answers.items():
+            if key not in result:
+                result[key] = value
+
         return result
-    
+
     def get_tool_spec(self) -> Dict[str, Any]:
         """
         获取工具规范。
@@ -268,6 +356,8 @@ class AskUserQuestion(BaseTaskTool):
             "name": "AskUserQuestion",
             "description": (
                 "在执行过程中向用户提问，获取用户反馈。"
+                "调用后工具会暂停等待用户回答，用户在界面选择选项或输入内容后"
+                "回答会返回给 Agent 继续执行。"
                 "支持单选和多选模式，每个问题可以有2-4个选项。"
                 "问题标题最多12个字符。"
             ),
