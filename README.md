@@ -6,11 +6,11 @@
 
 ***
 
-<h2 align="center"><b>Let AI Run Every Industry.</b></h2>
+<h2 align="center"><b>Build Your Custom Harness in 5 Minutes.</b></h2>
 
 ***
 
-<p align="center"><b>SoloEngine</b> is the first low-code platform for Agentic AI. Drag an Agent onto the canvas, wire it to a teammate, and hit run — your Agentic AI plans, acts, observes, and iterates on its own until the work is done.</p>
+<p align="center"><b>SoloEngine</b> is the first open-source low-code platform purpose-built for crafting Harness. Drag an Agent onto the canvas, wire up its collaborators, and hit run — it will autonomously plan, act, observe, and iterate until the task is done.</p>
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
@@ -37,7 +37,7 @@
 
 ## Why SoloEngine
 
-Agentic AI is transforming software — one developer now ships the work of ten. But that revolution never left the IDE. Building real AI Agents means writing LangChain pipelines, debugging ReAct loops, and hand-authoring tool schemas. If you can't code, you're locked out.
+Agentic AI and Harness Engineering are reshaping the software landscape — a single developer can now deliver what once took a ten-person team. Yet this revolution has remained confined to the IDE. To build a Harness that truly fits your business, you have to hand-write LangChain pipelines, repeatedly debug ReAct loops, and define tool Schemas one by one. Don't know how to code? Then none of this is within reach.
 
 The alternatives don't help: workflow platforms (Dify, n8n, etc.) run pre-scripted paths, not autonomous agents. Code frameworks (LangChain, CrewAI, etc.) require Python. **SoloEngine** fills the gap.
 

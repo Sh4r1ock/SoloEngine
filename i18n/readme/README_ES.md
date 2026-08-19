@@ -6,11 +6,11 @@
 
 ***
 
-<h2 align="center"><b>Que la IA impulse cada industria.</b></h2>
+<h2 align="center"><b>Crea tu Harness personalizado en 5 minutos.</b></h2>
 
 ***
 
-<p align="center"><b>SoloEngine</b> es la primera plataforma low-code para IA agéntica. Arrastra un agente al lienzo, conéctalo con otro miembro del equipo y ponlo en marcha: planificará, actuará, observará e iterará por sí solo hasta completar la tarea.</p>
+<p align="center"><b>SoloEngine</b> es la primera plataforma low-code de código abierto diseñada específicamente para crear Harness. Arrastra un Agent al lienzo, conecta sus colaboradores y ponlo en marcha: planificará, actuará, observará e iterará por sí solo hasta completar la tarea.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -38,7 +38,7 @@
 
 ## ¿Por qué SoloEngine?
 
-La Agentic AI está transformando el desarrollo de software: un solo desarrollador logra hoy lo que antes exigía un equipo de diez personas. Sin embargo, esta revolución jamás salió del IDE. Para construir un AI Agent real, tenías que escribir pipelines de LangChain a mano, depurar bucles ReAct una y otra vez, y definir esquemas de herramientas uno por uno. ¿No sabes programar? Entonces todo esto queda fuera de tu alcance.
+La Agentic AI y la Harness Engineering están transformando el desarrollo de software: un solo desarrollador logra hoy lo que antes exigía un equipo de diez personas. Sin embargo, esta revolución jamás salió del IDE. Para construir un Harness que se adapte de verdad a tu negocio, tenías que escribir pipelines de LangChain a mano, depurar bucles ReAct una y otra vez, y definir esquemas de herramientas uno por uno. ¿No sabes programar? Entonces todo esto queda fuera de tu alcance.
 
 Las alternativas actuales tampoco resuelven el problema: las plataformas de workflow (Dify, n8n, etc.) ejecutan rutas fijas preorquestadas, sin Agents autónomos en su núcleo; los frameworks de código (LangChain, CrewAI, etc.) exigen dominar Python. **SoloEngine** existe precisamente para cerrar esa brecha.
 
