@@ -6,11 +6,11 @@
 
 ***
 
-<h2 align="center"><b>KI treibt jede Branche an.</b></h2>
+<h2 align="center"><b>Bauen Sie Ihren eigenen Harness in 5 Minuten.</b></h2>
 
 ***
 
-<p align="center"><b>SoloEngine</b> ist die erste Low-Code-Plattform für Agentic AI. Ziehen Sie einen Agent auf die Arbeitsfläche, verbinden Sie ihn mit einem weiteren Teammitglied und starten Sie ihn – er plant, handelt, beobachtet und iteriert selbstständig, bis die Aufgabe erledigt ist.</p>
+<p align="center"><b>SoloEngine</b> ist die erste Open-Source-Low-Code-Plattform, die speziell für die Entwicklung von Harness konzipiert wurde. Ziehen Sie einen Agent auf die Arbeitsfläche, verknüpfen Sie dessen Zusammenarbeit und starten Sie ihn – er plant, handelt, beobachtet und iteriert selbstständig, bis die Aufgabe erledigt ist.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -38,7 +38,7 @@
 
 ## Warum SoloEngine
 
-Agentic AI verändert die Softwareentwicklung grundlegend: Ein einzelner Entwickler liefert heute, wofür früher ein Zehnerteam nötig war. Doch diese Revolution blieb bislang auf die IDE beschränkt. Um einen wirklich autonomen AI-Agenten zu bauen, musste man LangChain-Pipelines von Hand schreiben, ReAct-Loops debuggen und Tool-Schemas einzeln definieren. Wer nicht programmieren kann, stand vor einer Wand.
+Agentic AI und Harness Engineering verändern die Softwareentwicklung grundlegend: Ein einzelner Entwickler liefert heute, wofür früher ein Zehnerteam nötig war. Doch diese Revolution blieb bislang auf die IDE beschränkt. Um einen Harness zu bauen, der wirklich zu Ihrem Geschäft passt, musste man LangChain-Pipelines von Hand schreiben, ReAct-Loops immer wieder debuggen und Tool-Schemas einzeln definieren. Wer nicht programmieren kann, steht vor einer Wand.
 
 Die verfügbaren Alternativen lösen das Problem kaum: Workflow-Plattformen (Dify, n8n, Zapier u. a.) folgen starr vordefinierten Pfaden — ihr Kern ist kein autonomer Agent. Code-Frameworks (LangChain, CrewAI, LangGraph u. a.) setzen zwingend Python-Kenntnisse voraus. **SoloEngine** schließt genau diese Lücke.
 

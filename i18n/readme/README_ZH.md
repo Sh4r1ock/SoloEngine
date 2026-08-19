@@ -6,11 +6,11 @@
 
 ***
 
-<h2 align="center"><b>让 AI 驱动每一个行业。</b></h2>
+<h2 align="center"><b>5 分钟搭建你的专属 Harness</b></h2>
 
 ***
 
-<p align="center"><b>SoloEngine</b> 是首个专为 Agentic AI 打造的开源低代码平台。只需将 Agent 拖入画布，连接另一位成员，点击运行——它便会自主规划、行动、观察、迭代，直至任务完成。</p>
+<p align="center"><b>SoloEngine</b> 是首个专为打造 Harness 设计的开源低代码平台。只需将 Agent 拖入画布，连接协作关系，点击运行——它便会自主规划、行动、观察、迭代，直至任务完成。</p>
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
 <div align="center">
@@ -37,7 +37,7 @@
 
 ## 为什么选择 SoloEngine
 
-Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成过去需要十人团队才能交付的工作量。然而，这场变革始终被局限在IDE之内。要构建一个真正意义上的 AI Agent，你不得不手写 LangChain 管线、反复调试 ReAct 循环、逐一定义工具 Schema。不懂编程？这一切便无从谈起。
+Agentic AI 与 Harness Engineering 正在重塑软件开发的格局——一名开发者如今能完成过去需要十人团队才能交付的工作量。然而，这场变革始终被局限在IDE之内。要构建一个真正适配你业务的 Harness，你不得不手写 LangChain 管线、反复调试 ReAct 循环、逐一定义工具 Schema。不懂编程？这一切便无从谈起。
 
 现有的替代方案同样难以解决问题：工作流平台（Dify、n8n 等）执行的是预先编排的固定路径，其核心并非自主 Agent；代码框架（LangChain、CrewAI 等）则要求使用者必须具备 Python 编程能力。**SoloEngine** 的定位，正是填补这两者之间的空白。
 
@@ -68,7 +68,7 @@ Agentic AI 正在重塑软件开发的格局——一名开发者如今能完成
 
 <div align="center">
   <img src="../../docs/images/Canvas.gif" alt="SoloEngine 可视化画布演示" width="100%"/>
-  <p><sub>通过可视化画布编排 Agent，并将团队配置编译为可执行的 Agent DAG</sub></p>
+  <p><sub>通过可视化画布编排 Agent，快速搭建你的 Harness</sub></p>
 </div>
 
 ## 快速开始
@@ -88,7 +88,7 @@ npm install
 npm run dev
 ```
 
-在浏览器中打开 **<http://localhost:8991>**，即可构建你的第一个 Agent 团队。
+在浏览器中打开 **<http://localhost:8991>**，即可构建你的第一个 Harness。
 
 ## 应用场景
 

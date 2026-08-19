@@ -6,11 +6,11 @@
 
 ***
 
-<h2 align="center"><b>Que l'IA impulse chaque industrie.</b></h2>
+<h2 align="center"><b>Créez votre Harness personnalisé en 5 minutes.</b></h2>
 
 ***
 
-<p align="center"><b>SoloEngine</b> est la première plateforme low-code dédiée à l’IA agentique. Déposez un Agent sur le canevas, reliez-le à un autre membre de l’équipe et lancez-le : il planifie, agit, observe et itère en toute autonomie jusqu’à l’accomplissement de la tâche.</p>
+<p align="center"><b>SoloEngine</b> est la première plateforme low-code open-source spécialement conçue pour créer des Harness. Déposez un Agent sur le canevas, reliez ses collaborateurs et lancez-le : il planifie, agit, observe et itère en toute autonomie jusqu'à l'accomplissement de la tâche.</p>
 
 <p align="center">No Workflow. No orchestration code. Just Agents that get things done.</p>
 
@@ -38,7 +38,7 @@
 
 ## Pourquoi SoloEngine
 
-L'Agentic AI est en train de redéfinir le développement logiciel : un seul développeur accomplit aujourd'hui ce qui exigeait autrefois une équipe de dix personnes. Pourtant, cette révolution n'est jamais sortie de l'IDE. Pour construire un véritable AI Agent, il fallait écrire des pipelines LangChain à la main, déboguer des boucles ReAct sans fin et définir les schémas d'outils un par un. Vous ne savez pas coder ? Alors tout cela reste hors de portée.
+L'Agentic AI et la Harness Engineering sont en train de redéfinir le développement logiciel : un seul développeur accomplit aujourd'hui ce qui exigeait autrefois une équipe de dix personnes. Pourtant, cette révolution n'est jamais sortie de l'IDE. Pour construire un Harness qui s'adapte véritablement à votre métier, il fallait écrire des pipelines LangChain à la main, déboguer des boucles ReAct sans fin et définir les schémas d'outils un par un. Vous ne savez pas coder ? Alors tout cela reste hors de portée.
 
 Les alternatives actuelles ne résolvent pas davantage le problème : les plateformes de workflow (Dify, n8n, etc.) exécutent des chemins fixes préorchestrés, leur cœur n'étant pas celui d'un Agent autonome ; les frameworks de code (LangChain, CrewAI, etc.) exigent de maîtriser Python. **SoloEngine** existe précisément pour combler cet écart.
 
