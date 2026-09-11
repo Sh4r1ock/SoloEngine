@@ -25,17 +25,15 @@
  */
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Form, Input, Select, Button, Typography, App } from 'antd';
-import { ToolOutlined, FolderOutlined, ThunderboltOutlined, SettingOutlined, TeamOutlined, UserOutlined, RobotOutlined, CaretRightOutlined, EditOutlined } from '@ant-design/icons';
+import { ToolOutlined, FolderOutlined, ThunderboltOutlined, SettingOutlined, RobotOutlined, CaretRightOutlined, EditOutlined } from '@ant-design/icons';
 import { useParams } from 'react-router-dom';
 import { useCanvasStore } from '../../store/canvasStore';
-import { useMCPStore } from '../../store/mcpStore';
-import { useRunStore } from '../../store/runStore';
 import { skillsApi, SkillsPackage } from '../../services/skillsApi';
 import { mcpApi, MCPTool, MCPServer } from '../../services/mcpApi';
 import { llmApi, LLMConfig } from '../../services/llmApi';
-import { toolsApi, ToolInfo, AgentPreset } from '../../services/toolsApi';
 import { getPresets } from '../../stores/presetsStore';
 import { LLM_DEFAULTS } from '../../config/llmDefaults';
+import { getPresetIcon } from '../../utils/iconLibrary';
 import LLMConfigSelector from '../Settings/LLMConfigSelector';
 import ConfirmDialog from '../common/ConfirmDialog';
 
@@ -112,7 +110,6 @@ const PropertyPanel: React.FC = () => {
   const { selectedNode, updateNode, nodes, edges, saveCanvas, configMap } = useCanvasStore();
   const [form] = Form.useForm();
   const { projectId } = useParams<{ projectId: string }>();
-  const { currentSessionId } = useRunStore();
   
   const saveTimeoutRef = useRef<number | null>(null);
   const selectedNodeRef = useRef<typeof selectedNode>(null);
@@ -128,7 +125,6 @@ const PropertyPanel: React.FC = () => {
   const [allMcpTools, setAllMcpTools] = useState<MCPTool[]>([]);
   const [loadingSkills, setLoadingSkills] = useState(false);
   const [loadingTools, setLoadingTools] = useState(false);
-  const [localTools, setLocalTools] = useState<ToolInfo[]>([]);
   const [loadingLocalTools, setLoadingLocalTools] = useState(false);
 
   const [selectedLLMConfig, setSelectedLLMConfig] = useState<LLMConfig | null>(null);
@@ -256,24 +252,9 @@ const PropertyPanel: React.FC = () => {
     }
   };
 
-  const loadLocalTools = async () => {
-    setLoadingLocalTools(true);
-    try {
-      const response = await toolsApi.getTools();
-      if (response.code === 200) {
-        setLocalTools(response.data || []);
-      }
-    } catch (error) {
-      console.error('Failed to load local tools:', error);
-    } finally {
-      setLoadingLocalTools(false);
-    }
-  };
-
   useEffect(() => {
     loadSkillsPackages();
     loadMCPTools();
-    loadLocalTools();
   }, []);
 
   const handleSave = useCallback(async () => {
@@ -325,16 +306,6 @@ const PropertyPanel: React.FC = () => {
     saveTimeoutRef.current = setTimeout(() => {
       handleSave();
     }, 500) as unknown as number;
-  };
-
-  const getPresetIcon = (iconName: string) => {
-    const iconMap: Record<string, React.ReactNode> = {
-      'TeamOutlined': <TeamOutlined />,
-      'UserOutlined': <UserOutlined />,
-      'ToolOutlined': <ToolOutlined />,
-      'SettingOutlined': <SettingOutlined />,
-    };
-    return iconMap[iconName] || <SettingOutlined />;
   };
 
   const hasPresetDiff = (a: string[] | undefined, b: string[] | undefined) => {

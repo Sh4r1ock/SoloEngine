@@ -14,20 +14,19 @@ AgenticFlow编译器机制-__init__.py: AgenticFlow编译器模块
 - FlowRunner: 流程运行器，执行编译后的流程
 - ExecutionEvent: 执行事件，用于流程执行过程中的事件通知
 
-依赖:
-- .flow_compiler: 编译器实现模块
-
-使用示例:
-- from SoloAgent.solo_agent.compiler import AgenticFlowCompiler
-- from SoloAgent.solo_agent.compiler import CompiledFlow, FlowRunner
+模块结构（拆分）：
+- events.py         : ExecutionEvent（执行事件）
+- compiled_flow.py  : CompiledFlow（编译后流程对象）+ 压缩常量
+- flow_compiler.py  : CompiledFlowFactory + AgenticFlowCompiler
+- flow_runner.py    : FlowRunner（流程运行器）
 """
+from .events import ExecutionEvent
+from .compiled_flow import CompiledFlow
 from .flow_compiler import (
-    AgenticFlowCompiler, 
-    CompiledFlow, 
+    AgenticFlowCompiler,
     CompiledFlowFactory,
-    FlowRunner,
-    ExecutionEvent
 )
+from .flow_runner import FlowRunner
 
 __all__ = [
     "AgenticFlowCompiler",

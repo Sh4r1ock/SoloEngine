@@ -37,17 +37,16 @@ backend_dir = Path(__file__).parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-def __getattr__(name):
-    if name != "app":
-        raise AttributeError(name)
-    parent_app_path = backend_dir / "app.py"
-    if not parent_app_path.exists():
-        raise ImportError("app.py not found in backend directory")
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("_app_module", parent_app_path)
-    _app_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(_app_module)
-    globals()["app"] = _app_module.app
-    return _app_module.app
+import importlib.util
+
+# 直接加载 FastAPI 主应用（backend/app.py）并导出 app 实例。
+# 替代原 __getattr__ 懒加载 exec（3 层间接启动链路）；main.py 以对象方式
+# uvicorn.run(app, ...) 启动，`uvicorn app:app` 字符串方式（如 _start_server.py）仍兼容。
+_app_spec = importlib.util.spec_from_file_location(
+    "_backend_app_module", backend_dir / "app.py"
+)
+_app_module = importlib.util.module_from_spec(_app_spec)
+_app_spec.loader.exec_module(_app_module)
+app = _app_module.app
 
 __all__ = ["app"]

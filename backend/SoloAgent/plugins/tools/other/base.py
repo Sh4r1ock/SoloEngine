@@ -161,7 +161,6 @@ class BaseOtherTool(ABC):
     
     def __init__(self) -> None:
         """初始化其他工具。"""
-        self._last_action: Optional[ToolAction] = None
     
     @abstractmethod
     async def execute(self, **kwargs) -> Dict[str, Any]:
@@ -219,17 +218,7 @@ class BaseOtherTool(ABC):
             message=message,
             requires_confirmation=requires_confirmation
         )
-        self._last_action = action
         return action
-    
-    def get_last_action(self) -> Optional[ToolAction]:
-        """
-        获取最近创建的动作。
-        
-        Returns:
-            Optional[ToolAction]: 最近创建的动作，如果没有返回 None。
-        """
-        return self._last_action
     
     def create_error_response(
         self,

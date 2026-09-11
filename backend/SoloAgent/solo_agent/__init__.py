@@ -23,11 +23,10 @@ SoloAgent机制-__init__.py: SoloAgent模块，简洁的Agent基础类和Agentic
 """
 from .config import SoloAgentConfig
 from .agent import SoloAgent
-from .tools import ToolRegistry, register_all_tools
+from .tools import ToolRegistry
 
 __all__ = [
     "SoloAgentConfig",
     "SoloAgent",
     "ToolRegistry",
-    "register_all_tools",
 ]

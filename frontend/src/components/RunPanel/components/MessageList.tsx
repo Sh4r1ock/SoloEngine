@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle, useState } from 'react';
 import { Typography, Tooltip, App, Button, Input, Space, Tag, Radio, Checkbox } from 'antd';
-import { RobotOutlined, UndoOutlined, DeleteOutlined, FileAddOutlined, CloseCircleOutlined, CloseOutlined, FileTextOutlined, ExclamationCircleOutlined, CodeOutlined, PictureOutlined, FilePdfOutlined, FileZipOutlined, FileExcelOutlined, FilePptOutlined, AudioOutlined, VideoCameraOutlined, FileOutlined, InfoCircleOutlined, LoadingOutlined, GlobalOutlined } from '@ant-design/icons';
+import { RobotOutlined, UndoOutlined, DeleteOutlined, FileAddOutlined, CloseCircleOutlined, CloseOutlined, ExclamationCircleOutlined, InfoCircleOutlined, LoadingOutlined, GlobalOutlined } from '@ant-design/icons';
 import { useRunPanelStore } from '../stores/runPanelStore';
 import type { LLMMessage, SystemMessage, Message, DataBlock, FileChangeInfo, TokenTotals } from '../types';
 import BeautifulMarkdownRenderer from '../../common/BeautifulMarkdownRenderer';
@@ -11,6 +11,7 @@ import { copyToClipboard } from '../utils/dataBlockUtils';
 import { useAutoScroll } from '../hooks/useAutoScroll';
 import { fileChangesApi } from '../../../services/fileChangesApi';
 import ConfirmDialog from '../../common/ConfirmDialog';
+import { getFileIcon } from '../../../utils/fileIcon';
 import '../styles/FileChangeStyles.css';
 
 const { Text } = Typography;
@@ -37,11 +38,15 @@ interface AgentGroup {
   group_agent_tokens?: number;
   group_agent_totals?: TokenTotals;
   group_agent_history?: any[];
-  /** 组实例归属键（〇·3 并发修复：流式同 agent 多实例时按 execution_key 查询
-   *  agentUsageMap，组头 token 各实例独立，不被后一次调用覆盖） */
-  execution_key?: string;
-  /** 分组唯一键 = agent_id + execution_key（〇·3 并发修复：同 agent 并发 N 实例
-   *  execution_key 不同各独立成组，组头 token 各自显示；mainagent 无 execution_key 单组） */
+  /** 组实例标识（session_message_id）：流式由 agent_start 事件 metadata.message_id 注入、
+   *  回显由 build_flattened_blocks 注入消息 id——组头 token 按 message_id 查询
+   *  agentUsageMap（同 agent 并发 N 实例各独立，不被后一次调用覆盖） */
+  message_id?: string;
+  /** tc.id 方案：产生该子执行的 tool_call id（流式 agent_start source_tool_call_id 注入
+   *  块、回显由 run_api 从 task 消息注入子组块）——前端在子组出现时按 tc.id 精确嵌套
+   *  （流式/回显统一对号） */
+  sourceToolCallId?: string;
+  /** 分组唯一键 = agent_id + message_id（同 agent 并发 N 实例 message_id 不同各独立成组） */
   instanceKey?: string;
 }
 
@@ -50,7 +55,7 @@ const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
   // 〇·3 并发修复（TA10 流式碎片化根因）：分组不能依赖"同实例块在 blocks 数组中
   // 连续存放"——并发 N 实例（asyncio.gather）的 WS 事件流天然交错，各实例的类型
   // 切换（reasoning→content→tool_calls）交错触发 finalize，导致同实例块被其他实例
-  // 块隔开。因此改为按 instanceKey（agent_id + execution_key）归组：遍历时把每个
+  // 块隔开。因此改为按 instanceKey（agent_id + message_id）归组：遍历时把每个
   // 块归入所属实例组（组内块保持输出顺序），组顺序 = 首次出现顺序（mainagent 在前、
   // 各 subagent 实例按事件到达顺序，与回显 build_flattened_blocks 的消息顺序一致）。
   // 回显路径同实例块本就连续，归组结果与相邻分组一致，行为不变。
@@ -59,10 +64,10 @@ const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
     const agentId = block.agent_id || 'default';
     const agentName = block.agent_name || 'AI助手';
     const agentLevel = block.agent_level || 0;
-    // 分组键 = agent_id + execution_key（回显由后端 build_flattened_blocks
-    // 注入实例唯一键 root_task_id / 流式由 processStreamChunk 注入 execution_key），
+    // 分组键 = agent_id + message_id（回显由后端 build_flattened_blocks
+    // 注入实例唯一键 root_task_id / 流式由 processStreamChunk 注入 message_id），
     // 同 agent 并发 N 实例（TA10）各独立成组、组头 token 独立显示，不再被合并为 1 组。
-    const instanceKey = `${agentId}|${block.execution_key || ''}`;
+    const instanceKey = `${agentId}|${block.message_id || ''}`;
     let group = groupMap.get(instanceKey);
     if (!group) {
       group = {
@@ -75,7 +80,9 @@ const groupDataBlocksByAgent = (blocks: DataBlock[]): AgentGroup[] => {
         group_agent_tokens: block.group_agent_tokens,
         group_agent_totals: block.group_agent_totals,
         group_agent_history: block.group_agent_history,
-        execution_key: block.execution_key,
+        message_id: block.message_id,
+        // tc.id 方案：流式子组归属（agent_start source_tool_call_id 注入块）
+        sourceToolCallId: block.source_tool_call_id,
       };
       groupMap.set(instanceKey, group);
       groups.push(group);
@@ -113,7 +120,7 @@ const ThoughtBlock = React.memo(({ block, isExpanded, onToggle, blockKey }: {
   );
 }, (prev, next) => prev.block === next.block && prev.isExpanded === next.isExpanded);
 
-const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChangesMap, allBlocks, onFileClick }: {
+const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChangesMap, allBlocks, onFileClick, subGroupRenderers = {} }: {
   block: DataBlock;
   msgId: string;
   onToggle: (block: DataBlock, blockKey: string, currentIsExpanding: boolean) => void;
@@ -121,23 +128,26 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
   fileChangesMap: Record<string, FileChangeInfo[]>;
   allBlocks?: DataBlock[];
   onFileClick?: (filePath: string) => void;
+  /** tc.id 对号插槽：tc.id → 该 tc 的子 subagent 组渲染（AgentGroupItem 构造），
+   *  每个 tc 徽标下交错嵌套其子组（task → subagent → task → subagent，非块后追加） */
+  subGroupRenderers?: Record<string, React.ReactNode>;
 }) => {
   const expandedBlockKeys = useRunPanelStore(state => state.expandedBlockKeys);
   const userAnswerSender = useRunPanelStore(state => state.userAnswerSender);
   const openAgenticPanel = useRunPanelStore(state => state.openAgenticPanel);
   const [planModifyText, setPlanModifyText] = useState('');
   // AskUserQuestion 分页卡片状态：一个问题一页，div 内跳转（上一步/下一步/确认，无取消无跳过，留空即跳过）
-  const [aqIndex, setAqIndex] = useState(0);
-  const [aqAnswers, setAqAnswers] = useState<Record<string, any>>({});
-  const [aqCustom, setAqCustom] = useState<string>('');
-  const [aqSupText, setAqSupText] = useState<string>('');
+  const [questionIndex, setQuestionIndex] = useState(0);
+  const [questionAnswers, setQuestionAnswers] = useState<Record<string, any>>({});
+  const [customAnswerText, setCustomAnswerText] = useState<string>('');
+  const [supplementText, setSupplementText] = useState<string>('');
 
   const streamingFileChanges = useMemo(() => {
     return (allBlocks?.filter(b => b.type === 'file_changes') || []).flatMap(b => b.file_changes || []);
   }, [allBlocks]);
 
   const streamingPreviewChanges = useMemo(() => {
-    return streamingFileChanges.filter((fc: any) => fc._preview);
+    return streamingFileChanges.filter((fileChange: any) => fileChange._preview);
   }, [streamingFileChanges]);
 
   const apiFileChanges: FileChangeInfo[] = fileChangesMap[msgId] || [];
@@ -155,15 +165,15 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
         const toolKey = `${blockKey}-tc-${tcIdx}`;
         const toolExpanded = expandedBlockKeys[toolKey] ?? block._isExpanding ?? false;
         const matchedChanges = isFileOpTool ? (() => {
-          const previewMatches = streamingPreviewChanges.filter((fc: any) => tc.id && fc.tool_call_id && fc.tool_call_id === tc.id);
+          const previewMatches = streamingPreviewChanges.filter((fileChange: any) => tc.id && fileChange.tool_call_id && fileChange.tool_call_id === tc.id);
           if (previewMatches.length > 0) return previewMatches;
-          const apiMatches = apiFileChanges.filter((fc: any) => tc.id && fc.tool_call_id && fc.tool_call_id === tc.id);
+          const apiMatches = apiFileChanges.filter((fileChange: any) => tc.id && fileChange.tool_call_id && fileChange.tool_call_id === tc.id);
           if (apiMatches.length > 0) return apiMatches;
-          return apiFileChanges.filter((fc: any) => {
+          return apiFileChanges.filter((fileChange: any) => {
             if (!toolFilePath) return false;
-            const fcPath = fc.file_path?.replace(/\\/g, '/');
-            const toolPath = toolFilePath?.replace(/\\/g, '/');
-            return fcPath === toolPath || fcPath?.endsWith(toolPath) || toolPath?.endsWith(fcPath);
+            const changeFilePath = fileChange.file_path?.replace(/\\/g, '/');
+            const normalizedToolFilePath = toolFilePath?.replace(/\\/g, '/');
+            return changeFilePath === normalizedToolFilePath || changeFilePath?.endsWith(normalizedToolFilePath) || normalizedToolFilePath?.endsWith(changeFilePath);
           });
         })() : [];
 
@@ -172,14 +182,14 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
             <div onClick={() => onToggle(block, toolKey, toolExpanded)} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none' }}>
               <span style={{ fontSize: 12, color: 'var(--text-200)', width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>⚙︎</span>
               <Text style={{ fontSize: 12, color: 'var(--text-200)', fontWeight: 500 }}>{tc.function?.name}</Text>
-              {matchedChanges.length > 0 && matchedChanges.map((fc: any, i: number) => {
-                const fileName = fc.file_path?.split(/[\\/]/).pop() || '';
-                if (fc.operation === 'deleted') {
-                  return (<React.Fragment key={i}><span style={{ flex: 1 }} /><span className="sc-tool-fc-name" onClick={(e) => { e.stopPropagation(); onFileClick?.(fc.file_path); }} title={`点击打开: ${fc.file_path}`}>{fileName}</span><DeleteOutlined style={{ fontSize: 11, color: '#ff4d4f', marginLeft: 6 }} /></React.Fragment>);
+              {matchedChanges.length > 0 && matchedChanges.map((fileChange: any, i: number) => {
+                const fileName = fileChange.file_path?.split(/[\\/]/).pop() || '';
+                if (fileChange.operation === 'deleted') {
+                  return (<React.Fragment key={i}><span style={{ flex: 1 }} /><span className="sc-tool-fc-name" onClick={(e) => { e.stopPropagation(); onFileClick?.(fileChange.file_path); }} title={`点击打开: ${fileChange.file_path}`}>{fileName}</span><DeleteOutlined style={{ fontSize: 11, color: '#ff4d4f', marginLeft: 6 }} /></React.Fragment>);
                 }
-                const added = fc.diff?.lines_added ?? 0;
-                const removed = fc.diff?.lines_removed ?? 0;
-                return (<React.Fragment key={i}><span style={{ flex: 1 }} /><span className="sc-tool-fc-name" onClick={(e) => { e.stopPropagation(); onFileClick?.(fc.file_path); }} title={`点击打开: ${fc.file_path}`}>{fileName}</span><FileAddOutlined style={{ fontSize: 11, color: '#52c41a', marginLeft: 6 }} /><Text style={{ fontSize: 11, marginLeft: 4 }}><span style={{ color: '#52c41a' }}>+{added}</span><span style={{ color: '#ff4d4f', marginLeft: 4 }}>-{removed}</span></Text></React.Fragment>);
+                const added = fileChange.diff?.lines_added ?? 0;
+                const removed = fileChange.diff?.lines_removed ?? 0;
+                return (<React.Fragment key={i}><span style={{ flex: 1 }} /><span className="sc-tool-fc-name" onClick={(e) => { e.stopPropagation(); onFileClick?.(fileChange.file_path); }} title={`点击打开: ${fileChange.file_path}`}>{fileName}</span><FileAddOutlined style={{ fontSize: 11, color: '#52c41a', marginLeft: 6 }} /><Text style={{ fontSize: 11, marginLeft: 4 }}><span style={{ color: '#52c41a' }}>+{added}</span><span style={{ color: '#ff4d4f', marginLeft: 4 }}>-{removed}</span></Text></React.Fragment>);
               })}
             </div>
             {toolName === 'AskUserQuestion' && !tc.result && userAnswerSender && (() => {
@@ -191,97 +201,97 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
               const supplementQ: any = {
                 question: '是否有更多的补充信息需要提供？（可选）',
               };
-              const allQ: any[] = [...questions, supplementQ];
-              const total = allQ.length;
-              const cur: any = allQ[aqIndex] || allQ[0];
-              const isLast = aqIndex === total - 1;
-              const isSupplement = cur.question === supplementQ.question;
+              const allQuestions: any[] = [...questions, supplementQ];
+              const total = allQuestions.length;
+              const currentQuestion: any = allQuestions[questionIndex] || allQuestions[0];
+              const isLast = questionIndex === total - 1;
+              const isSupplement = currentQuestion.question === supplementQ.question;
               const navHint = isSupplement ? '其他补充' : '下一步';
 
-              const getAnswer = (q: any): any => aqAnswers[q.question];
-              const setAnswer = (q: any, v: any) => setAqAnswers(prev => ({ ...prev, [q.question]: v }));
+              const getAnswer = (question: any): any => questionAnswers[question.question];
+              const setAnswer = (question: any, value: any) => setQuestionAnswers(prev => ({ ...prev, [question.question]: value }));
 
-              const toggleOption = (q: any, label: string) => {
-                if (q.multiSelect) {
-                  const arr: string[] = Array.isArray(getAnswer(q)) ? getAnswer(q) : [];
-                  setAnswer(q, arr.includes(label) ? arr.filter(x => x !== label) : [...arr, label]);
+              const toggleOption = (question: any, label: string) => {
+                if (question.multiSelect) {
+                  const answers: string[] = Array.isArray(getAnswer(question)) ? getAnswer(question) : [];
+                  setAnswer(question, answers.includes(label) ? answers.filter(option => option !== label) : [...answers, label]);
                 } else {
-                  setAnswer(q, label);
+                  setAnswer(question, label);
                 }
               };
 
-              const isOptionSelected = (q: any, label: string): boolean => {
-                const v = getAnswer(q);
-                if (q.multiSelect) return Array.isArray(v) && v.includes(label);
-                return v === label;
+              const isOptionSelected = (question: any, label: string): boolean => {
+                const value = getAnswer(question);
+                if (question.multiSelect) return Array.isArray(value) && value.includes(label);
+                return value === label;
               };
 
-              const isOtherSelected = (q: any): boolean => isOptionSelected(q, OTHER_LABEL);
+              const isOtherSelected = (question: any): boolean => isOptionSelected(question, OTHER_LABEL);
 
               // 记录当前题答案："其他"输入内容优先（单选替换为输入内容；多选将"其他"替换为输入内容）；未作答=跳过不记录
               const commitCurrent = () => {
-                if (isOtherSelected(cur) && aqCustom.trim()) {
-                  if (cur.multiSelect) {
-                    const arr: string[] = Array.isArray(getAnswer(cur)) ? getAnswer(cur).filter((x: string) => x !== OTHER_LABEL) : [];
-                    setAnswer(cur, [...arr, aqCustom.trim()]);
+                if (isOtherSelected(currentQuestion) && customAnswerText.trim()) {
+                  if (currentQuestion.multiSelect) {
+                    const answers: string[] = Array.isArray(getAnswer(currentQuestion)) ? getAnswer(currentQuestion).filter((option: string) => option !== OTHER_LABEL) : [];
+                    setAnswer(currentQuestion, [...answers, customAnswerText.trim()]);
                   } else {
-                    setAnswer(cur, aqCustom.trim());
+                    setAnswer(currentQuestion, customAnswerText.trim());
                   }
-                  setAqCustom('');
+                  setCustomAnswerText('');
                 }
               };
 
               const handleNext = () => {
                 commitCurrent();
-                setAqIndex(i => Math.min(i + 1, total - 1));
+                setQuestionIndex(i => Math.min(i + 1, total - 1));
               };
 
               const handlePrev = () => {
                 commitCurrent();
-                setAqIndex(i => Math.max(i - 1, 0));
+                setQuestionIndex(i => Math.max(i - 1, 0));
               };
 
               // 提交答案（cancel=true 时空提交，全部答案为 null，后端按跳过处理）
               const submitAnswers = (cancel: boolean) => {
                 commitCurrent();
                 const result: Record<string, any> = {};
-                questions.forEach(q => { result[q.question] = cancel ? null : (aqAnswers[q.question] ?? null); });
-                result[supplementQ.question] = cancel ? null : (aqSupText.trim() || null);
-                userAnswerSender?.(JSON.stringify({ answers: result }));
-                setAqIndex(0); setAqAnswers({}); setAqCustom(''); setAqSupText('');
+                questions.forEach(question => { result[question.question] = cancel ? null : (questionAnswers[question.question] ?? null); });
+                result[supplementQ.question] = cancel ? null : (supplementText.trim() || null);
+                userAnswerSender?.(JSON.stringify({ answers: result }), tc.id);
+                setQuestionIndex(0); setQuestionAnswers({}); setCustomAnswerText(''); setSupplementText('');
               };
 
               // 选项行：整行块样式（参考 Trae Solo 图片：label 粗体一行、description 换行其下，
               // 整行可点、行有完整区块）；"其他"行选中时将输入框换行内嵌到该行
-              const renderOption = (q: any, opt: any) => {
-                const selected = isOptionSelected(q, opt.label);
-                const isOther = opt.label === OTHER_LABEL;
+              const renderOption = (question: any, option: any) => {
+                const selected = isOptionSelected(question, option.label);
+                const isOther = option.label === OTHER_LABEL;
                 return (
                   <div
-                    key={opt.label}
-                    onClick={() => toggleOption(q, opt.label)}
+                    key={option.label}
+                    onClick={() => toggleOption(question, option.label)}
                     style={{
                       display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8,
                       background: selected ? 'var(--bg-100)' : 'transparent',
                       cursor: 'pointer', fontSize: 12, color: 'var(--text-100)',
                     }}
                   >
-                    <span style={{ marginTop: 1, lineHeight: '18px' }}>{q.multiSelect ? <Checkbox checked={selected} /> : <Radio checked={selected} />}</span>
+                    <span style={{ marginTop: 1, lineHeight: '18px' }}>{question.multiSelect ? <Checkbox checked={selected} /> : <Radio checked={selected} />}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: selected ? 500 : 400, lineHeight: '18px' }}>{opt.label}</div>
+                      <div style={{ fontWeight: selected ? 500 : 400, lineHeight: '18px' }}>{option.label}</div>
                       {isOther && selected ? (
                         <div className="hitl-underlined-input-wrap" style={{ marginTop: 4 }} onClick={e => e.stopPropagation()}>
                           <Input.TextArea
                             autoSize={{ minRows: 1, maxRows: 4 }}
-                            value={aqCustom}
-                            onChange={e => setAqCustom(e.target.value)}
+                            value={customAnswerText}
+                            onChange={e => setCustomAnswerText(e.target.value)}
                             placeholder="请输入"
                             maxLength={1000}
                             showCount
                           />
                         </div>
                       ) : (
-                        opt.description ? <div style={{ fontSize: 11, color: 'var(--text-300)', lineHeight: '16px', marginTop: 2 }}>{opt.description}</div> : null
+                        option.description ? <div style={{ fontSize: 11, color: 'var(--text-300)', lineHeight: '16px', marginTop: 2 }}>{option.description}</div> : null
                       )}
                     </div>
                   </div>
@@ -296,15 +306,15 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                     <Text style={{ fontSize: 13, color: 'var(--text-100)', fontWeight: 500 }}>
                       {/* 只显示问题文本：header 为 AI 传参（后端校验/格式化用），前端不再单独渲染，
                           避免"header+question"拼接重复（如"部署方式你更倾向于使用哪种部署方式？"） */}
-                      {cur.question}
-                      {cur.multiSelect ? <Text type="secondary" style={{ fontSize: 11 }}>（可多选）</Text> : null}
+                      {currentQuestion.question}
+                      {currentQuestion.multiSelect ? <Text type="secondary" style={{ fontSize: 11 }}>（可多选）</Text> : null}
                     </Text>
 
                     {!isSupplement && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-                        {(cur.options || []).map((opt: any) => renderOption(cur, opt))}
+                        {(currentQuestion.options || []).map((option: any) => renderOption(currentQuestion, option))}
                         {/* 自定义回答 = "其他"选项，与选项列表合并；选中后该行展开内嵌输入框（换行于 label 下方） */}
-                        {renderOption(cur, { label: OTHER_LABEL, description: '自定义回答' })}
+                        {renderOption(currentQuestion, { label: OTHER_LABEL, description: '自定义回答' })}
                       </div>
                     )}
 
@@ -312,8 +322,8 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                       <div className="hitl-supplement-wrap" style={{ position: 'relative', marginTop: 8 }}>
                         <Input.TextArea
                           autoSize={{ minRows: 1, maxRows: 6 }}
-                          value={aqSupText}
-                          onChange={e => setAqSupText(e.target.value)}
+                          value={supplementText}
+                          onChange={e => setSupplementText(e.target.value)}
                           placeholder="添加补充信息"
                           maxLength={1000}
                           showCount
@@ -324,10 +334,10 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
 
                   {/* 底部：左侧进度/提示，右侧 取消/上一步/下一步（取消=空提交，复用空提交，后端按跳过处理） */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 12 }}>
-                    <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>{aqIndex + 1}/{total} {navHint}</Text>
+                    <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>{questionIndex + 1}/{total} {navHint}</Text>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Button size="small" onClick={() => submitAnswers(true)}>取消</Button>
-                      {aqIndex > 0 && <Button size="small" onClick={handlePrev}>上一步</Button>}
+                      {questionIndex > 0 && <Button size="small" onClick={handlePrev}>上一步</Button>}
                       {!isLast && (
                         <Button size="small" type="primary" onClick={handleNext}>下一步</Button>
                       )}
@@ -357,8 +367,8 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 12 }}>
                     <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>进入后处于只读模式，禁止修改文件或执行命令</Text>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <Button size="small" onClick={() => userAnswerSender?.('【驳回】不允许进入计划模式。')}>驳回</Button>
-                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【批准】允许进入计划模式。')}>批准</Button>
+                      <Button size="small" onClick={() => userAnswerSender?.('【驳回】不允许进入计划模式。', tc.id)}>驳回</Button>
+                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【批准】允许进入计划模式。', tc.id)}>批准</Button>
                     </div>
                   </div>
                 </div>
@@ -422,12 +432,12 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                     <div style={{ display: 'flex', gap: 8 }}>
                       <Button size="small" onClick={() => {
                         if (planModifyText.trim()) {
-                          userAnswerSender?.(`【修改】${planModifyText.trim()}`);
+                          userAnswerSender?.(`【修改】${planModifyText.trim()}`, tc.id);
                           setPlanModifyText('');
                         }
                       }}>提交修改</Button>
-                      <Button size="small" onClick={() => userAnswerSender?.('【跳过】跳过该计划，请勿执行。')}>跳过</Button>
-                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】计划已批准，请开始执行。')}>执行</Button>
+                      <Button size="small" onClick={() => userAnswerSender?.('【跳过】跳过该计划，请勿执行。', tc.id)}>跳过</Button>
+                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】计划已批准，请开始执行。', tc.id)}>执行</Button>
                     </div>
                   </div>
                 </div>
@@ -446,8 +456,8 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 12 }}>
                   <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>批准后执行命令</Text>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Button size="small" onClick={() => userAnswerSender?.('【取消】取消执行该命令。')}>取消</Button>
-                    <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】允许执行该命令。')}>执行</Button>
+                    <Button size="small" onClick={() => userAnswerSender?.('【取消】取消执行该命令。', tc.id)}>取消</Button>
+                    <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】允许执行该命令。', tc.id)}>执行</Button>
                   </div>
                 </div>
               </div>
@@ -470,8 +480,8 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: 12 }}>
                     <Text style={{ fontSize: 11, color: 'var(--text-300)' }}>删除操作不可恢复，请谨慎确认</Text>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <Button size="small" onClick={() => userAnswerSender?.('【取消】取消删除。')}>取消</Button>
-                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】确认删除这些文件。')}>执行</Button>
+                      <Button size="small" onClick={() => userAnswerSender?.('【取消】取消删除。', tc.id)}>取消</Button>
+                      <Button size="small" type="primary" onClick={() => userAnswerSender?.('【执行】确认删除这些文件。', tc.id)}>执行</Button>
                     </div>
                   </div>
                 </div>
@@ -528,18 +538,21 @@ const ToolCallsBlock = React.memo(({ block, msgId, onToggle, blockKey, fileChang
                 </AutoScrollContainer>
               </div>
             )}
+            {subGroupRenderers[tc.id] && (
+              <div style={{ marginTop: 4 }}>{subGroupRenderers[tc.id]}</div>
+            )}
           </div>
         );
       })}
     </>
   );
-}, (prev, next) => prev.block === next.block && prev.fileChangesMap === next.fileChangesMap && prev.allBlocks === next.allBlocks);
+}, (prev, next) => prev.block === next.block && prev.fileChangesMap === next.fileChangesMap && prev.allBlocks === next.allBlocks && prev.subGroupRenderers === next.subGroupRenderers);
 
 const ContentBlock = React.memo(({ content }: { content: string }) => {
   return <BeautifulMarkdownRenderer>{content || ''}</BeautifulMarkdownRenderer>;
 }, (prev, next) => prev.content === next.content);
 
-const DataBlockItem = React.memo(({ block, idx, msgId, onToggle, blockKey, fileChangesMap, allBlocks, onFileClick }: {
+const DataBlockItem = React.memo(({ block, idx, msgId, onToggle, blockKey, fileChangesMap, allBlocks, onFileClick, subGroupRenderers = {} }: {
   block: DataBlock;
   idx: number;
   msgId: string;
@@ -548,6 +561,8 @@ const DataBlockItem = React.memo(({ block, idx, msgId, onToggle, blockKey, fileC
   fileChangesMap: Record<string, FileChangeInfo[]>;
   allBlocks?: DataBlock[];
   onFileClick?: (filePath: string) => void;
+  /** tc.id 对号插槽（透传给 ToolCallsBlock）：每个 tc 徽标下交错嵌套其子组 */
+  subGroupRenderers?: Record<string, React.ReactNode>;
 }) => {
   const isExpanded = useRunPanelStore(state => state.expandedBlockKeys[blockKey] ?? block._isExpanding ?? false);
 
@@ -557,14 +572,14 @@ const DataBlockItem = React.memo(({ block, idx, msgId, onToggle, blockKey, fileC
     return <ThoughtBlock block={block} isExpanded={isExpanded} onToggle={onToggle} blockKey={blockKey} />;
   }
   if (block.type === 'tool_calls') {
-    return <ToolCallsBlock block={block} msgId={msgId} onToggle={onToggle} blockKey={blockKey} fileChangesMap={fileChangesMap} allBlocks={allBlocks} onFileClick={onFileClick} />;
+    return <ToolCallsBlock block={block} msgId={msgId} onToggle={onToggle} blockKey={blockKey} fileChangesMap={fileChangesMap} allBlocks={allBlocks} onFileClick={onFileClick} subGroupRenderers={subGroupRenderers} />;
   }
   if (block.type === 'content') {
     return <ContentBlock content={block.content || ''} />;
   }
   return null;
 }, (prev, next) => {
-  return prev.block === next.block && prev.blockKey === next.blockKey && prev.fileChangesMap === next.fileChangesMap && prev.allBlocks === next.allBlocks;
+  return prev.block === next.block && prev.blockKey === next.blockKey && prev.fileChangesMap === next.fileChangesMap && prev.allBlocks === next.allBlocks && prev.subGroupRenderers === next.subGroupRenderers;
 });
 
 // Token 徽标组件：鼠标 hover 时显示汇总详情 tooltip（问题 3 修复）。
@@ -634,9 +649,9 @@ const TokenBadge = ({ tokens, totals, history, style }: { tokens: number; totals
             调用详情（{hist.length} 次调用）
           </div>
           <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-            {hist.map((h, i) => (
+            {hist.map((entry, i) => (
               <div key={i} style={{ paddingLeft: 6, borderLeft: '2px solid var(--border-100)' }}>
-                #{h.iteration} · {h.timestamp} · {h.finish_reason} · {h.duration_ms}ms
+                #{entry.iteration} · {entry.timestamp} · {entry.finish_reason} · {entry.duration_ms}ms
               </div>
             ))}
           </div>
@@ -739,13 +754,15 @@ const CompactionBubble = React.memo(({ blocks, agentName, tokens, tokenHistory, 
   );
 }, (prev, next) => prev.blocks === next.blocks && prev.isExpanded === next.isExpanded && prev.blockKey === next.blockKey);
 
-const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlockToggle, fileChangesMap, onFileClick }: {
+const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlockToggle, fileChangesMap, onFileClick, subagentGroups = [] }: {
   group: AgentGroup;
   msgId: string;
   allMessageBlocks: DataBlock[];
   handleBlockToggle: (block: DataBlock, blockKey: string, currentIsExpanding: boolean) => void;
   fileChangesMap: Record<string, FileChangeInfo[]>;
   onFileClick?: (filePath: string) => void;
+  /** 当前组的子 subagent 组（tc_id 分离：产生子执行的 tool_call 块后按 tc.id 精确匹配嵌套渲染） */
+  subagentGroups?: AgentGroup[];
 }) => {
   const isMainAgent = group.agent_level === 0;
   const borderColor = getSubagentColor(group.agent_level);
@@ -756,6 +773,13 @@ const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlock
   // 同一路径，保证所有 agent 完全一致。
   const blocks: React.ReactNode[] = [];
   let i = 0;
+  // 已消费子组（跨块共享）：tc.id 分离——每个产生子执行的 tool_call 的 tc.id 由
+  // agent_start source_tool_call_id（流式）/ task 消息持久化（回显）注入子组块的
+  // source_tool_call_id，渲染时按 tc.id === 组.sourceToolCallId 精确匹配（顺序无关：
+  // 并发事件到达顺序与工具调用顺序无关，无需游标顺序消费；与工具名无关，所有工具
+  // 天然支持并发）。
+  const consumedSubGroups = new Set<string>();
+  const pendingSubGroups = () => subagentGroups.filter(g => !!g.instanceKey && !consumedSubGroups.has(g.instanceKey));
   while (i < group.blocks.length) {
     const block = group.blocks[i];
     if (block._is_compaction) {
@@ -766,7 +790,10 @@ const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlock
         j++;
       }
       const first = compBlocks[0];
-      const compKey = `${msgId}-${i}-comp`;
+      // 块 key 必须全局唯一：mainagent 与 subagent 组共享同一 msgId，组内索引 i 各自从 0 开始，
+      // 若 key 只用 `${msgId}-${i}`，mainagent 与 subagent 同序块会互相冲突（展开/折叠联动）。
+      // 因此前缀组实例唯一键 instanceKey（agent_id + message_id）。
+      const compKey = `${msgId}-${group.instanceKey || 'root'}-${i}-comp`;
       blocks.push(
         <CompactionBubble
           key={compKey}
@@ -785,7 +812,38 @@ const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlock
       );
       i = j;
     } else {
-      const blockKey = `${msgId}-${i}`;
+      const blockKey = `${msgId}-${group.instanceKey || 'root'}-${i}`;
+      // 通用子组消费（tc.id 对号，非工具名集合驱动）：所有工具调用都拥有唯一的
+      // tool_call_id（tc.id，LLM 生成）。流式：子组块由 agent_start source_tool_call_id
+      // 注入；回显：run_api 从 task 消息持久化的 source_tool_call_id 注入子组块——
+      // 均按 tc.id === 组.sourceToolCallId 精确嵌套（出现即对号，无需等任何事件）。
+      // 匹配到的子组作为"tc 插槽"随 tc 交错嵌套渲染（tc 徽标下即子组，
+      // task → subagent → task → subagent），而非追加在 tool_calls 块后（会聚成
+      // task task → subagent subagent）。
+      let subGroupRenderers: Record<string, React.ReactNode> = {};
+      if (block.type === 'tool_calls') {
+        for (const tc of block.tool_calls || []) {
+          const tcId = tc.id;
+          let g: AgentGroup | undefined;
+          if (tcId) {
+            g = subagentGroups.find(x => !!x.instanceKey && x.sourceToolCallId && x.sourceToolCallId === tcId && !consumedSubGroups.has(x.instanceKey));
+          }
+          if (g) {
+            consumedSubGroups.add(g.instanceKey!);
+            subGroupRenderers[tcId] = (
+              <AgentGroupItem
+                group={g}
+                msgId={msgId}
+                allMessageBlocks={allMessageBlocks}
+                handleBlockToggle={handleBlockToggle}
+                fileChangesMap={fileChangesMap}
+                onFileClick={onFileClick}
+                subagentGroups={pendingSubGroups()}
+              />
+            );
+          }
+        }
+      }
       blocks.push(
         <DataBlockItem
           key={i}
@@ -797,6 +855,7 @@ const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlock
           fileChangesMap={fileChangesMap}
           allBlocks={allMessageBlocks || group.blocks}
           onFileClick={onFileClick}
+          subGroupRenderers={subGroupRenderers}
         />
       );
       i++;
@@ -811,12 +870,12 @@ const AgentGroupItem = React.memo(({ group, msgId, allMessageBlocks, handleBlock
   //（由 updateAgentTokens 写入：agent_token_usage 推送 agent_usage / agent_complete
   // metadata.agent_usage），前端不再 mergeTokenHistories(group.blocks) + sumHistoryTokens 拼接。
   const agentUsageMap = useRunPanelStore(state => state.agentUsageMap);
-  // 〇·3 并发修复：优先按组实例 execution_key 查询（同 agent 多实例各独立），
-  // 未命中（回显/未推送）再按 agent_id 兜底；回显路径 agentUsageMap 为空时
-  // 走后端注入的组级累计 group_agent_*。
-  const groupUsage = group.agent_id
-    ? (group.execution_key ? agentUsageMap[group.execution_key] : undefined) ?? agentUsageMap[group.agent_id]
-    : undefined;
+  // 〇·3 并发修复 + 回显隔离修复：组头只按组实例 message_id 精确查询 agentUsageMap。
+  // 禁止回退到 agent_id 兜底——agent_id 键会被同 agent 的最新流式执行覆盖（setAgentUsage
+  // 双键写入），回显的历史消息 subagent 组头会读到最新执行 token（跨消息混写）。
+  // 流式实例：message_id 命中 agentUsageMap（各实例独立）；回显/未命中：
+  // groupUsage=undefined，走后端注入的组级累计 group_agent_*。
+  const groupUsage = group.message_id ? agentUsageMap[group.message_id] : undefined;
   // 回显路径（无 agentUsageMap，刷新后无流式事件重放）：组头走后端注入的组级整轮
   // 累计（group_agent_*：该 subagent 本次 task 调用全部消息 history 求和，与流式
   // agentUsageMap 同构）；块级 agent_tokens 为单消息（压缩气泡用），不用于组头。
@@ -871,55 +930,22 @@ const extractAgentName = (msg: LLMMessage, canvasData?: any): string | null => {
   for (const block of msg.data || []) {
     if (block.type === 'tool_calls') {
       for (const tc of block.tool_calls || []) {
-        if (tc.function?.name === 'Task' && tc.result) {
-          try {
-            const result = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
-            if (result.subagent_name) return result.subagent_name;
-          } catch {}
-        }
+        // 通用判断（非工具名集合）：产生子执行的 tc 其 result 被框架钩子覆盖为
+        // {success, subagent_name, subagent_id, content}——据此提取子组名称；
+        // 无 result（未执行/无子执行）的 tc 跳过（与工具名无关）。
+        if (!tc.result) continue;
+        try {
+          const args = typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function?.arguments;
+          if (args?.subagent_name) return args.subagent_name;
+        } catch {}
+        try {
+          const result = typeof tc.result === 'string' ? JSON.parse(tc.result) : tc.result;
+          if (result?.subagent_name) return result.subagent_name;
+        } catch {}
       }
     }
   }
   return null;
-};
-
-const getFileIcon = (filePath: string) => {
-  const ext = filePath.split('.').pop()?.toLowerCase() || '';
-  const iconMap: Record<string, React.ReactNode> = {
-    js: <CodeOutlined style={{ color: '#f7df1e' }} />,
-    jsx: <CodeOutlined style={{ color: '#61dafb' }} />,
-    ts: <CodeOutlined style={{ color: '#3178c6' }} />,
-    tsx: <CodeOutlined style={{ color: '#61dafb' }} />,
-    py: <CodeOutlined style={{ color: '#3776ab' }} />,
-    java: <CodeOutlined style={{ color: '#ed8b00' }} />,
-    go: <CodeOutlined style={{ color: '#00add8' }} />,
-    rs: <CodeOutlined style={{ color: '#dea584' }} />,
-    c: <CodeOutlined style={{ color: '#555555' }} />,
-    cpp: <CodeOutlined style={{ color: '#00599c' }} />,
-    html: <CodeOutlined style={{ color: '#e34c26' }} />,
-    css: <CodeOutlined style={{ color: '#264de4' }} />,
-    scss: <CodeOutlined style={{ color: '#c6538c' }} />,
-    json: <CodeOutlined style={{ color: '#5b5b5b' }} />,
-    yaml: <CodeOutlined style={{ color: '#cb171e' }} />,
-    yml: <CodeOutlined style={{ color: '#cb171e' }} />,
-    md: <FileTextOutlined style={{ color: '#4a4a4a' }} />,
-    svg: <PictureOutlined style={{ color: '#ffb13b' }} />,
-    png: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-    jpg: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-    jpeg: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-    gif: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-    pdf: <FilePdfOutlined style={{ color: '#f40f02' }} />,
-    zip: <FileZipOutlined style={{ color: '#ffa726' }} />,
-    tar: <FileZipOutlined style={{ color: '#ffa726' }} />,
-    gz: <FileZipOutlined style={{ color: '#ffa726' }} />,
-    xlsx: <FileExcelOutlined style={{ color: '#217346' }} />,
-    xls: <FileExcelOutlined style={{ color: '#217346' }} />,
-    pptx: <FilePptOutlined style={{ color: '#d24726' }} />,
-    mp3: <AudioOutlined style={{ color: '#9b59b6' }} />,
-    wav: <AudioOutlined style={{ color: '#9b59b6' }} />,
-    mp4: <VideoCameraOutlined style={{ color: '#e74c3c' }} />,
-  };
-  return iconMap[ext] || <FileOutlined style={{ color: 'var(--text-200)' }} />;
 };
 
 const UserMessageItem = React.memo(({ msg, isHovered, onHover, onLeave, onRewind, onCancelPreview, onConfirmRecall, onFileClick, currentSessionId, onDelete }: {
@@ -1065,29 +1091,29 @@ const UserMessageItem = React.memo(({ msg, isHovered, onHover, onLeave, onRewind
           </div>
           {previewFiles && previewFiles.length > 0 ? (
             <div className="sc-change-file-list">
-              {previewFiles.map((f: any) => {
-                const fileName = f.file_path.split(/[\\/]/).pop() || f.file_path;
-                const absPath = f.absolute_path || f.file_path;
+              {previewFiles.map((previewFile: any) => {
+                const fileName = previewFile.file_path.split(/[\\/]/).pop() || previewFile.file_path;
+                const absPath = previewFile.absolute_path || previewFile.file_path;
                 const actionMap: Record<string, { label: string; className: string }> = {
                   '删除': { label: '将被删除', className: 'deleted' },
                   '新建': { label: '将被新建', className: 'created' },
                   '修改': { label: '将被修改', className: 'modified' },
                 };
-                const action = actionMap[f.recall_action] || { label: f.recall_action, className: 'modified' };
+                const action = actionMap[previewFile.recall_action] || { label: previewFile.recall_action, className: 'modified' };
                 return (
-                  <div key={f.file_path} className="sc-change-file-item">
-                    <span className="sc-change-file-icon">{getFileIcon(f.file_path)}</span>
+                  <div key={previewFile.file_path} className="sc-change-file-item">
+                    <span className="sc-change-file-icon">{getFileIcon(previewFile.file_path)}</span>
                     <span
                       className="sc-change-file-name"
-                      onClick={() => onFileClick?.(f.absolute_path || f.file_path)}
-                      title={`点击打开: ${f.absolute_path || f.file_path}`}
+                      onClick={() => onFileClick?.(previewFile.absolute_path || previewFile.file_path)}
+                      title={`点击打开: ${previewFile.absolute_path || previewFile.file_path}`}
                     >{fileName}</span>
                     <span className="sc-change-file-dir">{absPath}</span>
                     <span className="sc-change-file-stats-right">
                       <span className={`sc-change-op-badge ${action.className}`}>{action.label}</span>
                       <span className="sc-change-file-stats">
-                        <span className="added">+{f.lines_removed || 0}</span>
-                        <span className="removed">-{f.lines_added || 0}</span>
+                        <span className="added">+{previewFile.lines_removed || 0}</span>
+                        <span className="removed">-{previewFile.lines_added || 0}</span>
                       </span>
                     </span>
                   </div>
@@ -1147,10 +1173,10 @@ const AssistantMessageItem = React.memo(({ msg, msgIdx, messages, currentSession
   }, [msg.data]);
 
   const getFileChangesForMessage = (msgId: string, blocks: DataBlock[] | undefined) => {
-    const apiChanges = fileChangesMap[msgId]?.filter((fc: any) => !fc.tool_call_id);
+    const apiChanges = fileChangesMap[msgId]?.filter((fileChange: any) => !fileChange.tool_call_id);
     if (apiChanges && apiChanges.length > 0) return apiChanges;
     if (!blocks) return null;
-    return blocks.filter(b => b.type === 'file_changes' && !b.file_changes?.some((fc: any) => fc._preview)).flatMap(b => b.file_changes || []);
+    return blocks.filter(b => b.type === 'file_changes' && !b.file_changes?.some((fileChange: any) => fileChange._preview)).flatMap(b => b.file_changes || []);
   };
 
   // 所有 assistant 消息都显示 LLM 回复块（AI 头像/名称/时间/tokens）
@@ -1183,17 +1209,39 @@ const AssistantMessageItem = React.memo(({ msg, msgIdx, messages, currentSession
             </Text>
             <TokenDisplay msg={msg} />
           </div>
-          {msg.data && agentGroups.map((group, groupIdx) => (
-            <AgentGroupItem
-              key={groupIdx}
-              group={group}
-              msgId={msg.id}
-              allMessageBlocks={msg.data!}
-              handleBlockToggle={handleBlockToggle}
-              fileChangesMap={fileChangesMap}
-              onFileClick={onFileClick}
-            />
-          ))}
+          {msg.data && (() => {
+            if (agentGroups.length === 0) return null;
+            const mainGroup = agentGroups.find(g => g.agent_level === 0);
+            const subGroups = agentGroups.filter(g => g.agent_level > 0);
+            if (mainGroup) {
+              // mainagent 组渲染时传入 subagent 组：AgentGroupItem 在产生子执行的
+              // tool_call 块后按 tc.id 精确匹配插入嵌套渲染（与工具名无关）。
+              return (
+                <AgentGroupItem
+                  key="main"
+                  group={mainGroup}
+                  msgId={msg.id}
+                  allMessageBlocks={msg.data!}
+                  handleBlockToggle={handleBlockToggle}
+                  fileChangesMap={fileChangesMap}
+                  onFileClick={onFileClick}
+                  subagentGroups={subGroups}
+                />
+              );
+            }
+            // 无 mainagent 组（异常数据）：直接渲染全部组（subagent 独立组头）
+            return agentGroups.map((group, groupIdx) => (
+              <AgentGroupItem
+                key={groupIdx}
+                group={group}
+                msgId={msg.id}
+                allMessageBlocks={msg.data!}
+                handleBlockToggle={handleBlockToggle}
+                fileChangesMap={fileChangesMap}
+                onFileClick={onFileClick}
+              />
+            ));
+          })()}
           {currentSessionId && (msg.status === 'completed' || msg.status === 'error' || msg.status === 'stop' || msg.status === 'stopped') && (
             <FileChangePanel
               sessionId={currentSessionId}
@@ -1401,8 +1449,6 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(({ isWaiting
     return { tokens: u?.tokens, totals: u?.totals, history: u?.history || [] };
   }, [streamingGroups, agentUsageMap]);
 
-  const messageIds = useMemo(() => messages.map(m => m.id), [messages]);
-
   const handlePreviewRecall = useCallback(async (msg: LLMMessage) => {
     if (!currentSessionId || recallingMessageId || recallPreviewMessageId) return;
 
@@ -1565,16 +1611,35 @@ const MessageList = forwardRef<MessageListHandle, MessageListProps>(({ isWaiting
                     <Text style={{ fontSize: 14, color: 'var(--text-200)' }}>正在思考...</Text>
                   </div>
                 )}
-                {streamingGroups.map((group, groupIdx) => (
-                  <AgentGroupItem
-                    key={groupIdx}
-                    group={group}
-                    msgId="streaming"
-                    allMessageBlocks={streamingData}
-                    handleBlockToggle={handleBlockToggle}
-                    fileChangesMap={fileChangesMap}
-                  />
-                ))}
+                {(() => {
+                  if (streamingGroups.length === 0) return null;
+                  const streamMainGroup = streamingGroups.find(g => g.agent_level === 0);
+                  const streamSubGroups = streamingGroups.filter(g => g.agent_level > 0);
+                  if (streamMainGroup) {
+                    // 与回显同构：mainagent 组渲染时传入 subagent 组（产生子执行的 tool_call 后嵌套插入）
+                    return (
+                      <AgentGroupItem
+                        key="stream-main"
+                        group={streamMainGroup}
+                        msgId="streaming"
+                        allMessageBlocks={streamingData}
+                        handleBlockToggle={handleBlockToggle}
+                        fileChangesMap={fileChangesMap}
+                        subagentGroups={streamSubGroups}
+                      />
+                    );
+                  }
+                  return streamingGroups.map((group, groupIdx) => (
+                    <AgentGroupItem
+                      key={groupIdx}
+                      group={group}
+                      msgId="streaming"
+                      allMessageBlocks={streamingData}
+                      handleBlockToggle={handleBlockToggle}
+                      fileChangesMap={fileChangesMap}
+                    />
+                  ));
+                })()}
               </div>
             </div>
           )}

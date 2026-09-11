@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Spin, Result, Button } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 import { useOfficeConfigStore } from '../stores/officeConfigStore';
 
 interface OnlyOfficeEditorProps {
@@ -150,8 +150,6 @@ const OnlyOfficeEditor: React.FC<OnlyOfficeEditorProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [tab, onSave, addEventListener]);
-
-  useEditorCleanup(instanceId, cleanup);
 
   if (loading) {
     return (

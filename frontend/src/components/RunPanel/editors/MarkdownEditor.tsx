@@ -2,8 +2,9 @@ import React, { useState, useCallback, useEffect, useRef, useMemo, useDeferredVa
 import { Button, Tooltip, Spin } from 'antd';
 import { EditOutlined, EyeOutlined, ColumnWidthOutlined, CheckOutlined, CopyOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 import { copyToClipboard } from '../utils/dataBlockUtils';
+import { useRunPanelStore } from '../stores/runPanelStore';
 
 interface MarkdownEditorProps {
   instanceId: string;
@@ -116,8 +117,6 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [tab, onSave]);
 
-  useEditorCleanup(instanceId, cleanup);
-
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     setViewMode(mode);
   }, []);
@@ -137,7 +136,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     </Tooltip>
   );
 
-  const content = tab.content || '';
+  const content = useRunPanelStore((state) => state.getTabContent(tab.id)) || '';
   const deferredContent = useDeferredValue(content);
 
   const isDark = theme === 'dark';

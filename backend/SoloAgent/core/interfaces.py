@@ -9,12 +9,10 @@ ReAct核心机制-interfaces.py: 定义SoloEngine的核心插件接口，实现�
 
 功能描述：
 本模块定义ReAct核心机制所需的插件接口规范，提供以下核心接口：
-- IMemory: 记忆插件接口，用于对话历史和上下文存储
-- IRAG: 检索增强生成插件接口，用于知识库检索
-- IToolExecutor: 工具执行器接口，用于工具调用
-- IMCPClient: MCP客户端接口，用于Model Context Protocol
-- IPlanNotebook: 计划笔记本接口，用于任务规划
-- ITTSModel: TTS模型接口，用于语音合成
+- RAGInterface: 检索增强生成插件接口，用于知识库检索
+- ToolExecutorInterface: 工具执行器接口，用于工具调用
+- MCPClientInterface: MCP客户端接口，用于Model Context Protocol
+- PlanNotebookInterface: 计划笔记本接口，用于任务规划
 
 设计模式：
 - 策略模式：不同插件实现相同接口，可互换使用
@@ -24,12 +22,11 @@ ReAct核心机制-interfaces.py: 定义SoloEngine的核心插件接口，实现�
 依赖:
 - abc: 抽象基类定义
 - typing: 类型提示
-- ..message: 消息类型
 - ..types: 可序列化对象类型
 
 使用示例:
-- class MyMemory(IMemory): ...
-- core = ReActCore(memory=MyMemory())
+- class MyRAG(RAGInterface): ...
+- core = ReActCore(rag=MyRAG())
 """
 
 from abc import ABC, abstractmethod
@@ -39,121 +36,7 @@ from ..message import Msg
 from ..types import JSONSerializableObject
 
 
-class IMemory(ABC):
-    """
-    记忆插件接口。
-    
-    定义 Agent 记忆系统的标准接口，用于存储和检索对话历史、
-    上下文信息等。支持向量检索和语义相似度匹配。
-    
-    实现类：
-        - VectorMemoryPlugin: 基于向量相似度的记忆检索
-        - BlackholeMemoryPlugin: 不存储任何内容的空记忆实现
-    
-    设计理念：
-        记忆系统是 Agent 的长期记忆层，区别于对话历史的短期记忆。
-        通过语义检索，Agent 可以在大量历史对话中找到相关上下文。
-    
-    Example:
-        >>> memory = VectorMemoryPlugin(config)
-        >>> await memory.add(user_message)
-        >>> relevant_msgs = await memory.retrieve("用户之前问过什么？")
-    """
-    
-    @abstractmethod
-    async def add(self, msg: Msg) -> None:
-        """
-        将消息添加到记忆存储中。
-        
-        将消息向量化后存储，用于后续的相似度检索。
-        消息会被自动分配向量嵌入（如果配置了嵌入服务）。
-        
-        Args:
-            msg (Msg): 要添加的消息对象，包含角色、内容等信息。
-                消息内容会被提取文本后进行向量化。
-        
-        Raises:
-            EmbeddingError: 当向量化失败时抛出（如果使用向量记忆）
-        
-        Note:
-            - 消息添加后可能不会立即可检索，取决于具体实现
-            - 部分实现可能有容量限制，会自动淘汰旧消息
-        """
-    
-    @abstractmethod
-    async def retrieve(
-        self, 
-        query: str, 
-        limit: int = 5
-    ) -> List[Msg]:
-        """
-        从记忆中检索相关消息。
-        
-        基于语义相似度检索与查询最相关的历史消息。
-        返回的消息按相关性降序排列。
-        
-        Args:
-            query (str): 查询文本，用于计算与存储消息的相似度。
-            limit (int, optional): 返回消息的最大数量。默认为 5。
-        
-        Returns:
-            List[Msg]: 相关消息列表，按相似度降序排列。
-                如果没有匹配的消息，返回空列表。
-        
-        Note:
-            - 相似度阈值由具体实现配置决定
-            - 查询文本会被向量化后与存储的向量比较
-        """
-    
-    @abstractmethod
-    async def clear(self) -> None:
-        """
-        清空记忆存储。
-        
-        删除所有存储的消息和对应的向量嵌入。
-        此操作不可逆，谨慎使用。
-        
-        Warning:
-            此操作会永久删除所有记忆数据，无法恢复。
-        """
-    
-    @abstractmethod
-    async def get_memory_state(self) -> dict:
-        """
-        获取当前记忆状态。
-        
-        返回记忆系统的状态信息，用于持久化和恢复。
-        状态信息包括消息数量、配置参数等。
-        
-        Returns:
-            dict: 记忆状态字典，包含：
-                - message_count: 当前存储的消息数量
-                - max_size: 最大容量
-                - config: 配置参数
-                - 其他实现特定的状态信息
-        
-        Note:
-            返回的状态可用于 set_memory_state 恢复状态。
-        """
-    
-    @abstractmethod
-    async def set_memory_state(self, state: dict) -> None:
-        """
-        设置记忆状态。
-        
-        从状态字典恢复记忆系统的状态。
-        通常用于从持久化存储加载记忆。
-        
-        Args:
-            state (dict): 记忆状态字典，由 get_memory_state 生成。
-        
-        Note:
-            - 设置状态会覆盖当前状态
-            - 状态格式应与 get_memory_state 返回的格式一致
-        """
-
-
-class IRAG(ABC):
+class RAGInterface(ABC):
     """
     检索增强生成（RAG）插件接口。
     
@@ -161,19 +44,13 @@ class IRAG(ABC):
     相关文档以增强 Agent 的回答能力。
     
     实现类：
-        - KnowledgeBaseRAGPlugin: 基于向量相似度的知识库检索
+        当前无内置实现，保留接口供自定义 RAG 插件扩展
     
     设计理念：
         RAG 系统为 Agent 提供外部知识访问能力，通过语义检索
         从知识库中找到与用户问题相关的文档片段。
     
-    与 IMemory 的区别：
-        - IMemory: 存储对话历史，用于上下文记忆
-        - IRAG: 存储外部知识，用于知识增强
-    
     Example:
-        >>> rag = KnowledgeBaseRAGPlugin(config)
-        >>> await rag.add_document("产品说明书内容...", metadata={"source": "manual"})
         >>> docs = await rag.retrieve("如何使用产品？")
     """
     
@@ -246,7 +123,7 @@ class IRAG(ABC):
         """
 
 
-class IToolExecutor(ABC):
+class ToolExecutorInterface(ABC):
     """
     工具执行器接口。
     
@@ -261,9 +138,8 @@ class IToolExecutor(ABC):
         工具调用执行各种操作，如搜索、计算、API 调用等。
     
     工具生命周期：
-        1. 注册工具（register_tool）
-        2. 获取可用工具列表（get_available_tools）
-        3. 执行工具调用（execute）
+        1. 获取可用工具列表（get_available_tools）
+        2. 执行工具调用（execute）
     
     Example:
         >>> executor = ToolkitExecutor()
@@ -323,31 +199,9 @@ class IToolExecutor(ABC):
         Note:
             返回的规范格式兼容 OpenAI Function Calling 格式。
         """
-    
-    @abstractmethod
-    async def register_tool(self, tool_spec: dict) -> None:
-        """
-        注册新工具。
-        
-        将工具添加到执行器的工具注册表中。
-        
-        Args:
-            tool_spec (dict): 工具规范，包含：
-                - name (str): 工具名称（唯一标识）
-                - function (Callable): 工具函数
-                - description (str): 工具描述
-                - parameters (dict): 参数规范
-        
-        Raises:
-            ValueError: 当工具名称已存在或规范无效时抛出
-        
-        Note:
-            - 工具名称必须唯一
-            - 工具函数可以是同步或异步函数
-        """
 
 
-class IMCPClient(ABC):
+class MCPClientInterface(ABC):
     """
     MCP（Model Context Protocol）客户端接口。
     
@@ -450,7 +304,7 @@ class IMCPClient(ABC):
         """
 
 
-class IPlanNotebook(ABC):
+class PlanNotebookInterface(ABC):
     """
     计划笔记本接口。
     
@@ -554,62 +408,9 @@ class IPlanNotebook(ABC):
         """
 
 
-class ITTSModel(ABC):
-    """
-    TTS（Text-to-Speech）模型接口。
-    
-    定义语音合成的标准接口，支持将文本转换为语音。
-    
-    实现类：
-        - OpenAITTSModel: OpenAI TTS API 实现
-        - AzureTTSModel: Azure Cognitive Services 实现
-        - EdgeTTSModel: Edge TTS 实现
-        - LocalTTSModel: 本地模型实现
-    
-    设计理念：
-        TTS 插件为 Agent 提供语音输出能力，支持多种
-        语音合成服务和模型。
-    
-    Example:
-        >>> tts = OpenAITTSModel(api_key="...", voice="alloy")
-        >>> audio_data = await tts.synthesize("你好，世界！")
-        >>> with open("output.mp3", "wb") as f:
-        ...     f.write(audio_data)
-    """
-    
-    @abstractmethod
-    async def synthesize(
-        self,
-        text: str,
-        **kwargs
-    ) -> bytes:
-        """
-        将文本合成为语音。
-        
-        Args:
-            text (str): 要合成的文本内容。
-            **kwargs: 额外参数，可包含：
-                - voice: 语音角色
-                - speed: 语速
-                - format: 输出格式
-        
-        Returns:
-            bytes: 音频数据（二进制格式）。
-        
-        Raises:
-            TTSError: 当语音合成失败时抛出
-        
-        Note:
-            - 返回的音频格式取决于具体实现
-            - 长文本可能需要分块处理
-        """
-
-
 __all__ = [
-    "IMemory",
-    "IRAG",
-    "IToolExecutor",
-    "IMCPClient",
-    "IPlanNotebook",
-    "ITTSModel",
+    "RAGInterface",
+    "ToolExecutorInterface",
+    "MCPClientInterface",
+    "PlanNotebookInterface",
 ]

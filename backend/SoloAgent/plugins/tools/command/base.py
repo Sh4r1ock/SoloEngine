@@ -36,22 +36,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from enum import Enum
 
-from app.core.config import settings
+from SoloAgent.config import settings
 from app.utils.timezone_utils import format_iso
-
-
-ALLOWED_COMMANDS = {
-    'ls', 'pwd', 'cat', 'grep', 'head', 'tail', 'ps', 'df', 'du',
-    'npm', 'node', 'python', 'pip', 'git', 'pytest', 'cargo', 'go',
-    'conda', 'dir', 'type', 'findstr', 'where', 'echo', 'cd',
-    'mkdir', 'rmdir', 'copy', 'move', 'ren', 'del',
-    'python3', 'pip3', 'nodejs', 'npm.cmd', 'npx',
-    'git.exe', 'python.exe', 'conda.exe',
-    'uvicorn', 'gunicorn', 'flask', 'django-admin',
-    'tsc', 'webpack', 'vite', 'esbuild',
-    'rustc', 'rustup', 'cargo.exe',
-    'go.exe',
-}
 
 
 # 危险模式检测（分级：命中即"危险命令"，由运行模式决定转人工审批，不直接拒绝）。
@@ -263,30 +249,6 @@ class CommandRegistry:
     def get_all(self) -> Dict[str, CommandInfo]:
         """获取所有命令。"""
         return self._commands.copy()
-    
-    def clear_finished(self, max_age_seconds: int = 3600) -> int:
-        """
-        清理已完成的命令。
-        
-        Args:
-            max_age_seconds (int): 最大保留时间（秒）。
-        
-        Returns:
-            int: 清理的命令数量。
-        """
-        now = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-        to_remove = []
-        for cmd_id, cmd_info in self._commands.items():
-            if cmd_info.state in (CommandState.DONE, CommandState.ERROR, CommandState.STOPPED):
-                if cmd_info.finished_at:
-                    age = (now - cmd_info.finished_at).total_seconds()
-                    if age > max_age_seconds:
-                        to_remove.append(cmd_id)
-        
-        for cmd_id in to_remove:
-            del self._commands[cmd_id]
-        
-        return len(to_remove)
 
 
 class BaseCommandTool:
@@ -301,10 +263,8 @@ class BaseCommandTool:
         3. 命令注入防护
     
     Example:
-        >>> is_safe, reason = BaseCommandTool.is_command_safe("ls -la")
-        >>> if is_safe:
-        ...     # 执行命令
-        ...     pass
+        >>> is_dangerous, reason = BaseCommandTool.is_command_dangerous("rm -rf /")
+        >>> is_allowed = BaseCommandTool.is_command_allowlisted("ls -la", ["ls", "git"])
     """
     
     _registry: CommandRegistry = CommandRegistry()
@@ -349,61 +309,6 @@ class BaseCommandTool:
                 return True
         return False
 
-    @staticmethod
-    def is_command_safe(command: str) -> Tuple[bool, str]:
-        """
-        检查命令是否安全。
-
-        执行两层安全检查：
-        1. 危险模式检测：命中危险模式（rm -rf / sudo / shutdown 等破坏性操作）判定不安全
-        2. 命令白名单验证：检查基础命令是否在允许列表中
-
-        Args:
-            command (str): 要检查的命令字符串。
-
-        Returns:
-            Tuple[bool, str]: 
-                - bool: 命令是否安全
-                - str: 不安全原因（如果安全则为空字符串）
-
-        Example:
-            >>> is_safe, reason = BaseCommandTool.is_command_safe("ls -la")
-            >>> print(is_safe)  # True
-            
-            >>> is_safe, reason = BaseCommandTool.is_command_safe("rm -rf /")
-            >>> print(is_safe)  # False
-            >>> print(reason)   # "检测到危险模式: rm -rf"
-        """
-        if not command or not command.strip():
-            return False, "命令为空"
-        
-        # 危险模式分级检测（危险命令由运行模式决定转人工审批）
-        dangerous, reason = BaseCommandTool.is_command_dangerous(command)
-        if dangerous:
-            return False, reason
-        
-        command = command.strip()
-        
-        base_command = command.split()[0] if command.split() else ""
-        base_command_lower = base_command.lower()
-        
-        base_command_name = base_command_lower
-        for ext in ['.exe', '.cmd', '.bat', '.ps1']:
-            if base_command_lower.endswith(ext):
-                base_command_name = base_command_lower[:-len(ext)]
-                break
-        
-        if base_command_lower in ALLOWED_COMMANDS or base_command_name in ALLOWED_COMMANDS:
-            return True, ""
-        
-        if sys.platform == 'win32':
-            if base_command_lower.endswith('.exe') or base_command_lower.endswith('.cmd'):
-                base_without_ext = base_command_lower.rsplit('.', 1)[0]
-                if base_without_ext in ALLOWED_COMMANDS:
-                    return True, ""
-        
-        return True, ""
-    
     @staticmethod
     def parse_command_type(command_type_str: Optional[str]) -> CommandType:
         """

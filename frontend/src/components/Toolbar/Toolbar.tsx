@@ -22,7 +22,7 @@ const Toolbar: React.FC<ToolbarProps> = ({ reactFlowInstance }) => {
 
   const handleCanvasClick = async (event: React.MouseEvent) => {
     if (pendingAdd && reactFlowInstance) {
-      const position = reactFlowInstance.project({
+      const position = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });

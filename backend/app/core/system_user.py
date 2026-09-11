@@ -10,7 +10,6 @@ SoloEngine : 系统用户管理模块
 功能描述：
 本模块提供以下核心功能：
     - 创建系统用户
-    - 检查用户是否为系统用户
     - 管理系统用户凭证
 
 依赖:
@@ -20,9 +19,8 @@ SoloEngine : 系统用户管理模块
     - app.core.database: 数据库模型
 
 使用示例:
-    - from app.core.system_user import create_system_user, is_system_user
+    - from app.core.system_user import create_system_user
     - system_user = create_system_user(db_session)
-    - is_system = is_system_user(user_id)
 """
 
 from sqlalchemy.orm import Session
@@ -69,19 +67,3 @@ def create_system_user(db: Session) -> UserModel:
     db.refresh(system_user)
     return system_user
 
-
-def is_system_user(user_id: str) -> bool:
-    """
-    检查是否是系统用户
-    
-    Args:
-        user_id: 用户ID
-        
-    Returns:
-        是否为系统用户
-        
-    Example:
-        >>> is_system = is_system_user("system")
-        True
-    """
-    return user_id == SYSTEM_USER_ID

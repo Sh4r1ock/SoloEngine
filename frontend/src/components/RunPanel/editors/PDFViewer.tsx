@@ -3,11 +3,13 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import { Button, Spin, Result } from 'antd';
 import { LeftOutlined, RightOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// 使用本地打包的 pdf.js worker，避免依赖外部 CDN（unpkg.com）导致 PDF 预览失败
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 interface PDFViewerProps {
   instanceId: string;
@@ -51,12 +53,6 @@ const PDFViewer: React.FC<PDFViewerProps> = ({ instanceId, tab }) => {
   const fileUrl = tab.content.startsWith('data:') 
     ? tab.content 
     : `data:application/pdf;base64,${tab.content}`;
-
-  useEditorCleanup(instanceId, useCallback(() => {
-    setNumPages(0);
-    setPageNumber(1);
-    cleanup();
-  }, [cleanup]));
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#1a1a1a' }}>

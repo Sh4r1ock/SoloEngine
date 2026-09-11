@@ -38,18 +38,12 @@ import { MarkerType } from 'reactflow';
 import { message } from 'antd';
 import { agenticFlowApi } from '../services/agenticFlowApi';
 import { llmApi, LLMConfig } from '../services/llmApi';
+import { getPresets } from '../stores/presetsStore';
+import { debounce } from '../utils/debounce';
 
 const MAX_HISTORY_SIZE = 30;
 const DEBOUNCE_DELAY = 500;
 const AUTO_SAVE_DELAY = 1000;
-
-const debounce = <T extends (...args: any[]) => any>(func: T, wait: number): T => {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return ((...args: any[]) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  }) as T;
-};
 
 
 
@@ -66,28 +60,26 @@ interface CanvasStore {
   globalSettings: GlobalSettings;
   isPreviewOpen: boolean;
   isSettingsOpen: boolean;
-  isPropertyPanelOpen: boolean;
   snapToGrid: boolean;
   configMap: Map<string, LLMConfig>;
   autoSave: () => void;
   history: HistoryState[];
   historyIndex: number;
   isDragging: boolean;
+  isLoading: boolean;
   
   setCurrentProject: (project: ProjectData | null) => void;
-  setNodes: (nodes: NodeData[], skipHistory?: boolean) => void;
-  setEdges: (edges: EdgeData[], skipHistory?: boolean) => void;
+  setNodes: (nodes: NodeData[], skipHistory?: boolean, skipAutoSave?: boolean) => void;
+  setEdges: (edges: EdgeData[], skipHistory?: boolean, skipAutoSave?: boolean) => void;
   addNode: (node: NodeData) => void;
   addNodeWithDefaultConfig: (node: NodeData) => Promise<void>;
+  addNodeFromPreset: (presetId: string, position: { x: number; y: number }) => Promise<void>;
   updateNode: (nodeId: string, data: Partial<NodeData['data']>) => void;
-  deleteNode: (nodeId: string) => void;
   addEdge: (edge: EdgeData) => void;
-  deleteEdge: (edgeId: string) => void;
   setSelectedNode: (node: NodeData | null) => void;
   setGlobalSettings: (settings: Partial<GlobalSettings>) => void;
   setPreviewOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
-  setPropertyPanelOpen: (open: boolean) => void;
   setSnapToGrid: (snap: boolean) => void;
   setIsDragging: (dragging: boolean) => void;
   saveCanvas: () => Promise<void>;
@@ -117,12 +109,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   globalSettings: defaultSettings,
   isPreviewOpen: false,
   isSettingsOpen: false,
-  isPropertyPanelOpen: false,
   snapToGrid: true,
   configMap: new Map(),
   history: [{ nodes: [], edges: [] }],
   historyIndex: 0,
   isDragging: false,
+  isLoading: false,
 
   autoSave: debounce(async () => {
     const { nodes, edges, currentProject, isDragging, globalSettings } = get();
@@ -179,9 +171,13 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   setCurrentProject: (project) => set({ currentProject: project }),
 
-  setNodes: (nodes, skipHistory = false) => {
+  setNodes: (nodes, skipHistory = false, skipAutoSave = false) => {
     set({ nodes });
-    get().autoSave();
+    // 加载期间（isLoading）或 ReactFlow 内部测量变化（skipAutoSave）不触发自动保存，
+    // 避免刷新/加载页面时把已保存数据重复写回 DB（覆盖其他会话修改、无谓更新 updated_at）
+    if (!skipAutoSave && !get().isLoading) {
+      get().autoSave();
+    }
     if (!skipHistory) {
       const { isDragging } = get();
       if (isDragging) {
@@ -197,7 +193,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     }
   },
 
-  setEdges: (edges, skipHistory = false) => {
+  setEdges: (edges, skipHistory = false, skipAutoSave = false) => {
     const edgesWithMarker = edges.map(edge => {
       const { label, ...rest } = edge;
       if (!rest.markerEnd) {
@@ -214,7 +210,9 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
       return rest;
     });
     set({ edges: edgesWithMarker as EdgeData[] });
-    get().autoSave();
+    if (!skipAutoSave && !get().isLoading) {
+      get().autoSave();
+    }
     if (!skipHistory) {
       const { isDragging } = get();
       if (isDragging) {
@@ -246,6 +244,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           message.error(`LLM 配置「${defaultConfig.name}」缺少 max_input_tokens，无法应用到节点，请在模型管理中修复`);
           return;
         }
+        if (defaultConfig.max_tool_calls == null) {
+          message.error(`LLM 配置「${defaultConfig.name}」缺少 max_tool_calls（工具调用轮次），无法应用到节点，请在模型管理中修复`);
+          return;
+        }
         node.data.model_config = {
           llm_config_id: defaultConfig.id,
           temperature: defaultConfig.temperature,
@@ -253,6 +255,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
           max_input_tokens: defaultConfig.max_input_tokens,
           frequency_penalty: defaultConfig.frequency_penalty,
           presence_penalty: defaultConfig.presence_penalty,
+          max_tool_calls: defaultConfig.max_tool_calls,
         };
         get().configMap.set(defaultConfig.id, defaultConfig);
       }
@@ -266,6 +269,28 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     });
     get().autoSave();
     get().pushHistory();
+  },
+
+  addNodeFromPreset: async (presetId: string, position: { x: number; y: number }) => {
+    // 统一入口（C6/F7 修复）：右键菜单 addNodeByType 与拖拽 onDrop 共用同一路径。
+    // preset 可能不存在（如工具栏拖拽的 'agent' 通用节点），此时回退默认节点。
+    const preset = getPresets().find(p => p.id === presetId);
+    const node: NodeData = {
+      id: `node_${Date.now()}`,
+      type: 'agent' as const,
+      position,
+      data: {
+        name: `新${preset?.name || '节点'}`,
+        desc: '',
+        agentType: (preset?.id || 'custom') as any,
+        color: preset?.color || '#3F51B5',
+        system_prompt: preset?.system_prompt || '',
+        skills: preset?.skills || [],
+        tools: preset?.tools || [],
+        mcp_tools: preset?.mcp_tools || [],
+      },
+    } as NodeData;
+    await get().addNodeWithDefaultConfig(node);
   },
 
   updateNode: (nodeId, data) => set((state) => {
@@ -286,23 +311,8 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     return { nodes: newNodes, selectedNode: newSelectedNode };
   }),
 
-  deleteNode: (nodeId) => set((state) => {
-    const newNodes = state.nodes.filter((node) => node.id !== nodeId);
-    const newEdges = state.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId);
-    get().autoSave();
-    get().pushHistory();
-    return { nodes: newNodes, edges: newEdges };
-  }),
-
   addEdge: (edge) => set((state) => {
     const newEdges = [...state.edges, edge];
-    get().autoSave();
-    get().pushHistory();
-    return { edges: newEdges };
-  }),
-
-  deleteEdge: (edgeId) => set((state) => {
-    const newEdges = state.edges.filter((edge) => edge.id !== edgeId);
     get().autoSave();
     get().pushHistory();
     return { edges: newEdges };
@@ -322,8 +332,6 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
 
-  setPropertyPanelOpen: (open) => set({ isPropertyPanelOpen: open }),
-
   setSnapToGrid: (snap) => set({ snapToGrid: snap }),
 
   setIsDragging: (dragging) => set({ isDragging: dragging }),
@@ -337,15 +345,20 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   loadCanvas: async (projectId: string) => {
-    const canvasData = await agenticFlowApi.getCanvas(projectId);
-    set({
-      nodes: canvasData.nodes,
-      edges: canvasData.edges,
-      // 加载画布时同步加载已保存的全局设置（运行模式/白名单）；缺失用默认值
-      globalSettings: canvasData.globalSettings
-        ? { ...defaultSettings, ...canvasData.globalSettings }
-        : defaultSettings,
-    });
+    set({ isLoading: true });
+    try {
+      const canvasData = await agenticFlowApi.getCanvas(projectId);
+      set({
+        nodes: canvasData.nodes,
+        edges: canvasData.edges,
+        // 加载画布时同步加载已保存的全局设置（运行模式/白名单）；缺失用默认值
+        globalSettings: canvasData.globalSettings
+          ? { ...defaultSettings, ...canvasData.globalSettings }
+          : defaultSettings,
+      });
+    } finally {
+      set({ isLoading: false });
+    }
   },
 
   loadLLMConfigs: async () => {

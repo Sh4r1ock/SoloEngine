@@ -33,6 +33,7 @@ SoloEngine : 通义千问(Qwen)模型实现，支持阿里DashScope API
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import asyncio
+import json
 from typing import (
     Any,
     TYPE_CHECKING,
@@ -42,7 +43,7 @@ from typing import (
 )
 from collections import OrderedDict
 
-from app.core.config import settings
+from SoloAgent.config import settings
 
 from dashscope import Generation
 
@@ -69,7 +70,7 @@ except ImportError:
 
 from .model_response import ChatResponse
 from .model_base import ChatModelBase
-from .model_usage import ChatUsage
+from .model_usage import ChatUsage, build_usage
 from ..message import (
     TextBlock as SoloTextBlock,
     ThinkingBlock as SoloThinkingBlock,
@@ -210,6 +211,9 @@ class QwenChatModel(ChatModelBase):
                 "Each message in 'messages' list must contain a 'role' "
                 "and 'content' key for Qwen API."
             )
+
+        # 记录本次请求起始时间（用于 usage.duration 计算）
+        start_datetime = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
 
         # Format messages for Qwen
         qwen_messages: list[dict] = []
@@ -374,6 +378,8 @@ class QwenChatModel(ChatModelBase):
         self._save_response_ref(response)
         try:
             while True:
+                # 保存上一轮 tool_calls 快照（必须在解析 chunk 增量之前，用于增量计算）
+                last_tool_calls = OrderedDict(tool_calls)
                 # stall 超时保护（根因修复）：流停滞时 __anext__ 永久阻塞使 cancel_event
                 # 检查不可达，暂停/停止无法中断 LLM 调用。超时视为异常结束。
                 try:
@@ -393,24 +399,14 @@ class QwenChatModel(ChatModelBase):
                     if hasattr(chunk, "finish_reason"):
                         finish_reason = chunk.finish_reason
                         if finish_reason == "stop":
-                            stop_reason = "end_turn"
                             if total_input_tokens is not None or total_output_tokens is not None:
-                                usage = ChatUsage(
-                                    input_tokens=total_input_tokens,
-                                    output_tokens=total_output_tokens,
-                                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
-                                )
+                                usage = build_usage(total_input_tokens, total_output_tokens, start_datetime)
                                 logger.info(f"[Qwen Stream] usage at end: input={total_input_tokens}, output={total_output_tokens}")
                         elif finish_reason == "tool_calls":
-                            stop_reason = "tool_use"
                             # tool_calls 完成时也需要创建 usage
                             if total_input_tokens is not None or total_output_tokens is not None:
-                                usage = ChatUsage(
-                                    input_tokens=total_input_tokens,
-                                    output_tokens=total_output_tokens,
-                                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
-                                )
-                        logger.info(f"[Qwen Stream] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
+                                usage = build_usage(total_input_tokens, total_output_tokens, start_datetime)
+                        logger.info(f"[Qwen Stream] finish_reason: {finish_reason}")
                     
                     if isinstance(output, list) and output:
                         for msg in output:
@@ -443,8 +439,6 @@ class QwenChatModel(ChatModelBase):
                                         elif block.get("type") == "thinking":
                                             thinking += block.get("text", "")
 
-                last_tool_calls = OrderedDict(tool_calls)
-                
                 # 逐个 yield，每个 ChatResponse 只含一种 block type
                 if thinking and len(thinking) > len(last_thinking):
                     delta_thinking_content = thinking[len(last_thinking):]
@@ -520,7 +514,6 @@ class QwenChatModel(ChatModelBase):
                             metadata=None,
                         )
                 
-                last_tool_calls = OrderedDict(tool_calls)
         finally:
             self._clear_response_ref()
 
@@ -568,7 +561,7 @@ class QwenChatModel(ChatModelBase):
                             content_blocks.append({
                                 "type": "tool_calls",
                                 "tool_calls": [{
-                                    "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                    "index": len([block for block in content_blocks if isinstance(block, dict) and block.get("type") == "tool_calls"]),
                                     "id": tool_call.get("id", ""),
                                     "type": "function",
                                     "function": {
@@ -615,21 +608,12 @@ class QwenChatModel(ChatModelBase):
             input_tok = getattr(response.usage, 'input_tokens', None) or getattr(response.usage, 'prompt_tokens', None)
             output_tok = getattr(response.usage, 'output_tokens', None) or getattr(response.usage, 'completion_tokens', None)
             if input_tok is not None or output_tok is not None:
-                usage = ChatUsage(
-                    input_tokens=input_tok,
-                    output_tokens=output_tok,
-                    time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
-                )
+                usage = build_usage(input_tok, output_tok, start_datetime)
                 logger.info(f"[Qwen Completion] usage: input={input_tok}, output={output_tok}")
 
         finish_reason = getattr(response, "finish_reason", None)
-        stop_reason = None
         if finish_reason:
-            if finish_reason == "stop":
-                stop_reason = "end_turn"
-            elif finish_reason == "tool_calls":
-                stop_reason = "tool_use"
-            logger.info(f"[Qwen Completion] finish_reason: {finish_reason}, stop_reason: {stop_reason}")
+            logger.info(f"[Qwen Completion] finish_reason: {finish_reason}")
 
         metadata = metadata or {}
         metadata['original_model_message'] = response
@@ -639,6 +623,5 @@ class QwenChatModel(ChatModelBase):
             content=content_blocks,
             usage=usage,
             metadata=metadata,
-            stop_reason=stop_reason,
             finish_reason=finish_reason,
         )

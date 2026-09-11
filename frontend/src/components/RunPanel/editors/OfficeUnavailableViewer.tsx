@@ -2,29 +2,21 @@ import React, { useCallback } from 'react';
 import { Result, Button, Typography, Collapse } from 'antd';
 import { DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
+import { downloadDataURL } from '../../../utils/download';
 
 const { Paragraph, Text } = Typography;
 
 interface OfficeUnavailableViewerProps {
   instanceId: string;
   tab: FileTab;
-  reason?: 'onlyoffice_required' | 'fallback_unavailable';
+  reason?: 'onlyoffice_required';
 }
 
 const OfficeUnavailableViewer: React.FC<OfficeUnavailableViewerProps> = ({ tab, reason = 'onlyoffice_required' }) => {
   const ext = tab.name.split('.').pop()?.toLowerCase();
 
   const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
-    if (tab.content.startsWith('data:')) {
-      link.href = tab.content;
-    } else {
-      link.href = `data:application/octet-stream;base64,${tab.content}`;
-    }
-    link.download = tab.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadDataURL(tab.content, tab.name, 'application/octet-stream');
   }, [tab]);
 
   const deploymentGuide = (
@@ -87,23 +79,6 @@ ONLYOFFICE_ENABLED=true`}
             <li>在线编辑 Word、Excel、PowerPoint 文档</li>
             <li>查看 Agent 修改的变更记录（修订模式）</li>
             <li>选择文档内容让 Agent 进行精确修改</li>
-          </ul>
-        </>
-      ),
-    },
-    fallback_unavailable: {
-      title: '无法预览此文件',
-      description: (
-        <>
-          <Paragraph>
-            当前文件类型 <Text strong>.{ext}</Text> 无法在浏览器中预览。
-          </Paragraph>
-          <Paragraph>
-            建议您：
-          </Paragraph>
-          <ul>
-            <li>部署 OnlyOffice 服务以支持在线编辑</li>
-            <li>下载文件到本地使用 Office 软件打开</li>
           </ul>
         </>
       ),

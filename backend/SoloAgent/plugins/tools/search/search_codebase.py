@@ -137,9 +137,9 @@ class CodeIndex:
                 if embedding_config:
                     self._embedding_service = get_embedding_service(embedding_config)
                 else:
-                    # 未显式传入配置时，从系统 settings 读取全局 embedding 配置
+                    # 未显式传入配置时，从 SoloAgent.config 读取全局 embedding 配置
                     #（默认本机 Ollama bge-m3，无需 API Key；见 config.py EMBEDDING_* 注释）
-                    from app.core.config import settings as app_settings
+                    from SoloAgent.config import settings as app_settings
                     embedding_config = {
                         "provider": app_settings.EMBEDDING_PROVIDER,
                         "model_name": app_settings.EMBEDDING_MODEL,
@@ -355,12 +355,6 @@ class CodeIndex:
             return 0.0
         
         return dot_product / (norm1 * norm2)
-    
-    def clear(self) -> None:
-        """清空索引。"""
-        self._snippets = []
-        self._embeddings = []
-        self._file_hashes = {}
 
 
 class SearchCodebase(BaseSearchTool):

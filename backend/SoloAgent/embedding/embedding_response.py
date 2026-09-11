@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Literal, List
 
 from .embedding_usage import EmbeddingUsage
-from ..utils.common import _get_timestamp
+from ..utils.common import get_timestamp
 from ..utils.mixin import DictMixin
 from ..types import Embedding
 
@@ -63,10 +63,10 @@ class EmbeddingResponse(DictMixin):
     embeddings: List[Embedding]
     """嵌入向量列表"""
 
-    id: str = field(default_factory=lambda: _get_timestamp(True))
+    id: str = field(default_factory=lambda: get_timestamp(True))
     """响应唯一标识"""
 
-    created_at: str = field(default_factory=_get_timestamp)
+    created_at: str = field(default_factory=get_timestamp)
     """创建时间戳"""
 
     type: Literal["embedding"] = field(default_factory=lambda: "embedding")

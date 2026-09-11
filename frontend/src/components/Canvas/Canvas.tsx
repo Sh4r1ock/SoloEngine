@@ -56,13 +56,9 @@ import 'reactflow/dist/style.css';
 import { Dropdown, Button, Input, Modal, App, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import { 
-  UserOutlined, 
-  TeamOutlined, 
-  ToolOutlined,
   CommentOutlined,
   DeleteOutlined,
   CopyOutlined,
-  SettingOutlined,
 } from '@ant-design/icons';
 import { useCanvasStore } from '../../store/canvasStore';
 import { NodeData, EdgeData } from '../../types/canvas';
@@ -71,6 +67,7 @@ import Toolbar from '../Toolbar/Toolbar';
 import ScalableBackground from './ScalableBackground';
 import SmartGridLines from './SmartGridLines';
 import { getPresets } from '../../stores/presetsStore';
+import { getPresetIcon } from '../../utils/iconLibrary';
 
 interface ContextMenuPosition {
   x: number;
@@ -84,16 +81,6 @@ interface AnnotationNodeData {
   color: string;
   editable?: boolean;
 }
-
-const getPresetIcon = (iconName: string) => {
-  const iconMap: Record<string, React.ReactNode> = {
-    'TeamOutlined': <TeamOutlined />,
-    'UserOutlined': <UserOutlined />,
-    'ToolOutlined': <ToolOutlined />,
-    'SettingOutlined': <SettingOutlined />,
-  };
-  return iconMap[iconName] || <SettingOutlined />;
-};
 
 const AnnotationNode: React.FC<{ data: AnnotationNodeData; id: string }> = ({ data, id }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -155,7 +142,7 @@ const Canvas: React.FC = () => {
     setEdges, 
     addEdge: storeAddEdge, 
     addNode,
-    addNodeWithDefaultConfig,
+    addNodeFromPreset,
     snapToGrid, 
     setIsDragging, 
     pushHistory,
@@ -183,6 +170,9 @@ const Canvas: React.FC = () => {
     (changes) => {
       const updatedNodes = applyNodeChanges(changes, nodes as any);
       const isDragging = changes.some(change => change.type === 'position' && change.dragging);
+      // ReactFlow 内部测量（dimensions）不是用户操作：应用变化但不触发自动保存，
+      // 否则加载/刷新页面时 ReactFlow 对节点测尺寸会触发多余 PUT canvas
+      const hasUserChanges = changes.some(c => c.type !== 'dimensions');
       
       const selectionChanges = changes.filter(c => c.type === 'select');
       if (selectionChanges.length > 0) {
@@ -192,7 +182,7 @@ const Canvas: React.FC = () => {
         setSelectedNodeIds(newSelectedIds);
       }
       
-      setNodes(updatedNodes as NodeData[], isDragging);
+      setNodes(updatedNodes as NodeData[], isDragging, !hasUserChanges);
     },
     [nodes, setNodes]
   );
@@ -254,7 +244,6 @@ const Canvas: React.FC = () => {
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     useCanvasStore.getState().setSelectedNode(node as any);
-    useCanvasStore.getState().setPropertyPanelOpen(true);
     setSelectedEdgeIds([]);
   }, []);
 
@@ -317,28 +306,10 @@ const Canvas: React.FC = () => {
   const addNodeByType = useCallback(async (presetId: string) => {
     if (!contextMenu) return;
 
-    const preset = getPresets().find(p => p.id === presetId);
-    const presetName = preset?.name || '节点';
-
-    const newNode = {
-      id: `node_${Date.now()}`,
-      type: 'agent' as const,
-      position: { x: contextMenu.canvasX, y: contextMenu.canvasY },
-      data: {
-        name: `新${presetName}`,
-        desc: '',
-        agentType: presetId,
-        color: preset?.color || '#3F51B5',
-        system_prompt: preset?.system_prompt || '',
-        skills: preset?.skills || [],
-        tools: preset?.tools || [],
-        mcp_tools: preset?.mcp_tools || [],
-      },
-    };
-
-    await addNodeWithDefaultConfig(newNode as any);
+    // 统一入口（C6/F7）：右键菜单与拖拽共用 canvasStore.addNodeFromPreset
+    await addNodeFromPreset(presetId, { x: contextMenu.canvasX, y: contextMenu.canvasY });
     setContextMenu(null);
-  }, [contextMenu, addNodeWithDefaultConfig]);
+  }, [contextMenu, addNodeFromPreset]);
 
   const addAnnotation = useCallback(() => {
     if (!contextMenu) return;
@@ -371,6 +342,8 @@ const Canvas: React.FC = () => {
     setEdges(newEdges);
     setSelectedNodeIds([]);
     setSelectedEdgeIds([]);
+    // 删除节点后必须清空属性面板选中状态，否则面板残留已删除节点的信息
+    useCanvasStore.getState().setSelectedNode(null);
     pushHistory();
     message.success(`已删除 ${selectedNodeIds.length} 个节点`);
   }, [selectedNodeIds, pushHistory]);
@@ -452,8 +425,21 @@ const Canvas: React.FC = () => {
       const typeData = event.dataTransfer.getData('application/reactflow');
       if (!typeData) return;
 
-      const presetId = JSON.parse(typeData);
-      const preset = getPresets().find(p => p.id === presetId);
+      // C6 修复：容错解析——Toolbar/NodePanel 可能写入裸字符串（'agent'/'orchestrator'），
+      // Canvas 曾直接 JSON.parse 导致 SyntaxError（拖拽加节点必崩溃）。统一协议：
+      // 能 JSON.parse 的按 presetId 处理，否则按原始字符串处理。
+      let presetId: string = typeData;
+      try {
+        const parsed = JSON.parse(typeData);
+        if (typeof parsed === 'string') {
+          presetId = parsed;
+        } else {
+          presetId = typeData;
+        }
+      } catch {
+        // 裸字符串（非 JSON），直接使用
+      }
+
       const reactFlowBounds = reactFlowWrapper.current?.getBoundingClientRect();
       if (!reactFlowBounds) return;
 
@@ -464,25 +450,10 @@ const Canvas: React.FC = () => {
 
       if (!position) return;
 
-      const newNode = {
-        id: `node_${Date.now()}`,
-        type: 'agent' as const,
-        position,
-        data: {
-          name: `新${preset?.name || '节点'}`,
-          desc: '',
-          agentType: presetId,
-          color: preset?.color || '#3F51B5',
-          system_prompt: preset?.system_prompt || '',
-          skills: preset?.skills || [],
-          tools: preset?.tools || [],
-          mcp_tools: preset?.mcp_tools || [],
-        },
-      };
-
-      await addNodeWithDefaultConfig(newNode as any);
+      // 统一入口（C6/F7）：右键菜单与拖拽共用 canvasStore.addNodeFromPreset
+      await addNodeFromPreset(presetId, position);
     },
-    [reactFlowInstance, addNodeWithDefaultConfig]
+    [reactFlowInstance, addNodeFromPreset]
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {

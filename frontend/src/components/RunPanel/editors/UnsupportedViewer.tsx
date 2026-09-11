@@ -2,6 +2,7 @@ import React, { useCallback } from 'react';
 import { Typography, Button } from 'antd';
 import { FileUnknownOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
+import { downloadDataURL } from '../../../utils/download';
 
 const { Text } = Typography;
 
@@ -14,16 +15,7 @@ const UnsupportedViewer: React.FC<UnsupportedViewerProps> = ({ tab }) => {
   const ext = tab.name.split('.').pop()?.toLowerCase() || 'unknown';
 
   const handleDownload = useCallback(() => {
-    const link = document.createElement('a');
-    if (tab.content.startsWith('data:')) {
-      link.href = tab.content;
-    } else {
-      link.href = `data:application/octet-stream;base64,${tab.content}`;
-    }
-    link.download = tab.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadDataURL(tab.content, tab.name, 'application/octet-stream');
   }, [tab]);
 
   return (

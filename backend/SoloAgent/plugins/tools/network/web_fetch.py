@@ -24,7 +24,7 @@
 import re
 from typing import Dict, Any, Optional
 from html.parser import HTMLParser
-from app.core.config import settings
+from SoloAgent.config import settings
 from .base import BaseNetworkTool, NetworkToolError
 
 

@@ -1,6 +1,6 @@
 import type { FileCategory, FileTypeInfo } from '../types';
 
-export const getFileExtension = (fileName: string): string => {
+const getFileExtension = (fileName: string): string => {
   return fileName.split('.').pop()?.toLowerCase() || '';
 };
 
@@ -73,16 +73,8 @@ export const getFileCategory = (fileName: string): FileCategory => {
   return getFileTypeInfo(fileName).category;
 };
 
-export const isEditable = (fileName: string): boolean => {
-  return getFileTypeInfo(fileName).editable;
-};
-
 export const getLanguage = (fileName: string): string | undefined => {
   return getFileTypeInfo(fileName).language;
-};
-
-export const getViewerName = (fileName: string): string => {
-  return getFileTypeInfo(fileName).viewer;
 };
 
 export const requiresOnlyOffice = (fileName: string): boolean => {
@@ -91,58 +83,6 @@ export const requiresOnlyOffice = (fileName: string): boolean => {
 
 export const getFallbackViewer = (fileName: string): string | undefined => {
   return getFileTypeInfo(fileName).fallbackViewer;
-};
-
-export const isOfficeFile = (fileName: string): boolean => {
-  const category = getFileCategory(fileName);
-  return category === 'office';
-};
-
-export const isCodeFile = (fileName: string): boolean => {
-  const category = getFileCategory(fileName);
-  return category === 'code';
-};
-
-export const isMarkdownFile = (fileName: string): boolean => {
-  const category = getFileCategory(fileName);
-  return category === 'markdown';
-};
-
-export const isImageFile = (fileName: string): boolean => {
-  const category = getFileCategory(fileName);
-  return category === 'image';
-};
-
-export const isPDFFile = (fileName: string): boolean => {
-  const category = getFileCategory(fileName);
-  return category === 'pdf';
-};
-
-export const isBinaryFile = (fileName: string): boolean => {
-  const binaryExtensions = new Set([
-    'pyc', 'pyo', 'pyd', 'exe', 'dll', 'so', 'dylib',
-    'bin', 'dat', 'mp3', 'mp4', 'wav', 'avi', 'mov',
-    'mkv', 'flv', 'wmv', 'zip', 'tar', 'gz', 'rar',
-    '7z', 'bz2', 'ttf', 'otf', 'woff', 'woff2', 'eot',
-    'class', 'jar', 'war', 'ear', 'lock', 'sqlite', 'db'
-  ]);
-  const ext = getFileExtension(fileName);
-  return binaryExtensions.has(ext);
-};
-
-export const getFileIcon = (fileName: string): string => {
-  const category = getFileCategory(fileName);
-  const iconMap: Record<FileCategory, string> = {
-    code: 'code',
-    markdown: 'markdown',
-    office: 'file-word',
-    pdf: 'file-pdf',
-    image: 'file-image',
-    text: 'file-text',
-    binary: 'file-unknown',
-    unsupported: 'file-unknown',
-  };
-  return iconMap[category] || 'file';
 };
 
 export const getFileColor = (fileName: string): string => {

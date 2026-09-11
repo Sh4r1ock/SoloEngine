@@ -9,9 +9,9 @@ SoloEngine : 通用工具模块，提供常用工具函数
 
 功能描述：
 本模块提供以下核心工具函数：
-    - _get_timestamp: 获取时间戳
-    - _save_base64_data: 保存Base64数据
-    - _json_loads_with_repair: 带修复的JSON加载
+    - get_timestamp: 获取时间戳
+    - save_base64_data: 保存Base64数据
+    - json_loads_with_repair: 带修复的JSON加载
 
 依赖:
     - os: 操作系统接口
@@ -23,8 +23,8 @@ SoloEngine : 通用工具模块，提供常用工具函数
     - .logging: 日志模块
 
 使用示例:
-    - from SoloAgent.utils import _get_timestamp
-    - timestamp = _get_timestamp()
+    - from SoloAgent.utils import get_timestamp
+    - timestamp = get_timestamp()
 """
 
 import os
@@ -33,12 +33,11 @@ import base64
 import json
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.core.config import settings
 from json_repair import repair_json
 from .logging import logger
 
 
-def _get_timestamp(add_random_suffix: bool = False) -> str:
+def get_timestamp(add_random_suffix: bool = False) -> str:
     """
     获取当前时间戳
     
@@ -49,9 +48,11 @@ def _get_timestamp(add_random_suffix: bool = False) -> str:
         格式化的时间戳字符串，格式为 YYYY-MM-DD HH:MM:SS.sss
     
     Example:
-        >>> timestamp = _get_timestamp()
-        >>> timestamp_with_suffix = _get_timestamp(add_random_suffix=True)
+        >>> timestamp = get_timestamp()
+        >>> timestamp_with_suffix = get_timestamp(add_random_suffix=True)
     """
+    # C8：延迟 import settings（消除 utils 层模块级反向依赖 app.core.config）
+    from SoloAgent.config import settings
     timestamp = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     if add_random_suffix:
@@ -61,7 +62,7 @@ def _get_timestamp(add_random_suffix: bool = False) -> str:
     return timestamp
 
 
-def _save_base64_data(base64_string: str, output_path: str = None) -> str:
+def save_base64_data(base64_string: str, output_path: str = None) -> str:
     """
     保存Base64编码数据到文件
     
@@ -73,7 +74,7 @@ def _save_base64_data(base64_string: str, output_path: str = None) -> str:
         保存文件的路径
     
     Example:
-        >>> path = _save_base64_data("data:image/png;base64,iVBORw0KGgo...")
+        >>> path = save_base64_data("data:image/png;base64,iVBORw0KGgo...")
     """
     # Remove data URI prefix if present
     if ',' in base64_string:
@@ -84,7 +85,7 @@ def _save_base64_data(base64_string: str, output_path: str = None) -> str:
     
     # Create output path if not provided
     if output_path is None:
-        output_path = os.path.join(tempfile.gettempdir(), f"soloagent_{_get_timestamp(True)}.bin")
+        output_path = os.path.join(tempfile.gettempdir(), f"soloagent_{get_timestamp(True)}.bin")
     
     # Write data to file
     with open(output_path, 'wb') as f:
@@ -94,7 +95,7 @@ def _save_base64_data(base64_string: str, output_path: str = None) -> str:
     return output_path
 
 
-def _json_loads_with_repair(json_string: str) -> dict:
+def json_loads_with_repair(json_string: str) -> dict:
     """
     解析JSON字符串，支持自动修复格式错误的JSON
     
@@ -108,7 +109,7 @@ def _json_loads_with_repair(json_string: str) -> dict:
         json.JSONDecodeError: 如果即使修复后也无法解析JSON
     
     Example:
-        >>> data = _json_loads_with_repair('{"key": "value"}')
+        >>> data = json_loads_with_repair('{"key": "value"}')
     """
     try:
         # Try standard JSON parsing first

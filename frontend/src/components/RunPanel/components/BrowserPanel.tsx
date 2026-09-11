@@ -59,6 +59,10 @@ interface BrowserTab {
   src: string | null;
   /** 刷新信号：iframe key 变化触发重新挂载 = 重载（同 URL 外部导航时使用） */
   refreshKey: number;
+  /** 真实 URL 历史栈（外部导航与 iframe 内部导航共用） */
+  history: string[];
+  /** 历史栈当前索引（-1 表示无历史） */
+  historyIndex: number;
 }
 
 let tabSeq = 0;
@@ -69,15 +73,21 @@ const newTabId = () => `btab-${++tabSeq}`;
  *
  * iframe 通过 /browser-proxy 同源加载目标站点后：
  * - 地址栏：轮询 + popstate/hashchange 监听 iframe 内部 location，同步显示真实 URL
- * - 前进/后退：直接调用 iframe 原生 history.back()/forward()（真实可用）
- * - 刷新：调用 iframe 原生 location.reload()
- * - 内部导航（点击链接/JS 跳转）由 iframe 自己完成，React 只做地址栏同步，不干预
+ * - 前进/后退：由 React 层维护历史栈（history/historyIndex）驱动 iframe 重载，
+ *   不调用 iframe 原生 history API——同源 iframe 与父页面共享 session history，
+ *   而外部导航（src 变化重挂载）不产生 iframe 内部历史条目，
+ *   直接调用 history.back() 会在 iframe 无内部历史时误回退父页面路由
+ * - 刷新：refreshKey 变化触发 iframe 重挂载（不新增历史条目）
+ * - 内部导航（点击链接/JS 跳转）由 iframe 自己完成，轮询同步时并入 React 历史栈
  */
 const BrowserView: React.FC<{
   tab: BrowserTab;
   onNavigate: (url: string) => void;
   onUrlChange: (realUrl: string) => void;
-}> = ({ tab, onNavigate, onUrlChange }) => {
+  onGoBack: () => void;
+  onGoForward: () => void;
+  onRefresh: () => void;
+}> = ({ tab, onNavigate, onUrlChange, onGoBack, onGoForward, onRefresh }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [urlInput, setUrlInput] = useState(tab.url || '');
 
@@ -131,45 +141,18 @@ const BrowserView: React.FC<{
     if (e.key === 'Enter') onNavigate(urlInput);
   };
 
-  /** 后退：调用 iframe 原生 history.back() */
-  const handleGoBack = useCallback(() => {
-    try {
-      iframeRef.current?.contentWindow?.history?.back();
-    } catch {
-      // 非代理 iframe 无法访问，忽略
-    }
-  }, []);
-
-  /** 前进：调用 iframe 原生 history.forward() */
-  const handleGoForward = useCallback(() => {
-    try {
-      iframeRef.current?.contentWindow?.history?.forward();
-    } catch {
-      // 非代理 iframe 无法访问，忽略
-    }
-  }, []);
-
-  /** 刷新：调用 iframe 原生 location.reload()（保留历史，不新增条目） */
-  const handleRefresh = useCallback(() => {
-    try {
-      iframeRef.current?.contentWindow?.location?.reload();
-    } catch {
-      // 非代理 iframe 无法访问，忽略
-    }
-  }, []);
-
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* 浏览器 chrome：后退 / 前进 / 刷新 + 网址栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 2, padding: '6px 8px', borderBottom: '1px solid var(--bg-300)', background: 'var(--bg-200)' }}>
         <Tooltip title="后退">
-          <Button type="text" size="small" icon={<ArrowLeftOutlined />} disabled={!tab.url} onClick={handleGoBack} />
+          <Button type="text" size="small" icon={<ArrowLeftOutlined />} disabled={!tab.url || tab.historyIndex <= 0} onClick={onGoBack} />
         </Tooltip>
         <Tooltip title="前进">
-          <Button type="text" size="small" icon={<ArrowRightOutlined />} disabled={!tab.url} onClick={handleGoForward} />
+          <Button type="text" size="small" icon={<ArrowRightOutlined />} disabled={!tab.url || tab.historyIndex >= tab.history.length - 1} onClick={onGoForward} />
         </Tooltip>
         <Tooltip title="刷新">
-          <Button type="text" size="small" icon={<ReloadOutlined />} disabled={!tab.url} onClick={handleRefresh} />
+          <Button type="text" size="small" icon={<ReloadOutlined />} disabled={!tab.url} onClick={onRefresh} />
         </Tooltip>
         <Input
           size="small"
@@ -215,7 +198,7 @@ const BrowserPanel: React.FC = () => {
 
   const initialTabIdRef = useRef(newTabId());
   const [tabs, setTabs] = useState<BrowserTab[]>(() => [
-    { id: initialTabIdRef.current, url: null, src: null, refreshKey: 0 },
+    { id: initialTabIdRef.current, url: null, src: null, refreshKey: 0, history: [], historyIndex: -1 },
   ]);
   const [activeTabId, setActiveTabId] = useState<string>(initialTabIdRef.current);
 
@@ -225,22 +208,57 @@ const BrowserPanel: React.FC = () => {
     setTabs(prev => prev.map(t => {
       if (t.id !== tabId) return t;
       const nextSrc = toProxyUrl(target);
-      // 同 URL 外部导航 = 刷新（refreshKey 变化触发 iframe 重挂载重载）
-      if (nextSrc === t.src) {
-        return { ...t, url: target, refreshKey: t.refreshKey + 1 };
+      // 同 URL 外部导航 = 刷新（refreshKey 变化触发 iframe 重挂载重载，不新增历史条目）
+      if (nextSrc === t.src && t.url === target) {
+        return { ...t, refreshKey: t.refreshKey + 1 };
       }
-      return { ...t, url: target, src: nextSrc };
+      // 前进方向截断：丢弃 index 之后的旧前进历史，再追加新条目
+      const history = [...t.history.slice(0, t.historyIndex + 1), target];
+      return { ...t, url: target, src: nextSrc, history, historyIndex: history.length - 1 };
     }));
   }, []);
 
-  /** 地址栏同步（iframe 内部导航后更新显示 URL；不改变 src，避免 iframe 重载） */
+  /** 地址栏同步（iframe 内部导航后更新显示 URL；并入 React 历史栈，不改变 src） */
   const updateTabUrl = useCallback((tabId: string, realUrl: string) => {
-    setTabs(prev => prev.map(t => (t.id === tabId && t.url !== realUrl ? { ...t, url: realUrl } : t)));
+    setTabs(prev => prev.map(t => {
+      if (t.id !== tabId || t.url === realUrl) return t;
+      // iframe 加载/重挂载过程中的初始 about:blank 与非法协议（about:/data:/javascript: 等）
+      // 不是真实导航，不并入历史栈——否则会污染历史导致后退异常
+      if (!realUrl || !/^https?:/i.test(realUrl)) return t;
+      // iframe 内部导航（点击链接/JS 跳转）：前进方向截断后并入历史栈
+      const history = [...t.history.slice(0, t.historyIndex + 1), realUrl];
+      return { ...t, url: realUrl, history, historyIndex: history.length - 1 };
+    }));
+  }, []);
+
+  /** 后退：React 历史栈回退（重新设置 iframe src 重载，不触碰 iframe 原生 history） */
+  const handleGoBack = useCallback((tabId: string) => {
+    setTabs(prev => prev.map(t => {
+      if (t.id !== tabId || t.historyIndex <= 0) return t;
+      const newIndex = t.historyIndex - 1;
+      const target = t.history[newIndex];
+      return { ...t, url: target, src: toProxyUrl(target), historyIndex: newIndex, refreshKey: t.refreshKey + 1 };
+    }));
+  }, []);
+
+  /** 前进：React 历史栈前进（重新设置 iframe src 重载） */
+  const handleGoForward = useCallback((tabId: string) => {
+    setTabs(prev => prev.map(t => {
+      if (t.id !== tabId || t.historyIndex >= t.history.length - 1) return t;
+      const newIndex = t.historyIndex + 1;
+      const target = t.history[newIndex];
+      return { ...t, url: target, src: toProxyUrl(target), historyIndex: newIndex, refreshKey: t.refreshKey + 1 };
+    }));
+  }, []);
+
+  /** 刷新：refreshKey 变化触发 iframe 重挂载重载（不新增历史条目） */
+  const handleRefresh = useCallback((tabId: string) => {
+    setTabs(prev => prev.map(t => (t.id === tabId ? { ...t, refreshKey: t.refreshKey + 1 } : t)));
   }, []);
 
   const addTab = useCallback(() => {
     const id = newTabId();
-    setTabs(prev => [...prev, { id, url: null, src: null, refreshKey: 0 }]);
+    setTabs(prev => [...prev, { id, url: null, src: null, refreshKey: 0, history: [], historyIndex: -1 }]);
     setActiveTabId(id);
   }, []);
 
@@ -297,6 +315,9 @@ const BrowserPanel: React.FC = () => {
                 tab={t}
                 onNavigate={(url) => navigateTab(t.id, url)}
                 onUrlChange={(real) => updateTabUrl(t.id, real)}
+                onGoBack={() => handleGoBack(t.id)}
+                onGoForward={() => handleGoForward(t.id)}
+                onRefresh={() => handleRefresh(t.id)}
               />
             ),
           }))}

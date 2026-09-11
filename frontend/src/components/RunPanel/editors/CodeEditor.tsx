@@ -3,10 +3,11 @@ import CodeMirror from '@uiw/react-codemirror';
 import { history } from '@codemirror/commands';
 import { oneDark } from '@codemirror/theme-one-dark';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 import { getLanguage } from '../utils/fileTypeUtils';
 import { loadLanguage } from './lazyLanguageLoader';
 import { useDiffDecorations } from './DiffDecorations';
+import { useRunPanelStore } from '../stores/runPanelStore';
 
 import type { Extension } from '@codemirror/state';
 
@@ -35,7 +36,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const { extensions: diffExtensions, hasPendingDiff } = useDiffDecorations(tab.path);
 
-  const isLargeFile = tab.content.length > LARGE_FILE_THRESHOLD;
+  const content = useRunPanelStore((state) => state.getTabContent(tab.id));
+  const isLargeFile = content.length > LARGE_FILE_THRESHOLD;
 
   useEffect(() => {
     const loadLangExtension = async () => {
@@ -85,8 +87,6 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     };
   }, [tab, onSave]);
 
-  useEditorCleanup(instanceId, cleanup);
-
   if (loading) {
     return (
       <div style={{ 
@@ -121,7 +121,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         </div>
       )}
       <CodeMirror
-        value={tab.content}
+        value={content}
         height="100%"
         extensions={extensions}
         onChange={handleChange}

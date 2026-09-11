@@ -31,7 +31,8 @@ SoloEngine : JWT 认证服务模块
 """
 
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -43,12 +44,72 @@ except ImportError:
     HAS_AUTH_DEPS = False
     InvalidTokenError = Exception
 
-from app.models.auth import User, Token
 from app.core.database import db_manager, get_db_context, UserModel, hash_password
 from app.core.config import settings
 from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class User:
+    """用户定义。"""
+    id: str
+    username: str
+    email: str
+    hashed_password: str
+    is_active: bool = True
+    is_superuser: bool = False
+    roles: List[str] = field(default_factory=list)
+    created_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat())
+    last_login: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "hashed_password": "***",
+            "is_active": self.is_active,
+            "is_superuser": self.is_superuser,
+            "roles": self.roles,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_login": self.last_login,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "User":
+        return cls(
+            id=data["id"],
+            username=data["username"],
+            email=data["email"],
+            hashed_password=data.get("hashed_password", ""),
+            is_active=data.get("is_active", True),
+            is_superuser=data.get("is_superuser", False),
+            roles=data.get("roles", []),
+            created_at=data.get("created_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            updated_at=data.get("updated_at", datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()),
+            last_login=data.get("last_login"),
+        )
+
+
+@dataclass
+class Token:
+    """令牌定义。"""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int = 3600
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "access_token": self.access_token,
+            "refresh_token": self.refresh_token,
+            "token_type": self.token_type,
+            "expires_in": self.expires_in,
+        }
 
 
 def _user_model_to_dataclass(user_model: UserModel) -> User:
@@ -75,6 +136,28 @@ def _user_model_to_dataclass(user_model: UserModel) -> User:
         updated_at=format_iso(user_model.updated_at),
         last_login=format_iso(user_model.last_login),
     )
+
+
+def user_to_public_dict(user) -> Dict[str, Any]:
+    """
+    用户公开信息序列化唯一模板（R4：api/v1/auth._user_to_dict 复用的公共实现）。
+
+    仅输出非敏感公开字段（不含 hashed_password / created_at 等），
+    供注册 / me / 更新 / 用户列表等 API 响应使用。
+
+    Args:
+        user: User dataclass 或 UserModel 数据库模型（均含以下公开属性）。
+
+    Returns:
+        Dict[str, Any]: 公开用户信息。
+    """
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "is_active": user.is_active,
+        "is_superuser": user.is_superuser,
+    }
 
 
 class AuthService:

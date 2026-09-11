@@ -26,8 +26,25 @@ SoloEngine : 模型使用量统计模块，定义聊天模型API调用的使用�
 
 from dataclasses import dataclass, field
 from typing import Literal
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from ..utils import DictMixin
+
+
+def build_usage(input_tokens, output_tokens, start_datetime) -> "ChatUsage":
+    """构造 ChatUsage 唯一样板（B10：openai/qwen/anthropic usage 构造收敛）。
+
+    统一 time = 当前时间 − 调用开始时间（秒）。input/output token 由各模型
+    SDK 的 usage 对象提取后传入（数据源不同，构造形式唯一）。
+    """
+    # C8：延迟 import settings（消除 model 层模块级反向依赖 app.core.config）
+    from SoloAgent.config import settings
+    return ChatUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+        time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+    )
 
 
 @dataclass

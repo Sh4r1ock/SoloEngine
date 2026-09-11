@@ -63,6 +63,24 @@ def _get_canvas_data(flow) -> Dict[str, Any]:
     return {"nodes": [], "edges": []}
 
 
+def _flow_to_dict(flow, canvas_data) -> Dict[str, Any]:
+    """AgenticFlow 序列化唯一样板（B8：4 处 flow dict 收敛）。"""
+    return {
+        "id": flow.id,
+        "user_id": flow.user_id,
+        "name": flow.name,
+        "description": flow.description,
+        "icon": flow.icon,
+        "folder_path": flow.folder_path,
+        "canvas_data": canvas_data,
+        "is_template": flow.is_template,
+        "is_active": flow.is_active,
+        "version": flow.version,
+        "created_at": format_iso(flow.created_at),
+        "updated_at": format_iso(flow.updated_at),
+    }
+
+
 @router.get("")
 async def list_flows(
     db: Session = Depends(get_db),
@@ -75,20 +93,7 @@ async def list_flows(
     data = []
     for flow in flows:
         canvas_data = _get_canvas_data(flow)
-        data.append({
-            "id": flow.id,
-            "user_id": flow.user_id,
-            "name": flow.name,
-            "description": flow.description,
-            "icon": flow.icon,
-            "folder_path": flow.folder_path,
-            "canvas_data": canvas_data,
-            "is_template": flow.is_template,
-            "is_active": flow.is_active,
-            "version": flow.version,
-            "created_at": format_iso(flow.created_at),
-            "updated_at": format_iso(flow.updated_at),
-        })
+        data.append(_flow_to_dict(flow, canvas_data))
     
     return {
         "code": 200,
@@ -121,19 +126,7 @@ async def create_flow(
     return {
         "code": 200,
         "message": "AgenticFlow created",
-        "data": {
-            "id": flow.id,
-            "user_id": flow.user_id,
-            "name": flow.name,
-            "description": flow.description,
-            "icon": flow.icon,
-            "folder_path": flow.folder_path,
-            "canvas_data": request.canvas_data or {"nodes": [], "edges": []},
-            "is_template": flow.is_template,
-            "is_active": flow.is_active,
-            "created_at": format_iso(flow.created_at),
-            "updated_at": format_iso(flow.updated_at),
-        },
+        "data": _flow_to_dict(flow, request.canvas_data or {"nodes": [], "edges": []}),
     }
 
 
@@ -155,20 +148,7 @@ async def get_flow(
     return {
         "code": 200,
         "message": "AgenticFlow retrieved",
-        "data": {
-            "id": flow.id,
-            "user_id": flow.user_id,
-            "name": flow.name,
-            "description": flow.description,
-            "icon": flow.icon,
-            "folder_path": flow.folder_path,
-            "canvas_data": canvas_data,
-            "is_template": flow.is_template,
-            "is_active": flow.is_active,
-            "version": flow.version,
-            "created_at": format_iso(flow.created_at),
-            "updated_at": format_iso(flow.updated_at),
-        },
+        "data": _flow_to_dict(flow, canvas_data),
     }
 
 
@@ -204,20 +184,7 @@ async def update_flow(
     return {
         "code": 200,
         "message": "AgenticFlow updated",
-        "data": {
-            "id": flow.id,
-            "user_id": flow.user_id,
-            "name": flow.name,
-            "description": flow.description,
-            "icon": flow.icon,
-            "folder_path": flow.folder_path,
-            "canvas_data": canvas_data,
-            "is_template": flow.is_template,
-            "is_active": flow.is_active,
-            "version": flow.version,
-            "created_at": format_iso(flow.created_at),
-            "updated_at": format_iso(flow.updated_at),
-        },
+        "data": _flow_to_dict(flow, canvas_data),
     }
 
 

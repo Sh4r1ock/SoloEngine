@@ -4,20 +4,10 @@ import {
   FileAddOutlined,
   EditOutlined,
   DeleteOutlined,
-  FileOutlined,
   CheckOutlined,
   CloseOutlined,
   EyeOutlined,
   AppstoreOutlined,
-  CodeOutlined,
-  PictureOutlined,
-  FilePdfOutlined,
-  FileZipOutlined,
-  FileTextOutlined,
-  FileExcelOutlined,
-  FilePptOutlined,
-  AudioOutlined,
-  VideoCameraOutlined,
   DownOutlined,
   UpOutlined,
   LoadingOutlined,
@@ -27,6 +17,7 @@ import type { FileChangeInfo } from '../types';
 import { FileOperation, ChangeStatus } from '../constants/fileChangeTypes';
 import type { ChangeStatusType } from '../constants/fileChangeTypes';
 import { useRunPanelStore } from '../stores/runPanelStore';
+import { getFileIcon } from '../../../utils/fileIcon';
 import '../styles/FileChangeStyles.css';
 
 const { Text } = Typography;
@@ -186,45 +177,6 @@ export const FileChangePanel: React.FC<FileChangePanelProps> = ({
       ));
       message.error(`撤回变更失败: ${error?.message || '未知错误'}`);
     }
-  };
-
-  const getFileIcon = (filePath: string) => {
-    const ext = filePath.split('.').pop()?.toLowerCase() || '';
-    const iconMap: Record<string, React.ReactNode> = {
-      js: <CodeOutlined style={{ color: '#f7df1e' }} />,
-      jsx: <CodeOutlined style={{ color: '#61dafb' }} />,
-      ts: <CodeOutlined style={{ color: '#3178c6' }} />,
-      tsx: <CodeOutlined style={{ color: '#61dafb' }} />,
-      py: <CodeOutlined style={{ color: '#3776ab' }} />,
-      java: <CodeOutlined style={{ color: '#ed8b00' }} />,
-      go: <CodeOutlined style={{ color: '#00add8' }} />,
-      rs: <CodeOutlined style={{ color: '#dea584' }} />,
-      c: <CodeOutlined style={{ color: '#555555' }} />,
-      cpp: <CodeOutlined style={{ color: '#00599c' }} />,
-      html: <CodeOutlined style={{ color: '#e34c26' }} />,
-      css: <CodeOutlined style={{ color: '#264de4' }} />,
-      scss: <CodeOutlined style={{ color: '#c6538c' }} />,
-      json: <CodeOutlined style={{ color: '#5b5b5b' }} />,
-      yaml: <CodeOutlined style={{ color: '#cb171e' }} />,
-      yml: <CodeOutlined style={{ color: '#cb171e' }} />,
-      md: <FileTextOutlined style={{ color: '#4a4a4a' }} />,
-      svg: <PictureOutlined style={{ color: '#ffb13b' }} />,
-      png: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-      jpg: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-      jpeg: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-      gif: <PictureOutlined style={{ color: '#ff6b6b' }} />,
-      pdf: <FilePdfOutlined style={{ color: '#f40f02' }} />,
-      zip: <FileZipOutlined style={{ color: '#ffa726' }} />,
-      tar: <FileZipOutlined style={{ color: '#ffa726' }} />,
-      gz: <FileZipOutlined style={{ color: '#ffa726' }} />,
-      xlsx: <FileExcelOutlined style={{ color: '#217346' }} />,
-      xls: <FileExcelOutlined style={{ color: '#217346' }} />,
-      pptx: <FilePptOutlined style={{ color: '#d24726' }} />,
-      mp3: <AudioOutlined style={{ color: '#9b59b6' }} />,
-      wav: <AudioOutlined style={{ color: '#9b59b6' }} />,
-      mp4: <VideoCameraOutlined style={{ color: '#e74c3c' }} />,
-    };
-    return iconMap[ext] || <FileOutlined style={{ color: 'var(--text-200)' }} />;
   };
 
   if (!changes || changes.length === 0) {

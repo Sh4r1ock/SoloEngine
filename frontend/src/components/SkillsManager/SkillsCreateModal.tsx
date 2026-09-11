@@ -2,34 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Form, Input, App, Alert, Tag } from 'antd';
 import { skillsApi } from '../../services/skillsApi';
 import { useAuthStore } from '../../store/authStore';
+import TagInput from '../common/TagInput';
 
 interface SkillsCreateModalProps {
   visible: boolean;
   onClose: () => void;
   onSave: () => void;
 }
-
-const defaultSkillTemplate = `---
-name: your-skill-name
-description: This skill should be used when [describe conditions and triggers]. Examples: [provide concrete examples]
----
-
-# Your Skill Title
-
-## Overview
-Briefly describe what this skill accomplishes.
-
-## When to Use
-- When the user asks for [specific request type]
-- When [triggering condition 2]
-
-## Instructions
-1. Step one: [instruction]
-2. Step two: [instruction]
-
-## Examples
-Provide usage examples here...
-`;
 
 const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
   visible,
@@ -41,40 +20,16 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
   const [creating, setCreating] = useState(false);
   const { user } = useAuthStore();
   const [tags, setTags] = useState<string[]>([]);
-  const [inputTagValue, setInputTagValue] = useState('');
 
   useEffect(() => {
     if (visible) {
       form.resetFields();
       setTags([]);
-      setInputTagValue('');
       if (user?.username) {
         form.setFieldsValue({ author: user.username });
       }
     }
   }, [visible, form, user]);
-
-  const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputTagValue(e.target.value);
-  };
-
-  const handleTagInputConfirm = () => {
-    if (inputTagValue && !tags.includes(inputTagValue)) {
-      setTags([...tags, inputTagValue]);
-    }
-    setInputTagValue('');
-  };
-
-  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleTagInputConfirm();
-    }
-  };
-
-  const handleTagRemove = (removedTag: string) => {
-    setTags(tags.filter(tag => tag !== removedTag));
-  };
 
   const handleCreate = async () => {
     try {
@@ -161,75 +116,7 @@ const SkillsCreateModal: React.FC<SkillsCreateModalProps> = ({
         </Form.Item>
 
         <Form.Item label="标签">
-          <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 4,
-              alignItems: 'center',
-              padding: '1px 11px',
-              border: '1px solid #d9d9d9',
-              borderRadius: 6,
-              minHeight: 30,
-              backgroundColor: '#fff',
-              fontSize: 14,
-              transition: 'all 0.2s',
-              cursor: 'text',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = '#4096ff';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = '#d9d9d9';
-            }}
-            onClick={(e) => {
-              const input = e.currentTarget.querySelector('input');
-              if (input) {
-                input.focus();
-              }
-            }}
-          >
-            {tags.map((tag, index) => (
-              <Tag
-                key={tag}
-                closable
-                onClose={(e) => {
-                  e.stopPropagation();
-                  handleTagRemove(tag);
-                }}
-                style={{
-                  margin: 0,
-                  padding: '0 7px',
-                  fontSize: 14,
-                  lineHeight: '20px',
-                  borderRadius: 4,
-                  backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
-                  border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
-                  color: tag === 'system' ? 'var(--primary-100)' : undefined,
-                }}
-              >
-                {tag}
-              </Tag>
-            ))}
-            <Input
-              type="text"
-              style={{
-                width: tags.length === 0 ? 120 : 80,
-                border: 'none',
-                backgroundColor: 'transparent',
-                boxShadow: 'none',
-                padding: 0,
-                fontSize: 14,
-                lineHeight: '20px',
-              }}
-              placeholder={tags.length === 0 ? "按回车添加标签" : ""}
-              value={inputTagValue}
-              onChange={handleTagInputChange}
-              onBlur={handleTagInputConfirm}
-              onKeyDown={handleTagInputKeyDown}
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
+          <TagInput value={tags} onChange={setTags} />
         </Form.Item>
       </Form>
     </Modal>

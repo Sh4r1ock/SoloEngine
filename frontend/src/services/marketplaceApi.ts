@@ -65,22 +65,12 @@ class MarketplaceApi {
     return response.data;
   }
 
-  async getMCPItem(itemId: string): Promise<MarketItem> {
-    const response = await api.get(`/marketplace/mcp/${itemId}`);
-    return response.data;
-  }
-
   async getSkillsMarket(params?: {
     category?: string;
     search?: string;
     sort_by?: string;
   }): Promise<MarketData> {
     const response = await api.get('/marketplace/skills', { params });
-    return response.data;
-  }
-
-  async getSkillsItem(itemId: string): Promise<MarketItem> {
-    const response = await api.get(`/marketplace/skills/${itemId}`);
     return response.data;
   }
 
@@ -91,19 +81,6 @@ class MarketplaceApi {
 
   async installSkillsItem(itemId: string): Promise<{ id: string; name: string; installed: boolean }> {
     const response = await api.post(`/marketplace/skills/${itemId}/install`);
-    return response.data;
-  }
-
-  async getFeaturedItems(): Promise<{ mcp: MarketItem[]; skills: MarketItem[] }> {
-    const response = await api.get('/marketplace/featured');
-    return response.data;
-  }
-
-  async getMarketStats(): Promise<{
-    mcp: { total_items: number; total_downloads: number; categories_count: number };
-    skills: { total_items: number; total_downloads: number; categories_count: number };
-  }> {
-    const response = await api.get('/marketplace/stats');
     return response.data;
   }
 }

@@ -68,10 +68,15 @@ export interface DataBlock {
   group_agent_tokens?: number;
   group_agent_totals?: TokenTotals;
   group_agent_history?: any[];
-  /** 流式块实例归属键（〇·3 并发方案 4.1-2）：流式由 processStreamChunk 注入、
-   *  回显由 build_flattened_blocks 按消息 agent 归属注入——并发栈/块级 token
-   *  匹配依据（同一 agent 多实例时块级 token 不混写） */
-  execution_key?: string;
+  /** 实例标识（session_message_id）：流式由 agent_start 事件 metadata.message_id 注入、
+   *  回显由 build_flattened_blocks 注入 msg.id（= 预生成 message_id）——前端归组
+   *  agent_id + message_id / 组头 token 匹配键（同一 agent 并发 N 实例各自独立） */
+  message_id?: string;
+  /** tc.id 方案：产生该子执行的 tool_call id（流式 agent_start 事件
+   *  source_tool_call_id → useStreamingData 注入块；回显由 run_api 从 task 消息
+   *  source_tool_call_id 注入子组块）——前端在子组出现时按 tc.id 精确嵌套
+   *  （流式/回显统一对号） */
+  source_tool_call_id?: string;
   name?: string;
   arguments?: string;
   _isExpanding?: boolean;
@@ -172,14 +177,6 @@ export interface AgenticPanel {
   content?: string;
 }
 
-export interface AgenticStep {
-  id: string;
-  type: 'thinking' | 'action' | 'observation' | 'result';
-  content: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  timestamp: string;
-}
-
 export interface RunSession {
   id: string;
   status: string;
@@ -253,14 +250,6 @@ export interface SessionMessage {
   parent_agent_id?: string;
 }
 
-export interface FileInfo {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  modified?: string;
-}
-
 export interface CurrentProject {
   id: string;
   name: string;
@@ -274,30 +263,6 @@ export interface RecentProjectInfo {
   folder_path: string;
   accessed_at?: string;
 }
-
-export const TOOL_NAME_MAP: Record<string, string> = {
-  'Read': '读取文件',
-  'Write': '写入文件',
-  'DeleteFile': '删除文件',
-  'LS': '列出目录',
-  'SearchReplace': '搜索替换',
-  'Grep': '正则搜索',
-  'Glob': '文件匹配',
-  'SearchCodebase': '搜索代码库',
-  'RunCommand': '执行命令',
-  'CheckCommandStatus': '检查命令状态',
-  'StopCommand': '停止命令',
-  'GetDiagnostics': '获取诊断',
-  'WebFetch': '获取网页',
-  'WebSearch': '网络搜索',
-  'Skill': '技能',
-  'Task': '任务',
-  'TodoWrite': '待办事项',
-  'AskUserQuestion': '询问用户',
-  'OpenPreview': '打开预览',
-  'mcp_list_tools': 'MCP工具列表',
-  'mcp_call_tool': 'MCP调用工具',
-};
 
 export type FileCategory = 
   | 'code' 
@@ -324,14 +289,6 @@ export interface EditorInstance {
   category: FileCategory;
   tabId: string;
   createdAt: number;
-}
-
-export type EditorStatus = 'unloaded' | 'loading' | 'loaded';
-
-export interface EditorRegistryEntry {
-  status: EditorStatus;
-  refCount: number;
-  instanceIds: Set<string>;
 }
 
 export interface MessageFileChangesMap {

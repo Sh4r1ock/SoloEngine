@@ -16,7 +16,6 @@ import {
 } from '@ant-design/icons';
 import type { AgenticPanel as AgenticPanelType, FileTab } from '../types';
 import EditorLoader, { getEditorForFile } from '../editors';
-import { useOfficeConfigStore } from '../stores/officeConfigStore';
 import { useRunPanelStore } from '../stores/runPanelStore';
 import BrowserPanel from './BrowserPanel';
 import TerminalPanel from './TerminalPanel';
@@ -207,14 +206,6 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
   const [verticalDragStartY, setVerticalDragStartY] = useState(0);
   const [verticalDragStartRatio, setVerticalDragStartRatio] = useState(0.5);
   
-  const { checkAvailability, config } = useOfficeConfigStore();
-
-  useEffect(() => {
-    if (config.checkStatus === 'idle') {
-      checkAvailability();
-    }
-  }, [config.checkStatus, checkAvailability]);
-
   const getAgenticPanelIcon = (type: string) => {
     switch (type) {
       case 'editor': return <EditOutlined />;
@@ -363,7 +354,7 @@ const AgenticPanel: React.FC<AgenticPanelProps> = ({
           {tab.isModified && <span style={{ color: 'var(--warning)', fontSize: 10 }}>●</span>}
           <ClearOutlined 
             style={{ fontSize: 9, color: 'var(--text-300)', marginLeft: 2 }}
-            onClick={onClose}
+            onClick={(e) => { e.stopPropagation(); onClose(e); }}
           />
         </div>
       </Dropdown>

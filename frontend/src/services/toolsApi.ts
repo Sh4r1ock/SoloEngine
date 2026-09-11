@@ -1,33 +1,13 @@
 /**
- * SoloEngine : 工具API服务模块
+ * SoloEngine : 工具预设类型模块
  *
  * @file toolsApi.ts
- * @description 工具API服务 - 本地工具列表获取
+ * @description 仅保留画布工具预设类型 AgentPreset（被 Canvas/registry、presetsStore 引用）；
+ *             原 toolsApi.getTools 调用的后端 /api/v1/tools 玩具工具端点已删除（R3/M12），
+ *             无调用方的工具列表接口一并剪除。
  * @author Sh4rlock
  * @date 2026-04-09
- *
- * 功能描述：
- * 本模块提供以下核心功能：
- *     - 获取本地工具列表
- *     - 工具信息查询
- *     - Agent预设获取
- *
- * 依赖:
- *     - ./api: API基础服务
- *
- * 使用示例:
- *     - import { toolsApi } from './toolsApi'
- *     - const tools = await toolsApi.getTools()
  */
-
-import { api } from './api';
-
-export interface ToolInfo {
-  name: string;
-  description: string;
-  parameters: Record<string, any>;
-  tool_type: string;
-}
 
 export interface AgentPreset {
   id: string;
@@ -42,20 +22,3 @@ export interface AgentPreset {
   mcp_servers?: string[];
   system_prompt: string;
 }
-
-export const toolsApi = {
-  async getTools(): Promise<{ code: number; message: string; data: ToolInfo[] }> {
-    const response = await api.get('/tools');
-    if (response.data.data && Array.isArray(response.data.data.tools)) {
-      return { code: response.data.code, message: response.data.message, data: response.data.data.tools };
-    }
-    return response.data;
-  },
-
-  async getTool(toolName: string): Promise<{ code: number; message: string; data: ToolInfo }> {
-    const response = await api.get(`/tools/${toolName}`);
-    return response.data;
-  },
-};
-
-export default toolsApi;

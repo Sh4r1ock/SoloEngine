@@ -38,7 +38,6 @@ interface RunPanelState {
   currentSessionId: string | null;
   loading: boolean;
   error: string | null;
-  searchQuery: string;
   isRunning: boolean;
 
   messages: Message[];
@@ -50,11 +49,11 @@ interface RunPanelState {
   // 后端聚合改造（4.2）：agent 级整轮 token 状态（消息头/组头整轮显示数据源）。
   // 由 updateAgentTokens 写入（agent_token_usage 推送的 agent_usage / agent_complete
   // metadata.agent_usage），执行开始时 clearAgentUsage 清空。
-  // 〇·3 并发修复：同一 agent 多次调用（多个 execution_key 实例，如 subagent 被 Task
-  // 调用两次）时，键控维度区分实例——executionKey 键（实例准确值，组头用）+ agentId 键
-  // （mainagent 消息头兼容，单实例场景），后写入不覆盖不同实例的组级聚合。
+  // 并发修复：同一 agent 多次调用（多个 message_id 实例）时，键控维度区分实例——
+  // messageId 键（实例准确值，组头用）+ agentId 键（mainagent 消息头兼容，单实例场景），
+  // 后写入不覆盖不同实例的组级聚合。
   agentUsageMap: Record<string, { tokens: number; totals: TokenTotals; history: any[] }>;
-  setAgentUsage: (agentId: string, usage: any, executionKey?: string) => void;
+  setAgentUsage: (agentId: string, usage: any, messageId?: string) => void;
   clearAgentUsage: () => void;
 
   callRecords: CallRecord[];
@@ -73,7 +72,6 @@ interface RunPanelState {
   /** 浏览器外部导航信号（OpenPreview 点击时递增，BrowserPanel 依赖其变化触发导航，解决同 URL 重复点击不触发的问题） */
   browserNavSeq: number;
   panelRatios: number[];
-  isDragging: number | null;
 
   currentProject: CurrentProject | null;
   recentProjects: RecentProjectInfo[];
@@ -85,16 +83,11 @@ interface RunPanelState {
 
   hoveredMessageId: string | null;
 
-  expandedReasoning: string[];
-  expandedToolCalls: string[];
-  streamingExpandedKeys: string[];
-
   recallingMessageId: string | null;
   recallPreviewFiles: Record<string, Array<{ file_path: string; original_operation: string; recall_action: string; lines_added: number; lines_removed: number }>>;
   recallPreviewMessageId: string | null;
   fileChangeRefreshKey: number;
   fileChangesMap: MessageFileChangesMap;
-  fileChangesLoaded: boolean;
   activeChangesMessageId: string | null;
 
   expandedBlockKeys: Record<string, boolean>;
@@ -102,35 +95,26 @@ interface RunPanelState {
 
   // 工具交互回答发送器：AskUserQuestion / ExitPlanMode 交互面板点击后调用。
   // 由 RunPanel 注入（内部调用 executeFlow 发送回答），避免逐层传 props。
-  userAnswerSender: ((text: string) => void) | null;
-  setUserAnswerSender: (fn: ((text: string) => void) | null) => void;
+  // toolCallId 用于并发审批按 id 精确路由（后端 _pending_interactions Dict 送达）。
+  userAnswerSender: ((text: string, toolCallId?: string) => void) | null;
 
   setCurrentSessionId: (sessionId: string | null) => void;
   setSessions: (sessions: ExtendedRunSession[] | ((prev: ExtendedRunSession[]) => ExtendedRunSession[])) => void;
-  setSearchQuery: (query: string) => void;
   startRunning: () => void;
   stopRunning: () => void;
 
-  addMessage: (message: Message) => void;
   setMessages: (messages: Message[] | ((prev: Message[]) => Message[])) => void;
-  clearMessages: () => void;
   setStreamingData: (data: DataBlock[] | ((prev: DataBlock[]) => DataBlock[])) => void;
   clearStreamingData: () => void;
   setInputText: (text: string) => void;
   setIsWaitingReply: (waiting: boolean) => void;
   setCurrentMsgId: (id: string) => void;
 
-  addCallRecord: (record: CallRecord) => void;
-  updateCallRecord: (id: string, updates: Partial<CallRecord>) => void;
   setCallRecords: (records: CallRecord[] | ((prev: CallRecord[]) => CallRecord[])) => void;
-  clearCallRecords: () => void;
 
-  addSubagentOutput: (output: SubagentOutput) => void;
-  updateSubagentOutput: (id: string, updates: Partial<SubagentOutput>) => void;
   setSubagentOutputs: (outputs: SubagentOutput[] | ((prev: SubagentOutput[]) => SubagentOutput[])) => void;
   clearSubagentOutputs: () => void;
 
-  addEditorTab: (tab: FileTab) => void;
   updateEditorTab: (id: string, updates: Partial<FileTab>) => void;
   closeEditorTab: (id: string) => void;
   closeEditorTabs: (ids: string[]) => void;
@@ -138,7 +122,6 @@ interface RunPanelState {
   setTabContent: (tabId: string, content: string) => void;
   getTabContent: (tabId: string) => string;
 
-  addDocumentTab: (tab: FileTab) => void;
   updateDocumentTab: (id: string, updates: Partial<FileTab>) => void;
   closeDocumentTab: (id: string) => void;
   closeDocumentTabs: (ids: string[]) => void;
@@ -151,7 +134,6 @@ interface RunPanelState {
   closeAgenticPanels: (ids: string[]) => void;
   setActiveAgenticTab: (tab: string | null) => void;
   setPanelRatios: (ratios: number[]) => void;
-  setIsDragging: (index: number | null) => void;
 
   setCurrentProject: (project: CurrentProject | null) => void;
   setRecentProjects: (projects: RecentProjectInfo[]) => void;
@@ -164,17 +146,11 @@ interface RunPanelState {
   loadRecentProjects: (agenticFlowId: string) => Promise<RecentProjectInfo[]>;
   listFiles: (path?: string, pattern?: string) => Promise<void>;
   setCurrentPath: (path: string) => void;
-  clearProject: () => void;
-  clearError: () => void;
   applyIncrementalChanges: (changes: FileSystemChange[]) => void;
 
   setCanvasData: (data: any | null) => void;
 
   setHoveredMessageId: (id: string | null) => void;
-
-  setExpandedReasoning: (keys: string[]) => void;
-  setExpandedToolCalls: (keys: string[]) => void;
-  setStreamingExpandedKeys: (keys: string[]) => void;
 
   setRecallingMessageId: (messageId: string | null) => void;
   setRecallPreviewFiles: (messageId: string, files: Array<{ file_path: string; original_operation: string; recall_action: string; lines_added: number; lines_removed: number }>) => void;
@@ -227,7 +203,6 @@ const _createStore = () => createStore<RunPanelState>()(
       currentSessionId: null,
       loading: false,
       error: null,
-      searchQuery: '',
       isRunning: false,
 
       messages: [],
@@ -256,7 +231,6 @@ const _createStore = () => createStore<RunPanelState>()(
       browserUrl: null,
       browserNavSeq: 0,
       panelRatios: [1, 4, 4, 1],
-      isDragging: null,
 
       currentProject: null,
       recentProjects: [],
@@ -271,16 +245,11 @@ const _createStore = () => createStore<RunPanelState>()(
 
       hoveredMessageId: null,
 
-      expandedReasoning: [],
-      expandedToolCalls: [],
-      streamingExpandedKeys: [],
-
       recallingMessageId: null,
       recallPreviewFiles: {},
       recallPreviewMessageId: null,
       fileChangeRefreshKey: 0,
       fileChangesMap: {},
-      fileChangesLoaded: false,
       activeChangesMessageId: null,
 
       expandedBlockKeys: {},
@@ -294,7 +263,6 @@ const _createStore = () => createStore<RunPanelState>()(
       },
 
       userAnswerSender: null,
-      setUserAnswerSender: (fn) => set({ userAnswerSender: fn }),
 
       setCurrentSessionId: (sessionId) => set({ currentSessionId: sessionId }),
       setSessions: (sessionsOrUpdater) => {
@@ -304,7 +272,6 @@ const _createStore = () => createStore<RunPanelState>()(
           set({ sessions: sessionsOrUpdater });
         }
       },
-      setSearchQuery: (query) => set({ searchQuery: query }),
       startRunning: () => set((state) => {
         if (state.isRunning) return state;
         return { isRunning: true };
@@ -314,7 +281,6 @@ const _createStore = () => createStore<RunPanelState>()(
         return { isRunning: false, isWaitingReply: false };
       }),
 
-      addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
       setMessages: (messagesOrUpdater) => {
         if (typeof messagesOrUpdater === 'function') {
           set((state) => ({ messages: messagesOrUpdater(state.messages) }));
@@ -322,7 +288,6 @@ const _createStore = () => createStore<RunPanelState>()(
           set({ messages: messagesOrUpdater });
         }
       },
-      clearMessages: () => set({ messages: [] }),
       setStreamingData: (dataOrUpdater) => {
         if (typeof dataOrUpdater === 'function') {
           set((state) => {
@@ -347,10 +312,10 @@ const _createStore = () => createStore<RunPanelState>()(
 
       // 后端聚合改造（4.2）：写入 agent 级整轮累计（tokens=total、totals=5 字段、history=全数组）。
       // 消息头/组头整轮显示的数据源（与块级本阶段 usage 正交）。
-      // 〇·3 并发修复：executionKey 与 agentId 双键写入——executionKey 键为实例准确值
+      // 并发修复：messageId 与 agentId 双键写入——messageId 键为实例准确值
       //（subagent 组头按实例查询，同 agent 多实例互不覆盖）；agentId 键兼容 mainagent
       // 消息头（index.tsx 按 rootAgentId 查询）与单实例场景。
-      setAgentUsage: (agentId, usage, executionKey) => {
+      setAgentUsage: (agentId, usage, messageId) => {
         if (!agentId || !usage) return;
         const value = {
           tokens: usage.total_tokens ?? usage.total ?? 0,
@@ -367,16 +332,12 @@ const _createStore = () => createStore<RunPanelState>()(
           agentUsageMap: {
             ...state.agentUsageMap,
             [agentId]: value,
-            ...(executionKey && executionKey !== agentId ? { [executionKey]: value } : {}),
+            ...(messageId && messageId !== agentId ? { [messageId]: value } : {}),
           },
         }));
       },
       clearAgentUsage: () => set({ agentUsageMap: {} }),
 
-      addCallRecord: (record) => set((state) => ({ callRecords: [...state.callRecords, record] })),
-      updateCallRecord: (id, updates) => set((state) => ({
-        callRecords: state.callRecords.map((r) => (r.id === id ? { ...r, ...updates } : r)),
-      })),
       setCallRecords: (recordsOrUpdater) => {
         if (typeof recordsOrUpdater === 'function') {
           set((state) => ({ callRecords: recordsOrUpdater(state.callRecords) }));
@@ -384,12 +345,7 @@ const _createStore = () => createStore<RunPanelState>()(
           set({ callRecords: recordsOrUpdater });
         }
       },
-      clearCallRecords: () => set({ callRecords: [] }),
 
-      addSubagentOutput: (output) => set((state) => ({ subagentOutputs: [...state.subagentOutputs, output] })),
-      updateSubagentOutput: (id, updates) => set((state) => ({
-        subagentOutputs: state.subagentOutputs.map((o) => (o.id === id ? { ...o, ...updates } : o)),
-      })),
       setSubagentOutputs: (outputsOrUpdater) => {
         if (typeof outputsOrUpdater === 'function') {
           set((state) => ({ subagentOutputs: outputsOrUpdater(state.subagentOutputs) }));
@@ -399,7 +355,6 @@ const _createStore = () => createStore<RunPanelState>()(
       },
       clearSubagentOutputs: () => set({ subagentOutputs: [] }),
 
-      addEditorTab: (tab) => set((state) => ({ editorTabs: [...state.editorTabs, tab] })),
       updateEditorTab: (id, updates) => set((state) => ({
         editorTabs: state.editorTabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       })),
@@ -451,7 +406,6 @@ const _createStore = () => createStore<RunPanelState>()(
           ?? '';
       },
 
-      addDocumentTab: (tab) => set((state) => ({ documentTabs: [...state.documentTabs, tab] })),
       updateDocumentTab: (id, updates) => set((state) => ({
         documentTabs: state.documentTabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       })),
@@ -575,7 +529,6 @@ const _createStore = () => createStore<RunPanelState>()(
       }),
       setActiveAgenticTab: (tab) => set({ activeAgenticTab: tab }),
       setPanelRatios: (ratios) => set({ panelRatios: ratios }),
-      setIsDragging: (index) => set({ isDragging: index }),
 
       setCurrentProject: (project) => set({ currentProject: project }),
       setRecentProjects: (projects) => set({ recentProjects: projects }),
@@ -703,17 +656,6 @@ const _createStore = () => createStore<RunPanelState>()(
 
       setCurrentPath: (path) => set({ currentPath: path }),
 
-      clearProject: () => {
-        set({
-          currentProject: null,
-          files: [],
-          currentPath: '',
-          error: null,
-        });
-      },
-
-      clearError: () => set({ error: null }),
-
       applyIncrementalChanges: (changes) => {
         set((state) => {
           let newTree: any[] = state.files as any;
@@ -733,10 +675,6 @@ const _createStore = () => createStore<RunPanelState>()(
       setCanvasData: (data) => set({ canvasData: data }),
 
       setHoveredMessageId: (id) => set({ hoveredMessageId: id }),
-
-      setExpandedReasoning: (keys) => set({ expandedReasoning: keys }),
-      setExpandedToolCalls: (keys) => set({ expandedToolCalls: keys }),
-      setStreamingExpandedKeys: (keys) => set({ streamingExpandedKeys: keys }),
 
       setRecallingMessageId: (messageId) => set({ recallingMessageId: messageId }),
 
@@ -777,7 +715,6 @@ const _createStore = () => createStore<RunPanelState>()(
           currentSessionId: newSessionId,
           sessions: [newSession, ...state.sessions],
           messages: [],
-          fileChangesLoaded: false,
           callRecords: [],
         }));
         return newSessionId;
@@ -924,15 +861,11 @@ const _createStore = () => createStore<RunPanelState>()(
           callRecords: [] as CallRecord[],
           subagentOutputs: [] as SubagentOutput[],
           hoveredMessageId: null as string | null,
-          expandedReasoning: [] as string[],
-          expandedToolCalls: [] as string[],
-          streamingExpandedKeys: [] as string[],
           recallingMessageId: null as string | null,
           recallPreviewFiles: {} as Record<string, any>,
           recallPreviewMessageId: null as string | null,
           fileChangeRefreshKey: 0,
           fileChangesMap: {} as MessageFileChangesMap,
-          fileChangesLoaded: false,
           activeChangesMessageId: null as string | null,
           expandedBlockKeys: {} as Record<string, boolean>,
         };

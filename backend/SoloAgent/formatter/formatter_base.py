@@ -36,7 +36,7 @@
 from abc import abstractmethod
 from typing import Any, List, Tuple, Sequence
 
-from ..utils import _save_base64_data
+from ..utils import save_base64_data
 from ..message import Msg, AudioBlock, ImageBlock, TextBlock, VideoBlock
 
 
@@ -214,7 +214,7 @@ class FormatterBase:
                     path_multimodal_file = source["url"]
 
                 elif source["type"] == "base64":
-                    path_multimodal_file = _save_base64_data(
+                    path_multimodal_file = save_base64_data(
                         source["media_type"],
                         source["data"],
                     )
@@ -243,4 +243,4 @@ class FormatterBase:
             return textual_output[0], multimodal_data
 
         else:
-            return "\n".join("- " + _ for _ in textual_output), multimodal_data
+            return "\n".join("- " + item for item in textual_output), multimodal_data

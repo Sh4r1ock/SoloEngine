@@ -22,7 +22,7 @@ import asyncio
 import httpx
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
-from app.core.config import settings
+from SoloAgent.config import settings
 
 
 class NetworkToolError(Exception):
@@ -247,32 +247,6 @@ class BaseNetworkTool:
                 error_message=f"未知错误: {str(e)}",
                 url=url,
             )
-    
-    async def _fetch_bytes(
-        self,
-        url: str,
-        timeout: Optional[int] = None,
-    ) -> tuple[bytes, int, bool]:
-        """
-        获取二进制内容。
-        
-        用于下载文件或图片等二进制数据。
-        
-        Args:
-            url (str): 请求 URL。
-            timeout (Optional[int], optional): 超时时间。默认为 None。
-        
-        Returns:
-            tuple[bytes, int, bool]: (二进制内容, 状态码, 是否成功)
-        """
-        request_timeout = timeout or self.timeout
-        
-        try:
-            async with httpx.AsyncClient(timeout=request_timeout) as client:
-                response = await client.get(url, headers=self.headers, follow_redirects=True)
-                return response.content, response.status_code, response.is_success
-        except Exception:
-            return b"", 0, False
     
     async def _fetch_impersonate(
         self,

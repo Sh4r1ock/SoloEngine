@@ -31,8 +31,7 @@ SoloEngine : OpenAI文本嵌入模型模块
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.core.config import settings
-from typing import Any, List
+from typing import Any, List, Dict
 
 from .embedding_response import EmbeddingResponse
 from .embedding_usage import EmbeddingUsage
@@ -107,39 +106,22 @@ class OpenAITextEmbedding(EmbeddingModelBase):
         self.batch_size = batch_size
         self.max_tokens_per_batch = max_tokens_per_batch
 
-    async def __call__(
+    def _build_embedding_kwargs(
         self,
-        text: List[str | TextBlock],
-        **kwargs: Any,
-    ) -> EmbeddingResponse:
+        gather_text: List[str],
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
-        调用OpenAI嵌入API
+        OpenAI 版调用参数组装（R11：基类公共 __call__ 骨架的差异钩子）。
 
         Args:
-            text: 输入文本列表
-            **kwargs: 额外的关键字参数
+            gather_text: 清理后的输入文本列表
+            kwargs: 调用方额外参数
 
         Returns:
-            EmbeddingResponse: 嵌入响应
-
-        Raises:
-            ValueError: 输入格式不支持时抛出
-
-        示例:
-            >>> response = await model(["文本1", "文本2"])
+            Dict[str, Any]: OpenAI embeddings API 调用参数（含 OpenAI 特有 encoding_format）
         """
-        gather_text = []
-        for _ in text:
-            if isinstance(_, dict) and "text" in _:
-                gather_text.append(_["text"])
-            elif isinstance(_, str):
-                gather_text.append(_)
-            else:
-                raise ValueError(
-                    "Input text must be a list of strings or TextBlock dicts.",
-                )
-
-        kwargs = {
+        return {
             "input": gather_text,
             "model": self.model_name,
             "dimensions": self.dimensions,
@@ -147,34 +129,15 @@ class OpenAITextEmbedding(EmbeddingModelBase):
             **kwargs,
         }
 
-        if self.embedding_cache:
-            cached_embeddings = await self.embedding_cache.retrieve(
-                identifier=kwargs,
-            )
-            if cached_embeddings:
-                return EmbeddingResponse(
-                    embeddings=cached_embeddings,
-                    usage=EmbeddingUsage(
-                        tokens=0,
-                        time=0,
-                    ),
-                    source="cache",
-                )
+    async def _call_embedding_api(self, call_kwargs: Dict[str, Any]):
+        """
+        OpenAI 版嵌入 API 调用（R11：差异钩子，embeddings.create）。
 
-        start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-        response = await self.client.embeddings.create(**kwargs)
-        time = (datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_time).total_seconds()
+        Args:
+            call_kwargs: 组装后的调用参数
 
-        if self.embedding_cache:
-            await self.embedding_cache.store(
-                identifier=kwargs,
-                embeddings=[_.embedding for _ in response.data],
-            )
-
-        return EmbeddingResponse(
-            embeddings=[_.embedding for _ in response.data],
-            usage=EmbeddingUsage(
-                tokens=response.usage.total_tokens,
-                time=time,
-            ),
-        )
+        Returns:
+            tuple: (embeddings 列表, token_usage)
+        """
+        response = await self.client.embeddings.create(**call_kwargs)
+        return [_.embedding for _ in response.data], response.usage.total_tokens

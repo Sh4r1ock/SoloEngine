@@ -164,15 +164,15 @@ class LLMFactory:
             provider_kwargs["api_key"] = api_key
 
         elif provider_lower == LLMProvider.OLLAMA:
-            client_kw = kwargs.pop("client_kwargs", {})
-            provider_kwargs["base_url"] = client_kw.pop("base_url", None)
+            client_kwargs = kwargs.pop("client_kwargs", {})
+            provider_kwargs["base_url"] = client_kwargs.pop("base_url", None)
             if not provider_kwargs["base_url"]:
                 raise ValueError(
                     "Ollama base_url is required. "
                     "Please configure the base URL in Settings > LLM Configuration."
                 )
-            if client_kw:
-                provider_kwargs["client_kwargs"] = client_kw
+            if client_kwargs:
+                provider_kwargs["client_kwargs"] = client_kwargs
 
         elif provider_lower in [LLMProvider.DEEPSEEK, LLMProvider.ZHIPU, LLMProvider.MIMO]:
             provider_kwargs["api_key"] = api_key
@@ -200,20 +200,3 @@ class LLMFactory:
         cls._load_providers_config()
         provider_lower = provider.lower()
         return cls._available_models.get(provider_lower, [])
-
-    @classmethod
-    def get_default_model(cls, provider: str) -> str:
-        cls._load_providers_config()
-        provider_lower = provider.lower()
-
-        if provider_lower not in cls._default_models:
-            raise ValueError(
-                f"Unsupported LLM provider: '{provider}'. "
-                f"Supported providers: {', '.join(cls._providers_data.keys())}"
-            )
-
-        return cls._default_models[provider_lower]
-
-    @classmethod
-    def validate_model(cls, provider: str, model_name: str) -> bool:
-        return True

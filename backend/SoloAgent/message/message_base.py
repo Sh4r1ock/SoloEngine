@@ -54,7 +54,6 @@ from .message_block import (
     ThinkingBlock,
 )
 from ..types import JSONSerializableObject
-from app.core.config import settings
 
 
 class Msg:
@@ -169,6 +168,8 @@ class Msg:
         self.tool_call_id = tool_call_id
 
         self.id = shortuuid.uuid()
+        # C8：延迟 import settings（消除 message 层模块级反向依赖 app.core.config）
+        from SoloAgent.config import settings
         self.timestamp = (
             timestamp
             or datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).strftime(

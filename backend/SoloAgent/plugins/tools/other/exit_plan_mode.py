@@ -39,7 +39,7 @@ import logging
 import os
 
 from .base import BaseOtherTool
-from .._hitl import get_run_context, await_user_message, set_plan_mode
+from ..human_in_the_loop import get_run_context, wait_for_user_message, set_plan_mode, parse_approval_response
 from ...plan import PlanNotebookPlugin
 from app.core.data_paths import DataPaths
 
@@ -141,8 +141,9 @@ class ExitPlanModeTool(BaseOtherTool):
         )
 
         # 真实交互：等待用户在工具调用面板中批准/驳回/修改计划。
-        # 用户决策经前端 → WS execute → run.py enqueue_message 进入业务消息队列，
-        # await_user_message 内部 await 该队列即实现"工具暂停等待用户批准"。
+        # 用户决策经前端 → WS interaction_answer（携带 tool_call_id）→ 事件循环 set_result
+        # 直接送达 pending_interaction Future，wait_for_user_message 内部 await 该 Future
+        # 即实现"工具暂停等待用户批准"（回答零队列中转，不经业务消息队列）。
         run_context = get_run_context()
         if run_context is not None:
             try:
@@ -202,7 +203,7 @@ class ExitPlanModeTool(BaseOtherTool):
             }
 
         # 无 run_context（非 Web 执行场景）：直接报错，严禁回退。
-        # 工具必须真实等待用户批准/驳回/修改，失败即显式报错（对齐 _hitl.await_user_input）。
+        # 工具必须真实等待用户批准/驳回/修改，失败即显式报错（对齐 human_in_the_loop.wait_for_user_message）。
         raise RuntimeError(
             "无运行上下文（run_context）：无法等待用户批准，"
             "ExitPlanMode 工具必须在 AgenticFlow 执行环境中使用"
@@ -224,43 +225,9 @@ class ExitPlanModeTool(BaseOtherTool):
         Raises:
             asyncio.TimeoutError: 等待审批超时。
         """
-        answer_text = await await_user_message(run_context, "计划审批")
-        return self._parse_approval(answer_text)
-
-    @staticmethod
-    def _parse_approval(text: str) -> Dict[str, Any]:
-        """
-        解析用户审批决策文本。
-
-        支持前端固定格式（【执行】/【跳过】/【修改】）与关键词兜底。
-
-        Args:
-            text (str): 用户回答文本。
-
-        Returns:
-            Dict[str, Any]: 审批结果 {approved, action, feedback}
-        """
-        stripped = text.strip()
-
-        if stripped.startswith("【执行】"):
-            return {"approved": True, "action": "approve", "feedback": stripped}
-        if stripped.startswith("【跳过】"):
-            return {"approved": False, "action": "skip", "feedback": stripped}
-        if stripped.startswith("【修改】"):
-            return {"approved": False, "action": "modify", "feedback": stripped}
-
-        reject_keywords = ["跳过", "驳回", "拒绝", "不同意", "取消", "不需要", "停止"]
-        approve_keywords = ["执行", "批准", "同意", "确认", "可以", "开始", "approve", "yes"]
-
-        lowered = stripped.lower()
-        for keyword in reject_keywords:
-            if keyword in lowered:
-                return {"approved": False, "action": "skip", "feedback": stripped}
-        for keyword in approve_keywords:
-            if keyword in lowered:
-                return {"approved": True, "action": "approve", "feedback": stripped}
-
-        return {"approved": False, "action": "modify", "feedback": stripped}
+        answer_text = await wait_for_user_message(run_context, "计划审批")
+        # R2：解析逻辑统一复用 human_in_the_loop.parse_approval_response（dict 三分支语义，原 _parse_approval 行为保真）
+        return parse_approval_response(answer_text)
 
     @staticmethod
     def _format_approval_content(approval: Dict[str, Any]) -> str:

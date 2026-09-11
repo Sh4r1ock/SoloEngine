@@ -52,12 +52,11 @@ const iconMap: Record<string, React.ReactNode> = {
 
 interface MarketCardProps {
   item: MarketItem;
-  type: 'mcp' | 'skills';
   onInstall: (id: string) => void;
   installing: boolean;
 }
 
-const MarketCard: React.FC<MarketCardProps> = ({ item, type, onInstall, installing }) => {
+const MarketCard: React.FC<MarketCardProps> = ({ item, onInstall, installing }) => {
   const handleInstall = () => {
     onInstall(item.id);
   };
@@ -355,7 +354,6 @@ const MarketplacePage: React.FC = () => {
               <Col key={item.id} xs={24} sm={12} md={8} lg={6}>
                 <MarketCard
                   item={item}
-                  type={activeTab}
                   onInstall={handleInstall}
                   installing={installingId === item.id}
                 />

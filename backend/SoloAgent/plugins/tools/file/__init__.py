@@ -12,7 +12,7 @@ SoloEngine : 文件操作工具模块，提供文件读写删除等功能
 - Write: 写入文件内容
 - SearchReplace: 搜索并替换文件内容
 - DeleteFile: 删除文件
-- LS: 列出目录内容
+- Ls: 列出目录内容
 
 状态: ✅ 模块初始化完成
 """
@@ -22,7 +22,7 @@ from .read import Read
 from .write import Write
 from .search_replace import SearchReplace
 from .delete_file import DeleteFile
-from .ls import LS
+from .ls import Ls
 
 __all__ = [
     "BaseFileTool",
@@ -31,5 +31,5 @@ __all__ = [
     "Write",
     "SearchReplace",
     "DeleteFile",
-    "LS",
+    "Ls",
 ]

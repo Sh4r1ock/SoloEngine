@@ -34,9 +34,9 @@
  *     - 支持Ctrl+Z撤销和Ctrl+Y重做快捷键
  *     - 属性面板宽度可通过拖拽调整
  */
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layout, Button, Modal, Input, App } from 'antd';
+import { Layout, Button, App } from 'antd';
 import { PlayCircleOutlined, CloseOutlined, DragOutlined, SaveOutlined, HomeOutlined } from '@ant-design/icons';
 import Canvas from '../../components/Canvas/Canvas';
 import PropertyPanel from '../../components/PropertyEditor/PropertyEditor';
@@ -68,11 +68,8 @@ const EditorPage: React.FC = () => {
     isSettingsOpen,
     setSettingsOpen,
   } = useCanvasStore();
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [projectName, setProjectName] = useState('');
   const [panelWidth, setPanelWidth] = useState(480);
   const [isPanelDragging, setIsPanelDragging] = useState(false);
-  const dragHandleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const initialWidth = Math.floor(window.innerWidth * 0.25);
@@ -107,37 +104,6 @@ const EditorPage: React.FC = () => {
       loadProject();
     }
   }, [projectId, setCurrentProject]);
-
-  /**
-   * 处理创建项目
-   * 
-   * @description 创建新项目并导航到编辑器页面
-   * @returns {Promise<void>}
-   */
-  const handleCreateProject = async () => {
-    if (!projectName.trim()) {
-      message.error('请输入项目名称');
-      return;
-    }
-
-    try {
-      const project = await agenticFlowApi.createFlow({
-        name: projectName,
-        canvas_data: { nodes: [], edges: [] }
-      });
-      setCurrentProject({
-        id: project.id,
-        name: project.name,
-        canvas: project.canvas_data
-      });
-      setIsModalVisible(false);
-      setProjectName('');
-      message.success('项目创建成功');
-      navigate(`/editor/${project.id}`);
-    } catch (error) {
-      message.error('项目创建失败');
-    }
-  };
 
   /**
    * 处理保存项目
@@ -244,14 +210,6 @@ const EditorPage: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        useCanvasStore.getState().undo();
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        useCanvasStore.getState().redo();
-      }
       if (e.key === 'Escape') {
         handleClosePropertyPanel();
       }
@@ -420,7 +378,6 @@ const EditorPage: React.FC = () => {
               </button>
               
               <div
-                ref={dragHandleRef}
                 onMouseDown={handleMouseDown}
                 style={{
                   position: 'absolute',
@@ -468,19 +425,6 @@ const EditorPage: React.FC = () => {
           </Sider>
         )}
       </Layout>
-
-      <Modal
-        title="新建项目"
-        open={isModalVisible}
-        onOk={handleCreateProject}
-        onCancel={() => setIsModalVisible(false)}
-      >
-        <Input
-          placeholder="请输入项目名称"
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-        />
-      </Modal>
 
       <Preview 
         visible={isPreviewOpen} 

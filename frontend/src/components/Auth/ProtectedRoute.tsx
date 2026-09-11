@@ -32,7 +32,7 @@ interface ProtectedRouteProps {
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const { isAuthenticated, loadUser, token } = useAuthStore();
+  const { isAuthenticated, loadUser } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const location = useLocation();
 

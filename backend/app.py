@@ -32,11 +32,17 @@ SoloEngine : FastAPI主应用模块
     - 支持热重载开发模式
 """
 import asyncio
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import tools, config, run, skills, auth, export, package, marketplace, agentic_flows, agent_tools, run_project, settings, mcp_servers, file_changes, browser_proxy, terminal_ws
 import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.requests import Request
+from fastapi.responses import JSONResponse
+
+from app.api.v1 import agent_tools, config, run, skills, auth, marketplace, agentic_flows, run_project, mcp_servers, file_changes, browser_proxy, terminal_ws
+from app.core.database import OptimisticLockError
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +60,19 @@ async def app_lifespan(_app: FastAPI):
 
     flush_task = asyncio.create_task(push_service._flush_loop())
     consumer_task = asyncio.create_task(_watchdog_consumer(change_queue))
+
+    # 初始化系统用户（拆解原 @app.on_event("startup")，统一并入 lifespan 启动阶段）
+    from app.core.database import SessionLocal
+    from app.core.system_user import create_system_user
+
+    db = SessionLocal()
+    try:
+        create_system_user(db)
+        logger.info("System user created/verified successfully")
+    except Exception as e:
+        logger.error(f"Failed to create system user: {e}")
+    finally:
+        db.close()
 
     yield
 
@@ -81,16 +100,10 @@ app = FastAPI(
     lifespan=app_lifespan,
 )
 
-from fastapi.exceptions import RequestValidationError
-from fastapi.requests import Request
-from fastapi.responses import JSONResponse
-
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"[422 VALIDATION ERROR] path={request.url.path} errors={exc.errors()} body={exc.body}")
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
-
-from app.core.database import OptimisticLockError
 
 @app.exception_handler(OptimisticLockError)
 async def optimistic_lock_handler(request: Request, exc: OptimisticLockError):
@@ -98,27 +111,17 @@ async def optimistic_lock_handler(request: Request, exc: OptimisticLockError):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # 前端固定从 8991 访问；allow_credentials=True 时禁止用 "*"（浏览器会拒绝带 Authorization 的跨源请求），
+    # 必须显式列出 origin 使 Starlette 回显具体 origin 而非 "*"。
+    allow_origins=[
+        "http://localhost:8991",
+        "http://127.0.0.1:8991",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动时执行初始化操作。"""
-    from app.core.database import SessionLocal
-    from app.core.system_user import create_system_user
-    
-    db = SessionLocal()
-    try:
-        create_system_user(db)
-        logger.info("System user created/verified successfully")
-    except Exception as e:
-        logger.error(f"Failed to create system user: {e}")
-    finally:
-        db.close()
 
 @app.get("/")
 async def root():
@@ -131,15 +134,11 @@ async def health():
 app.include_router(config.router)
 app.include_router(run.router)
 app.include_router(skills.router)
-app.include_router(tools.router)
+app.include_router(agent_tools.router)
 app.include_router(auth.router)
-app.include_router(export.router)
-app.include_router(package.router)
 app.include_router(marketplace.router)
 app.include_router(agentic_flows.router)
-app.include_router(agent_tools.router)
 app.include_router(run_project.router)
-app.include_router(settings.router)
 app.include_router(mcp_servers.router)
 app.include_router(file_changes.router)
 app.include_router(browser_proxy.router)

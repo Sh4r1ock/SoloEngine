@@ -30,6 +30,7 @@ SoloEngine : 程序入口模块
     - 默认监听0.0.0.0:8990
     - 开发模式下启用热重载
 """
+import os
 import sys
 import asyncio
 
@@ -40,7 +41,8 @@ import asyncio
 # ProactorEventLoop 完全支持子进程，且 Python 3.14 中 WindowsSelectorEventLoopPolicy 已 deprecated。
 
 import uvicorn
+from app import app
 from app.core.config import settings
 
 if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=settings.BACKEND_PORT, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=settings.BACKEND_PORT, reload=os.getenv("RELOAD", "0") == "1")

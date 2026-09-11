@@ -536,11 +536,6 @@ const UnifiedCard: React.FC<CardItemProps> = ({
               title={
                 <div>
                   <div>{deleteConfirmText}</div>
-                  {deleteWarning && (
-                    <div style={{ color: 'var(--danger-100)', fontSize: 12, marginTop: 4 }}>
-                      ⚠️ {deleteWarning}
-                    </div>
-                  )}
                 </div>
               }
               onConfirm={(e) => {

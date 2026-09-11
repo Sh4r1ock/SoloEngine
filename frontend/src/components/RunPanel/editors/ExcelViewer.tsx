@@ -4,7 +4,8 @@ import { Table, Tabs, Spin, Empty, Button } from 'antd';
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
+import { downloadDataURL } from '../../../utils/download';
 
 interface ExcelViewerProps {
   instanceId: string;
@@ -130,24 +131,8 @@ const ExcelViewer: React.FC<ExcelViewerProps> = ({ instanceId, tab }) => {
 
   const handleDownload = useCallback(() => {
     if (!tab.content) return;
-    
-    const link = document.createElement('a');
-    if (tab.content.startsWith('data:')) {
-      link.href = tab.content;
-    } else {
-      link.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${tab.content}`;
-    }
-    link.download = tab.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadDataURL(tab.content, tab.name, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   }, [tab]);
-
-  useEditorCleanup(instanceId, useCallback(() => {
-    setWorkbook(null);
-    setActiveSheet('');
-    cleanup();
-  }, [cleanup]));
 
   if (loading) {
     return (

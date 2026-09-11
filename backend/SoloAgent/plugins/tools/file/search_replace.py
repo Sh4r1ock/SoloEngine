@@ -18,7 +18,7 @@ SoloEngine : 搜索替换工具模块，提供文件内容搜索替换功能
 from typing import Dict, Any
 
 from .base import BaseFileTool, FileToolError
-from .._hitl import plan_mode_guard
+from ..human_in_the_loop import plan_mode_guard
 
 
 class SearchReplace(BaseFileTool):

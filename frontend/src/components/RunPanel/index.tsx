@@ -358,7 +358,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           if (res.code === 200) {
             useRunPanelStore.getState().updateEditorTab(tab.id, { content: res.data.content, isLoading: false, fileSize: res.data.size });
           }
-        }).catch(() => {
+        }).catch((err: any) => {
+          // 文件不存在（404）：关闭残留 tab——文件已删除/移动，tab 无展示对象。
+          // 不关闭则每次会话恢复都会重复读取失败（持久化数据残留导致持续 404）。
+          if (err?.response?.status === 404) {
+            useRunPanelStore.getState().closeEditorTabs([tab.id]);
+            return;
+          }
           useRunPanelStore.getState().updateEditorTab(tab.id, { content: '加载失败', isLoading: false });
         });
       }
@@ -368,7 +374,12 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           if (res.code === 200) {
             useRunPanelStore.getState().updateDocumentTab(tab.id, { content: res.data.content, isLoading: false, fileSize: res.data.size });
           }
-        }).catch(() => {
+        }).catch((err: any) => {
+          // 同上：文件不存在（404）时关闭残留 tab，避免持久化数据残留导致持续 404
+          if (err?.response?.status === 404) {
+            useRunPanelStore.getState().closeDocumentTabs([tab.id]);
+            return;
+          }
           useRunPanelStore.getState().updateDocumentTab(tab.id, { content: '加载失败', isLoading: false });
         });
       }
@@ -689,18 +700,22 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         // 层级信息：parent_agent_id 为空 = mainagent（root），非空 = subagent。
         // 用 agent_start 事件驱动 agent 栈（enterRootAgent/enterSubAgent），
         // 不依赖「第一个 WS 块 = root」的流式顺序推断（mainagent 无流式输出时 subagent 不再误判为 root）
-        // execution_key（〇·3）：栈元素为 executionKey（并发实例独立层级/出栈）
+        // message_id（session_message_id，实例标识）：栈元素/归组键（并发实例独立层级/出栈）
+        // source_tool_call_id（tc.id 方案）：产生该子执行的 tool_call id——前端在子组出现时
+        // 按 tc.id 精确嵌套（流式/回显统一对号）
         const startParentAgentId = (event as any).metadata?.parent_agent_id;
         const startAgentId = (event as any).agent_id;
-        const startExecutionKey = (event as any).metadata?.execution_key;
-        if (startAgentId && startExecutionKey) {
+        const startMessageId = (event as any).metadata?.message_id;
+        const startSourceToolCallId = (event as any).metadata?.source_tool_call_id;
+        if (startAgentId && startMessageId) {
           if (startParentAgentId) {
-            streamingHook.enterSubAgent(startAgentId, (event as any).agent_name, startExecutionKey);
+            // 层级 = parent 层级 + 1（并发同层实例层级一致，不依赖栈深）
+            streamingHook.enterSubAgent(startAgentId, (event as any).agent_name, startMessageId, startParentAgentId, startSourceToolCallId);
           } else {
             // root（mainagent）：同时记录轮次级归属（finalizeExecution 读取，
             // 与流式状态机解耦——finalizeStream 清空 rootAgentIdRef 不影响此归属）
             roundRootAgentIdRef.current = startAgentId;
-            streamingHook.enterRootAgent(startAgentId, startExecutionKey);
+            streamingHook.enterRootAgent(startAgentId, startMessageId);
           }
         }
         break;
@@ -712,7 +727,7 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
         const completeAgentName = (event as any).agent_name;
         const parentAgentId = (event as any).metadata?.parent_agent_id;
         const isCompactionRound = (event as any).metadata?.compaction_round === true;
-        const completeExecutionKey = (event as any).metadata?.execution_key;
+        const completeMessageId = (event as any).metadata?.message_id;
         const completeAgentUsage = (event as any).metadata?.agent_usage;
         // 压缩轮次与正常轮次完全相同：不打断流式、不 commit 独立消息（移除原 finalizeStream+commit），
         // 所有块持续累积，最终由 execution_complete / 用户 stop 统一 commit。
@@ -723,15 +738,15 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           // 完成块级 token 注入（含压缩轮 stop 拦截阶段——该阶段无迭代推送，仅由此补写，
           // 值含 intercepted_entry 与回显一致；不再需要独立的 injectAgentTokens）。
           // 后端聚合改造（4.4-3）：metadata.agent_usage（agent 级整轮）同步写入
-          // agentUsageMap（消息头/组头整轮显示）；execution_key 用于块级 token 匹配。
-          streamingHook.updateAgentTokens(completeAgentId, completeTokens, completeAgentUsage, completeExecutionKey);
+          // agentUsageMap（消息头/组头整轮显示）；message_id 用于块级 token 匹配。
+          streamingHook.updateAgentTokens(completeAgentId, completeTokens, completeAgentUsage, completeMessageId);
           // B8 修复删除：mainagent 消息级 token 不再前端累计（rootAgentTokensRef 已删），
           // 由 agentUsageMap[rootAgentId] 提供整轮聚合（4.4-1/4.4-6）。
         }
         // subagent 完成（非压缩轮、status=completed、有 parent_agent_id）：pop 回父级层级
-        // （〇·3：栈元素为 executionKey，按此出栈）
-        if (!isCompactionRound && (event as any).status === 'completed' && parentAgentId && completeExecutionKey) {
-          streamingHook.exitAgent(completeExecutionKey);
+        //（栈元素为 messageId，按此出栈）
+        if (!isCompactionRound && (event as any).status === 'completed' && parentAgentId && completeMessageId) {
+          streamingHook.exitAgent(completeMessageId);
         }
         break;
       }
@@ -904,13 +919,13 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
           // 问题 1 修复：实时 token 更新事件（后端每次 LLM 迭代结束推送）。
           // 非消息块，仅更新该 agent 的流式 token 详情，不进入内容渲染路径。
           // 后端聚合改造（4.4-4）：delta.agent_usage（agent 级整轮）同步写 agentUsageMap；
-          // delta.execution_key 用于块级 token 匹配（并发实例独立）。
+          // delta.message_id 用于块级 token 匹配（并发实例独立）。
           if ((delta as any).type === 'agent_token_usage' && (delta as any).usage) {
             streamingHook.updateAgentTokens(
               (event as any).agent_id,
               (delta as any).usage,
               (delta as any).agent_usage,
-              (event as any).execution_key,
+              (event as any).message_id,
             );
             lastStreamActivityRef.current = Date.now();
             break;
@@ -932,9 +947,9 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
             || (delta as any).text !== undefined && (delta as any).text !== null;
           const hasLegacyContent = event.content !== undefined && event.content_type !== undefined;
           if (hasContent) {
-            // 〇·3（4.4-5）：stream 块归属 execution_key（从 WS 消息 execution_key 读），
-            // 注入块级 execution_key（并发栈/块级 token 匹配依据）
-            streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name, (event as any).execution_key);
+            // stream 块归属 message_id（从 WS 消息 message_id 读），注入块级 message_id
+            //（并发栈/块级 token 匹配依据）
+            streamingHook.processStreamChunk(delta, (event as any).agent_id, (event as any).agent_name, (event as any).message_id);
             setIsWaitingReply(false);
           } else if (hasLegacyContent) {
             streamingHook.processLegacyStream(event.content!, event.content_type!);
@@ -1080,24 +1095,16 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   }, [startRunning, stopRunning, setIsWaitingReply, setCallRecords, openAgenticPanel, setMessages, clearSubagentOutputs, setSubagentOutputs, currentSessionId, incrementFileChangeRefreshKey, clearTimeouts, finalizeExecution]);
 
-  const handleWebSocketMessage = useCallback((msg: any) => {
-    if (msg.type === 'execution_result') {
-      stopRunning();
-      setIsWaitingReply(false);
-    }
-  }, [stopRunning, setIsWaitingReply]);
-
   const handleWebSocketError = useCallback((_error?: any) => {
     message.error('WebSocket连接错误');
     stopRunning();
     setIsWaitingReply(false);
   }, [stopRunning, setIsWaitingReply]);
 
-  const { isConnected, executeFlow, stopFlow, send } = useRunWebSocket({
+  const { isConnected, executeFlow, stopFlow, send, sendInteractionAnswer } = useRunWebSocket({
     agenticFlowId: agenticFlowId || null,
     sessionId: currentSessionId,
     runProjectId: currentProject?.id || null,
-    onMessage: handleWebSocketMessage,
     onEvent: handleExecutionEvent,
     onError: handleWebSocketError,
     autoReconnect: true,
@@ -1462,21 +1469,22 @@ const RunPanel: React.FC<RunPanelProps> = ({ agenticFlowId }) => {
     }
   };
 
-  // 工具交互回答：AskUserQuestion / ExitPlanMode 等待用户回答时，
-  // 交互面板点击选项/批准后调用。复用执行通道（executeFlow → WS execute），
-  // 后端在执行任务未完成时将回答消息入队，工具 await 消息队列拿到回答。
-  const handleUserAnswer = useCallback(async (text: string) => {
+  // 工具交互回答：AskUserQuestion / ExitPlanMode / 命令审批 等待用户回答时，
+  // 交互面板点击选项/批准后调用。走独立 interaction_answer 通道（sendInteractionAnswer），
+  // 与排队消息（execute → 业务消息队列）完全隔离——后端工具 await_user_message 从回答队列取，
+  // 杜绝执行中发送的排队消息被审批等待误取（同队列竞态）。
+  const handleUserAnswer = useCallback(async (text: string, toolCallId?: string) => {
     if (!text.trim()) return;
     if (!agenticFlowId || !currentProject?.id) {
       message.warning('请先选择项目和流程');
       return;
     }
     if (isConnectedRef.current) {
-      await executeFlow(canvasData, text, agenticFlowId, currentSessionId || undefined, currentProject?.id);
+      await sendInteractionAnswer(text, toolCallId);
     } else {
       message.warning('WebSocket 未连接，无法发送回答');
     }
-  }, [agenticFlowId, currentProject?.id, canvasData, currentSessionId, executeFlow]);
+  }, [sendInteractionAnswer]);
 
   // 注入工具交互回答发送器（供 ToolCallsBlock 交互面板调用）
   useEffect(() => {

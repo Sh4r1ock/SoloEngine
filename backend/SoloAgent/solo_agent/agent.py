@@ -30,18 +30,20 @@ SoloAgent机制-agent.py: SoloAgent基础类，简洁的Agent配置类，支持�
 import asyncio
 import logging
 import os
-from typing import Optional, List, Dict, Any, AsyncGenerator, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 
 from .config import SoloAgentConfig
 from ..utils.message_utils import MessageBlockExtractor
 from ..model.model_response import ChatResponse
 from ..message import Msg
+from .file_change_tracking import FileChangeTracker
 
 if TYPE_CHECKING:
     from ..core.react_core import ReActCore
     from ..model.model_base import BaseLLM
     from ..plugins.mcp.mcp_client import MCPClient
     from ..plugins.tools.agent.mcp import MCPServerInfo
+    from .compiler.compiled_flow import CompiledFlow
 
 logger = logging.getLogger("SoloEngine")
 
@@ -63,7 +65,6 @@ class SoloAgent:
         _initialized (bool): 是否已初始化
         _llm (Optional[BaseLLM]): LLM模型实例
         _core (Optional[ReActCore]): ReAct核心实例
-        _mcp_clients (List[MCPClient]): MCP客户端列表
         _tools (Dict[str, Any]): 工具字典
         _subagents (Dict[str, SoloAgent]): 子Agent字典
         _message_history (List[Dict]): 消息历史
@@ -84,7 +85,6 @@ class SoloAgent:
         
         self._llm: Optional["BaseLLM"] = None
         self._core: Optional["ReActCore"] = None
-        self._mcp_clients: List["MCPClient"] = []
         self._mcp_servers_info: Dict[str, "MCPServerInfo"] = {}
         self._tools: Dict[str, Any] = {}
         self._subagents: Dict[str, "SoloAgent"] = {}
@@ -96,6 +96,16 @@ class SoloAgent:
         self._event_callback: Optional[callable] = None
         self._working_dir: str = ""
         self._pre_tool_hashes: Dict[str, str] = {}
+        self._file_change_tracker = FileChangeTracker(self)
+        # C1：本实例当前执行的有效取消事件（prepare_execution 注入），
+        # 替代跨层读 ReactCore._current_cancel_event 私有属性
+        self._exec_cancel_event: Optional[asyncio.Event] = None
+        # 编译流反向引用（C2：经 set_compiled_flow 公开 setter 写入）
+        self._compiled_flow: Optional["CompiledFlow"] = None
+        # 父实例 message_id（agent_start 事件 parent_message_id 来源，C1：经公开 setter 写入）
+        self._parent_message_id: Optional[str] = None
+        # 执行实例 message_id（session_message_id，prepare_execution 注入）
+        self._message_id: Optional[str] = None
         
     @property
     def name(self) -> str:
@@ -106,19 +116,8 @@ class SoloAgent:
         return self.config.agent_id or self.config.name
     
     @property
-    def subagents(self) -> List[Dict[str, Any]]:
-        return self.config.subagents
-    
-    @property
     def agent_type(self) -> str:
         return self.config.agent_type
-    
-    @property
-    def last_tool_calls(self) -> List[Dict[str, Any]]:
-        return self._last_tool_calls
-    
-    def set_last_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> None:
-        self._last_tool_calls = tool_calls or []
 
     def set_file_change_context(self, working_dir: str) -> None:
         self._working_dir = working_dir or ""
@@ -127,249 +126,88 @@ class SoloAgent:
         set_file_tool_working_dir(self._working_dir)
         logger.info(f"[set_file_change_context] working_dir={working_dir}")
 
-    FILE_OP_TOOLS = {"Write", "SearchReplace", "DeleteFile", "write_file", "search_replace", "delete_file", "create_file", "edit_file"}
-
-    MCP_FILE_PATH_PARAMS = {
-        "path", "file_path", "filePath", "filepath",
-        "source_path", "target_path", "output_path", "destination",
-        "notebook_path", "image_path", "document_path",
-        "directory", "dir_path", "folder_path",
-    }
-
-    MCP_FILE_PATH_ARRAY_PARAMS = {
-        "paths", "files", "file_paths", "filePaths",
-    }
-
     async def _on_tool_executing(self, tool_call: Dict) -> None:
-        tool_name = tool_call.get("name")
-
-        if tool_name in self.FILE_OP_TOOLS:
-            file_paths = self._extract_all_file_paths(tool_call)
-            for fp in file_paths:
-                abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
-                # 仅对文件存储 CAS（LS 等工具返回的路径可能为目录，
-                # 目录 open('rb') 会抛 PermissionError）
-                if os.path.exists(abs_path) and os.path.isfile(abs_path):
-                    from app.core.content_addressable_storage import cas
-                    from app.utils.file_utils import normalize_file_path
-                    before_hash = cas.store_file(abs_path)
-                    rel_path = normalize_file_path(abs_path, self._working_dir)
-                    self._pre_tool_hashes[rel_path] = before_hash
-
-        elif self._is_mcp_tool(tool_name):
-            file_paths = self._extract_mcp_file_paths(tool_call)
-            for fp in file_paths:
-                abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
-                # 仅对文件存储 CAS（MCP 工具返回的路径可能为目录）
-                if os.path.exists(abs_path) and os.path.isfile(abs_path):
-                    from app.core.content_addressable_storage import cas
-                    from app.utils.file_utils import normalize_file_path
-                    before_hash = cas.store_file(abs_path)
-                    rel_path = normalize_file_path(abs_path, self._working_dir)
-                    self._pre_tool_hashes[rel_path] = before_hash
-
-    def _extract_file_path(self, tool_call: Dict) -> Optional[str]:
-        args = tool_call.get("arguments", {}) or tool_call.get("function", {}).get("arguments", {})
-        if isinstance(args, str):
-            import json
-            try:
-                args = json.loads(args)
-            except Exception:
-                return None
-        return args.get("path") or args.get("file_path") or args.get("filePath")
-
-    def _extract_all_file_paths(self, tool_call: Dict) -> List[str]:
-        args = tool_call.get("arguments", {}) or tool_call.get("function", {}).get("arguments", {})
-        if isinstance(args, str):
-            import json
-            try:
-                args = json.loads(args)
-            except Exception:
-                return []
-
-        paths = []
-        single = args.get("path") or args.get("file_path") or args.get("filePath")
-        if single and isinstance(single, str):
-            paths.append(single)
-
-        multi = args.get("file_paths") or args.get("filePaths")
-        if multi and isinstance(multi, list):
-            paths.extend([p for p in multi if isinstance(p, str)])
-
-        return paths
-
-    def _is_mcp_tool(self, tool_name: str) -> bool:
-        return tool_name not in self.FILE_OP_TOOLS and tool_name not in {"RunCommand", "Task"}
-
-    def _extract_mcp_file_paths(self, tool_call: Dict) -> List[str]:
-        args = tool_call.get("arguments", {}) or {}
-        if isinstance(args, str):
-            import json
-            try:
-                args = json.loads(args)
-            except Exception:
-                return []
-
-        file_paths = []
-
-        for param_name in self.MCP_FILE_PATH_PARAMS:
-            if param_name in args and isinstance(args[param_name], str):
-                val = args[param_name]
-                if self._looks_like_file_path(val):
-                    file_paths.append(val)
-
-        for param_name, val in args.items():
-            if param_name in self.MCP_FILE_PATH_PARAMS:
-                continue
-            if isinstance(val, str) and self._looks_like_file_path(val):
-                param_lower = param_name.lower()
-                if any(kw in param_lower for kw in ("path", "file", "dir", "output", "dest", "source", "target", "folder", "location", "uri")):
-                    file_paths.append(val)
-
-        for param_name in self.MCP_FILE_PATH_ARRAY_PARAMS:
-            if param_name in args and isinstance(args[param_name], list):
-                file_paths.extend([p for p in args[param_name] if isinstance(p, str) and self._looks_like_file_path(p)])
-
-        if "uri" in args and isinstance(args["uri"], str) and args["uri"].startswith("file://"):
-            from urllib.parse import urlparse
-            parsed = urlparse(args["uri"])
-            if parsed.path:
-                file_paths.append(parsed.path)
-
-        return list(set(file_paths))
-
-    def _looks_like_file_path(self, val: str) -> bool:
-        if not val or len(val) < 2:
-            return False
-        return (
-            val.startswith("/") or
-            val.startswith("./") or
-            val.startswith("..") or
-            val.startswith("~") or
-            (len(val) > 2 and val[1] == ":") or
-            "." in os.path.basename(val)
-        )
+        await self._file_change_tracker.on_tool_executing(tool_call)
 
     async def _on_tool_executed(self, tool_call: Dict, result: Any):
-        if not self._working_dir:
-            return
+        await self._file_change_tracker.on_tool_executed(tool_call, result)
+        # 框架驱动（单向架构：上级调下级，工具只产出数据）：
+        # 数据驱动（非工具名集合）：任何工具只要返回子代理启动声明
+        #（subagent_id + task），框架即启动该子执行并返回其执行结果，
+        # react_core 用它覆盖工具声明结果注入 LLM 上下文；无声明返回 None（行为不变）。
+        if isinstance(result, dict):
+            subagent_id = result.get("subagent_id")
+            task_content = result.get("task")
+            if subagent_id and task_content and self._compiled_flow is not None:
+                return await self._launch_subagent(
+                    tool_call,
+                    result.get("subagent_name"),
+                    subagent_id,
+                    task_content,
+                )
+        return None
 
-        tool_name = tool_call.get("name")
-        change_list = []
-
+    async def _launch_subagent(
+        self,
+        tool_call: Dict,
+        subagent_name: str,
+        subagent_id: str,
+        task_content: str,
+    ) -> Dict[str, Any]:
+        """启动 SubAgent 并返回其执行结果（框架侧，_on_tool_executed 钩子内调用）。"""
         try:
-            if tool_name in self.FILE_OP_TOOLS:
-                from app.services.file_change import file_change_manager
-                changes = file_change_manager.compute_incremental_change(
-                    tool_call=tool_call,
-                    working_dir=self._working_dir
-                )
-                change_list = changes if isinstance(changes, list) else ([changes] if changes else [])
-                for change in change_list:
-                    if change:
-                        fp = change.get("file_path", "")
-                        abs_path = os.path.join(self._working_dir, fp)
+            subagent = self._compiled_flow.create_agent_instance(subagent_id)
+            task_msg = Msg(name="user", content=task_content, role="user")
+            # C1：取消事件使用 SoloAgent 自身维护的 _exec_cancel_event
+            #（prepare_execution 注入，与 ReactCore._current_cancel_event 语义等价），
+            # 不再跨三层私有链读 self._core._current_cancel_event。
+            cancel_event = self._exec_cancel_event
+            # 父实例 message_id（agent_start 事件 metadata.parent_message_id 来源，
+            # 前端层级关联 + 保存链路 task 消息的 parent_message_id 定位依据）
+            # C1：经公开 setter 写入，不直接赋值子实例私有字段 _parent_message_id
+            subagent.set_parent_message_id(self._message_id)
+            # message_id 不传 → execute_agent 内部生成（HEAD 机制，作为历史消息 id）；
+            # source_tool_call_id = 本次 Task 调用的 tc.id（agent_start 携带，前端流式对号）
+            # C1：经 CompiledFlow 公开方法 execute_agent 调用，不调私有 _execute_agent
+            result = await self._compiled_flow.execute_agent(
+                subagent,
+                task_msg,
+                context={},
+                cancel_event=cancel_event,
+                parent_agent_id=self.agent_id,
+                parent_agent_name=self.name,
+                task_content=task_content,
+                source_tool_call_id=tool_call.get("id"),
+            )
+            # 子执行消息 id：_execute_agent 内部生成后经 prepare_execution 写入 subagent._message_id
+            #（agent_start/stream 事件携带，前端归组/实例标识，HEAD 机制）
+            if isinstance(result, dict):
+                if result.get("status") == "failed":
+                    error_msg = result.get("error", "Unknown error")
+                    return {
+                        "success": False,
+                        "error_message": f"SubAgent执行失败: {error_msg}",
+                        "content": str(error_msg),
+                    }
+                final_content = result.get("output", "")
+            else:
+                final_content = str(result)
 
-                        if fp in self._pre_tool_hashes and change.get("operation") == "created":
-                            change["operation"] = "modified"
-
-                        if change.get("operation") == "deleted":
-                            change["before_content_hash"] = self._pre_tool_hashes.pop(fp, None)
-                            change["after_content_hash"] = None
-                        elif os.path.exists(abs_path):
-                            from app.core.content_addressable_storage import cas
-                            after_hash = cas.store_file(abs_path)
-                            change["before_content_hash"] = self._pre_tool_hashes.get(fp)
-                            change["after_content_hash"] = after_hash
-                            self._pre_tool_hashes[fp] = after_hash
-
-                        if change.get("content_type", "text") == "text":
-                            if change.get("operation") == "deleted":
-                                if change.get("before_content_hash"):
-                                    try:
-                                        from app.core.content_addressable_storage import cas
-                                        from app.utils.file_utils import compute_text_diff
-                                        old_bytes = cas.get_content(change["before_content_hash"])
-                                        old_content = old_bytes.decode('utf-8', errors='replace') if old_bytes else ""
-                                        diff_data = compute_text_diff(old_content, "", fp)
-                                        change["diff"] = diff_data
-                                    except Exception as e:
-                                        logger.warning(f"Failed to compute diff for deleted {fp}: {e}")
-                            elif os.path.exists(abs_path):
-                                try:
-                                    from app.core.content_addressable_storage import cas
-                                    from app.utils.file_utils import compute_text_diff
-                                    if change.get("before_content_hash"):
-                                        old_bytes = cas.get_content(change["before_content_hash"])
-                                        old_content = old_bytes.decode('utf-8', errors='replace') if old_bytes else ""
-                                    else:
-                                        old_content = ""
-                                    with open(abs_path, 'rb') as f:
-                                        new_content = f.read().decode('utf-8', errors='replace')
-                                    diff_data = compute_text_diff(old_content, new_content, fp)
-                                    change["diff"] = diff_data
-                                except Exception as e:
-                                    logger.warning(f"Failed to compute diff for {fp}: {e}")
-
-                        if "content_type" not in change:
-                            from app.utils.file_utils import get_content_type
-                            change["content_type"] = get_content_type(fp)
-
-            elif self._is_mcp_tool(tool_name):
-                file_paths = self._extract_mcp_file_paths(tool_call)
-                from app.core.content_addressable_storage import cas
-                from app.utils.file_utils import get_content_type, normalize_file_path
-                for fp in file_paths:
-                    abs_path = os.path.join(self._working_dir, fp) if not os.path.isabs(fp) else fp
-                    rel_path = normalize_file_path(abs_path, self._working_dir)
-                    before_hash = self._pre_tool_hashes.get(rel_path)
-                    content_type = get_content_type(rel_path)
-
-                    # 仅对文件存储 CAS（LS 等工具返回的路径可能为目录，
-                    # 目录 open('rb') 会抛 PermissionError）
-                    if os.path.exists(abs_path) and os.path.isfile(abs_path):
-                        after_hash = cas.store_file(abs_path)
-                        if before_hash and before_hash != after_hash:
-                            change_list.append({
-                                "file_path": rel_path,
-                                "operation": "modified",
-                                "tool_call_id": tool_call.get("id"),
-                                "before_content_hash": before_hash,
-                                "after_content_hash": after_hash,
-                                "content_type": content_type,
-                            })
-                        elif not before_hash:
-                            change_list.append({
-                                "file_path": rel_path,
-                                "operation": "created",
-                                "tool_call_id": tool_call.get("id"),
-                                "before_content_hash": None,
-                                "after_content_hash": after_hash,
-                                "content_type": content_type,
-                            })
-                    elif before_hash:
-                        change_list.append({
-                            "file_path": rel_path,
-                            "operation": "deleted",
-                            "tool_call_id": tool_call.get("id"),
-                            "before_content_hash": before_hash,
-                            "after_content_hash": None,
-                            "content_type": content_type,
-                        })
-
-            if change_list and self._event_callback:
-                from ..solo_agent.compiler.flow_compiler import ExecutionEvent
-                event = ExecutionEvent(
-                    event_type="file_change_preview",
-                    agent_id=self.agent_id,
-                    agent_name=self.name,
-                    file_changes=change_list,
-                )
-                self._event_callback(event)
-
+            return {
+                "success": True,
+                "subagent_name": subagent_name,
+                "subagent_id": subagent_id,
+                "error_message": None,
+                "content": final_content,
+            }
         except Exception as e:
-            logger.warning(f"Failed to compute change: {e}", exc_info=True)
-    
+            logger.error(f"[SoloAgent] SubAgent launch failed: {e}")
+            return {
+                "success": False,
+                "error_message": str(e),
+                "content": str(e),
+            }
+
     def set_subagents(self, agents: Dict[str, "SoloAgent"], subagents_info: List[Dict[str, Any]] = None) -> None:
         self._subagents = agents
         if subagents_info:
@@ -386,9 +224,6 @@ class SoloAgent:
                 }
                 for name, agent in agents.items()
             ]
-    
-    def get_subagent(self, agent_id: str) -> Optional["SoloAgent"]:
-        return self._subagents.get(agent_id)
     
     def set_stream_callback(self, callback: callable) -> None:
         """
@@ -504,8 +339,8 @@ class SoloAgent:
                         if block_type == "thinking":
                             content_list.append({"type": "thinking", "thinking": block.get("thinking", "")})
                         elif block_type == "reasoning_content":
-                            rc = block.get("reasoning_content", block.get("content", ""))
-                            content_list.append({"type": "reasoning_content", "reasoning_content": rc if isinstance(rc, str) else str(rc)})
+                            reasoning_content = block.get("reasoning_content", block.get("content", ""))
+                            content_list.append({"type": "reasoning_content", "reasoning_content": reasoning_content if isinstance(reasoning_content, str) else str(reasoning_content)})
                         else:
                             content_list.append(block)
 
@@ -517,8 +352,8 @@ class SoloAgent:
                             if block.get("type") == "thinking":
                                 thinking_parts.append(block.get("thinking", ""))
                             elif block.get("type") == "reasoning_content":
-                                rc = block.get("reasoning_content", block.get("content", ""))
-                                thinking_parts.append(rc if isinstance(rc, str) else str(rc or ""))
+                                reasoning_content = block.get("reasoning_content", block.get("content", ""))
+                                thinking_parts.append(reasoning_content if isinstance(reasoning_content, str) else str(reasoning_content or ""))
                     if thinking_parts:
                         metadata["thinking"] = "\n".join(thinking_parts)
 
@@ -722,13 +557,9 @@ class SoloAgent:
         if toolkit_executor:
             self._core.tool_executor = toolkit_executor
 
-        if hasattr(self._core, '_on_tool_executed') and hasattr(self._core, '_on_tool_executing'):
-            self._core._on_tool_executed = self._on_tool_executed
-            self._core._on_tool_executing = self._on_tool_executing
-            logger.info(f"[SoloAgent] Set _on_tool_executed callback, pre_tool_hashes={len(self._pre_tool_hashes)}, working_dir={self._working_dir}")
-            logger.info(f"[SoloAgent] _core._on_tool_executed is now: {self._core._on_tool_executed is not None}")
-        else:
-            logger.warning(f"[SoloAgent] _core does not have _on_tool_executed attribute")
+        # M9：_core._on_tool_executed/_on_tool_executing 回调桥接统一在 prepare_execution 注入
+        #（initialize 仅负责构建 _core；prepare_execution 是执行前统一入口，每次执行都兜底注入，
+        #  已初始化实例也确保生效，因此此处不再重复设置）
 
         if self._message_history:
             # SoloAgent 层负责将原始格式转换为 Msg 对象
@@ -866,199 +697,93 @@ class SoloAgent:
         if self._core:
             return self._core.take_accumulated_usage()
         return None
-    
-    async def stream(self, message: str) -> AsyncGenerator[str, None]:
+
+    # ---- A2：compiler 层经公开方法访问 agent/core 私有状态（不直接改私有属性）----
+
+    # C2/C3：CompiledFlow 反向引用 & MCP 服务器信息 公开 setter/getter
+    #（compiler 层不再直接写 _compiled_flow / _mcp_servers_info 私有字段）
+    def set_compiled_flow(self, compiled_flow) -> None:
+        """经公开 setter 写入 CompiledFlow 反向引用（C2：替代直接赋值 _compiled_flow）。"""
+        self._compiled_flow = compiled_flow
+
+    def set_mcp_servers_info(self, mcp_servers_info: Dict[str, "MCPServerInfo"]) -> None:
+        """经公开 setter 写入 MCP 服务器信息（C2/C3：替代直接赋值 _mcp_servers_info）。"""
+        self._mcp_servers_info = mcp_servers_info or {}
+
+    def get_mcp_servers_info(self) -> Dict[str, "MCPServerInfo"]:
+        """公开获取 MCP 服务器信息（C2：compiler 层经公开方法读取）。"""
+        return self._mcp_servers_info
+
+    # C1：父实例 message_id 公开 setter（替代直接写子实例私有 _parent_message_id）
+    def set_parent_message_id(self, parent_message_id: Optional[str]) -> None:
+        """设置父实例 message_id（agent_start 事件 metadata.parent_message_id 来源）。"""
+        self._parent_message_id = parent_message_id
+
+    # C4：初始化状态公开查询（替代直接读 _initialized 私有字段）
+    def is_initialized(self) -> bool:
+        """当前 Agent 是否已完成初始化（C4：flow_runner 经公开方法查询）。"""
+        return self._initialized
+
+    # C1：当前执行有效取消事件公开查询（prepare_execution 注入，跨层不再读 ReactCore 私有）
+    def get_cancel_event(self) -> Optional[asyncio.Event]:
+        """当前执行的有效取消事件（未开始执行时为 None）。"""
+        return self._exec_cancel_event
+
+    async def prepare_execution(
+        self,
+        message_id: str,
+        cancel_event: asyncio.Event = None,
+        event_callback: callable = None,
+        working_dir: str = None,
+        memory: List[Dict[str, Any]] = None,
+    ) -> None:
+        """执行前统一准备（A2：compiler 层唯一入口，封装对私有属性的全部直接访问）。
+
+        统一封装 compiled_flow._execute_agent 此前直接改动的私有状态：
+        - _event_callback 注入
+        - set_file_change_context（working_dir，增量 diff 依赖）
+        - set_message_history + initialize（未初始化时）
+        - _core._on_tool_executed / _on_tool_executing 回调桥接（已初始化实例也确保生效）
+        - _core.set_message_id + _message_id（执行实例标识 = session_message_id：
+          所有 agent 统一由 _execute_agent 内部生成，prepare_execution 注入）
         """
-        流式处理用户消息并生成回复
-
-        以流式方式处理用户输入，逐步返回生成的文本片段。
-
-        Args:
-            message: 用户输入消息
-
-        Returns:
-            AsyncGenerator[str, None]: 文本片段的异步生成器
-
-        Raises:
-            RuntimeError: 当Agent核心未初始化时抛出
-
-        Example:
-            >>> async for chunk in agent.stream("Tell me a story"):
-            ...     print(chunk, end="")
-        """
+        self._event_callback = event_callback
+        # C1：保存当前执行的有效取消事件（_launch_subagent 传递子执行时使用）
+        self._exec_cancel_event = cancel_event
+        if working_dir:
+            self.set_file_change_context(working_dir)
+        if memory and hasattr(self, 'set_message_history'):
+            self.set_message_history(memory)
         if not self._initialized:
             await self.initialize()
-        
-        if self._core is None:
-            raise RuntimeError("Agent core not initialized")
-        
-        from ..formatter.openai_formatter import OpenAIChatFormatter
-        from ..message import Msg
+        if self._core is not None:
+            self._core._on_tool_executed = self._on_tool_executed
+            self._core._on_tool_executing = self._on_tool_executing
+            self._core.set_message_id(message_id)
+        self._message_id = message_id
 
-        stream_model = self._create_openai_compatible_model(stream=True)
-        
-        formatter = OpenAIChatFormatter()
-        messages = [
-            Msg(name="system", content=self.config.system_prompt, role="system"),
-        ]
-        for msg in self._message_history:
-            messages.append(Msg(
-                name=msg["role"],
-                content=msg["content"],
-                role=msg["role"],
-            ))
-        messages.append(Msg(name="user", content=message, role="user"))
-        
-        formatted = await formatter.format(messages)
-        
-        stream_result = await stream_model(formatted)
-        
-        async for chunk in stream_result:
-            if hasattr(chunk, 'content'):
-                for block in chunk.content:
-                    if isinstance(block, dict):
-                        if block.get("type") == "text":
-                            text = block.get("text", "")
-                            yield text
-                        elif block.get("type") == "thinking":
-                            thinking = block.get("thinking", "")
-                            yield f"<think:{thinking}>"
-                    elif hasattr(block, 'text'):
-                        yield block.text
-            elif isinstance(chunk, str):
-                yield chunk
-    
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        调用指定工具
+    def get_core_model(self):
+        """公开获取核心模型实例（A2：compiler 层不直接读 _core.model）。"""
+        return self._core.model if self._core else None
 
-        根据工具名称查找并执行工具，返回执行结果。
-
-        Args:
-            tool_name: 工具名称
-            arguments: 工具参数字典
-
-        Returns:
-            Dict[str, Any]: 工具执行结果，包含success和result字段
-
-        Raises:
-            ValueError: 当工具不存在或没有execute方法时抛出
-
-        Example:
-            >>> result = await agent.call_tool("search", {"query": "python"})
-            >>> print(result["result"])
-        """
-        from .tools import ToolRegistry
-        
-        tool = ToolRegistry.get_tool(tool_name)
-        if tool is None:
-            raise ValueError(f"Tool '{tool_name}' not found")
-        
-        if hasattr(tool, 'execute'):
-            result = tool.execute(**arguments)
-            if asyncio.iscoroutine(result):
-                result = await result
-            return {"success": True, "result": result}
-        else:
-            raise ValueError(f"Tool '{tool_name}' does not have execute method")
-    
-    async def call_subagent(self, subagent_name: str, task: str) -> str:
-        """
-        调用子Agent执行任务
-
-        根据子Agent名称查找并分配任务，返回执行结果。
-
-        Args:
-            subagent_name: 子Agent名称
-            task: 任务描述
-
-        Returns:
-            str: 子Agent的执行结果
-
-        Raises:
-            ValueError: 当子Agent不存在时抛出
-
-        Example:
-            >>> result = await agent.call_subagent("code_reviewer", "Review this code")
-            >>> print(result)
-        """
-        subagent = self.get_subagent(subagent_name)
-        if subagent is None:
-            for agent in self._subagents.values():
-                if agent.config.name == subagent_name:
-                    subagent = agent
-                    break
-        
-        if subagent is None:
-            raise ValueError(f"Subagent '{subagent_name}' not found")
-        
-        logger.info(f"[call_subagent] Calling subagent '{subagent_name}' with task: {task[:100]}...")
-        
-        if not subagent._initialized:
-            await subagent.initialize()
-        
-        task_msg = Msg(name="user", content=task, role="user")
-        cancel_event = getattr(self._core, '_current_cancel_event', None) if self._core else None
-        result = await subagent.reply(task_msg, cancel_event=cancel_event)
-        
-        if hasattr(result, 'content'):
-            content = result.content
-        elif isinstance(result, dict):
-            content = result.get('content', str(result))
-        else:
-            content = str(result)
-        
-        logger.info(f"[call_subagent] Subagent '{subagent_name}' returned: {content[:200]}...")
-        return content
-    
-    def interrupt(self) -> None:
-        """
-        中断当前正在进行的模型输出。
-        
-        调用此方法后，流式输出会立即停止，API 不再发送请求。
-        这是一个真实的中断，不会消耗额外的 token。
-        
-        Example:
-            >>> # 在另一个线程中调用
-            >>> agent.interrupt()
-        """
-        if hasattr(self, '_core') and self._core:
-            self._core.interrupt()
-            logger.info(f"[SoloAgent] Interrupt requested for agent '{self.config.name}'")
-    
     def is_interrupted(self) -> bool:
-        """
-        检查是否已被中断。
-        
-        Returns:
-            bool: 如果已被中断返回 True，否则返回 False。
-        """
-        if hasattr(self, '_core') and self._core:
-            return self._core.is_interrupted()
-        return False
-    
-    async def close(self) -> None:
-        """
-        关闭Agent并清理资源
+        """公开查询中断状态（A2：compiler 层不直接读 _core）。"""
+        return self._core.is_interrupted() if self._core else False
 
-        关闭所有MCP客户端连接，重置初始化状态。
+    def get_conversation_history(self):
+        """公开获取对话历史（A2：compiler 层不直接读 _core）。"""
+        return self._core.get_conversation_history() if self._core else []
 
-        Args:
-            无参数
+    def get_last_tool_calls(self) -> List[Dict[str, Any]]:
+        """公开获取最近一轮工具调用（A2：compiler 层不直接读 _last_tool_calls）。"""
+        return self._last_tool_calls.copy() if self._last_tool_calls else []
 
-        Returns:
-            None
+    def reset_agent_usage(self) -> None:
+        """公开重置 agent 级整轮累计（A2：compiler 层不直接读 _core）。"""
+        if self._core:
+            self._core.reset_agent_usage()
 
-        Raises:
-            无异常抛出
-
-        Example:
-            >>> await agent.close()
-            >>> print("Agent closed")
-        """
-        for client in self._mcp_clients:
-            if hasattr(client, 'close'):
-                await client.close()
-        
-        self._mcp_clients = []
-        self._initialized = False
+    async def compact(self, cancel_event: asyncio.Event = None) -> None:
+        """公开执行上下文压缩（A2：compiler 层不直接读 _core）。"""
+        if self._core:
+            await self._core.compact(cancel_event=cancel_event)

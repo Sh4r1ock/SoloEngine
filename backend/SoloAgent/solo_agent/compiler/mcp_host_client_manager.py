@@ -30,7 +30,7 @@ AgenticFlow编译器机制-mcp_host_client_manager.py: MCP Host Client管理器
 
 使用示例:
 - manager = MCPHostClientManager()
-- result = await manager.register_servers(mcp_servers, user_id)
+- result = await manager.connect_servers_async(mcp_servers, user_id)
 - tools = await manager.get_all_tools()
 """
 
@@ -65,59 +65,6 @@ class MCPHostClientManager:
         self._connection_tasks: Dict[str, asyncio.Task] = {}  # 连接任务跟踪
         self._shutdown_events: Dict[str, asyncio.Event] = {}  # 关闭信号事件（连接任务等待）
         self._server_data: Dict[str, Dict] = {}  # 保存server_id和user_id用于重连
-    
-    async def register_servers(
-        self, 
-        all_mcp_servers: Dict[str, Dict],
-        user_id: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """注册所有MCP Server，统一创建Client
-        
-        Args:
-            all_mcp_servers: 所有Agent配置的mcp_servers的并集
-                {"server_name": {"id": "...", "config": {...}}, ...}
-            user_id: 用户ID，用于权限检查
-        
-        Returns:
-            Dict[str, Any]: 注册结果
-                {
-                    "success": True/False,
-                    "registered": ["server_name1", ...],
-                    "failed": [{"name": "...", "error": "..."}],
-                    "total": 10,
-                    "connected": 8
-                }
-        """
-        registered = []
-        failed = []
-        
-        async def _register_one(server_name, server_data):
-            try:
-                await self._create_client(server_name, server_data, user_id)
-                return server_name, None
-            except Exception as e:
-                logger.error(f"[MCPHost] Failed to register '{server_name}': {e}")
-                return None, {"name": server_name, "error": str(e)}
-        
-        results = await asyncio.gather(*[
-            _register_one(name, data) for name, data in all_mcp_servers.items()
-        ], return_exceptions=True)
-        
-        for result in results:
-            if isinstance(result, Exception):
-                failed.append({"name": "unknown", "error": str(result)})
-            elif result[0]:
-                registered.append(result[0])
-            else:
-                failed.append(result[1])
-        
-        return {
-            "success": len(failed) == 0,
-            "registered": registered,
-            "failed": failed,
-            "total": len(all_mcp_servers),
-            "connected": len(registered)
-        }
     
     async def _create_client(
         self,

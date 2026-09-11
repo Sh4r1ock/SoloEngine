@@ -96,15 +96,4 @@ export const convertToMessages = (msgs: any[]): Message[] => {
   return result;
 };
 
-export const formatJson = (obj: any) => {
-  try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
-};
-
 export { copyToClipboard } from './dataBlockUtils';
-
-export const formatDuration = (duration?: number) => {
-  if (!duration) return '-';
-  if (duration < 1000) return `${duration}ms`;
-  if (duration < 60000) return `${(duration / 1000).toFixed(2)}s`;
-  return `${(duration / 60000).toFixed(2)}m`;
-};

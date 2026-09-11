@@ -62,14 +62,6 @@ class AuthApi {
   async updateMe(email?: string, password?: string): Promise<ApiResponse<User>> {
     return api.put<User>('/auth/me', { email, password });
   }
-
-  async getUsers(): Promise<ApiResponse<User[]>> {
-    return api.get<User[]>('/auth/users');
-  }
-
-  async deleteUser(userId: string): Promise<ApiResponse<{ user_id: string }>> {
-    return api.delete<{ user_id: string }>(`/auth/users/${userId}`);
-  }
 }
 
 export const authApi = new AuthApi();

@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Sequence, Optional
 
 from .model_usage import ChatUsage
-from ..utils import _get_timestamp, DictMixin
+from ..utils import get_timestamp, DictMixin
 from ..message import (
     TextBlock,
     ToolCallsBlock,
@@ -85,7 +85,7 @@ class ChatResponse(DictMixin):
     - 最后请求工具调用（ToolUseBlock）
     """
 
-    id: str = field(default_factory=lambda: _get_timestamp(True))
+    id: str = field(default_factory=lambda: get_timestamp(True))
     """
     响应唯一标识符。
     
@@ -93,7 +93,7 @@ class ChatResponse(DictMixin):
     默认使用带毫秒的时间戳生成。
     """
 
-    created_at: str = field(default_factory=_get_timestamp)
+    created_at: str = field(default_factory=get_timestamp)
     """
     响应创建时间。
     
@@ -233,17 +233,17 @@ class ChatResponse(DictMixin):
             
             if block_type == "tool_calls":
                 if isinstance(block, dict):
-                    tcs = block.get("tool_calls", [])
+                    block_tool_calls = block.get("tool_calls", [])
                 else:
-                    tcs = block.get("tool_calls", []) if hasattr(block, "get") else (block["tool_calls"] if "tool_calls" in block else [])
-                for tc in tcs:
-                    if isinstance(tc, dict):
-                        tc_id = tc.get("id", "")
-                        if tc_id and tc_id not in [t.get("id", "") for t in tool_calls]:
+                    block_tool_calls = block.get("tool_calls", []) if hasattr(block, "get") else (block["tool_calls"] if "tool_calls" in block else [])
+                for tool_call in block_tool_calls:
+                    if isinstance(tool_call, dict):
+                        tool_call_id = tool_call.get("id", "")
+                        if tool_call_id and tool_call_id not in [tool.get("id", "") for tool in tool_calls]:
                             # 清洗（Hermes 案例）：重建干净结构，仅保留
                             # id/type/function{name, arguments}，剔除
                             # call_id/response_item_id/function.parameters 等非标准字段
-                            func_raw = tc.get("function", {})
+                            func_raw = tool_call.get("function", {})
                             if isinstance(func_raw, dict):
                                 func_name = func_raw.get("name")
                                 func_args = func_raw.get("arguments")
@@ -251,8 +251,8 @@ class ChatResponse(DictMixin):
                                 func_name = str(func_raw) if func_raw else ""
                                 func_args = None
                             clean_tc = {
-                                "id": tc_id,
-                                "type": tc.get("type", "function"),
+                                "id": tool_call_id,
+                                "type": tool_call.get("type", "function"),
                                 "function": {"name": func_name, "arguments": func_args},
                             }
                             if not func_name:

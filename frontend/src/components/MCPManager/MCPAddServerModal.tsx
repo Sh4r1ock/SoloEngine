@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, InputNumber, Switch, App, Button, Divider, 
 import { PlusOutlined, DeleteOutlined, UploadOutlined, FolderOpenOutlined, FileZipOutlined, ApiOutlined, CloudServerOutlined, CodeOutlined, ToolOutlined } from '@ant-design/icons';
 import { MCPServer, MCPTool } from '../../services/mcpApi';
 import { mcpApi, CreateHttpServerRequest, CreateSseServerRequest } from '../../services/mcpApi';
+import TagInput from '../common/TagInput';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -70,7 +71,6 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
     const [stdioUploadType, setStdioUploadType] = useState<'zip' | 'folder'>('zip');
     const [fileList, setFileList] = useState<any[]>([]);
     const [tags, setTags] = useState<string[]>([]);
-    const [inputTagValue, setInputTagValue] = useState('');
     const [tools, setTools] = useState<MCPTool[]>([]);
     const [connecting, setConnecting] = useState(false);
     const [isOpeningDialog, setIsOpeningDialog] = useState(false);
@@ -238,28 +238,6 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
             }
             setTags(defaultTags);
         }
-    };
-
-    const handleTagInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setInputTagValue(e.target.value);
-    };
-
-    const handleTagInputConfirm = () => {
-        if (inputTagValue && !tags.includes(inputTagValue)) {
-            setTags([...tags, inputTagValue]);
-        }
-        setInputTagValue('');
-    };
-
-    const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            handleTagInputConfirm();
-        }
-    };
-
-    const handleTagRemove = (removedTag: string) => {
-        setTags(tags.filter(tag => tag !== removedTag));
     };
 
     const handleToolEnabledChange = async (toolName: string, isEnabled: boolean) => {
@@ -461,7 +439,6 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
         try {
             const values = await form.validateFields();
             setSaving(true);
-            console.log('[MCP Save] createType:', createType, 'server:', !!server, 'tools count:', tools.length);
 
             if (createType === 'python') {
                 const tools = [{
@@ -528,13 +505,11 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
                 }
             } else if (createType === 'stdio') {
                 if (server) {
-                    console.log('[MCP Save] Updating stdio server:', server.id, 'tools:', tools.length);
                     const response = await mcpApi.updateServer(server.id, {
                         description: values.description,
                         tags: tags,
                         tools: tools,
                     });
-                    console.log('[MCP Save] Update response:', response.code, response.message);
 
                     if (response.code === 200) {
                         message.success('Stdio MCP 更新成功！');
@@ -754,76 +729,7 @@ const MCPAddServerModal: React.FC<MCPAddServerModalProps> = ({
             <Row>
                 <Col span={24}>
                     <Form.Item label="标签">
-                        <div 
-                            style={{ 
-                                display: 'flex', 
-                                flexWrap: 'wrap', 
-                                gap: 4, 
-                                alignItems: 'center',
-                                padding: '1px 11px',
-                                border: '1px solid #d9d9d9',
-                                borderRadius: 6,
-                                minHeight: 30,
-                                backgroundColor: '#fff',
-                                fontSize: 14,
-                                transition: 'all 0.2s',
-                                cursor: 'text',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#4096ff';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = '#d9d9d9';
-                            }}
-                            onClick={(e) => {
-                                // 点击容器时聚焦到输入框
-                                const input = e.currentTarget.querySelector('input');
-                                if (input) {
-                                    input.focus();
-                                }
-                            }}
-                        >
-                            {tags.map((tag, index) => (
-                                <Tag
-                                    key={tag}
-                                    closable
-                                    onClose={(e) => {
-                                        e.stopPropagation();
-                                        handleTagRemove(tag);
-                                    }}
-                                    style={{
-                                        margin: 0,
-                                        padding: '0 7px',
-                                        fontSize: 14,
-                                        lineHeight: '20px',
-                                        borderRadius: 4,
-                                        backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
-                                        border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
-                                        color: tag === 'system' ? 'var(--primary-100)' : undefined,
-                                    }}
-                                >
-                                    {tag}
-                                </Tag>
-                            ))}
-                            <Input
-                                type="text"
-                                style={{ 
-                                    width: tags.length === 0 ? 120 : 80,
-                                    border: 'none',
-                                    backgroundColor: 'transparent',
-                                    boxShadow: 'none',
-                                    padding: 0,
-                                    fontSize: 14,
-                                    lineHeight: '20px',
-                                }}
-                                placeholder={tags.length === 0 ? "按回车添加标签" : ""}
-                                value={inputTagValue}
-                                onChange={handleTagInputChange}
-                                onBlur={handleTagInputConfirm}
-                                onKeyDown={handleTagInputKeyDown}
-                                onClick={(e) => e.stopPropagation()}
-                            />
-                        </div>
+                        <TagInput value={tags} onChange={setTags} />
                     </Form.Item>
                 </Col>
             </Row>

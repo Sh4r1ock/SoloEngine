@@ -1,6 +1,6 @@
 import React, { Suspense, useMemo, useEffect } from 'react';
 import { Spin } from 'antd';
-import type { FileTab, FileCategory } from '../types';
+import type { FileTab } from '../types';
 import { getFileTypeInfo, requiresOnlyOffice, getFallbackViewer } from '../utils/fileTypeUtils';
 import { useOfficeConfigStore } from '../stores/officeConfigStore';
 
@@ -127,16 +127,4 @@ const EditorLoader: React.FC<EditorLoaderProps> = ({
 
 export default EditorLoader;
 
-export const editorComponentsByCategory: Record<FileCategory, React.LazyExoticComponent<React.FC<any>>> = {
-  code: React.lazy(() => import('./CodeEditor')),
-  markdown: React.lazy(() => import('./MarkdownEditor')),
-  office: React.lazy(() => import('./OnlyOfficeEditor')),
-  pdf: React.lazy(() => import('./PDFViewer')),
-  image: React.lazy(() => import('./ImageViewer')),
-  text: React.lazy(() => import('./TextViewer')),
-  binary: React.lazy(() => import('./UnsupportedViewer')),
-  unsupported: React.lazy(() => import('./UnsupportedViewer')),
-};
-
-export { editorRegistry, useEditorRegistry, useEditorCleanup } from './EditorRegistry';
 export { useEditorInstanceManager } from './EditorInstanceManager';

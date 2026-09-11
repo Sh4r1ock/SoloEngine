@@ -2,7 +2,8 @@ import React, { useCallback, useRef, useEffect, useMemo } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { oneDark } from '@codemirror/theme-one-dark';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
+import { useRunPanelStore } from '../stores/runPanelStore';
 
 const LARGE_FILE_THRESHOLD = 100 * 1024;
 
@@ -24,7 +25,8 @@ const TextViewer: React.FC<TextViewerProps> = ({
   const { addTimer, removeTimer, addEventListener, cleanup } = useEditorInstanceManager(instanceId);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isLargeFile = tab.content.length > LARGE_FILE_THRESHOLD;
+  const content = useRunPanelStore((state) => state.getTabContent(tab.id));
+  const isLargeFile = content.length > LARGE_FILE_THRESHOLD;
 
   const handleChange = useCallback((value: string) => {
     onContentChange(tab.id, value);
@@ -52,12 +54,10 @@ const TextViewer: React.FC<TextViewerProps> = ({
     };
   }, [tab, onSave, addEventListener]);
 
-  useEditorCleanup(instanceId, cleanup);
-
   return (
     <div className="doc-editor-wrapper" style={{ height: '100%', overflow: 'hidden', background: '#1e1e1e' }}>
       <CodeMirror
-        value={tab.content}
+        value={content}
         height="100%"
         onChange={handleChange}
         theme="dark"

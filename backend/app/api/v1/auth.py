@@ -31,7 +31,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from app.core.auth import auth_service, User
+from app.core.auth import auth_service, User, user_to_public_dict
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 limiter = Limiter(key_func=get_remote_address)
+
+
+def _user_to_dict(user) -> dict:
+    """用户序列化唯一样板（B8/R4：复用 app.core.auth.user_to_public_dict 公共实现，消除双序列化）。"""
+    return user_to_public_dict(user)
 
 
 class UserRegister(BaseModel):
@@ -128,13 +133,7 @@ async def register(request: Request, user_data: UserRegister):
         return {
             "code": 200,
             "message": "User registered successfully",
-            "data": {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-            }
+            "data": _user_to_dict(user),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -190,13 +189,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     return {
         "code": 200,
         "message": "User info retrieved",
-        "data": {
-            "id": current_user.id,
-            "username": current_user.username,
-            "email": current_user.email,
-            "is_active": current_user.is_active,
-            "is_superuser": current_user.is_superuser,
-        }
+        "data": _user_to_dict(current_user),
     }
 
 
@@ -218,13 +211,7 @@ async def update_me(
     return {
         "code": 200,
         "message": "User updated",
-        "data": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "is_active": user.is_active,
-            "is_superuser": user.is_superuser,
-        }
+        "data": _user_to_dict(user),
     }
 
 
@@ -235,16 +222,7 @@ async def list_users(current_user: User = Depends(get_current_superuser)):
     return {
         "code": 200,
         "message": "Users retrieved",
-        "data": [
-            {
-                "id": user.id,
-                "username": user.username,
-                "email": user.email,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-            }
-            for user in users
-        ]
+        "data": [_user_to_dict(user) for user in users],
     }
 
 

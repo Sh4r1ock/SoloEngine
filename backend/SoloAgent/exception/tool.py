@@ -10,7 +10,6 @@ SoloEngine : 工具异常模块，提供工具相关异常定义
 功能描述：
 本模块提供工具相关异常，包括：
     - ToolNotFoundError: 工具未找到异常
-    - ToolInterruptedError: 工具中断异常
     - ToolInvalidArgumentsError: 工具参数无效异常
 
 依赖:
@@ -36,21 +35,6 @@ class ToolNotFoundError(AgentOrientedExceptionBase):
 
     示例:
         >>> raise ToolNotFoundError("Tool 'search' not found")
-    """
-
-
-class ToolInterruptedError(AgentOrientedExceptionBase):
-    """
-    工具中断异常
-
-    职责:
-        - 当工具调用被用户中断时抛出
-
-    属性:
-        message: 异常消息
-
-    示例:
-        >>> raise ToolInterruptedError("Tool execution was interrupted")
     """
 
 

@@ -1,16 +1,5 @@
 // 唯一入口：所有前端 env 变量在此集中读取，默认值唯一存在于此
 export const APP_CONFIG = {
-  // --- LLM 参数（表单初始值） ---
-  LLM_DEFAULT_TEMPERATURE:       parseFloat(import.meta.env.VITE_LLM_DEFAULT_TEMPERATURE || '0.7'),
-  LLM_DEFAULT_MAX_TOKENS:        parseInt(import.meta.env.VITE_LLM_DEFAULT_MAX_TOKENS || '128000'),
-  LLM_MAX_TOKENS_LIMIT:          parseInt(import.meta.env.VITE_LLM_MAX_TOKENS_LIMIT || '10240000'),
-  LLM_DEFAULT_TOP_P:             parseFloat(import.meta.env.VITE_LLM_DEFAULT_TOP_P || '1.0'),
-  LLM_DEFAULT_FREQUENCY_PENALTY: parseFloat(import.meta.env.VITE_LLM_DEFAULT_FREQUENCY_PENALTY || '0.0'),
-  LLM_DEFAULT_PRESENCE_PENALTY:  parseFloat(import.meta.env.VITE_LLM_DEFAULT_PRESENCE_PENALTY || '0.0'),
-  LLM_DEFAULT_TIMEOUT:           parseInt(import.meta.env.VITE_LLM_DEFAULT_TIMEOUT || '60'),
-  // 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限（LLM 配置默认值）
-  LLM_DEFAULT_MAX_TOOL_CALLS:    parseInt(import.meta.env.VITE_LLM_DEFAULT_MAX_TOOL_CALLS || '30'),
-
   // --- 命令权限默认配置 ---
   // 默认命令白名单（权限模式=白名单模式时画布初始显示；逗号分隔的命令前缀）
   // 综合主流 AI IDE（Claude Code / Cursor / CodeBuddy / mmi 等）默认安全命令：

@@ -44,12 +44,43 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db, db_manager
 from app.core.config import settings
-from SoloAgent.model.llm_factory import LLMFactory, LLMProvider
+from app.core.llm_service import LLMService
+from SoloAgent.model.llm_factory import LLMFactory
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
 from app.utils.timezone_utils import format_iso
+from app.api.v1.run.run_save import aggregate_token_totals
 
 router = APIRouter(prefix="/api/v1/llm", tags=["llm"])
+
+
+def config_to_dict(config) -> dict:
+    """LLM 配置完整版序列化唯一样板（B8：列表页/active 列表/单条 3 处收敛）。"""
+    return {
+        "id": config.id,
+        "user_id": config.user_id,
+        "name": config.name,
+        "provider": config.provider,
+        "model_name": config.model_name,
+        "base_url": config.base_url,
+        "is_full_url": bool(getattr(config, 'is_full_url', False)),
+        "temperature": config.temperature,
+        "max_tokens": config.max_tokens,
+        "max_input_tokens": config.max_input_tokens,
+        "max_output_tokens": config.max_output_tokens,
+        "top_p": config.top_p,
+        "frequency_penalty": config.frequency_penalty,
+        "presence_penalty": config.presence_penalty,
+        "timeout": config.timeout,
+        "max_tool_calls": getattr(config, 'max_tool_calls', None),
+        "extra_params": config.extra_params or {},
+        "is_default": config.is_default,
+        "is_active": config.is_active,
+        "version": config.version,
+        "has_api_key": bool(config.api_key),
+        "created_at": format_iso(config.created_at),
+        "updated_at": format_iso(config.updated_at),
+    }
 
 
 class ProviderConfig(BaseModel):
@@ -197,34 +228,7 @@ async def list_configs(
     return {
         "code": 200,
         "message": "success",
-        "data": [
-            {
-                "id": c.id,
-                "user_id": c.user_id,
-                "name": c.name,
-                "provider": c.provider,
-                "model_name": c.model_name,
-                "base_url": c.base_url,
-                "is_full_url": bool(getattr(c, 'is_full_url', False)),
-                "temperature": c.temperature,
-                "max_tokens": c.max_tokens,
-                "max_input_tokens": c.max_input_tokens,
-                "max_output_tokens": c.max_output_tokens,
-                "top_p": c.top_p,
-                "frequency_penalty": c.frequency_penalty,
-                "presence_penalty": c.presence_penalty,
-                "timeout": c.timeout,
-                "max_tool_calls": getattr(c, 'max_tool_calls', None),
-                "extra_params": c.extra_params or {},
-                "is_default": c.is_default,
-                "is_active": c.is_active,
-                "version": c.version,
-                "has_api_key": bool(c.api_key),
-                "created_at": format_iso(c.created_at),
-                "updated_at": format_iso(c.updated_at),
-            }
-            for c in configs
-        ],
+        "data": [config_to_dict(config) for config in configs],
     }
 
 
@@ -240,34 +244,7 @@ async def list_active_configs(
     return {
         "code": 200,
         "message": "success",
-        "data": [
-            {
-                "id": c.id,
-                "user_id": c.user_id,
-                "name": c.name,
-                "provider": c.provider,
-                "model_name": c.model_name,
-                "base_url": c.base_url,
-                "is_full_url": bool(getattr(c, 'is_full_url', False)),
-                "temperature": c.temperature,
-                "max_tokens": c.max_tokens,
-                "max_input_tokens": c.max_input_tokens,
-                "max_output_tokens": c.max_output_tokens,
-                "top_p": c.top_p,
-                "frequency_penalty": c.frequency_penalty,
-                "presence_penalty": c.presence_penalty,
-                "timeout": c.timeout,
-                "max_tool_calls": getattr(c, 'max_tool_calls', None),
-                "extra_params": c.extra_params or {},
-                "is_default": c.is_default,
-                "is_active": c.is_active,
-                "version": c.version,
-                "has_api_key": bool(c.api_key),
-                "created_at": format_iso(c.created_at),
-                "updated_at": format_iso(c.updated_at),
-            }
-            for c in configs
-        ],
+        "data": [config_to_dict(config) for config in configs],
     }
 
 
@@ -330,30 +307,7 @@ async def get_config(
     return {
         "code": 200,
         "message": "success",
-        "data": {
-            "id": config.id,
-            "user_id": config.user_id,
-            "name": config.name,
-            "provider": config.provider,
-            "model_name": config.model_name,
-            "base_url": config.base_url,
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-            "max_input_tokens": config.max_input_tokens,
-            "max_output_tokens": config.max_output_tokens,
-            "top_p": config.top_p,
-            "frequency_penalty": config.frequency_penalty,
-            "presence_penalty": config.presence_penalty,
-            "timeout": config.timeout,
-            "max_tool_calls": getattr(config, 'max_tool_calls', None),
-            "extra_params": config.extra_params or {},
-            "is_default": config.is_default,
-            "is_active": config.is_active,
-            "has_api_key": bool(config.api_key),
-            "version": config.version,
-            "created_at": format_iso(config.created_at),
-            "updated_at": format_iso(config.updated_at),
-        },
+        "data": config_to_dict(config),
     }
 
 
@@ -488,12 +442,12 @@ async def set_default_config(
 async def test_config(request: LLMConfigCreate, db: Session = Depends(get_db)) -> dict:
     """测试LLM配置。"""
     try:
-        model = LLMFactory.create_model(
+        # R5：模型创建统一复用 LLMService.build_model（消除与 llm_service._create_model_from_config 的重复组装）
+        model = LLMService.build_model(
             provider=request.provider,
             model_name=request.model_name,
-            stream=False,
             api_key=request.api_key,
-            client_kwargs={"base_url": request.base_url} if request.base_url else {},
+            base_url=request.base_url,
             is_full_url=request.is_full_url,
         )
         
@@ -526,7 +480,7 @@ def _build_usage_query(db: Session, user_id: str, start_date=None, end_date=None
     query = db.query(SessionMessageModel).filter(
         SessionMessageModel.user_id == user_id,
         SessionMessageModel.role == "assistant",
-        SessionMessageModel.total_tokens.isnot(None),
+        SessionMessageModel.token_usage_history.isnot(None),
     )
     if start_date:
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=ZoneInfo(settings.DEFAULT_TIMEZONE))
@@ -556,15 +510,21 @@ def _build_model_lookup(db: Session, user_id: str) -> dict:
 
 
 def _build_usage_record(msg, idx: int, model_lookup: dict) -> dict:
-    """共享：根据消息和模型查找表构建单条导出记录。"""
+    """共享：根据消息和模型查找表构建单条导出记录。
+
+    token 值从 token_usage_history（唯一数据源）聚合，而非不存在的列字段。
+    """
+    history = msg.token_usage_history or []
+    totals = aggregate_token_totals(history)
+    duration_ms = sum(h.get('duration_ms', 0) or 0 for h in history)
     record = {
         "num": idx,
         "timestamp": format_iso(msg.created_at),
-        "input_tokens": msg.prompt_tokens or 0,
-        "output_tokens": msg.completion_tokens or 0,
-        "total_tokens": msg.total_tokens or 0,
+        "input_tokens": totals["system_prompt"] + totals["user_prompt"] + totals["assistant_prompt"],
+        "output_tokens": totals["completion"],
+        "total_tokens": totals["total"],
         "request_id": msg.id,
-        "duration_ms": msg.duration_ms or 0,
+        "duration_ms": duration_ms,
     }
     if msg.llm_config_id and msg.llm_config_id in model_lookup:
         record["model_name"], record["provider"] = model_lookup[msg.llm_config_id]
@@ -596,11 +556,14 @@ async def get_usage(
 
         daily_data = defaultdict(lambda: {"requests": 0, "tokens": 0, "total_duration_ms": 0, "requests_with_duration": 0})
         for msg in messages:
+            history = msg.token_usage_history or []
+            totals = aggregate_token_totals(history)
+            duration_ms = sum(h.get('duration_ms', 0) or 0 for h in history)
             day = msg.created_at.strftime("%Y-%m-%d") if msg.created_at else "unknown"
             daily_data[day]["requests"] += 1
-            daily_data[day]["tokens"] += msg.total_tokens or 0
-            if msg.duration_ms is not None:
-                daily_data[day]["total_duration_ms"] += msg.duration_ms
+            daily_data[day]["tokens"] += totals["total"]
+            if duration_ms > 0:
+                daily_data[day]["total_duration_ms"] += duration_ms
                 daily_data[day]["requests_with_duration"] += 1
 
         sorted_days = sorted(daily_data.keys())

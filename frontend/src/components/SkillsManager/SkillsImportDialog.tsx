@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Modal, App, Space, Typography, Card, Button, Form, Input, Tag } from 'antd';
 import { InboxOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { skillsApi } from '../../services/skillsApi';
+import TagInput from '../common/TagInput';
 
 const { Text } = Typography;
 
@@ -28,7 +29,6 @@ const SkillsImportDialog: React.FC<SkillsImportDialogProps> = ({ visible, onClos
   const [importing, setImporting] = useState(false);
   const [form] = Form.useForm();
   const [tags, setTags] = useState<string[]>([]);
-  const [inputTagValue, setInputTagValue] = useState('');
   const [selectedType, setSelectedType] = useState<'zip' | 'folder'>('zip');
   // 文件选择器打开状态
   const [isOpeningDialog, setIsOpeningDialog] = useState(false);
@@ -51,7 +51,6 @@ const SkillsImportDialog: React.FC<SkillsImportDialogProps> = ({ visible, onClos
     setImporting(false);
     form.resetFields();
     setTags([]);
-    setInputTagValue('');
     setIsOpeningDialog(false);
   }, [form]);
 
@@ -353,19 +352,6 @@ const SkillsImportDialog: React.FC<SkillsImportDialogProps> = ({ visible, onClos
     }
   }, [tempFileId, form, tags, onImport, handleClose]);
 
-  // 添加标签
-  const handleAddTag = useCallback(() => {
-    if (inputTagValue && !tags.includes(inputTagValue)) {
-      setTags([...tags, inputTagValue]);
-      setInputTagValue('');
-    }
-  }, [inputTagValue, tags]);
-
-  // 移除标签
-  const handleRemoveTag = useCallback((removedTag: string) => {
-    setTags(tags.filter(tag => tag !== removedTag));
-  }, [tags]);
-
   return (
     <Modal
       title="导入 Skills 包"
@@ -561,75 +547,7 @@ const SkillsImportDialog: React.FC<SkillsImportDialogProps> = ({ visible, onClos
               </Form.Item>
 
               <Form.Item label="标签">
-                <div
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 4,
-                    alignItems: 'center',
-                    padding: '1px 11px',
-                    border: '1px solid #d9d9d9',
-                    borderRadius: 6,
-                    minHeight: 30,
-                    backgroundColor: '#fff',
-                    fontSize: 14,
-                    transition: 'all 0.2s',
-                    cursor: 'text',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = '#4096ff';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = '#d9d9d9';
-                  }}
-                  onClick={(e) => {
-                    const input = e.currentTarget.querySelector('input');
-                    if (input) {
-                      input.focus();
-                    }
-                  }}
-                >
-                  {tags.map((tag, index) => (
-                    <Tag
-                      key={tag}
-                      closable
-                      onClose={(e) => {
-                        e.stopPropagation();
-                        handleRemoveTag(tag);
-                      }}
-                      style={{
-                        margin: 0,
-                        padding: '0 7px',
-                        fontSize: 14,
-                        lineHeight: '20px',
-                        borderRadius: 4,
-                        backgroundColor: tag === 'system' ? 'var(--primary-300)' : undefined,
-                        border: tag === 'system' ? '1px solid var(--primary-100)' : undefined,
-                        color: tag === 'system' ? 'var(--primary-100)' : undefined,
-                      }}
-                    >
-                      {tag}
-                    </Tag>
-                  ))}
-                  <Input
-                    type="text"
-                    style={{
-                      width: tags.length === 0 ? 120 : 80,
-                      border: 'none',
-                      backgroundColor: 'transparent',
-                      boxShadow: 'none',
-                      padding: 0,
-                      fontSize: 14,
-                      lineHeight: '20px',
-                    }}
-                    placeholder={tags.length === 0 ? "按回车添加标签" : ""}
-                    value={inputTagValue}
-                    onChange={(e) => setInputTagValue(e.target.value)}
-                    onBlur={handleAddTag}
-                    onPressEnter={handleAddTag}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
+                <TagInput value={tags} onChange={setTags} />
               </Form.Item>
             </Form>
 

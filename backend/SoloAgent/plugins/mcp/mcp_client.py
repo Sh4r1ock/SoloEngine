@@ -11,7 +11,6 @@ SoloEngine : MCP客户端，实现Model Context Protocol
 本模块提供MCP客户端实现，包括：
     - MCPClient: MCP客户端，实现Model Context Protocol
     - MCPServerConfig: MCP服务器配置
-    - MCPClientManager: MCP客户端管理器
     - 支持stdio、SSE和Streamable HTTP传输协议
     - 支持工具调用、资源读取、提示词获取
 
@@ -40,12 +39,13 @@ AI模型与外部工具、数据源之间的通信。
 """
 
 import os
+import asyncio
 import logging
 import functools
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
-from ...core.interfaces import IMCPClient
+from ...core.interfaces import MCPClientInterface
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class MCPServerConfig:
     env: Optional[Dict[str, str]] = None
 
 
-class MCPClient(IMCPClient):
+class MCPClient(MCPClientInterface):
     """
     MCP客户端实现类
 
@@ -183,7 +183,7 @@ class MCPClient(IMCPClient):
             raise ImportError(
                 "MCP SDK is required. Install with: pip install mcp"
             )
-        except Exception as e:
+        except (Exception, asyncio.CancelledError) as e:
             logger.error(f"Failed to connect MCP client: {e}")
             # 根因修复：连接/初始化失败时，已创建的 client_context（stdio/sse/http 传输的
             # 异步上下文管理器）内部持有 async generator（read/write stream）。若不关闭，
@@ -194,9 +194,14 @@ class MCPClient(IMCPClient):
             if self._client_context is not None:
                 try:
                     await self._client_context.__aexit__(type(e), e, e.__traceback__)
-                except Exception:
+                except BaseException:
                     pass
                 self._client_context = None
+            # 连接失败场景下 anyio 会以 asyncio.CancelledError（BaseException，非 Exception）
+            # 取消连接任务，下游 try/except Exception 无法捕获。统一转换为 ConnectionError，
+            # 使调用方（如 create_http_mcp）能按"连接失败"优雅处理，而非 500。
+            if isinstance(e, asyncio.CancelledError):
+                raise ConnectionError(f"Failed to connect to MCP server: connection cancelled ({e})")
             raise
 
     async def _create_session(self, read_stream, write_stream):
@@ -484,84 +489,4 @@ class MCPClient(IMCPClient):
             }
 
 
-class MCPClientManager:
-    """
-    MCP客户端管理器
 
-    职责:
-        - 管理多个MCP服务器连接
-        - 统一获取所有服务器的工具
-        - 路由工具调用到对应服务器
-        - 管理服务器生命周期
-
-    属性:
-        _clients: 客户端字典 {server_id: MCPClient}
-        _servers: 服务器配置字典 {server_id: MCPServerConfig}
-
-    示例:
-        >>> manager = MCPClientManager()
-        >>> await manager.add_server(config)
-        >>> all_tools = await manager.get_all_tools()
-        >>> result = await manager.call_tool("server_id", "tool_name", {})
-    """
-
-    def __init__(self):
-        """初始化MCP客户端管理器。"""
-        self._clients: Dict[str, MCPClient] = {}
-        self._servers: Dict[str, MCPServerConfig] = {}
-
-    async def add_server(self, server_config: MCPServerConfig) -> None:
-        """添加 MCP 服务器。"""
-        self._servers[server_config.id] = server_config
-
-        if server_config.enabled:
-            client = MCPClient({
-                "transport": server_config.transport,
-                "url": server_config.url,
-                "command": server_config.command,
-                "args": server_config.args,
-                "env": server_config.env,
-                "headers": server_config.headers,
-                "timeout": server_config.timeout,
-            })
-            await client.connect()
-            self._clients[server_config.id] = client
-
-    async def remove_server(self, server_id: str) -> None:
-        """移除 MCP 服务器。"""
-        if server_id in self._clients:
-            await self._clients[server_id].disconnect()
-            del self._clients[server_id]
-
-        if server_id in self._servers:
-            del self._servers[server_id]
-
-    async def get_all_tools(self) -> List[Dict[str, Any]]:
-        """获取所有服务器的工具。"""
-        all_tools = []
-        for server_id, client in self._clients.items():
-            server = self._servers.get(server_id)
-            tools = await client.get_tools()
-            for tool in tools:
-                tool["_server_id"] = server_id
-                tool["_server_name"] = server.name if server else server_id
-            all_tools.extend(tools)
-        return all_tools
-
-    async def call_tool(
-        self,
-        server_id: str,
-        tool_name: str,
-        arguments: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """调用指定服务器的工具。"""
-        client = self._clients.get(server_id)
-        if not client:
-            raise ValueError(f"Server '{server_id}' not connected")
-        return await client.call_tool(tool_name, arguments)
-
-    async def disconnect_all(self) -> None:
-        """断开所有连接。"""
-        for client in self._clients.values():
-            await client.disconnect()
-        self._clients.clear()

@@ -56,7 +56,6 @@ from .base import (
     CommandToolError,
     CommandSecurityError,
     CommandNotFoundError,
-    ALLOWED_COMMANDS,
     DANGEROUS_PATTERNS,
 )
 
@@ -74,7 +73,6 @@ __all__ = [
     "CommandToolError",
     "CommandSecurityError",
     "CommandNotFoundError",
-    "ALLOWED_COMMANDS",
     "DANGEROUS_PATTERNS",
     "RunCommand",
     "CheckCommandStatus",

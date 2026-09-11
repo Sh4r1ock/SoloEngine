@@ -31,11 +31,7 @@
  *     - 需要正确配置服务器连接参数
  *     - MCP服务已集成到主后端端口8990
  */
-import axios, { AxiosResponse, AxiosError } from 'axios';
-import { APP_CONFIG } from '../config/index';
-
-const MCP_SERVICE_URL = APP_CONFIG.API_BASE_URL + '/api/v1';
-const MCP_REQUEST_TIMEOUT = APP_CONFIG.MCP_REQUEST_TIMEOUT;
+import { apiClient } from './api';
 
 export interface ApiResponse<T = any> {
   code: number;
@@ -43,136 +39,24 @@ export interface ApiResponse<T = any> {
   data: T;
 }
 
-// 错误消息映射函数 - 将英文错误转换为中文
-const getErrorMessage = (error: AxiosError): string => {
-  // 网络连接错误
-  if (error.code === 'ECONNREFUSED' || error.code === 'ERR_NETWORK' || !error.response) {
-    return '无法连接到MCP服务器，请检查后端服务是否启动';
-  }
-  // 超时错误
-  if (error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
-    return '请求超时，请稍后重试';
-  }
-  // HTTP状态码错误
-  if (error.response) {
-    const status = error.response.status;
-    switch (status) {
-      case 400:
-        return '请求参数错误';
-      case 401:
-        return '登录已过期，请重新登录';
-      case 403:
-        return '没有权限执行此操作';
-      case 404:
-        return '请求的资源不存在';
-      case 408:
-        return '请求超时，请稍后重试';
-      case 500:
-        return '服务器内部错误，请稍后重试';
-      case 502:
-        return '网关错误，请检查后端服务';
-      case 503:
-        return '服务暂时不可用，请稍后重试';
-      case 504:
-        return '网关超时，请稍后重试';
-      default:
-        return `服务器错误 (${status})`;
-    }
-  }
-  return '网络请求失败，请检查网络连接';
-};
-
-function getCookie(name: string): string | null {
-  const value = `; ${document.cookie}`;
-  const parts = value.split(`; ${name}=`);
-  if (parts.length === 2) {
-    return decodeURIComponent(parts.pop()?.split(';').shift() || '');
-  }
-  return null;
-}
-
-const mcpClient = axios.create({
-  baseURL: MCP_SERVICE_URL,
-  timeout: MCP_REQUEST_TIMEOUT,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-mcpClient.interceptors.request.use(
-  (config) => {
-    const token = getCookie('access_token') || localStorage.getItem('access_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    } else {
-      console.warn('[MCP] No token found for request');
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-mcpClient.interceptors.response.use(
-  (response) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config;
-    const url = originalRequest?.url || '';
-
-    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register');
-
-    if (error.response?.status === 401 && originalRequest && !isAuthEndpoint) {
-      const refreshToken = getCookie('refresh_token') || localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${MCP_SERVICE_URL}/auth/refresh`, {
-            refresh_token: refreshToken,
-          });
-          const { access_token, refresh_token } = response.data.data;
-          document.cookie = `access_token=${encodeURIComponent(access_token)}; path=/; max-age=604800; SameSite=Strict`;
-          document.cookie = `refresh_token=${encodeURIComponent(refresh_token)}; path=/; max-age=604800; SameSite=Strict`;
-          localStorage.setItem('access_token', access_token);
-          localStorage.setItem('refresh_token', refresh_token);
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
-          return mcpClient(originalRequest);
-        } catch (refreshError) {
-          document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          window.location.href = '/login';
-          return Promise.reject(refreshError);
-        }
-      } else {
-        window.location.href = '/login';
-      }
-    }
-
-    const chineseMessage = getErrorMessage(error);
-    if (error.message) {
-      error.message = chineseMessage;
-    }
-    console.error('MCP Service API Error:', error.response?.data || chineseMessage);
-    return Promise.reject(error);
-  }
-);
+// F1：MCP 与主 API 共用同一后端（baseURL 相同），直接复用 api.ts 的 apiClient
+//（auth token 注入 / 401 刷新 / 错误中文映射均由 apiClient 拦截器统一处理）。
 
 const mcpApiRequest = {
   get: async <T = any>(url: string, config?: any): Promise<ApiResponse<T>> => {
-    const response = await mcpClient.get(url, config);
+    const response = await apiClient.get(url, config);
     return response.data;
   },
   post: async <T = any>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> => {
-    const response = await mcpClient.post(url, data, config);
+    const response = await apiClient.post(url, data, config);
     return response.data;
   },
   put: async <T = any>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> => {
-    const response = await mcpClient.put(url, data, config);
+    const response = await apiClient.put(url, data, config);
     return response.data;
   },
   delete: async <T = any>(url: string, config?: any): Promise<ApiResponse<T>> => {
-    const response = await mcpClient.delete(url, config);
+    const response = await apiClient.delete(url, config);
     return response.data;
   },
 };
@@ -295,26 +179,6 @@ class MCPApi {
     return mcpApiRequest.get('/mcp/servers');
   }
 
-  async getServer(serverId: string) {
-    return mcpApiRequest.get(`/mcp/servers/${serverId}`);
-  }
-
-  async addServer(config: {
-    name: string;
-    transport: string;
-    description?: string;
-    url?: string;
-    command?: string;
-    args?: string[];
-    env?: Record<string, string>;
-    headers?: Record<string, string>;
-    timeout?: number;
-    is_active?: boolean;
-    share?: boolean;
-  }) {
-    return mcpApiRequest.post('/mcp/servers', config);
-  }
-
   async updateServer(serverId: string, config: Partial<MCPServer> & { version?: number }) {
     return mcpApiRequest.put(`/mcp/servers/${serverId}`, config);
   }
@@ -325,10 +189,6 @@ class MCPApi {
 
   async getServerTools(serverId: string) {
     return mcpApiRequest.get(`/mcp/servers/${serverId}/tools`);
-  }
-
-  async testConnection(serverId: string) {
-    return mcpApiRequest.post(`/mcp/servers/${serverId}/test`);
   }
 
   async connectAndGetTools(config: {
@@ -351,24 +211,8 @@ class MCPApi {
     });
   }
 
-  async getResources(serverId: string) {
-    return mcpApiRequest.get(`/mcp/servers/${serverId}/resources`);
-  }
-
-  async getPrompts(serverId: string) {
-    return mcpApiRequest.get(`/mcp/servers/${serverId}/prompts`);
-  }
-
   async connectServer(serverId: string) {
     return mcpApiRequest.post(`/mcp/servers/${serverId}/connect`);
-  }
-
-  async disconnectServer(serverId: string) {
-    return mcpApiRequest.post(`/mcp/servers/${serverId}/disconnect`);
-  }
-
-  async getAllTools() {
-    return mcpApiRequest.get('/mcp/tools/all');
   }
 
   async createPythonMCP(name: string, description: string, code: string, tools: any[], tags?: string[]) {
@@ -428,18 +272,15 @@ class MCPApi {
     return mcpApiRequest.post('/mcp/servers/create/sse', request);
   }
 
-  async getMCPCode(serverId: string): Promise<MCPCodeResponse> {
+  async getMCPOriginalCode(serverId: string): Promise<MCPCodeResponse> {
+    // C1 修复：后端无 /original 端点，复用已有 /code（get_mcp_code 返回 data.code）
     const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/code`);
     return response.data;
   }
 
-  async getMCPOriginalCode(serverId: string): Promise<MCPCodeResponse> {
-    const response = await mcpApiRequest.get(`/mcp/servers/${serverId}/original`);
-    return response.data;
-  }
-
   async updateMCPOriginalCode(serverId: string, code: string) {
-    return mcpApiRequest.put(`/mcp/servers/${serverId}/original`, { code });
+    // C1 修复：后端无 /original 端点，复用已有 PUT /code（update_mcp_code）
+    return mcpApiRequest.put(`/mcp/servers/${serverId}/code`, { code });
   }
 
   async getMCPToolsJson(serverId: string) {
@@ -452,24 +293,6 @@ class MCPApi {
     formData.append('tools', JSON.stringify(tools));
     return mcpApiRequest.put(`/mcp/servers/${serverId}/tools`, formData, {
       headers: { 'Content-Type': undefined },
-    });
-  }
-
-  async updateMCPCode(serverId: string, code: string) {
-    return mcpApiRequest.put(`/mcp/servers/${serverId}/code`, { code });
-  }
-
-  async getServerFiles(serverId: string) {
-    return mcpApiRequest.get(`/mcp/servers/${serverId}/files`);
-  }
-
-  async healthCheck() {
-    return mcpApiRequest.get('/mcp/health');
-  }
-
-  async updateToolEnabled(serverId: string, toolName: string, isEnabled: boolean) {
-    return mcpApiRequest.put(`/mcp/servers/${serverId}/tools/${toolName}/enabled`, {
-      is_active: isEnabled,
     });
   }
 }

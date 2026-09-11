@@ -23,7 +23,7 @@ from typing import Dict, Any, List, Optional
 from .base import BaseFileTool, FileToolError
 
 
-class LS(BaseFileTool):
+class Ls(BaseFileTool):
     """
     目录列表工具。
     
@@ -36,7 +36,7 @@ class LS(BaseFileTool):
         4. 名称排序：按名称排序结果
     
     Example:
-        >>> ls_tool = LS()
+        >>> ls_tool = Ls()
         >>> result = ls_tool.execute(
         ...     path="/path/to/directory",
         ...     ignore=["*.pyc", "__pycache__"]

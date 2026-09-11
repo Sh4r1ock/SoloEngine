@@ -16,10 +16,10 @@ type ChunkType = 'reasoning_content' | 'content' | 'tool_calls' | null;
 
 interface StreamingState {
   completedBlocks: DataBlock[];
-  /** 〇·3 并发修复：按 execution_key 隔离的"进行中块"（每实例一个）。
+  /** 〇·3 并发修复：按 message_id 隔离的"进行中块"（每实例一个）。
    * 并发实例交错 chunk 时各实例的增量只追加到自己的 slot（互不打断/不碎片化），
-   * 实例结束/阶段切换时才 finalize 到 completedBlocks。key 为 executionKey，
-   * 无 execution_key（mainagent 兜底/legacy）用 ''。 */
+   * 实例结束/阶段切换时才 finalize 到 completedBlocks。key 为 messageId，
+   * 无 message_id（mainagent 兜底/legacy）用 ''。 */
   currentBlocks: Record<string, InstanceSlot>;
 }
 
@@ -29,9 +29,8 @@ interface InstanceSlot {
 }
 
 interface ScopeState {
-  currentBlock: DataBlock | null;
   lastChunkType: ChunkType;
-  executionKey: string;
+  messageId: string;
   pendingToolCalls: Map<string, ToolCall>;
 }
 
@@ -58,14 +57,27 @@ export const useStreamingData = () => {
     currentBlocks: {},
   });
   const scopeStackRef = useRef<ScopeState[]>([]);
-  // agent 层级栈：栈元素为 execution_key（〇·3 并发方案——同一 agent 并发 N 实例 =
-  // N 个独立 execution_key，栈元素按 key 区分实例，同 agent_id 并发实例层级不混写）。
+  // agent 层级栈：栈元素为 message_id（〇·3 并发方案——同一 agent 并发 N 实例 =
+  // N 个独立 message_id，栈元素按 key 区分实例，同 agent_id 并发实例层级不混写）。
   // 栈深 = 当前流式块的 agent_level（mainagent=0、subagent=1...）。
   // 由 index.tsx 在 agent_start / agent_complete(subagent 完成) 事件时 push/pop，
   // 不依赖「第一个 WS 块 = root」的流式顺序推断（mainagent 无流式输出时 subagent 不再误判为 root）。
   const agentStackRef = useRef<string[]>([]);
   const currentExecutionKeyRef = useRef<string | null>(null);
   const rootAgentIdRef = useRef<string | null>(null);
+  // 〇·3 并发修复：messageId → agent_level（嵌套深度）映射。
+  // 由 agent_start 事件（带 parent_agent_id）建立，替代"栈深推断层级"——
+  // 并发同层实例（mainagent 同时派 N 个子代理）交错入栈会把栈深拉高，
+  // 导致同层子代理 agent_level 不一致（缩进不同，样式不一）。
+  // 层级 = parent 层级 + 1，并发同层实例层级一致（均为 1）。
+  const agentLevelMapRef = useRef<Map<string, number>>(new Map());
+  // agent_id → 最近 messageId（查 parent 层级用）
+  const agentExecKeyRef = useRef<Map<string, string>>(new Map());
+  // tc.id 方案：messageId → 产生该子执行的 tool_call id（source_tool_call_id）。
+  // agent_start 事件携带 source_tool_call_id 时记录（enterSubAgent），流式子组块
+  // 据此注入 source_tool_call_id（前端在子组出现时按 tc.id 精确嵌套，仅流式使用，
+  // 不落库）；resetStream/finalizeStream 时清空。
+  const sourceToolCallIdMapRef = useRef<Map<string, string>>(new Map());
   // 生命周期状态机实例（初始 idle：无执行时 chunk 一律不渲染）。
   // 状态转换唯一发生在 resetStream（→ streaming）与 finalizeStream（→ finalized）。
   const streamPhaseRef = useRef<StreamPhase>('idle');
@@ -127,9 +139,9 @@ export const useStreamingData = () => {
     setStreamingData(collectAllBlocks());
   }, [setStreamingData]);
 
-  // 〇·3 并发修复：获取/创建某 execution_key 的进行中 slot（'' 兜底 mainagent/legacy）
-  const getSlot = useCallback((executionKey?: string): InstanceSlot => {
-    const key = executionKey || '';
+  // 〇·3 并发修复：获取/创建某 message_id 的进行中 slot（'' 兜底 mainagent/legacy）
+  const getSlot = useCallback((messageId?: string): InstanceSlot => {
+    const key = messageId || '';
     let slot = stateRef.current.currentBlocks[key];
     if (!slot) {
       slot = { block: null, lastChunkType: null };
@@ -154,8 +166,8 @@ export const useStreamingData = () => {
     slot.lastChunkType = null;
   }, []);
 
-  const finalizeCurrentBlock = useCallback((executionKey?: string) => {
-    finalizeSlot(getSlot(executionKey));
+  const finalizeCurrentBlock = useCallback((messageId?: string) => {
+    finalizeSlot(getSlot(messageId));
   }, [finalizeSlot, getSlot]);
 
   const mergeToolCall = (existing: ToolCall, incoming: ToolCall): ToolCall => {
@@ -187,9 +199,9 @@ export const useStreamingData = () => {
     return { block: null, blockIndex: -1, toolIndex: -1 };
   }, []);
 
-  const addOrUpdateToolCallInCurrentBlock = useCallback((tc: ToolCall, agentId?: string, agentName?: string, agentLevel?: number, executionKey?: string) => {
+  const addOrUpdateToolCallInCurrentBlock = useCallback((tc: ToolCall, agentId?: string, agentName?: string, agentLevel?: number, messageId?: string) => {
     const toolId = tc.id;
-    const slot = getSlot(executionKey);
+    const slot = getSlot(messageId);
 
     if (slot.block?.type === 'tool_calls') {
       const existingIdx = slot.block.tool_calls?.findIndex(
@@ -225,14 +237,14 @@ export const useStreamingData = () => {
           agent_id: agentId,
           agent_name: agentName,
           agent_level: agentLevel,
-          // 〇·3：块级 execution_key（并发实例归属，updateAgentTokens 匹配键）
-          execution_key: executionKey,
+          // 实例标识（session_message_id）：并发实例归属，updateAgentTokens 匹配键
+          message_id: messageId,
         };
       }
     }
   }, [findToolCallBlockInCompleted, getSlot]);
 
-  const processToolCalls = useCallback((toolCalls: ToolCall[], agentId?: string, agentName?: string, agentLevel?: number, executionKey?: string) => {
+  const processToolCalls = useCallback((toolCalls: ToolCall[], agentId?: string, agentName?: string, agentLevel?: number, messageId?: string) => {
     for (const tc of toolCalls) {
       const toolId = tc.id;
       const hasResult = 'result' in tc || 'error' in tc;
@@ -241,14 +253,14 @@ export const useStreamingData = () => {
         const existingTc = pendingToolCallsRef.current.get(toolId)!;
         const mergedTc = mergeToolCall(existingTc, tc);
         pendingToolCallsRef.current.set(toolId, mergedTc);
-        addOrUpdateToolCallInCurrentBlock(mergedTc, agentId, agentName, agentLevel, executionKey);
+        addOrUpdateToolCallInCurrentBlock(mergedTc, agentId, agentName, agentLevel, messageId);
 
         if (hasResult) {
           pendingToolCallsRef.current.delete(toolId);
         }
       } else if (toolId && !hasResult) {
         pendingToolCallsRef.current.set(toolId, { ...tc });
-        addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel, executionKey);
+        addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel, messageId);
       } else if (toolId) {
         // 带有result但不在pending中，可能是堆栈恢复后的情况
         // 首先尝试在completedBlocks中查找
@@ -260,18 +272,18 @@ export const useStreamingData = () => {
           const mergedTc = mergeToolCall(existingTc, tc);
           existingBlock.tool_calls![toolIndex] = mergedTc;
           // 〇·3 并发修复：设置该实例的当前块为这个块（slot 隔离）
-          getSlot(executionKey).block = existingBlock;
+          getSlot(messageId).block = existingBlock;
         } else {
           // 没有找到，创建新的
           pendingToolCallsRef.current.set(toolId, { ...tc });
-          addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel, executionKey);
+          addOrUpdateToolCallInCurrentBlock({ ...tc }, agentId, agentName, agentLevel, messageId);
         }
         pendingToolCallsRef.current.delete(toolId);
       }
     }
   }, [addOrUpdateToolCallInCurrentBlock, findToolCallBlockInCompleted, getSlot]);
 
-  const processContentChunk = useCallback((delta: any, chunkType: 'reasoning_content' | 'content', agentId?: string, agentName?: string, agentLevel?: number, executionKey?: string) => {
+  const processContentChunk = useCallback((delta: any, chunkType: 'reasoning_content' | 'content', agentId?: string, agentName?: string, agentLevel?: number, messageId?: string, sourceToolCallId?: string) => {
     const content = delta[chunkType] || '';
     // 压缩摘要标记：react_core compact() 发射的格式化摘要 content 携带 _is_compaction，
     // 前端据此渲染「上下文已压缩」气泡（与回显路径 build_flattened_blocks 同构）
@@ -279,7 +291,7 @@ export const useStreamingData = () => {
 
     // 〇·3 并发修复：各实例的进行中块独立（slot.block 同实例类型一致才追加，
     // 交错 chunk 只更新自己实例的 slot，互不打断/不碎片化）
-    const slot = getSlot(executionKey);
+    const slot = getSlot(messageId);
     if (slot.block?.type === chunkType) {
       slot.block[chunkType] =
         (slot.block[chunkType] || '') + content;
@@ -293,8 +305,10 @@ export const useStreamingData = () => {
         agent_id: agentId,
         agent_name: agentName,
         agent_level: agentLevel,
-        // 〇·3：块级 execution_key（并发实例归属，updateAgentTokens 匹配键）
-        execution_key: executionKey,
+        // 实例标识（session_message_id）：并发实例归属，updateAgentTokens 匹配键
+        message_id: messageId,
+        // tc.id 方案：产生该子执行的 tool_call id（前端按 tc.id 嵌套对号）
+        ...(sourceToolCallId ? { source_tool_call_id: sourceToolCallId } : {}),
         ...(isCompactionBlock ? { _is_compaction: true } : {}),
       };
     }
@@ -323,11 +337,10 @@ export const useStreamingData = () => {
       prevSlot.block = null;
     }
 
-    // 3. 保存 executionKey 到堆栈（slot 已在 currentBlocks 中，按 key 恢复）
+    // 3. 保存 messageId 到堆栈（slot 已在 currentBlocks 中，按 key 恢复）
     scopeStackRef.current.push({
-      currentBlock: prevSlot.block,
       lastChunkType: prevSlot.lastChunkType,
-      executionKey: prevKey,
+      messageId: prevKey,
       pendingToolCalls: new Map(pendingToolCallsRef.current),
     });
 
@@ -355,12 +368,12 @@ export const useStreamingData = () => {
     if (scopeStackRef.current.length > 0) {
       const parentState = scopeStackRef.current.pop()!;
 
-      // 3. 恢复父实例：slot 按 executionKey 定位（pushScope 时已 finalize 到
+      // 3. 恢复父实例：slot 按 messageId 定位（pushScope 时已 finalize 到
       // completedBlocks，栈快照的 currentBlock 是同一对象引用；此处恢复 lastChunkType
       // 供父实例后续 chunk 的类型连续性判断）
-      currentExecutionKeyRef.current = parentState.executionKey;
+      currentExecutionKeyRef.current = parentState.messageId;
       pendingToolCallsRef.current = new Map(parentState.pendingToolCalls);
-      const parentSlot = getSlot(parentState.executionKey);
+      const parentSlot = getSlot(parentState.messageId);
       parentSlot.lastChunkType = parentState.lastChunkType;
 
       // 4. 恢复父实例的块为展开状态（仅当用户未手动操作时）
@@ -373,38 +386,52 @@ export const useStreamingData = () => {
     }
   }, [flushStreamingData, getSlot]);
 
-  const enterRootAgent = useCallback((agentId: string, executionKey: string) => {
+  const enterRootAgent = useCallback((agentId: string, messageId: string) => {
     // mainagent 进入（agent_start 事件，parent_agent_id 为空）。
-    // rootAgentIdRef 存 agentId（消息级归属）；agentStackRef 存 executionKey（层级）。
+    // rootAgentIdRef 存 agentId（消息级归属）；agentStackRef 存 messageId（层级）。
     if (!rootAgentIdRef.current) {
       rootAgentIdRef.current = agentId;
-      currentExecutionKeyRef.current = executionKey;
-      agentStackRef.current = [executionKey];
+      currentExecutionKeyRef.current = messageId;
+      agentStackRef.current = [messageId];
     }
+    // 〇·3 并发修复：记录 mainagent 层级 0 + agent_id→messageId 映射（parent 查层级用）
+    agentLevelMapRef.current.set(messageId, 0);
+    agentExecKeyRef.current.set(agentId, messageId);
   }, []);
 
-  const enterSubAgent = useCallback((agentId: string, agentName?: string, executionKey?: string) => {
+  const enterSubAgent = useCallback((agentId: string, agentName?: string, messageId?: string, parentAgentId?: string, sourceToolCallId?: string) => {
     // subagent 进入（agent_start 事件，parent_agent_id 非空）。
-    // 栈元素为 executionKey（〇·3：同一 agent 并发 N 实例各自独立层级）
-    if (!executionKey) return;
+    // 栈元素为 messageId（〇·3：同一 agent 并发 N 实例各自独立层级）。
+    // 〇·3 并发修复：层级 = parent 层级 + 1（agent_start 事件带 parent_agent_id），
+    // 并发同层实例层级一致，不再依赖栈深（栈深被并发实例拉高导致同层缩进不一）。
+    if (!messageId) return;
+    // tc.id 方案：记录"该子执行由哪个 tool_call 产生"（agent_start 携带 source_tool_call_id），
+    // 前端在子组出现时按 tc.id 精确嵌套（流式/回显统一对号）
+    if (sourceToolCallId) {
+      sourceToolCallIdMapRef.current.set(messageId, sourceToolCallId);
+    }
+    const parentExecKey = parentAgentId ? agentExecKeyRef.current.get(parentAgentId) : undefined;
+    const parentLevel = parentExecKey ? (agentLevelMapRef.current.get(parentExecKey) ?? 0) : 0;
+    agentLevelMapRef.current.set(messageId, parentLevel + 1);
+    agentExecKeyRef.current.set(agentId, messageId);
     if (!rootAgentIdRef.current) {
       // 防御：mainagent 的 agent_start 未到达（罕见），把 subagent 作为 root 处理
       rootAgentIdRef.current = agentId;
-      currentExecutionKeyRef.current = executionKey;
-      agentStackRef.current = [executionKey];
+      currentExecutionKeyRef.current = messageId;
+      agentStackRef.current = [messageId];
       return;
     }
-    if (executionKey === currentExecutionKeyRef.current) return;
-    pushScope(executionKey, agentName || agentId);
-    agentStackRef.current.push(executionKey);
-    currentExecutionKeyRef.current = executionKey;
+    if (messageId === currentExecutionKeyRef.current) return;
+    pushScope(messageId, agentName || agentId);
+    agentStackRef.current.push(messageId);
+    currentExecutionKeyRef.current = messageId;
   }, [pushScope]);
 
-  const exitAgent = useCallback((executionKey: string) => {
+  const exitAgent = useCallback((messageId: string) => {
     // subagent 完成（agent_complete status=completed 且 parent_agent_id 非空）：pop 回父级。
-    // 栈元素为 executionKey（并发实例独立出栈）
-    if (currentExecutionKeyRef.current !== executionKey) return;
-    const idx = agentStackRef.current.lastIndexOf(executionKey);
+    // 栈元素为 messageId（并发实例独立出栈）
+    if (currentExecutionKeyRef.current !== messageId) return;
+    const idx = agentStackRef.current.lastIndexOf(messageId);
     if (idx > 0) {
       popScope();
       agentStackRef.current.pop();
@@ -413,7 +440,7 @@ export const useStreamingData = () => {
     // idx === 0（root/mainagent）不 pop
   }, [popScope]);
 
-  const updateAgentTokens = useCallback((agentId: string, usage: any, agentUsage?: any, executionKey?: string) => {
+  const updateAgentTokens = useCallback((agentId: string, usage: any, agentUsage?: any, messageId?: string) => {
     // 统一性修复：流式 token 唯一注入路径（问题 1 修复）。
     // 数据源统一为后端 _accumulated_usage 快照（均携带 usage_phase）：
     //  - agent_token_usage 事件（每次 LLM 迭代结束推送）
@@ -429,8 +456,8 @@ export const useStreamingData = () => {
     //    持续更新（推送值为阶段累计，最终 = 阶段末值，与回显该消息求和一致）
     //  - 整轮累计（消息头/组头）由 agent_usage（agent 级整轮，后端聚合）经
     //    setAgentUsage 写入 agentUsageMap（后端聚合改造 4.3-2，前端不再拼接）
-    // 〇·3：块匹配键为块级 execution_key（executionKey 参数，与流式块同源）——
-    // 同一 agent 并发 N 实例时块级 token 不混写；阶段状态按 executionKey 隔离。
+    // 〇·3：块匹配键为块级 message_id（messageId 参数，与流式块同源）——
+    // 同一 agent 并发 N 实例时块级 token 不混写；阶段状态按 messageId 隔离。
     const totalTokens = usage?.total_tokens;
     const history = (usage?.token_usage_history || []) as any[];
     const usagePhase = usage?.usage_phase ?? 0;
@@ -438,35 +465,35 @@ export const useStreamingData = () => {
 
     // 后端聚合改造（4.3-2）：agent 级整轮累计写入 agentUsageMap（消息头/组头整轮显示）。
     // 数据源为 agent_usage（agent_token_usage 推送）或 agent_complete metadata.agent_usage。
-    // 〇·3 并发修复：executionKey 一并写入（setAgentUsage 双键），同 agent 多实例组头
-    // 按实例 executionKey 查询，互不覆盖。
+    // 〇·3 并发修复：messageId 一并写入（setAgentUsage 双键），同 agent 多实例组头
+    // 按实例 messageId 查询，互不覆盖。
     if (agentUsage) {
-      useRunPanelStore.getState().setAgentUsage(agentId, agentUsage, executionKey);
+      useRunPanelStore.getState().setAgentUsage(agentId, agentUsage, messageId);
     }
 
-    if (executionKey == null) return;
-    const state = agentTokenStateRef.current.get(executionKey) || { phase: -1 as number };
+    if (messageId == null) return;
+    const state = agentTokenStateRef.current.get(messageId) || { phase: -1 as number };
     if (state.phase >= 0 && usagePhase !== state.phase) {
       // 阶段切换：锁定已有 token 的块（普通块 + 压缩块统一），
       // 保持各自阶段值不被后续阶段覆盖（压缩气泡 token = 压缩轮累计）。
       // 新阶段刚产生的块尚无 agent_tokens，不锁定，由本次推送写入本阶段值。
       for (const block of stateRef.current.completedBlocks) {
-        if (block.execution_key === executionKey && block.agent_tokens != null) {
+        if (block.message_id === messageId && block.agent_tokens != null) {
           block._stageDone = true;
         }
       }
-      if (getSlot(executionKey).block && getSlot(executionKey).block!.execution_key === executionKey
-        && getSlot(executionKey).block!.agent_tokens != null) {
-        getSlot(executionKey).block!._stageDone = true;
+      if (getSlot(messageId).block && getSlot(messageId).block!.message_id === messageId
+        && getSlot(messageId).block!.agent_tokens != null) {
+        getSlot(messageId).block!._stageDone = true;
       }
     }
     state.phase = usagePhase;
-    agentTokenStateRef.current.set(executionKey, state);
+    agentTokenStateRef.current.set(messageId, state);
 
     // 同阶段内持续更新未锁定块（普通块 + 压缩块统一：阶段内多次推送递增更新，
     // 推送值为本阶段累计；跨阶段后 _stageDone 锁定不被后续阶段覆盖）。
     for (const block of stateRef.current.completedBlocks) {
-      if (block.execution_key === executionKey && !block._stageDone) {
+      if (block.message_id === messageId && !block._stageDone) {
         block.agent_tokens = totalTokens;
         block.agent_token_history = history.length > 0 ? [...history] : undefined;
         // 后端聚合改造（4.3-1）：块级本阶段聚合（压缩气泡 hover 用）
@@ -479,8 +506,8 @@ export const useStreamingData = () => {
         };
       }
     }
-    const curSlot = getSlot(executionKey);
-    if (curSlot.block && curSlot.block.execution_key === executionKey
+    const curSlot = getSlot(messageId);
+    if (curSlot.block && curSlot.block.message_id === messageId
       && !curSlot.block._stageDone) {
       curSlot.block.agent_tokens = totalTokens;
       curSlot.block.agent_token_history = history.length > 0 ? [...history] : undefined;
@@ -502,7 +529,7 @@ export const useStreamingData = () => {
   }, []);
 
   const handleAgentSwitch = useCallback((newAgentId: string, newAgentName: string, newExecutionKey: string) => {
-    // 流式块驱动的层级校正：确保 agent 栈与当前流式块一致（〇·3 栈元素 = execution_key）。
+    // 流式块驱动的层级校正：确保 agent 栈与当前流式块一致（〇·3 栈元素 = message_id）。
     // root 优先由 enterRootAgent（agent_start 事件）建立；此处兜底。
     if (!rootAgentIdRef.current) {
       rootAgentIdRef.current = newAgentId;
@@ -512,7 +539,7 @@ export const useStreamingData = () => {
     }
     // 〇·3 并发修复：此处**只切换**（改栈 + 当前 key），**不 finalize**——
     // 并发实例交错 chunk 时各实例的进行中块保留在自己的 slot（由 processContentChunk
-    // 按 execution_key 独立追加），实例结束（agent_complete → exitAgent → popScope）
+    // 按 message_id 独立追加），实例结束（agent_complete → exitAgent → popScope）
     // 或事件驱动进入新实例（agent_start → enterSubAgent → pushScope）时才 finalize，
     // 避免交错 chunk 频繁 finalize 导致同一实例内容碎片化（TA10 并发 3 实例）。
     const idx = agentStackRef.current.indexOf(newExecutionKey);
@@ -561,28 +588,29 @@ export const useStreamingData = () => {
   };
 
   // 使用 useRef 定义 processStreamChunk，避免依赖链问题
-  const processStreamChunkRef = useRef((delta: any, agentId?: string, agentName?: string, executionKey?: string) => {
+  const processStreamChunkRef = useRef((delta: any, agentId?: string, agentName?: string, messageId?: string) => {
     // 生命周期守卫：仅 streaming（活性态）接受 chunk；finalized（终态）到达的
     // chunk 一律丢弃（暂停后缓冲 chunk 不渲染新流式区、不重建 agent 头像）。
     if (streamPhaseRef.current !== 'streaming') return;
     const callbacks = callbacksRef.current;
 
-    if (agentId && executionKey) {
-      callbacks.handleAgentSwitch(agentId, agentName || agentId, executionKey);
+    if (agentId && messageId) {
+      callbacks.handleAgentSwitch(agentId, agentName || agentId, messageId);
     }
 
-    // 计算当前 agent 的 level（agent 栈深度 0 基：mainagent=0、subagent=1...）。
-    // 栈深从 1 开始（enterRootAgent 设 agentStackRef=[executionKey]），agent_level 语义为 0 基，
+    // 计算当前 agent 的 level（mainagent=0、subagent=1...）。
+    // 〇·3 并发修复：层级从 agentLevelMap 读（agent_start 事件按 parent_agent_id 建立），
+    // 并发同层实例层级一致（均为 1）；栈深被并发实例拉高不再影响缩进（样式统一）。
     // 与回显 build_flattened_blocks 一致（mainagent=0、subagent=agent_level+1）。
     // B7 修复：此前直接用 length（mainagent=1）导致 mainagent 块被渲染为 subagent 组（组头+边框）。
-    const agentLevel = Math.max(0, agentStackRef.current.length - 1);
+    const agentLevel = agentLevelMapRef.current.get(messageId ?? '') ?? 0;
 
     const currentType = detectChunkType(delta);
     if (!currentType) return;
 
     // 〇·3 并发修复：类型连续性基于当前实例的 slot（交错 chunk 各实例独立判断，
     // 互不打断；实例切换由 handleAgentSwitch 负责）
-    const slot = callbacks.getSlot(executionKey);
+    const slot = callbacks.getSlot(messageId);
     const prevType = slot.lastChunkType;
     const chunkTypeChanged = prevType && prevType !== currentType;
 
@@ -591,13 +619,14 @@ export const useStreamingData = () => {
       if (slot.block && !slot.block._userToggled) {
         slot.block._isExpanding = false;
       }
-      callbacks.finalizeCurrentBlock(executionKey);
+      callbacks.finalizeCurrentBlock(messageId);
     }
 
     if (currentType === 'tool_calls') {
-      callbacks.processToolCalls(delta.tool_calls || [], agentId, agentName, agentLevel, executionKey);
+      callbacks.processToolCalls(delta.tool_calls || [], agentId, agentName, agentLevel, messageId);
     } else {
-      callbacks.processContentChunk(delta, currentType, agentId, agentName, agentLevel, executionKey);
+      const sourceToolCallId = sourceToolCallIdMapRef.current.get(messageId ?? '');
+      callbacks.processContentChunk(delta, currentType, agentId, agentName, agentLevel, messageId, sourceToolCallId);
     }
 
     slot.lastChunkType = currentType;
@@ -615,8 +644,8 @@ export const useStreamingData = () => {
   });
 
   // 返回稳定的函数引用
-  const processStreamChunk = useCallback((delta: any, agentId?: string, agentName?: string, executionKey?: string) => {
-    processStreamChunkRef.current(delta, agentId, agentName, executionKey);
+  const processStreamChunk = useCallback((delta: any, agentId?: string, agentName?: string, messageId?: string) => {
+    processStreamChunkRef.current(delta, agentId, agentName, messageId);
   }, []);
 
   // 使用 useRef 定义 processLegacyStream，避免依赖链问题
@@ -626,7 +655,7 @@ export const useStreamingData = () => {
     const callbacks = callbacksRef.current;
 
     const legacyType = contentType === 'thinking' ? 'reasoning_content' : 'content';
-    // 〇·3 并发修复：legacy 事件无 executionKey，统一归入 ''（mainagent 兜底）slot
+    // 〇·3 并发修复：legacy 事件无 messageId，统一归入 ''（mainagent 兜底）slot
     const slot = callbacks.getSlot('');
     const prevType = slot.lastChunkType;
     const chunkTypeChanged = prevType && prevType !== legacyType;
@@ -694,6 +723,8 @@ export const useStreamingData = () => {
     agentStackRef.current = [];
     currentExecutionKeyRef.current = null;
     rootAgentIdRef.current = null;
+    agentLevelMapRef.current = new Map();
+    agentExecKeyRef.current = new Map();
 
     // 修复：移除 fallbackData 兜底（finalData 为空时回退到旧的 streamingData 闭包值）。
     // 该兜底会在「本轮 LLM 报错无任何流式输出」时把上一次正常轮次的 streamingData
@@ -716,6 +747,9 @@ export const useStreamingData = () => {
     agentStackRef.current = [];
     currentExecutionKeyRef.current = null;
     rootAgentIdRef.current = null;
+    agentLevelMapRef.current = new Map();
+    agentExecKeyRef.current = new Map();
+    sourceToolCallIdMapRef.current = new Map();
     resetAgentTokenState();
   }, [clearStreamingData, resetAgentTokenState]);
 
@@ -773,13 +807,8 @@ export const useStreamingData = () => {
     currentMsgIdRef.current = msgId;
   }, []);
 
-  // 使用useRef保持streamingDataRef的稳定性
-  const streamingDataRefStable = useRef({ current: streamingData });
-  streamingDataRefStable.current = { current: streamingData };
-
   return {
     streamingData,
-    streamingDataRef: streamingDataRefStable.current,
     processStreamChunk,
     processLegacyStream,
     finalizeStream,
@@ -790,7 +819,6 @@ export const useStreamingData = () => {
     exitAgent,
     updateAgentTokens,
     getRootAgentId,
-    currentMsgIdRef,
     setCurrentMsgIdRef,
   };
 };

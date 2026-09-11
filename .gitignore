@@ -237,6 +237,9 @@ SoloEngine.zip
 *.db-shm
 *.db-journal
 
+# 运行数据库（含用户数据，禁止入库）
+data/database/
+
 # 加密密钥
 .encryption_key
 

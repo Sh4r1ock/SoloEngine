@@ -41,7 +41,7 @@ from typing import (
 from collections import OrderedDict
 
 import httpx
-from app.core.config import settings
+from SoloAgent.config import settings
 from .model_response import ChatResponse
 from .model_base import ChatModelBase
 from .model_usage import ChatUsage
@@ -50,6 +50,7 @@ from ..message import (
     ThinkingBlock as SoloThinkingBlock,
 )
 from ..utils.logging import logger
+from ..utils.common import json_loads_with_repair
 from ..types import JSONSerializableObject
 
 
@@ -92,7 +93,7 @@ class OllamaChatModel(ChatModelBase):
 
         self.base_url = base_url.rstrip("/")
         self.generate_kwargs = generate_kwargs or {}
-        from app.core.config import settings
+        from SoloAgent.config import settings
         
         timeout = None
         if client_kwargs and "timeout" in client_kwargs:
@@ -346,7 +347,7 @@ class OllamaChatModel(ChatModelBase):
 
                 try:
                     # Ollama returns JSON lines
-                    data = self._json_loads_with_repair(line)
+                    data = json_loads_with_repair(line)
                 except Exception as e:
                     logger.warning(f"Failed to parse Ollama stream line: {e}")
                     continue
@@ -484,28 +485,25 @@ class OllamaChatModel(ChatModelBase):
                     
                     last_tool_calls = OrderedDict(tool_calls)
 
-                    # ★ 任务6：done=true 时设置 stop_reason / finish_reason
+                    # ★ 任务6：done=true 时设置 finish_reason（SoloEngine 系统格式：
+                    # tool_calls / stop / length，与 openai/qwen 透传值同体系；
+                    # 不再写 Anthropic 风格 stop_reason——系统存储/判断均用 finish_reason）
                     if data.get("done") is True:
                         done_reason = data.get("done_reason", "stop")
                         if tool_calls:
-                            final_stop_reason = "tool_use"
                             final_finish_reason = "tool_calls"
                         elif done_reason == "stop":
-                            final_stop_reason = "end_turn"
                             final_finish_reason = "stop"
                         elif done_reason == "tool_calls":
-                            final_stop_reason = "tool_use"
                             final_finish_reason = "tool_calls"
                         elif done_reason == "length":
-                            final_stop_reason = "max_tokens"
                             final_finish_reason = "length"
                         else:
-                            final_stop_reason = done_reason
                             final_finish_reason = done_reason
 
                         yield ChatResponse(
                             content=[], usage=usage, metadata=None,
-                            stop_reason=final_stop_reason, finish_reason=final_finish_reason,
+                            finish_reason=final_finish_reason,
                         )
 
         except Exception as e:
@@ -589,7 +587,7 @@ class OllamaChatModel(ChatModelBase):
                                     content_blocks.append({
                                         "type": "tool_calls",
                                         "tool_calls": [{
-                                            "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                                            "index": len([block for block in content_blocks if isinstance(block, dict) and block.get("type") == "tool_calls"]),
                                             "id": tool_call.get("id", ""),
                                             "type": "function",
                                             "function": {
@@ -614,7 +612,7 @@ class OllamaChatModel(ChatModelBase):
                     content_blocks.append({
                         "type": "tool_calls",
                         "tool_calls": [{
-                            "index": len([b for b in content_blocks if isinstance(b, dict) and b.get("type") == "tool_calls"]),
+                            "index": len([block for block in content_blocks if isinstance(block, dict) and block.get("type") == "tool_calls"]),
                             "id": tc_id,
                             "type": "function",
                             "function": {
@@ -640,19 +638,3 @@ class OllamaChatModel(ChatModelBase):
             usage=usage,
             metadata=metadata,
         )
-
-    def _json_loads_with_repair(self, text: str):
-        """Try to load JSON with repair for common issues."""
-        import json
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            # Try to fix common issues
-            # Remove trailing commas
-            text = text.rstrip().rstrip(",")
-            try:
-                return json.loads(text)
-            except Exception as e:
-                logger.warning(f"Failed to repair JSON: {e}")
-                # Return as plain text in content block
-                return {"message": {"content": text}}

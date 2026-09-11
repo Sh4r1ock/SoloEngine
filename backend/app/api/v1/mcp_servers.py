@@ -55,6 +55,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/mcp", tags=["mcp"])
 
 
+async def _run_mcp_isolated(coro_factory):
+    """在独立 asyncio task 中运行 MCPClient 协程，隔离 anyio cancel scope 泄漏。
+
+    背景：mcp 库的 streamable_http_client 在连接失败时，内部 anyio.create_task_group()
+    的 cancel scope 会跨 task 退出并污染 FastAPI 请求处理的 AsyncExitStack 清理，
+    抛出 CancelledError/RuntimeError（BaseException，无法被 except Exception 捕获）
+    导致 500。将连接隔离到独立 task 后，cancel scope 的作用域仅限该 task，失败不会
+    泄漏到主请求 task；CancelledError 统一转换为 ConnectionError 供上层捕获。
+    """
+    try:
+        return await asyncio.create_task(coro_factory())
+    except asyncio.CancelledError as e:
+        raise ConnectionError(f"MCP operation cancelled: {e}") from e
+
+
 def get_mcp_server_dir(user_id: str, name: str) -> str:
     """获取MCP Server存储目录（用户隔离）。"""
     base_dir = DataPaths.get_user_mcp_servers_dir(user_id)
@@ -62,6 +77,31 @@ def get_mcp_server_dir(user_id: str, name: str) -> str:
     server_dir = os.path.join(base_dir, name)
     DataPaths.ensure_dir(server_dir)
     return server_dir
+
+
+def _safe_extract(zip_ref: zipfile.ZipFile, target_dir: str) -> None:
+    """安全解压ZIP成员，拦截zip-slip路径遍历。
+
+    对每个成员依次校验：
+    - 拒绝相对路径跳转（"../"）或绝对路径条目
+    - 目标路径必须位于 target_dir 内（commonpath 校验）
+    不合法的条目直接跳过，仅解压合法成员。
+    """
+    target_dir = os.path.normpath(target_dir)
+    for name in zip_ref.namelist():
+        if name.startswith("../") or "/../" in name or os.path.isabs(name):
+            logger.warning(f"[MCP] Skipping unsafe zip entry: {name}")
+            continue
+        dest = os.path.normpath(os.path.join(target_dir, name))
+        if os.path.commonpath([target_dir, dest]) != target_dir:
+            logger.warning(f"[MCP] Skipping out-of-bounds zip entry: {name}")
+            continue
+        if name.endswith("/") or name.endswith("\\"):
+            os.makedirs(dest, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(dest) or target_dir, exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(zip_ref.read(name))
 
 
 def fill_server_data(server, server_data: dict):
@@ -407,7 +447,13 @@ async def create_python_mcp(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """创建Python编写的MCP。"""
+    """创建Python编写的MCP。
+
+M1 现状记录（保守保留，不删除）：两端点并存——
+- 本端点 /servers/python：JSON 自动生成 main.py 模板版（前端 mcpApi 无调用，遗留能力）。
+- /servers/create/python：用户代码上传版（前端 createPythonMCP FormData 唯一调用方）。
+两输入协议不同（JSON vs FormData+file），服务不同消费场景，保留并存。
+"""
     user_id = current_user.id
     mcp_dir = get_mcp_server_dir(user_id, request.name)
     os.makedirs(mcp_dir, exist_ok=True)
@@ -502,7 +548,7 @@ python main.py
         name=request.name,
         transport_type="stdio",
         description=f"Python MCP: {request.name}",
-        enabled=True,
+        is_active=True,
         tags=request.tags,
     )
     
@@ -567,6 +613,218 @@ class UpdateMCPCodeRequest(BaseModel):
     code: str = Field(..., description="Python代码")
 
 
+@router.post("/servers/create/python")
+async def create_python_mcp_with_code(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form("", description="MCP描述"),
+    tools: Optional[str] = Form(None, description="工具列表 (JSON字符串)"),
+    tags: Optional[str] = Form(None, description="标签列表 (JSON字符串)"),
+    file: Optional[UploadFile] = File(None, description="Python代码文件 (original.py)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """创建 Python MCP（用户代码版，与前端 MCPAddServerModal 对齐）。
+
+    C1 修复：前端 createPythonMCP 以 FormData 上传用户手写代码（file=original.py），
+    后端此前仅有 JSON 自动生成版 `/servers/python`（不接收用户代码）。本端点保存
+    用户代码为 original.py + main.py，并创建 server 记录 + stdio 配置。
+    """
+    user_id = current_user.id
+    safe_name = re.sub(r'[^\w\-]', '_', name)
+    if not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid server name")
+
+    import json as _json
+
+    # 解析工具列表与标签（前端传 JSON 字符串）
+    try:
+        parsed_tools = _json.loads(tools) if tools else []
+        if not isinstance(parsed_tools, list):
+            parsed_tools = []
+    except _json.JSONDecodeError:
+        parsed_tools = []
+    try:
+        parsed_tags = _json.loads(tags) if tags else []
+        if not isinstance(parsed_tags, list):
+            parsed_tags = []
+    except _json.JSONDecodeError:
+        parsed_tags = []
+
+    # 读取用户代码：优先 file（original.py），否则空模板
+    user_code = ""
+    if file:
+        user_code = (await file.read()).decode("utf-8", errors="replace")
+
+    mcp_dir = get_mcp_server_dir(user_id, safe_name)
+
+    # 保存用户原始代码 original.py + 运行入口 main.py（代码以用户代码为准，不做自动生成覆盖）
+    original_py_path = os.path.join(mcp_dir, "original.py")
+    main_py_path = os.path.join(mcp_dir, "main.py")
+    with open(original_py_path, "w", encoding="utf-8") as f:
+        f.write(user_code)
+    with open(main_py_path, "w", encoding="utf-8") as f:
+        f.write(user_code)
+
+    # 保存 tools.json（前端 getMCPToolsJson 读取）
+    if parsed_tools:
+        tools_json_path = os.path.join(mcp_dir, "tools.json")
+        with open(tools_json_path, "w", encoding="utf-8") as f:
+            _json.dump(parsed_tools, f, ensure_ascii=False, indent=2)
+
+    # 创建数据库记录（复用 create_stdio_mcp 的模式）
+    try:
+        new_server = MCPServerModel(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            name=safe_name,
+            transport_type="stdio",
+            description=f"Python MCP: {safe_name}",
+            is_active=True,
+            author="user",
+            tags=parsed_tags,
+        )
+        db.add(new_server)
+        db.flush()
+
+        stdio_config = MCPStdioConfigModel(
+            mcp_server_id=new_server.id,
+            command="python",
+            args=[main_py_path],
+            folder_path=mcp_dir,
+        )
+        db.add(stdio_config)
+        db.commit()
+        db.refresh(new_server)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[PYTHON] Failed to create server: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create server: {str(e)}")
+
+    # 更新 tools 记录（含 input_schema 结构）
+    if parsed_tools:
+        normalized_tools = []
+        for t in parsed_tools:
+            normalized_tools.append({
+                "name": t.get("name") or t.get("function_name"),
+                "description": t.get("description", ""),
+                "input_schema": t.get("input_schema") or t.get("inputSchema") or {
+                    "type": "object",
+                    "properties": {
+                        p.get("name"): {"type": p.get("type", "string"), "description": p.get("description", "")}
+                        for p in (t.get("parameters", {}).get("properties", []) if isinstance(t.get("parameters"), dict) else [])
+                    },
+                    "required": (t.get("parameters", {}).get("required", []) if isinstance(t.get("parameters"), dict) else []),
+                },
+                "is_enabled": True,
+            })
+        mcp_db_manager.update_server_tools(db=db, mcp_server_id=new_server.id, tools=normalized_tools, user_id=user_id)
+
+    return {
+        "code": 200,
+        "message": "Python MCP created",
+        "data": {
+            "id": new_server.id,
+            "name": new_server.name,
+            "path": mcp_dir,
+            "main_file": main_py_path,
+        },
+    }
+
+
+@router.get("/servers/{server_id}/tools/json")
+async def get_mcp_tools_json(
+    server_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """获取 MCP 工具的配置 JSON（前端 getMCPToolsJson 读取）。
+
+    C1 修复：优先读 mcp_dir/tools.json（创建时保存的用户配置），
+    否则回退 server.tools 数据库记录。
+    """
+    user_id = current_user.id
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+
+    # 尝试读取 tools.json（保存的用户原始配置）
+    if server.transport_type == "stdio" and server.stdio_config and server.stdio_config.folder_path:
+        tools_json_path = os.path.join(server.stdio_config.folder_path, "tools.json")
+        if os.path.exists(tools_json_path):
+            import json as _json
+            try:
+                with open(tools_json_path, "r", encoding="utf-8") as f:
+                    return {
+                        "code": 200,
+                        "message": "Tools JSON retrieved",
+                        "data": {"tools": _json.load(f)},
+                    }
+            except Exception:
+                pass
+
+    # 回退：数据库 server.tools
+    return {
+        "code": 200,
+        "message": "Tools JSON retrieved",
+        "data": {"tools": server.tools or []},
+    }
+
+
+@router.put("/servers/{server_id}/tools")
+async def update_mcp_tools(
+    server_id: str,
+    tools: str = Form(..., description="工具列表 (JSON字符串)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """更新 MCP 工具的配置 JSON（前端 updateMCPTools 写入）。"""
+    user_id = current_user.id
+    server = mcp_db_manager.get_server(db, server_id, user_id)
+
+    if not server:
+        raise HTTPException(status_code=404, detail=f"Server '{server_id}' not found")
+
+    import json as _json
+    try:
+        parsed_tools = _json.loads(tools)
+        if not isinstance(parsed_tools, list):
+            parsed_tools = []
+    except _json.JSONDecodeError:
+        parsed_tools = []
+
+    # 写入 tools.json（用户原始配置）
+    if server.transport_type == "stdio" and server.stdio_config and server.stdio_config.folder_path:
+        tools_json_path = os.path.join(server.stdio_config.folder_path, "tools.json")
+        with open(tools_json_path, "w", encoding="utf-8") as f:
+            _json.dump(parsed_tools, f, ensure_ascii=False, indent=2)
+
+    # 更新 DB 记录
+    normalized_tools = []
+    for t in parsed_tools:
+        normalized_tools.append({
+            "name": t.get("name") or t.get("function_name"),
+            "description": t.get("description", ""),
+            "input_schema": t.get("input_schema") or t.get("inputSchema") or {
+                "type": "object",
+                "properties": {
+                    p.get("name"): {"type": p.get("type", "string"), "description": p.get("description", "")}
+                    for p in (t.get("parameters", {}).get("properties", []) if isinstance(t.get("parameters"), dict) else [])
+                },
+                "required": (t.get("parameters", {}).get("required", []) if isinstance(t.get("parameters"), dict) else []),
+            },
+            "is_enabled": True,
+        })
+    mcp_db_manager.update_server_tools(db=db, mcp_server_id=server_id, tools=normalized_tools, user_id=user_id)
+
+    return {
+        "code": 200,
+        "message": "MCP tools updated",
+        "data": {"server_id": server_id, "tools_count": len(normalized_tools)},
+    }
+
+
 @router.put("/servers/{server_id}/code")
 async def update_mcp_code(
     server_id: str,
@@ -599,7 +857,7 @@ async def update_mcp_code(
 
 
 @router.post("/servers/{server_id}/connect")
-async def connect_server(
+async def connect_existing_server(
     server_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -645,7 +903,7 @@ async def disconnect_server(
 
 
 @router.post("/servers/connect")
-async def connect_server(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
+async def test_server_connection(server: MCPServerCreate, current_user: User = Depends(get_current_user)):
     """测试 MCP 服务器连接。"""
     from SoloAgent.plugins.mcp.mcp_client import MCPClient
     
@@ -660,18 +918,21 @@ async def connect_server(server: MCPServerCreate, current_user: User = Depends(g
     }
     
     try:
-        async with MCPClient(config) as client:
-            tools = await client.get_tools()
-            
-            return {
-                "code": 200,
-                "message": "Connection test successful",
-                "data": {
-                    "connected": True,
-                    "tools_count": len(tools),
-                    "tools": [{"name": t.get("name"), "description": t.get("description", ""), "input_schema": t.get("inputSchema", {})} for t in tools],
-                },
-            }
+        async def _get_tools():
+            async with MCPClient(config) as client:
+                return await client.get_tools()
+
+        tools = await _run_mcp_isolated(_get_tools)
+
+        return {
+            "code": 200,
+            "message": "Connection test successful",
+            "data": {
+                "connected": True,
+                "tools_count": len(tools),
+                "tools": [{"name": t.get("name"), "description": t.get("description", ""), "input_schema": t.get("inputSchema", {})} for t in tools],
+            },
+        }
     except Exception as e:
         logger.error(f"MCP connection test failed: {e}")
         return {
@@ -702,23 +963,26 @@ async def get_server_tools(
     config = build_mcp_config(server)
 
     try:
-        async with MCPClient(config) as client:
-            tools = await client.get_tools()
+        async def _get_tools():
+            async with MCPClient(config) as client:
+                return await client.get_tools()
 
-            return {
-                "code": 200,
-                "message": "Tools retrieved",
-                "data": [
-                    {
-                        "name": t.get("name"),
-                        "description": t.get("description", ""),
-                        "input_schema": t.get("inputSchema", {}),
-                        "server_id": server_id,
-                        "server_name": server.name,
-                    }
-                    for t in tools
-                ],
-            }
+        tools = await _run_mcp_isolated(_get_tools)
+
+        return {
+            "code": 200,
+            "message": "Tools retrieved",
+            "data": [
+                {
+                    "name": t.get("name"),
+                    "description": t.get("description", ""),
+                    "input_schema": t.get("inputSchema", {}),
+                    "server_id": server_id,
+                    "server_name": server.name,
+                }
+                for t in tools
+            ],
+        }
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -759,14 +1023,17 @@ async def call_server_tool(
     config = build_mcp_config(server)
 
     try:
-        async with MCPClient(config) as client:
-            result = await client.call_tool(tool_name, request.arguments)
+        async def _call_tool():
+            async with MCPClient(config) as client:
+                return await client.call_tool(tool_name, request.arguments)
 
-            return {
-                "code": 200,
-                "message": "Tool called successfully",
-                "data": result,
-            }
+        result = await _run_mcp_isolated(_call_tool)
+
+        return {
+            "code": 200,
+            "message": "Tool called successfully",
+            "data": result,
+        }
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -789,28 +1056,31 @@ async def get_all_tools(
     user_id = current_user.id
     servers = mcp_db_manager.get_servers(db, user_id)
 
-    async def get_server_tools(server):
+    async def fetch_server_tools(server):
         tools = []
         try:
             config = build_mcp_config(server)
 
-            async with MCPClient(config) as client:
-                server_tools = await client.get_tools()
+            async def _get_tools():
+                async with MCPClient(config) as client:
+                    return await client.get_tools()
 
-                for t in server_tools:
-                    tools.append({
-                        "name": t.get("name"),
-                        "description": t.get("description", ""),
-                        "input_schema": t.get("inputSchema", {}),
-                        "server_id": server.id,
-                        "server_name": server.name,
-                    })
+            server_tools = await _run_mcp_isolated(_get_tools)
+
+            for t in server_tools:
+                tools.append({
+                    "name": t.get("name"),
+                    "description": t.get("description", ""),
+                    "input_schema": t.get("inputSchema", {}),
+                    "server_id": server.id,
+                    "server_name": server.name,
+                })
         except Exception as e:
             logger.error(f"Failed to get tools from server {server.name}: {e}")
         return tools
 
     enabled_servers = [s for s in servers if s.is_active]
-    results = await asyncio.gather(*[get_server_tools(s) for s in enabled_servers], return_exceptions=True)
+    results = await asyncio.gather(*[fetch_server_tools(s) for s in enabled_servers], return_exceptions=True)
 
     all_tools = []
     for result in results:
@@ -842,24 +1112,27 @@ async def get_server_resources(
     config = build_mcp_config(server)
     
     try:
-        async with MCPClient(config) as client:
-            resources = await client.get_resources()
-            
-            return {
-                "code": 200,
-                "message": "Resources retrieved",
-                "data": [
-                    {
-                        "uri": r.get("uri"),
-                        "name": r.get("name"),
-                        "description": r.get("description", ""),
-                        "mime_type": r.get("mimeType"),
-                        "server_id": server_id,
-                        "server_name": server.name,
-                    }
-                    for r in resources
-                ],
-            }
+        async def _get_resources():
+            async with MCPClient(config) as client:
+                return await client.get_resources()
+
+        resources = await _run_mcp_isolated(_get_resources)
+
+        return {
+            "code": 200,
+            "message": "Resources retrieved",
+            "data": [
+                {
+                    "uri": r.get("uri"),
+                    "name": r.get("name"),
+                    "description": r.get("description", ""),
+                    "mime_type": r.get("mimeType"),
+                    "server_id": server_id,
+                    "server_name": server.name,
+                }
+                for r in resources
+            ],
+        }
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -889,23 +1162,26 @@ async def get_server_prompts(
     config = build_mcp_config(server)
     
     try:
-        async with MCPClient(config) as client:
-            prompts = await client.get_prompts()
-            
-            return {
-                "code": 200,
-                "message": "Prompts retrieved",
-                "data": [
-                    {
-                        "name": p.get("name"),
-                        "description": p.get("description", ""),
-                        "arguments": p.get("arguments", []),
-                        "server_id": server_id,
-                        "server_name": server.name,
-                    }
-                    for p in prompts
-                ],
-            }
+        async def _get_prompts():
+            async with MCPClient(config) as client:
+                return await client.get_prompts()
+
+        prompts = await _run_mcp_isolated(_get_prompts)
+
+        return {
+            "code": 200,
+            "message": "Prompts retrieved",
+            "data": [
+                {
+                    "name": p.get("name"),
+                    "description": p.get("description", ""),
+                    "arguments": p.get("arguments", []),
+                    "server_id": server_id,
+                    "server_name": server.name,
+                }
+                for p in prompts
+            ],
+        }
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -960,7 +1236,7 @@ async def create_stdio_mcp(
                 f.write(content)
             
             with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(server_dir)
+                _safe_extract(zip_ref, server_dir)
             
             # 处理嵌套目录（GitHub下载的ZIP常见）
             extracted_items = [item for item in os.listdir(server_dir) if not item.startswith('.')]
@@ -1157,13 +1433,18 @@ async def create_stdio_mcp(
         try:
             from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
-            async with MCPClient({
+            config = {
                 "transport": "stdio",
                 "command": run_command,
                 "args": run_args,
                 "env": {},
-            }) as client:
-                tools = await client.get_tools()
+            }
+
+            async def _get_tools():
+                async with MCPClient(config) as client:
+                    return await client.get_tools()
+
+            tools = await _run_mcp_isolated(_get_tools)
 
             mcp_db_manager.update_server_tools(
                 db=db,
@@ -1245,13 +1526,18 @@ async def create_http_mcp(
         try:
             from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
-            async with MCPClient({
+            config = {
                 "transport": "http",
                 "url": request.url,
                 "headers": request.headers or {},
                 "timeout": request.timeout or 30,
-            }) as client:
-                tools = await client.get_tools()
+            }
+
+            async def _get_tools():
+                async with MCPClient(config) as client:
+                    return await client.get_tools()
+
+            tools = await _run_mcp_isolated(_get_tools)
 
             mcp_db_manager.update_server_tools(
                 db=db,
@@ -1333,13 +1619,18 @@ async def create_sse_mcp(
         try:
             from SoloAgent.plugins.mcp.mcp_client import MCPClient
 
-            async with MCPClient({
+            config = {
                 "transport": "sse",
                 "url": request.url,
                 "headers": request.headers or {},
                 "timeout": request.timeout or 30,
-            }) as client:
-                tools = await client.get_tools()
+            }
+
+            async def _get_tools():
+                async with MCPClient(config) as client:
+                    return await client.get_tools()
+
+            tools = await _run_mcp_isolated(_get_tools)
 
             mcp_db_manager.update_server_tools(
                 db=db,

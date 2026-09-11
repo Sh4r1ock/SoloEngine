@@ -20,7 +20,7 @@ import os
 from typing import Dict, Any, List
 
 from .base import BaseFileTool, FileToolError
-from .._hitl import request_approval, plan_mode_guard
+from ..human_in_the_loop import request_approval, plan_mode_guard
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +89,13 @@ class DeleteFile(BaseFileTool):
             self.validate_absolute_path(file_path)
 
         # 删除属于高风险操作：等待用户在工具调用面板中批准/驳回（统一 HITL 批准机制）。
-        # 用户决策经前端 → WS execute → run.py enqueue_message 进入业务消息队列，
-        # request_approval 内部 await 该队列即实现"删除前等待用户批准"。
+        # 用户决策经前端 → WS interaction_answer（携带 tool_call_id）→ 事件循环 set_result
+        # 直接送达 pending_interaction Future，request_approval 内部 await 该 Future
+        # 即实现"删除前等待用户批准"（回答零队列中转，不经业务消息队列）。
         approved = await request_approval("删除文件确认")
-        if approved is False:
+        # 放行策略与 run_command 对齐：仅 approved is True（用户明确批准）才执行，
+        # None（无 run_context 的非 Web 执行场景）与 False（驳回/超时）一律拦截。
+        if approved is not True:
             return {
                 "content": "用户未批准删除操作，未删除任何文件。",
                 "success": False,

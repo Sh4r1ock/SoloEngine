@@ -30,7 +30,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base import BaseNetworkTool, NetworkResponse, NetworkToolError
-from app.core.config import settings
+from SoloAgent.config import settings
 
 
 @dataclass
@@ -679,72 +679,7 @@ class WebSearch(BaseNetworkTool):
         }
 
 
-async def web_search(
-    query: str,
-    num: int = 5,
-    lr: Optional[str] = None,
-    engine: Optional[str] = None,
-) -> Dict[str, Any]:
-    """
-    网络搜索工具函数。
-    
-    默认使用 Bing HTML 页面爬取进行网络搜索（免费免 API Key）。
-    
-    Args:
-        query (str): 搜索查询字符串。
-        num (int, optional): 最大返回结果数量。默认为 5。
-        lr (Optional[str], optional): 语言限制，如 "lang_zh-CN"。
-        engine (Optional[str], optional): 搜索引擎。
-            可选 "duckduckgo"、"bing"、"tavily"、"serper"、"baidu"。
-            默认从 settings.SEARCH_ENGINE 读取（默认 "bing"）。
-    
-    Returns:
-        Dict[str, Any]: 包含搜索结果的字典。
-    
-    Example:
-        >>> result = await web_search("Python asyncio")
-        >>> print(result["content"])
-    """
-    search_tool = WebSearch()
-    if engine is None:
-        engine = settings.SEARCH_ENGINE
-    
-    try:
-        results = await search_tool.search(query, num=num, lr=lr, engine=engine)
-        
-        if not results:
-            return {
-                "content": f"未找到关于 '{query}' 的搜索结果。",
-                "success": True,
-                "results": [],
-            }
-        
-        formatted = search_tool.format_results(results)
-        
-        return {
-            "content": formatted,
-            "success": True,
-            "results": [r.to_dict() for r in results],
-        }
-        
-    except NetworkToolError as e:
-        return {
-            "content": f"搜索出错: {e.message}",
-            "success": False,
-            "error_message": e.message,
-            "results": [],
-        }
-    except Exception as e:
-        return {
-            "content": f"搜索出错: {str(e)}",
-            "success": False,
-            "error_message": str(e),
-            "results": [],
-        }
-
-
 __all__ = [
     "WebSearch",
     "SearchResult",
-    "web_search",
 ]

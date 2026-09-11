@@ -6,15 +6,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Tree, Input, Spin, Empty, Dropdown, Modal, App, Typography } from 'antd';
 import {
-  FolderOutlined,
-  FolderOpenOutlined,
-  FileOutlined,
-  FileTextOutlined,
-  FileMarkdownOutlined,
-  FileImageOutlined,
-  FileZipOutlined,
-  FilePdfOutlined,
-  CodeOutlined,
   DeleteOutlined,
   EditOutlined,
   CopyOutlined,
@@ -25,6 +16,7 @@ import { runProjectApi, FileInfo } from '../../services/runProjectApi';
 import type { FileSystemChange } from './types';
 import { insertTreeNode, removeTreeNode, moveTreeNode } from './utils/treePatchUtils';
 import { copyToClipboard } from './utils/dataBlockUtils';
+import { getExplorerFileIcon } from '../../utils/fileIcon';
 import ConfirmDialog from '../common/ConfirmDialog';
 
 const { Text } = Typography;
@@ -152,47 +144,6 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
     return keys.map(k => findFileByPath(treeData, k as string)).filter(Boolean) as FileInfo[];
   }, [treeData]);
 
-  const getFileIcon = (file: FileInfo, isOpen?: boolean) => {
-    if (file.is_dir) {
-      return isOpen ? 
-        <FolderOpenOutlined style={{ color: '#f59e0b' }} /> : 
-        <FolderOutlined style={{ color: '#f59e0b' }} />;
-    }
-
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'js':
-      case 'jsx':
-      case 'ts':
-      case 'tsx':
-        return <CodeOutlined style={{ color: '#3b82f6' }} />;
-      case 'py':
-        return <CodeOutlined style={{ color: '#22c55e' }} />;
-      case 'json':
-        return <CodeOutlined style={{ color: '#f59e0b' }} />;
-      case 'md':
-      case 'markdown':
-        return <FileMarkdownOutlined style={{ color: '#6366f1' }} />;
-      case 'txt':
-      case 'log':
-        return <FileTextOutlined style={{ color: '#64748b' }} />;
-      case 'png':
-      case 'jpg':
-      case 'jpeg':
-      case 'gif':
-      case 'svg':
-        return <FileImageOutlined style={{ color: '#ec4899' }} />;
-      case 'zip':
-      case 'tar':
-      case 'gz':
-        return <FileZipOutlined style={{ color: '#8b5cf6' }} />;
-      case 'pdf':
-        return <FilePdfOutlined style={{ color: '#ef4444' }} />;
-      default:
-        return <FileOutlined style={{ color: '#94a3b8' }} />;
-    }
-  };
-
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '-';
     const k = 1024;
@@ -266,7 +217,7 @@ const FileExplorer: React.FC<FileExplorerProps> = ({ onFileSelect, onFileEdit, o
               padding: '1px 0',
             }}
           >
-            {getFileIcon(file)}
+            {getExplorerFileIcon(file.name, !!file.is_dir)}
             <Text style={{ 
               fontSize: 13, 
               flex: 1, 

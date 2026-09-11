@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from 'antd';
 import { ZoomInOutlined, ZoomOutOutlined, RotateLeftOutlined, RotateRightOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 
 interface ImageViewerProps {
   instanceId: string;
@@ -41,8 +41,6 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ instanceId, tab }) => {
   const handleZoomOut = () => setScale(prev => Math.max(0.2, prev - 0.2));
   const handleRotateLeft = () => setRotation(prev => prev - 90);
   const handleRotateRight = () => setRotation(prev => prev + 90);
-
-  useEditorCleanup(instanceId, cleanup);
 
   return (
     <div style={{ 

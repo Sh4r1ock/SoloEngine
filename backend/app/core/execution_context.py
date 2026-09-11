@@ -44,7 +44,7 @@ from zoneinfo import ZoneInfo
 from app.core.config import settings
 from threading import Lock
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SoloEngine")
 
 
 @dataclass
@@ -249,6 +249,17 @@ class ExecutionContextManager:
         
         return cleaned
     
+    def get_contexts_snapshot(self) -> Dict[str, ExecutionContext]:
+        """公开获取执行上下文快照（C5：跨层调用方不再直接读私有 _contexts/_context_lock）。
+
+        返回 dict 拷贝（锁在方法内部持有），调用方可安全遍历，无需外部加锁。
+
+        Returns:
+            Dict[str, ExecutionContext]: key → ExecutionContext 的拷贝。
+        """
+        with self._context_lock:
+            return dict(self._contexts)
+
     def get_stats(self) -> Dict[str, Any]:
         """
         获取统计信息。

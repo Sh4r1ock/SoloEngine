@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { Button, Spin, Result } from 'antd';
 import { LeftOutlined, RightOutlined, ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 
 interface PPTViewerProps {
   instanceId: string;
@@ -101,8 +101,6 @@ const PPTViewer: React.FC<PPTViewerProps> = ({ instanceId, tab }) => {
   const handleZoomOut = () => {
     setScale(prev => Math.max(0.5, prev - 0.1));
   };
-
-  useEditorCleanup(instanceId, cleanup);
 
   if (loading) {
     return (

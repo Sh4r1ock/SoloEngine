@@ -34,7 +34,7 @@ SoloEngine : 聊天模型基类模块，定义所有聊天模型的抽象基类�
 """
 
 from abc import abstractmethod
-from typing import AsyncGenerator, Any
+from typing import AsyncGenerator, Any, Optional
 import asyncio
 
 from .model_response import ChatResponse
@@ -227,15 +227,15 @@ class ChatModelBase:
         create_task = self._create_task
         if create_task is not None and not create_task.done():
             create_task.cancel()
-        resp = self._active_response
-        if resp:
+        response = self._active_response
+        if response:
             try:
                 try:
-                    await asyncio.wait_for(resp.aclose(), timeout=0.5)
+                    await asyncio.wait_for(response.aclose(), timeout=0.5)
                 except (AttributeError, NotImplementedError):
                     # 回退到同步 close()（Anthropic MessageStream 等）
                     try:
-                        resp.close()
+                        response.close()
                     except Exception:
                         pass
             except asyncio.TimeoutError:
@@ -243,7 +243,7 @@ class ChatModelBase:
                 # aclose 超时说明底层响应仍在等待数据（流停滞）。强制关闭流内部持有的
                 # httpx Response（openai AsyncStream._response / qwen 等同构），
                 # 使停滞的 __anext__ 能收到结束信号，事件循环不再被永久阻塞。
-                inner = getattr(resp, '_response', None) or getattr(resp, 'response', None)
+                inner = getattr(response, '_response', None) or getattr(response, 'response', None)
                 if inner is not None:
                     try:
                         if hasattr(inner, 'aclose'):

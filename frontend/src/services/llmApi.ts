@@ -108,18 +108,8 @@ class LLMApi {
     return response.data;
   }
 
-  async getProviderModels(provider: string): Promise<string[]> {
-    const response = await api.get(`/llm/providers/${provider}/models`);
-    return response.data.models;
-  }
-
   async getConfigs(): Promise<LLMConfig[]> {
     const response = await api.get('/llm/configs');
-    return response.data;
-  }
-
-  async getActiveConfigs(): Promise<LLMConfig[]> {
-    const response = await api.get('/llm/configs/active');
     return response.data;
   }
 

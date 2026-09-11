@@ -31,8 +31,7 @@ SoloEngine : Ollama文本嵌入模型模块
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.core.config import settings
-from typing import List, Any
+from typing import List, Any, Dict
 
 from .embedding_response import EmbeddingResponse
 from .embedding_usage import EmbeddingUsage
@@ -98,72 +97,37 @@ class OllamaTextEmbedding(EmbeddingModelBase):
         self.client = ollama.AsyncClient(host=host, **kwargs)
         self.embedding_cache = embedding_cache
 
-    async def __call__(
+    def _build_embedding_kwargs(
         self,
-        text: List[str | TextBlock],
-        **kwargs: Any,
-    ) -> EmbeddingResponse:
+        gather_text: List[str],
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
-        调用Ollama嵌入API
+        Ollama 版调用参数组装（R11：基类公共 __call__ 骨架的差异钩子）。
 
         Args:
-            text: 输入文本列表
-            **kwargs: 额外的关键字参数
+            gather_text: 清理后的输入文本列表
+            kwargs: 调用方额外参数
 
         Returns:
-            EmbeddingResponse: 嵌入响应
-
-        Raises:
-            ValueError: 输入格式不支持时抛出
-
-        示例:
-            >>> response = await model(["文本1", "文本2"])
+            Dict[str, Any]: Ollama embed API 调用参数
         """
-        gather_text = []
-        for _ in text:
-            if isinstance(_, dict) and "text" in _:
-                gather_text.append(_["text"])
-            elif isinstance(_, str):
-                gather_text.append(_)
-            else:
-                raise ValueError(
-                    "Input text must be a list of strings or TextBlock dicts.",
-                )
-
-        kwargs = {
+        return {
             "input": gather_text,
             "model": self.model_name,
             "dimensions": self.dimensions,
             **kwargs,
         }
 
-        if self.embedding_cache:
-            cached_embeddings = await self.embedding_cache.retrieve(
-                identifier=kwargs,
-            )
-            if cached_embeddings:
-                return EmbeddingResponse(
-                    embeddings=cached_embeddings,
-                    usage=EmbeddingUsage(
-                        tokens=0,
-                        time=0,
-                    ),
-                    source="cache",
-                )
+    async def _call_embedding_api(self, call_kwargs: Dict[str, Any]):
+        """
+        Ollama 版嵌入 API 调用（R11：差异钩子，embed）。
 
-        start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
-        response = await self.client.embed(**kwargs)
-        time = (datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_time).total_seconds()
+        Args:
+            call_kwargs: 组装后的调用参数
 
-        if self.embedding_cache:
-            await self.embedding_cache.store(
-                identifier=kwargs,
-                embeddings=response.embeddings,
-            )
-
-        return EmbeddingResponse(
-            embeddings=response.embeddings,
-            usage=EmbeddingUsage(
-                time=time,
-            ),
-        )
+        Returns:
+            tuple: (embeddings 列表, None——Ollama 不提供 token 用量)
+        """
+        response = await self.client.embed(**call_kwargs)
+        return response.embeddings, None

@@ -35,11 +35,10 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db, db_manager
+from app.core.database import get_db, db_manager, FileChangeModel
 from app.core.auth import User
 from app.api.v1.auth import get_current_user
 from app.core.content_addressable_storage import cas
-from app.models.file_change import FileChangeModel
 from app.utils.timezone_utils import format_iso
 
 logger = logging.getLogger(__name__)
@@ -418,7 +417,6 @@ async def rewind_file_changes(
 ):
     from app.core.database import SessionMessageModel
     from SoloAgent.solo_agent.compiler import CompiledFlowFactory
-    from sqlalchemy import func as sqlfunc
 
     session = db_manager.get_session(db, request.session_id)
     if not session or session.user_id != current_user.id:
@@ -546,20 +544,28 @@ async def rewind_file_changes(
     )
     await delete_messages(delete_request, db, current_user)
 
-    token_sum = db.query(
-        sqlfunc.sum(SessionMessageModel.prompt_tokens),
-        sqlfunc.sum(SessionMessageModel.completion_tokens),
-        sqlfunc.sum(SessionMessageModel.total_tokens)
-    ).filter(
+    # 从 token_usage_history 聚合回退消息的 token 增量
+    # （SessionMessageModel 无 prompt_tokens/completion_tokens/total_tokens 列，
+    #  仅有 token_usage_history JSON，值为 history 数组，每条含 prompt_tokens/completion_tokens/total_tokens）
+    rewinded_token_delta = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0
+    }
+    rolled_back_messages = db.query(SessionMessageModel).filter(
         SessionMessageModel.session_id == request.session_id,
         SessionMessageModel.message_index > target_index
-    ).first()
-
-    rewinded_token_delta = {
-        "prompt_tokens": token_sum[0] or 0,
-        "completion_tokens": token_sum[1] or 0,
-        "total_tokens": token_sum[2] or 0,
-    }
+    ).all()
+    for msg in rolled_back_messages:
+        history = msg.token_usage_history
+        if not history or not isinstance(history, list):
+            continue
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            rewinded_token_delta["prompt_tokens"] += entry.get("prompt_tokens", 0) or 0
+            rewinded_token_delta["completion_tokens"] += entry.get("completion_tokens", 0) or 0
+            rewinded_token_delta["total_tokens"] += entry.get("total_tokens", 0) or 0
 
     CompiledFlowFactory.remove(
         current_user.id,

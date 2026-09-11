@@ -41,9 +41,9 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, Optional
-from app.core.config import settings
+from SoloAgent.config import settings
 from app.core.terminal_manager import terminal_manager
-from .._hitl import request_approval, get_run_mode, get_command_allowlist, get_terminal_id, plan_mode_guard
+from ..human_in_the_loop import request_approval, get_run_mode, get_command_allowlist, get_terminal_id, plan_mode_guard
 from .base import (
     BaseCommandTool,
     CommandInfo,
@@ -196,8 +196,9 @@ class RunCommand(BaseCommandTool):
         #   auto      自动运行：直接执行（等价 Claude Code bypassPermissions / Cursor Run Everything）
         #   ask       每次询问：所有命令均请求用户批准（等价 Claude Code default / Cursor Ask）
         #   allowlist 白名单：白名单内命令自动执行，白名单外请求用户批准（等价 Cursor Allowlist）
-        # 用户决策经前端 → WS execute → run.py enqueue_message 进入业务消息队列，
-        # request_approval 内部 await 该队列即实现"执行前等待用户批准"。
+        # 用户决策经前端 → WS interaction_answer（携带 tool_call_id）→ 事件循环 set_result
+        # 直接送达 pending_interaction Future，request_approval 内部 await 该 Future
+        # 即实现"执行前等待用户批准"（回答零队列中转，不经业务消息队列）。
         run_mode = get_run_mode()
         need_approval = requires_approval
         if run_mode == "ask":
@@ -247,7 +248,7 @@ class RunCommand(BaseCommandTool):
     def _pick_terminal_session(cls) -> Optional[Any]:
         """选择命令执行的终端会话：优先前端指定的目标终端（terminal_attach），否则第一个会话。
 
-        关联决策（命令执行在哪个终端）由前端持有并经 run_context 注入（_hitl.get_terminal_id），
+        关联决策（命令执行在哪个终端）由前端持有并经 run_context 注入（human_in_the_loop.get_terminal_id），
         工具仅接收目标终端 ID 执行——工具不感知前端连接状态（session.clients），前端与工具联动独立。
         """
         sessions = terminal_manager.get_all()
@@ -394,11 +395,18 @@ class RunCommand(BaseCommandTool):
                 # 前缀异常（理论不发生）：以当前累计为基线继续
                 pre_clean = clean
                 continue
-            # 命令写入后新增部分出现新提示符 = 命令执行完成
-            if cls._find_prompt(clean[len(pre_clean):]) is not None:
+            # 完成判定：命令写入后新增部分出现提示符即视为命令执行完成。
+            # 实测（_tmp_pty_repro 真实 PTY 输出）：Remove-Module PSReadLine 成功后，
+            # PowerShell 对后续命令采用简单回显 =「光标定位 + 命令文本」，回显本身
+            # 不含提示符；命令执行完成后 PowerShell 打印 1 个新提示符。故 added 中
+            # 出现的第 1 个提示符就是命令完成标志（≥2 判定会永不满足导致超时——
+            # 此前"回显含提示符"的推断来自残留输出污染 cmd_chunks，属误判）。
+            added = clean[len(pre_clean):]
+            if cls._find_prompt(added) is not None:
                 break
-        # 提取本条命令输出（仅本条 chunk，结构：回显 + 输出 + 新提示符）
-        return cls._extract_terminal_output("".join(cmd_chunks), command)
+        # 提取本条命令输出：基于 added（命令写入后的新增部分，天然排除上一条命令
+        # 残留——残留均落在 pre_clean 基线内），结构：回显 + 输出 + 新提示符。
+        return cls._extract_terminal_output(added, command)
 
     @staticmethod
     def _clean_ansi(raw: str) -> str:
@@ -418,16 +426,25 @@ class RunCommand(BaseCommandTool):
         return re.search(r"(?:\([^)]*\)[ \t]*)?PS [^>\r\n]*>", text)
 
     @staticmethod
+    def _find_all_prompts(text: str) -> list:
+        """统计文本中 PowerShell 提示符出现的全部位置（`(base) PS D:...>`）。
+
+        与 _find_prompt 同锚点（前缀可选），供输出提取定位提示符边界。
+        """
+        return list(re.finditer(r"(?:\([^)]*\)[ \t]*)?PS [^>\r\n]*>", text))
+
+    @staticmethod
     def _extract_terminal_output(raw: str, command: str) -> str:
         """从单条命令的终端原始输出中提取命令输出（回显之后、新提示符之前的内容）。
 
-        单条命令输出结构（清理 ANSI 后）：
-            `(base) PS D:...> <command>`   ← 回显行（含初始提示符，长命令可能被折行拆开）
+        单条命令输出结构（清理 ANSI 后，PSReadLine 已禁用）：
+            `<command>`                    ← 回显行（仅命令文本，不含提示符）
             `<output 行1>`                  ← 命令输出
-            `(base) PS D:...>`             ← 新提示符
+            `(base) PS D:...>`             ← 新提示符（命令完成标志，added 中首个提示符）
 
-        提取策略：取初始提示符之后、新提示符之前的文本，再剔除命令回显
-        （命令文本本身，容忍折行拆行）。
+        提取策略：取新提示符之前的内容（= 回显 + 输出），再剔除命令回显
+        （命令文本本身，容忍折行拆行）。仅 1 个提示符时取提示符之前的文本；
+        若输出本身含提示符文本（罕见）出现多个提示符，取第 1 个到最后一个之间。
         """
         clean = RunCommand._clean_ansi(raw)
         prompts = list(re.finditer(r"(?:\([^)]*\)[ \t]*)?PS [^>\r\n]*>", clean))
@@ -436,7 +453,9 @@ class RunCommand(BaseCommandTool):
         if len(prompts) >= 2:
             body = clean[prompts[0].end():prompts[-1].start()]
         else:
-            body = clean[prompts[0].end():]
+            # 仅 1 个新提示符：其之前的内容 = 回显 + 输出（修正原取提示符之后
+            # 导致提取恒为空的 bug）
+            body = clean[:prompts[0].start()]
         body = RunCommand._strip_command_echo(body, command)
         return "\n".join(ln.strip() for ln in body.splitlines() if ln.strip())
 
@@ -452,15 +471,15 @@ class RunCommand(BaseCommandTool):
             return body
         # 逐字符映射 compact 索引回 body 索引（换行字符映射为 None）
         mapping = []
-        ci = 0
-        for ch in body:
-            if ch in "\r\n":
+        compact_index = 0
+        for char in body:
+            if char in "\r\n":
                 mapping.append(None)
             else:
-                mapping.append(ci)
-                ci += 1
-        start = next((bi for bi, v in enumerate(mapping) if v == cmd_idx), None)
-        end = next((bi for bi, v in enumerate(mapping) if v == cmd_idx + len(command) - 1), None)
+                mapping.append(compact_index)
+                compact_index += 1
+        start = next((body_index for body_index, value in enumerate(mapping) if value == cmd_idx), None)
+        end = next((body_index for body_index, value in enumerate(mapping) if value == cmd_idx + len(command) - 1), None)
         if start is None or end is None:
             return body
         return body[:start] + body[end + 1:]

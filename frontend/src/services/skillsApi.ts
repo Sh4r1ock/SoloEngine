@@ -111,16 +111,6 @@ class SkillsApi {
     return api.post(`/skills/packages/${packageId}/deactivate`);
   }
 
-  async importPackage(file: File) {
-    const formData = new FormData();
-    formData.append('file', file);
-    return api.post('/skills/import', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-  }
-
   async parseImportPackage(file: File) {
     const formData = new FormData();
     formData.append('file', file);
@@ -159,18 +149,6 @@ class SkillsApi {
         'Content-Type': 'multipart/form-data',
       },
     });
-  }
-
-  async searchPackages(query: string, tags?: string[]) {
-    return api.post('/skills/search', { query, tags });
-  }
-
-  async getSkillContent(packageId: string, skillName: string) {
-    return api.get(`/skills/packages/${packageId}/skills/${skillName}`);
-  }
-
-  async exportPackage(packageId: string) {
-    return api.get(`/skills/packages/${packageId}/export`);
   }
 
   async getPackageFiles(packageId: string) {

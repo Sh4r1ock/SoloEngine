@@ -7,6 +7,7 @@ import UnifiedCard from '../common/UnifiedCard';
 import PageHeader from '../common/PageHeader';
 import { getDefaultIcon } from '../../utils/iconLibrary';
 import MCPTestRunModal from './MCPTestRunModal';
+import { useListPage } from '../../hooks/useListPage';
 
 const { Text } = Typography;
 
@@ -14,12 +15,12 @@ const MCPManager: React.FC = () => {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [servers, setServers] = useState<MCPServer[]>([]);
-  const [filteredServers, setFilteredServers] = useState<MCPServer[]>([]);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [editingServer, setEditingServer] = useState<MCPServer | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [testRunServer, setTestRunServer] = useState<MCPServer | null>(null);
+
+  const { searchQuery, setSearchQuery, selectedTags, handleTagToggle, allTags, filteredItems } =
+    useListPage(servers, server => server.tags || []);
 
   const loadServerList = async () => {
     setLoading(true);
@@ -27,7 +28,6 @@ const MCPManager: React.FC = () => {
       const response = await mcpApi.getServers();
       if (response.code === 200) {
         setServers(response.data || []);
-        setFilteredServers(response.data || []);
       }
     } catch (error) {
       message.error('加载 MCP 工具列表失败：' + String(error));
@@ -90,50 +90,13 @@ const MCPManager: React.FC = () => {
     }
   };
 
-  const handleTagToggle = (tag: string) => {
-    setSelectedTags(prev => {
-      if (prev.includes(tag)) {
-        return prev.filter(t => t !== tag);
-      } else {
-        return [...prev, tag];
-      }
-    });
-  };
-
   const getTransportType = (server: MCPServer) => {
     return server.source || server.transport || server.transport_type || 'stdio';
   };
 
-  const allTags = Array.from(new Set(
-    servers.flatMap(server => server.tags || [])
-  )).sort();
-
   useEffect(() => {
     loadServerList();
   }, []);
-
-  useEffect(() => {
-    let result = servers;
-
-    if (selectedTags.length > 0) {
-      result = result.filter(server => {
-        const serverTags = server.tags || [];
-        return selectedTags.some(tag => serverTags.includes(tag));
-      });
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(server => {
-        const matchesName = server.name.toLowerCase().includes(query);
-        const matchesDesc = server.description?.toLowerCase().includes(query);
-        const matchesTags = server.tags?.some(tag => tag.toLowerCase().includes(query));
-        return matchesName || matchesDesc || matchesTags;
-      });
-    }
-
-    setFilteredServers(result);
-  }, [searchQuery, selectedTags, servers]);
 
   return (
     <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100%' }}>
@@ -166,7 +129,7 @@ const MCPManager: React.FC = () => {
         <div style={{ textAlign: 'center', padding: '48px' }}>
           <Spin size="large" />
         </div>
-      ) : filteredServers.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <Empty
           style={{ padding: '60px 20px' }}
           description={
@@ -190,7 +153,7 @@ const MCPManager: React.FC = () => {
             gap: '12px',
           }}
         >
-          {filteredServers.map((server) => {
+          {filteredItems.map((server) => {
             const isSystem = server.user_id === 'system';
             // 只从数据库读取标签，不前端动态添加
             const allTags = server.tags || [];

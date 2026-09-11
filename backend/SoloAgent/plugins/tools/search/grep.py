@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .base import BaseSearchTool
-from app.core.config import settings
+from SoloAgent.config import settings
 
 logger = logging.getLogger(__name__)
 

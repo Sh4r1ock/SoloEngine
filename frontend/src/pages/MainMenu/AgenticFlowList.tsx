@@ -5,7 +5,8 @@ import { AppstoreOutlined } from '@ant-design/icons';
 import { agenticFlowApi, AgenticFlow } from '../../services/agenticFlowApi';
 import UnifiedCard from '../../components/common/UnifiedCard';
 import PageHeader from '../../components/common/PageHeader';
-import { getDefaultIcon, getRandomIcon } from '../../utils/iconLibrary';
+import { getDefaultIcon } from '../../utils/iconLibrary';
+import { useListPage } from '../../hooks/useListPage';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -19,8 +20,9 @@ const AgenticFlowList: React.FC = () => {
   const [newFlowName, setNewFlowName] = useState('');
   const [newFlowDescription, setNewFlowDescription] = useState('');
   const [creating, setCreating] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  const { searchQuery, setSearchQuery, selectedTags, handleTagToggle, allTags, filteredItems } =
+    useListPage(flows, flow => (flow.is_template ? ['system'] : []));
 
   useEffect(() => {
     loadFlows();
@@ -109,33 +111,6 @@ const AgenticFlowList: React.FC = () => {
     }
   };
 
-  const handleTagToggle = (tag: string) => {
-    setSelectedTags(prev => {
-      if (prev.includes(tag)) {
-        return prev.filter(t => t !== tag);
-      } else {
-        return [...prev, tag];
-      }
-    });
-  };
-
-  const allTags = Array.from(new Set(
-    flows.flatMap(flow => [
-      ...(flow.is_template ? ['system'] : []),
-    ])
-  )).sort();
-
-  const filteredFlows = flows.filter(flow => {
-    const matchesSearch = !searchQuery || 
-      flow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (flow.description?.toLowerCase().includes(searchQuery.toLowerCase()) || false);
-    
-    const matchesTags = selectedTags.length === 0 || 
-      (flow.is_template && selectedTags.includes('system'));
-    
-    return matchesSearch && matchesTags;
-  });
-
   return (
     <div style={{ padding: '24px', backgroundColor: 'var(--bg-secondary)', minHeight: '100%' }}>
       <PageHeader
@@ -164,7 +139,7 @@ const AgenticFlowList: React.FC = () => {
         <div style={{ textAlign: 'center', padding: '100px 0' }}>
           <Spin size="large" />
         </div>
-      ) : filteredFlows.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <Empty
           style={{ padding: '60px 20px' }}
           description={
@@ -188,7 +163,7 @@ const AgenticFlowList: React.FC = () => {
             gap: '12px',
           }}
         >
-          {filteredFlows.map(flow => {
+          {filteredItems.map(flow => {
             const isSystem = flow.user_id === 'system';
             const tags = flow.tags || [];
             return (

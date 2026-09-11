@@ -4,11 +4,9 @@
  */
 
 import React, { useMemo, useRef, useCallback } from 'react';
-import { Button, Space, Typography, Tooltip } from 'antd';
+import { Typography } from 'antd';
 import {
   FileOutlined,
-  ArrowRightOutlined,
-  ArrowLeftOutlined,
 } from '@ant-design/icons';
 import '../styles/FileChangeStyles.css';
 
@@ -34,10 +32,6 @@ interface FileDiffViewerProps {
   filePath: string;
   oldContent: string;
   newContent: string;
-  onApply?: () => void;
-  onRevert?: () => void;
-  onApplyLine?: (lineNumber: number, content: string) => void;
-  onRevertLine?: (lineNumber: number, content: string) => void;
   hideHeader?: boolean;
 }
 
@@ -223,10 +217,6 @@ const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
   filePath,
   oldContent,
   newContent,
-  onApply,
-  onRevert,
-  onApplyLine,
-  onRevertLine,
   hideHeader,
 }) => {
   const diffLines = useMemo(() => computeDiff(oldContent, newContent), [oldContent, newContent]);
@@ -237,18 +227,6 @@ const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
     const removed = diffLines.filter(l => l.type === 'removed').length;
     return { added, removed };
   }, [diffLines]);
-
-  const handleApplyAll = () => {
-    if (onApply) {
-      onApply();
-    }
-  };
-
-  const handleRevertAll = () => {
-    if (onRevert) {
-      onRevert();
-    }
-  };
 
   const oldLineCount = oldContent ? oldContent.split('\n').length : 0;
   const newLineCount = newContent ? newContent.split('\n').length : 0;
@@ -295,41 +273,6 @@ const FileDiffViewer: React.FC<FileDiffViewerProps> = ({
             <span className="sc-diff-stat added">+{stats.added}</span>
             <span className="sc-diff-stat removed">-{stats.removed}</span>
           </div>
-        </div>
-        <div className="sc-diff-actions">
-          <Space size={4}>
-            <Tooltip title="一键应用所有更改（覆盖旧内容）">
-              <Button
-                type="primary"
-                size="small"
-                icon={<ArrowRightOutlined />}
-                onClick={handleApplyAll}
-                disabled={!onApply}
-                style={{
-                  borderRadius: 4,
-                  fontSize: 12,
-                  height: 26,
-                }}
-              >
-                应用全部
-              </Button>
-            </Tooltip>
-            <Tooltip title="一键撤销所有更改（恢复旧内容）">
-              <Button
-                size="small"
-                icon={<ArrowLeftOutlined />}
-                onClick={handleRevertAll}
-                disabled={!onRevert}
-                style={{
-                  borderRadius: 4,
-                  fontSize: 12,
-                  height: 26,
-                }}
-              >
-                撤销全部
-              </Button>
-            </Tooltip>
-          </Space>
         </div>
       </div>
       )}

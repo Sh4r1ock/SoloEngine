@@ -43,6 +43,7 @@ from typing import (
     TYPE_CHECKING,
     AsyncGenerator,
     Literal,
+    Optional,
     Type,
 )
 from collections import OrderedDict
@@ -63,20 +64,38 @@ except ImportError:
 
 from .model_response import ChatResponse
 from .model_base import ChatModelBase
-from .model_usage import ChatUsage
+from .model_usage import build_usage
 from ..message import (
     TextBlock as SoloTextBlock,
     ThinkingBlock as SoloThinkingBlock,
 )
 from ..utils.logging import logger
 from ..types import JSONSerializableObject
-from app.core.config import settings
+from SoloAgent.config import settings
 
 if TYPE_CHECKING:
     from anthropic import AsyncStream
 else:
     AsyncStream = "anthropic.AsyncStream"
 
+
+def _anthropic_stop_reason_to_finish_reason(stop_reason: Optional[str]) -> Optional[str]:
+    """Anthropic 原生 stop_reason → SoloEngine 系统 finish_reason 格式（LLM API → 系统方向转换）。
+
+    Anthropic API 原生返回 stop_reason（end_turn/tool_use/max_tokens/stop_sequence），
+    SoloEngine 系统统一使用 OpenAI 风格 finish_reason（stop/tool_calls/length）——
+    系统存储（token_usage_history）、判断（has_tool_calls）、流程控制（StopReason
+    解析）全部消费 finish_reason 体系，因此 Anthropic 层在此完成词汇转换。
+    """
+    if not stop_reason:
+        return None
+    if stop_reason == "end_turn":
+        return "stop"
+    if stop_reason == "tool_use":
+        return "tool_calls"
+    if stop_reason == "max_tokens":
+        return "length"
+    return stop_reason
 
 
 class AnthropicChatModel(ChatModelBase):
@@ -234,7 +253,7 @@ class AnthropicChatModel(ChatModelBase):
 
         anthropic_messages.extend(remaining_messages)
 
-        gen_kwargs = {
+        generate_kwargs = {
             "model": self.model_name,
             "max_tokens": kwargs.pop("max_tokens", None),
             "temperature": kwargs.pop("temperature", None),
@@ -243,13 +262,13 @@ class AnthropicChatModel(ChatModelBase):
             **self.generate_kwargs,
             **kwargs,
         }
-        gen_kwargs = {k: v for k, v in gen_kwargs.items() if v is not None}
+        generate_kwargs = {k: v for k, v in generate_kwargs.items() if v is not None}
 
         if self.stream:
-            gen_kwargs["stream"] = True
+            generate_kwargs["stream"] = True
 
         if tools:
-            gen_kwargs["tools"] = tools
+            generate_kwargs["tools"] = tools
 
         if structured_model:
             if tools:
@@ -259,8 +278,8 @@ class AnthropicChatModel(ChatModelBase):
                     "ignored. The model will only perform structured output "
                     "generation without calling any other tools."
                 )
-            gen_kwargs["tool_choice"] = {"type": "any", "name": "formatted_response"}
-            gen_kwargs["betas"] = ["computer-use-2024-10-22"]
+            generate_kwargs["tool_choice"] = {"type": "any", "name": "formatted_response"}
+            generate_kwargs["betas"] = ["computer-use-2024-10-22"]
 
         start_datetime = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
 
@@ -269,7 +288,7 @@ class AnthropicChatModel(ChatModelBase):
                 response = await self.client.messages.create(
                     system=system_message.get("content"),
                     messages=anthropic_messages,
-                    **gen_kwargs,
+                    **generate_kwargs,
                 )
                 return self._parse_anthropic_stream_response(
                     start_datetime,
@@ -280,7 +299,7 @@ class AnthropicChatModel(ChatModelBase):
             else:
                 response = await self.client.messages.stream(
                     messages=anthropic_messages,
-                    **gen_kwargs,
+                    **generate_kwargs,
                 )
                 return self._parse_anthropic_stream_response(
                     start_datetime,
@@ -293,7 +312,7 @@ class AnthropicChatModel(ChatModelBase):
                 response = await self.client.messages.create(
                     system=system_message.get("content"),
                     messages=anthropic_messages,
-                    **gen_kwargs,
+                    **generate_kwargs,
                 )
                 return self._parse_anthropic_completion_response(
                     start_datetime,
@@ -303,7 +322,7 @@ class AnthropicChatModel(ChatModelBase):
             else:
                 response = await self.client.messages.create(
                     messages=anthropic_messages,
-                    **gen_kwargs,
+                    **generate_kwargs,
                 )
                 return self._parse_anthropic_completion_response(
                     start_datetime,
@@ -362,10 +381,10 @@ class AnthropicChatModel(ChatModelBase):
                             stop_reason = event.message.stop_reason
                         # message_start 事件中包含 input_tokens，直接捕获
                         if hasattr(event.message, "usage") and event.message.usage:
-                            usage = ChatUsage(
-                                input_tokens=getattr(event.message.usage, 'input_tokens', 0) or 0,
-                                output_tokens=getattr(event.message.usage, 'output_tokens', 0) or 0,
-                                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                            usage = build_usage(
+                                getattr(event.message.usage, 'input_tokens', 0) or 0,
+                                getattr(event.message.usage, 'output_tokens', 0) or 0,
+                                start_datetime,
                             )
                             logger.info(f"[Anthropic Stream] message_start usage: input={usage.input_tokens}")
                     elif event.type == "content_block_start":
@@ -454,20 +473,21 @@ class AnthropicChatModel(ChatModelBase):
                             logger.info(f"[Anthropic Stream] stop_reason detected: {stop_reason}")
                         # message_delta 事件中包含 output_tokens（累积值）
                         if hasattr(event, "usage") and event.usage:
-                            usage = ChatUsage(
-                                input_tokens=getattr(usage, 'input_tokens', 0) if usage else 0,
-                                output_tokens=event.usage.output_tokens,
-                                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                            usage = build_usage(
+                                getattr(usage, 'input_tokens', 0) if usage else 0,
+                                event.usage.output_tokens,
+                                start_datetime,
                             )
                             logger.info(f"[Anthropic Stream] message_delta usage: output={usage.output_tokens}")
                     elif event.type == "message_stop":
                         # 始终 yield 最终 usage（纯文本场景无 tool_calls 时也需要）
+                        # finish_reason 统一为 SoloEngine 系统格式（end_turn→stop / tool_use→tool_calls）
                         yield ChatResponse(
                             content=[],
                             usage=usage,
                             metadata=metadata,
                             stop_reason=stop_reason,
-                            finish_reason="tool_calls" if tool_calls else stop_reason,
+                            finish_reason=_anthropic_stop_reason_to_finish_reason(stop_reason),
                         )
                         # 每个 tool_call 单独一个 ChatResponse
                         for tool_id, tool_call in tool_calls.items():
@@ -495,10 +515,10 @@ class AnthropicChatModel(ChatModelBase):
                             metadata={"error": str(event.error)},
                         )
                     elif event.type == "usage":
-                        usage = ChatUsage(
-                            input_tokens=event.usage.input_tokens,
-                            output_tokens=event.usage.output_tokens,
-                            time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                        usage = build_usage(
+                            event.usage.input_tokens,
+                            event.usage.output_tokens,
+                            start_datetime,
                         )
         finally:
             self._clear_response_ref()
@@ -559,10 +579,10 @@ class AnthropicChatModel(ChatModelBase):
 
         usage = None
         if response.usage:
-            usage = ChatUsage(
-                input_tokens=response.usage.input_tokens,
-                output_tokens=response.usage.output_tokens,
-                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+            usage = build_usage(
+                response.usage.input_tokens,
+                response.usage.output_tokens,
+                start_datetime,
             )
 
         metadata: dict | None = None
@@ -583,11 +603,13 @@ class AnthropicChatModel(ChatModelBase):
         metadata['original_model_message'] = response
         metadata['provider'] = 'anthropic'
 
+        # 非流式补 finish_reason（系统格式转换，与流式 message_stop 同源）
         return ChatResponse(
             content=content_blocks,
             usage=usage,
             metadata=metadata,
             stop_reason=stop_reason,
+            finish_reason=_anthropic_stop_reason_to_finish_reason(stop_reason),
         )
 
     @staticmethod

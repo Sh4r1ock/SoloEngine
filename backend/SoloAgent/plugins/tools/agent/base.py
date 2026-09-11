@@ -33,7 +33,7 @@ Agent工具类型：
 from typing import Dict, Any, List, Optional, Set
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from app.core.config import settings
+from SoloAgent.config import settings
 
 
 class AgentToolError(Exception):

@@ -11,8 +11,8 @@ SoloEngine : 异常模块，提供Agent相关异常定义
 本模块是异常模块的入口，提供以下核心异常类的统一导出：
     - AgentOrientedExceptionBase: 异常基类
     - ToolNotFoundError: 工具未找到异常
-    - ToolInterruptedError: 工具中断异常
     - ToolInvalidArgumentsError: 工具参数无效异常
+    - SoloEngineException: 引擎通用异常
 
 依赖:
     - .exception_base: 异常基类
@@ -26,27 +26,15 @@ SoloEngine : 异常模块，提供Agent相关异常定义
 from .exception_base import AgentOrientedExceptionBase
 from .tool import (
     ToolNotFoundError,
-    ToolInterruptedError,
     ToolInvalidArgumentsError,
 )
 from .exceptions import (
     SoloEngineException,
-    WebSocketException,
-    WebSocketConnectionError,
-    WebSocketAuthenticationError,
-    DatabaseException,
-    DatabaseConnectionError,
 )
 
 __all__ = [
     "AgentOrientedExceptionBase",
     "ToolNotFoundError",
-    "ToolInterruptedError",
     "ToolInvalidArgumentsError",
     "SoloEngineException",
-    "WebSocketException",
-    "WebSocketConnectionError",
-    "WebSocketAuthenticationError",
-    "DatabaseException",
-    "DatabaseConnectionError",
 ]

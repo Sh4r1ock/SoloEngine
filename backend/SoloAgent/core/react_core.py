@@ -1,192 +1,34 @@
 # -*- coding: utf-8 -*-
-"""
-ReAct核心机制-react_core.py: 实现ReAct（Reasoning + Acting）架构的核心微内核
-
-@file react_core.py
-@description 实现ReAct架构的核心微内核，提供推理-行动循环和四事件机制
-@author Sh4rlock
-@date 2026-04-09
-
-功能描述：
-本模块是ReAct核心机制的实现，提供以下核心功能：
-- 实现推理-行动循环的核心逻辑（Thought → Action → Observation）
-- 支持多轮迭代直到任务完成，可配置最大迭代次数
-- 自动检测任务完成条件，统一处理多模型API差异
-- 集成记忆、RAG、工具执行等插件接口
-- 实现四事件机制：ToolCallEventType工具调用事件管理
-- 维护_conversation_history作为唯一记忆缓存
-
-ReAct架构说明：
-ReAct是一种将推理（Reasoning）和行动（Acting）交替进行的Agent架构。
-每轮迭代包含三个阶段：
-1. Thought（思考）：分析当前状态，决定下一步行动
-2. Action（行动）：执行工具调用或生成回复
-3. Observation（观察）：获取行动结果，更新状态
-
-多模型任务完成检测：
-不同模型使用不同的API字段表示任务完成：
-- Claude: stop_reason = "end_turn" (完成) / "tool_use" (工具调用)
-- OpenAI/GLM/DeepSeek: finish_reason = "stop" (完成) / "tool_calls" (工具调用)
-本模块统一处理这些差异，提供一致的任务完成检测接口。
-
-依赖:
-- asyncio: 异步操作支持
-- json: JSON数据处理
-- re: 正则表达式
-- typing: 类型提示
-- ..message: 消息类型定义
-- ..model: 模型基类
-- ..formatter: 格式化器
-- .interfaces: 核心插件接口
-
-使用示例:
-- core = ReActCore(model=model, tools=tools, memory=memory)
-- async for chunk in core.reply(user_input): process(chunk)
-"""
-
+import logging
+import time
 import asyncio
 import json
 import re
-import time
-import logging
-from datetime import datetime
+from typing import Dict, Any, Optional, List, Union, Callable
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from typing import Optional, List, Any, Union, Dict
 from collections import Counter
 from enum import Enum
 
 from ..message import Msg
 from ..model import ChatModelBase, ChatResponse, ChatUsage
 from ..formatter import FormatterBase
-from .interfaces import IRAG, IToolExecutor
+from ..utils.context_vars import tool_call_id_var
+from .interfaces import RAGInterface, ToolExecutorInterface
 from ..types.protocols import StreamCallback
-from app.core.config import settings
 
 logger = logging.getLogger("SoloEngine")
 
-
-# ================== 上下文压缩（参考 Claude Code services/compact） ==================
-# 摘要输出预留 token（参考 Claude Code MAX_OUTPUT_TOKENS_FOR_SUMMARY=20000，
-# p99.99 摘要输出 17,387 tokens 为依据）
-SUMMARY_OUTPUT_RESERVE = 20000
-# 自动压缩安全缓冲（参考 Claude Code AUTOCOMPACT_BUFFER_TOKENS=13000）
-AUTOCOMPACT_BUFFER_TOKENS = 13000
-
-# 摘要违规标记：模型在压缩轮次输出任何形式的工具调用 XML / DeepSeek DSML 标记，
-# 即判定摘要无效并重试一次。必须覆盖全部变体：
-# - ASCII：<tool_calls>、<invoke name=...>、<parameter ...>
-# - DeepSeek DSML：<｜DSML｜tool_calls>、<|DSML|tool_calls>、<‖DSML‖tool_calls>
-#   （分隔符可能是 ｜ U+FF5C 全角竖线 ×1/×2、| 半角竖线、‖ U+2016 等变体，
-#    共同点是都含关键字 DSML，故检测 "DSML" 即可覆盖）
-COMPACTION_INVALID_MARKERS = ("DSML", "<tool_calls>", "<invoke", "<parameter")
-
-
-def format_compact_summary(summary: str) -> str:
-    """格式化压缩摘要：剥离 <analysis>/<think> 草稿区，提取 <summary> 最终区，压缩多余空行。
-
-    参考 Claude Code prompt.ts 的 formatCompactSummary：
-    1. 剥离 <analysis>...</analysis>（草稿区无信息价值）
-    2. 剥离 <think>...</think>（模型内部推理块，非摘要内容）
-    3. 提取 <summary>...</summary> 并替换为 "摘要：" 前缀
-    4. 压缩多余空行
-
-    健壮性增强：LLM 压缩输出格式异常（<analysis>/<summary> 开标签未闭合、
-    缺失闭合标签）时，剥离未闭合的草稿区并提取 <summary> 剩余内容，
-    保证摘要 text 永不残留 <analysis>/<summary> 标签（LLM 输出为外部边界）。
-    """
-    formatted = re.sub(r"<analysis>[\s\S]*?</analysis>", "", summary)
-    # 剥离未闭合的 <analysis> 块（无 </analysis> 闭合标签时，剥离到 <summary> 或文本结尾）
-    formatted = re.sub(r"<analysis>[\s\S]*?(?=<summary>|</?analysis>|$)", "", formatted, flags=re.DOTALL)
-    formatted = re.sub(r"<think>[\s\S]*?</think>", "", formatted)
-    # 剥离未闭合的 <think> 块
-    formatted = re.sub(r"<think>[\s\S]*?(?=</think>|<summary>|$)", "", formatted, flags=re.DOTALL)
-    match = re.search(r"<summary>([\s\S]*?)</summary>", formatted)
-    if match:
-        formatted = formatted.replace(
-            re.search(r"<summary>[\s\S]*?</summary>", formatted).group(0),
-            f"摘要：\n{match.group(1).strip()}",
-        )
-    else:
-        # 未闭合 <summary>：剥离开标签，其后内容即摘要正文
-        formatted = re.sub(r"<summary>", "摘要：\n", formatted)
-    formatted = re.sub(r"\n\n+", "\n\n", formatted)
-    return formatted.strip()
-
-
-def strip_spurious_tool_call_blocks(text: str) -> str:
-    """剥离模型幻觉输出的工具调用 XML/DSML 块（已知 DeepSeek V4 间歇性缺陷）。
-
-    模型在工具禁用（压缩摘要生成）时仍可能以纯文本形式输出工具调用标记
-    （<tool_calls>/<tool_call>/<invoke>/<parameter> 或 DSML 变体，即"XML
-    fallback"）。该文本不是标准输出类型（reasoning_content/content/tool_calls），
-    是模型幻觉产物，剥离它与 format_compact_summary 剥离 <analysis>/<think>
-    同理，属输出归一化：仅移除无意义的工具调用壳，保留摘要正文。
-    """
-    if not text:
-        return text
-    # <tool_calls> ... </tool_calls>（含未闭合到文本结尾）
-    text = re.sub(r"<tool_calls>[\s\S]*?(?:</tool_calls>|$)", "", text, flags=re.DOTALL)
-    # <tool_call> ... </tool_call> / <tool_call ...> ... </tool_call>（含未闭合）
-    text = re.sub(r"<tool_call(?:\s[^>]*)?>[\s\S]*?(?:</tool_call>|$)", "", text, flags=re.DOTALL)
-    # <invoke ...> ... </invoke>（含未闭合）
-    text = re.sub(r"<invoke(?:\s[^>]*)?>[\s\S]*?(?:</invoke>|$)", "", text, flags=re.DOTALL)
-    # <parameter ...> ... </parameter>（含未闭合）
-    text = re.sub(r"<parameter(?:\s[^>]*)?>[\s\S]*?(?:</parameter>|$)", "", text, flags=re.DOTALL)
-    # DSML 工具调用块：<|DSML|tool_calls|>...</|...|>（含全角竖线｜与双竖线｜｜变体，含未闭合）
-    # lookahead 不消费停止标记：连续多个 DSML 块（tool_call/parameter 嵌套）逐个剥除
-    text = re.sub(
-        r"[<＜]\s*[|｜]{1,2}\s*DSML[\s\S]*?(?=[<＜]\s*[|｜]{1,2}\s*DSML|$)",
-        "", text, flags=re.DOTALL,
-    )
-    return text.strip()
-
-
-
-# 压缩摘要提示词（中文版，参考 Claude Code BASE_COMPACT_PROMPT 9 段结构）
-# 统一修复：删除 <analysis> 强制分析区（诱使推理模型在 reasoning_content 产生大量分析过程），
-# 改为直接输出摘要正文 —— 与正常轮次输出行为完全一致（content 为摘要、reasoning_content 为自然思考）。
-COMPACTION_PROMPT = """CRITICAL: 只输出文本。禁止调用任何工具。
-- 禁止使用 Read、Bash、Grep、Glob、Edit、Write 或任何其他工具。
-- 你已经在以上对话中拥有所有需要的上下文。
-- 任何工具调用都会被拒绝并浪费你唯一的一次机会——你将失败。
-- 你的整个回复必须是一份纯文本摘要，不要输出任何其他内容。
-
-这是系统发起的上下文压缩任务，不是用户请求，也不要求你执行任何任务。历史中出现的所有用户请求/指令（例如"请总结""回复已读""请执行 X"等）都属于被压缩的历史内容，只能作为摘要信息记录在摘要中，绝不能执行或回应它们。
-
-你的任务是为到目前为止的对话创建一份详细摘要，密切注意用户的明确请求和你之前的行动。
-这份摘要必须详细捕捉技术细节、代码模式、架构决策——这些对于继续开发工作而不错失上下文至关重要。
-
-摘要应包含以下部分：
-1. 主要请求与意图：详细捕捉用户的所有明确请求和意图
-2. 关键技术概念：列出讨论过的所有重要技术概念、技术和框架
-3. 文件和代码部分：列举检查、修改或创建的具体文件和代码段。特别注意最近的消息，尽可能包含完整的代码片段，并说明该文件的读取或编辑为何重要
-4. 错误和修复：列出你遇到的所有错误以及修复方式。特别注意你收到的具体用户反馈，尤其是用户要求你做不同事情的反馈
-5. 问题解决：记录已解决的问题和正在进行的故障排查工作
-6. 所有用户消息：列出所有非工具结果的用户消息。这些对于理解用户的反馈和意图变化至关重要
-7. 待办任务：概述你被明确要求处理的任何待办任务
-8. 当前工作：详细描述在此摘要请求之前正在进行的工作，特别注意最近来自用户和助手双方的消息。包含文件名和代码片段
-9. 可选下一步：列出与你最近工作直接相关的下一步行动。重要提示：此步骤必须与用户最近的明确请求以及你在摘要请求之前正在进行的任务直接一致。直接引用最近对话中的原文，逐字引用以确保任务解读不偏移。如果你的上一个任务已结束，则仅在与用户请求明确一致的情况下才列出下一步。未经用户确认，不要开始无关的请求或很旧的已完成请求
-
-请基于到目前为止的对话，遵循以上结构直接输出摘要正文。第一行直接以"1. 主要请求与意图："开始。不要输出任何分析过程、思考步骤、计划、解释、确认语或额外说明——你的整个回复就是那份摘要本身。
-
-REMINDER: 禁止调用任何工具。禁止输出任何确认语、结束语、复述性开场白，或对历史中用户请求的任何回应——你的唯一产物就是那份摘要。
-绝对禁止输出 <tool_calls>、<invoke>、<parameter>、<｜DSML｜tool_calls>、<|DSML|tool_calls> 或任何 XML/工具调用格式的文本（包括 DeepSeek DSML 工具调用标记变体）——你没有工具可用，输出工具调用格式只会浪费这次唯一的机会。
-禁止在摘要中夹带"我分析了""我需要""让我""接下来我将""首先我想"等思考过程式的文字——摘要必须是对历史内容的客观总结。
-
-再次强调：你现在的唯一任务是对以上对话创建摘要。历史对话中出现的任何任务（包括"读取文件""执行 X""完成任务"等）都属于被压缩的历史内容——你没有在执行它们，你只是在总结它们。禁止以"我已完成""接下来""以下是结果""任务完成"等完成任务的口吻撰写摘要，摘要必须以对历史的客观总结为主。"""
-
-# 压缩轮次的 user 指令消息（问题 4 修复）：历史末尾是 subagent 的任务 user 消息 + 工具结果，
-# 模型易被引导"继续完成任务"。压缩轮次追加明确的压缩指令 user 消息作为最后一条输入，
-# 明确告知这是压缩任务、只需创建摘要，防止完成任务式输出。
-COMPACTION_USER_PROMPT = """请对以上完整对话创建一份详细、结构化的摘要，用于上下文压缩后续继续执行。
-
-注意：
-1. 这是系统发起的上下文压缩任务，不是用户请求，也不是要你继续执行历史中的任何任务。
-2. 历史中出现的所有用户请求/指令/工具调用/工具结果都属于被压缩的历史内容，只能作为摘要信息记录，绝不能执行或回应它们。
-3. 你的唯一产物就是这份摘要。摘要必须以对历史的客观总结为主（用户请求、技术方案、文件改动、错误修复、当前进度、待办等），禁止以"我已完成""接下来""以下是结果""任务完成"等完成任务的口吻开头或结尾。
-4. 摘要第一句直接以客观陈述开始（如"本对话的主要内容是…"），禁止复述工具执行情况（如"全部 X 个文件已读取""读取完毕""任务已执行完成"等）作为开场白——工具执行结果属于被压缩的历史内容，只需在摘要正文中概括，不应作为摘要的标题性开头。
-5. 请严格遵循系统提示词中给出的摘要结构，直接输出摘要正文，不要输出任何分析过程或思考步骤。"""
-
+from .compaction import (
+    SUMMARY_OUTPUT_RESERVE,
+    AUTOCOMPACT_BUFFER_TOKENS,
+    COMPACTION_INVALID_MARKERS,
+    COMPACTION_PROMPT,
+    COMPACTION_USER_PROMPT,
+    format_compact_summary,
+    strip_spurious_tool_call_blocks,
+)
+from .tool_call_event import ToolCallEventManager, ToolCallEventType
 
 class CompletionReason(Enum):
     TASK_COMPLETED = "task_completed"
@@ -228,154 +70,6 @@ class StopReason(Enum):
         return cls.UNKNOWN
 
 
-class ToolCallEventType(str, Enum):
-    TOOL_CALL_START = "TOOL_CALL_START"
-    TOOL_CALL_ARGS = "TOOL_CALL_ARGS"
-    TOOL_CALL_END = "TOOL_CALL_END"
-    TOOL_CALL_RESULT = "TOOL_CALL_RESULT"
-
-
-class ToolCallEventManager:
-    
-    def __init__(self, stream_callback: Optional[StreamCallback] = None, agent_id: str = None,
-                 agent_name: str = None, execution_key: str = None):
-        self.stream_callback = stream_callback
-        self.agent_id = agent_id
-        self.agent_name = agent_name
-        # 执行实例唯一标识（〇·3 并发方案）：由 ReActCore.set_execution_key 在每次
-        # _execute_agent 执行时同步设置，_emit_to_frontend 的 stream_callback 调用据此携带。
-        self.execution_key = execution_key
-        self._active_tool_calls: Dict[str, dict] = {}
-        self._ended_tool_calls: set = set()
-    
-    def on_tool_call_start(self, tool_call_id: str, tool_name: str):
-        if tool_call_id in self._active_tool_calls:
-            return
-        
-        self._active_tool_calls[tool_call_id] = {
-            "id": tool_call_id,
-            "name": tool_name,
-            "arguments": "",
-            "status": "start"
-        }
-        
-        logger.info(f"[ToolCallEventManager] TOOL_CALL_START: {tool_name} ({tool_call_id})")
-        self._emit_to_frontend({
-            "type": ToolCallEventType.TOOL_CALL_START,
-            "tool_call_id": tool_call_id,
-            "tool_name": tool_name
-        })
-    
-    def on_tool_call_args(self, tool_call_id: str, delta: str):
-        if tool_call_id not in self._active_tool_calls:
-            logger.warning(f"[ToolCallEventManager] Unknown tool_call_id: {tool_call_id}")
-            return
-        
-        self._active_tool_calls[tool_call_id]["arguments"] += delta
-        logger.debug(f"[ToolCallEventManager] TOOL_CALL_ARGS: {tool_call_id} delta={delta[:50]}...")
-        
-        self._emit_to_frontend({
-            "type": ToolCallEventType.TOOL_CALL_ARGS,
-            "tool_call_id": tool_call_id,
-            "delta": delta
-        })
-    
-    def on_tool_call_end(self, tool_call_id: str):
-        if tool_call_id not in self._active_tool_calls:
-            return
-        
-        self._active_tool_calls[tool_call_id]["status"] = "end"
-        self._ended_tool_calls.add(tool_call_id)
-        
-        logger.info(f"[ToolCallEventManager] TOOL_CALL_END: {tool_call_id}")
-        self._emit_to_frontend({
-            "type": ToolCallEventType.TOOL_CALL_END,
-            "tool_call_id": tool_call_id
-        })
-    
-    def on_tool_call_result(self, tool_call_id: str, result: str, error: str = None):
-        logger.info(f"[ToolCallEventManager] TOOL_CALL_RESULT: {tool_call_id} error={error is not None}")
-        self._emit_to_frontend({
-            "type": ToolCallEventType.TOOL_CALL_RESULT,
-            "tool_call_id": tool_call_id,
-            "result": result,
-            "error": error
-        })
-    
-    def end_all_active_tool_calls(self):
-        for tool_call_id in list(self._active_tool_calls.keys()):
-            if tool_call_id not in self._ended_tool_calls:
-                self.on_tool_call_end(tool_call_id)
-    
-    def get_tool_call_arguments(self, tool_call_id: str) -> str:
-        if tool_call_id in self._active_tool_calls:
-            return self._active_tool_calls[tool_call_id].get("arguments", "")
-        return ""
-    
-    def get_active_tool_calls(self) -> Dict[str, dict]:
-        return self._active_tool_calls.copy()
-    
-    def reset(self):
-        self._active_tool_calls.clear()
-        self._ended_tool_calls.clear()
-        logger.debug("[ToolCallEventManager] Reset")
-    
-    def _emit_to_frontend(self, event: dict):
-        frontend_delta = self._convert_to_frontend_format(event)
-        if self.stream_callback and frontend_delta:
-            self.stream_callback(frontend_delta, agent_id=self.agent_id, agent_name=self.agent_name,
-                                 execution_key=self.execution_key)
-    
-    def _convert_to_frontend_format(self, event: dict) -> dict:
-        event_type = event["type"]
-        tool_call_id = event["tool_call_id"]
-        
-        if event_type == ToolCallEventType.TOOL_CALL_START:
-            return {
-                "type": "tool_calls",
-                "tool_calls": [{
-                    "id": tool_call_id,
-                    "type": "function",
-                    "function": {
-                        "name": event["tool_name"]
-                    },
-                    "status": "start"
-                }]
-            }
-        elif event_type == ToolCallEventType.TOOL_CALL_ARGS:
-            return {
-                "type": "tool_calls",
-                "tool_calls": [{
-                    "id": tool_call_id,
-                    "function": {
-                        "arguments": event["delta"]
-                    }
-                }]
-            }
-        elif event_type == ToolCallEventType.TOOL_CALL_END:
-            return {
-                "type": "tool_calls",
-                "tool_calls": [{
-                    "id": tool_call_id,
-                    "status": "end"
-                }]
-            }
-        elif event_type == ToolCallEventType.TOOL_CALL_RESULT:
-            import copy
-            result_data = {
-                "id": tool_call_id,
-                "result": copy.deepcopy(event["result"])
-            }
-            if event.get("error"):
-                result_data["error"] = event["error"]
-            return {
-                "type": "tool_calls",
-                "tool_calls": [result_data]
-            }
-        
-        return None
-
-
 
 class ReActCore:
     
@@ -385,9 +79,11 @@ class ReActCore:
         model: ChatModelBase,
         formatter: FormatterBase,
         system_prompt: str,
-        rag: Optional[IRAG] = None,
-        tool_executor: Optional[IToolExecutor] = None,
-        max_iters: int = settings.DEFAULT_MAX_ITERS,
+        rag: Optional[RAGInterface] = None,
+        tool_executor: Optional[ToolExecutorInterface] = None,
+        # C8：默认值改为 None，在函数体内延迟 import settings 求值——
+        # 消除模块级 `from app.core.config import settings` 反向依赖（core 层禁 import app 层）
+        max_iters: int = None,
         print_hint_msg: bool = False,
         stream_callback: Optional[StreamCallback] = None,
         agent_id: Optional[str] = None,
@@ -395,6 +91,10 @@ class ReActCore:
         max_input_tokens: Optional[int] = None,
         max_tool_calls: Optional[int] = None,
     ) -> None:
+        # C8：延迟 import（仅在未显式传值时求默认），行为与模块级默认完全一致
+        if max_iters is None:
+            from SoloAgent.config import settings
+            max_iters = settings.DEFAULT_MAX_ITERS
         self.name = name
         self.model = model
         self.formatter = formatter
@@ -439,35 +139,19 @@ class ReActCore:
         self._compaction_stream_buffer: list = []  # 压缩期间缓冲的原始流 delta（统一发射格式化摘要）
         self._on_tool_executed: Optional[Any] = None
         self._on_tool_executing: Optional[Any] = None
-        self._accumulated_usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "duration_ms": 0,
-            "system_prompt_token": 0,
-            "user_prompt_token": 0,
-            "assistant_prompt_token": 0,
-            "token_usage_history": []
-        }
+        self._accumulated_usage = self._new_usage_dict()
         # agent 级整轮累计（后端聚合改造 3.1）：
         # 与 _accumulated_usage（本阶段/消息级，take_accumulated_usage 消费即清空）正交——
         # 不随 take 清空，由 flow_compiler 在每次 _execute_agent 开始时 reset_agent_usage()，
         # 语义为"一次 _execute_agent 调用（整轮，含压缩 stop/compacted/resume 各阶段）
         # 的完整累计"。是流式 agent_token_usage 推送 agent_usage 字段与
         # agent_complete.metadata.agent_usage 的唯一实时数据源（前端消息头/组头整轮显示）。
-        self._agent_accumulated_usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "duration_ms": 0,
-            "system_prompt_token": 0,
-            "user_prompt_token": 0,
-            "assistant_prompt_token": 0,
-            "token_usage_history": []
-        }
+        self._agent_accumulated_usage = self._new_usage_dict()
         # 执行实例唯一标识（〇·3 并发方案）：由 flow_compiler 在每次 _execute_agent 执行时
-        # 通过 set_execution_key 写入（initialize 之后、_active_models 注册处），
-        # 全部 stream_callback 调用（6 处）据此携带 execution_key，ChunkCollector 按
-        # execution_key 独立收集（同一 agent 并发 N 实例时块/保存互不混淆）。
-        self._execution_key: Optional[str] = None
+        # 通过 set_message_id 写入（initialize 之后、_active_models 注册处），
+        # 全部 stream_callback 调用（6 处）据此携带 message_id，ChunkCollector 按
+        # message_id 独立收集（同一 agent 并发 N 实例时块/保存互不混淆）。
+        self._message_id: Optional[str] = None
         # 独立快照阶段计数（2026-08-05 问题 1 修复配套）：
         # take_accumulated_usage（消息保存时消费清空）每调用一次 phase+1，
         # agent_token_usage 推送携带当前 phase —— 前端据此精确识别「新阶段」边界。
@@ -481,7 +165,7 @@ class ReActCore:
             stream_callback=self.stream_callback,
             agent_id=self.agent_id,
             agent_name=self.name,
-            execution_key=self._execution_key
+            message_id=self._message_id
         )
 
     def load_history(self, messages: List[Msg]) -> None:
@@ -493,9 +177,6 @@ class ReActCore:
     
     def is_interrupted(self) -> bool:
         return self._interrupted
-    
-    def reset_interrupt(self) -> None:
-        self._interrupted = False
     
     def get_auto_compact_threshold(self) -> int:
         """自动压缩阈值（参考 Claude Code autoCompact.ts：有效窗口 − 安全缓冲）。
@@ -524,6 +205,64 @@ class ReActCore:
             assistant_prompt_token=self._accumulated_usage.get("assistant_prompt_token", 0),
             token_usage_history=self._accumulated_usage.get("token_usage_history", []),
         )
+
+    # ---- B3 路径合并：usage 累计字典的唯一构造/累加/历史记录构造（3 个 helper）----
+
+    @staticmethod
+    def _new_usage_dict() -> Dict:
+        """新建 usage 累计字典（B3：5 处 7 键字面量收敛为唯一构造）。"""
+        return {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_ms": 0,
+            "system_prompt_token": 0,
+            "user_prompt_token": 0,
+            "assistant_prompt_token": 0,
+            "token_usage_history": [],
+        }
+
+    @staticmethod
+    def _accumulate_usage(
+        acc: Dict,
+        input_tokens: int,
+        output_tokens: int,
+        system_tokens: int,
+        user_tokens: int,
+        assistant_tokens: int,
+    ) -> None:
+        """将单次 LLM 调用的 token 累加到累计字典（B3：2 处成对累加收敛）。"""
+        acc["input_tokens"] += input_tokens
+        acc["output_tokens"] += output_tokens
+        acc["system_prompt_token"] += system_tokens
+        acc["user_prompt_token"] += user_tokens
+        acc["assistant_prompt_token"] += assistant_tokens
+
+    @staticmethod
+    def _build_history_entry(
+        iteration: int,
+        input_tokens: int,
+        output_tokens: int,
+        system_tokens: int,
+        user_tokens: int,
+        assistant_tokens: int,
+        finish_reason: str,
+        start_time: float,
+    ) -> Dict:
+        """构造 token_usage_history 单条记录（B3：2 处 history_entry 收敛）。"""
+        # C8：延迟 import settings（消除 core 层模块级反向依赖 app.core.config）
+        from SoloAgent.config import settings
+        return {
+            "iteration": iteration,
+            "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+            "system_prompt_token": system_tokens,
+            "user_prompt_token": user_tokens,
+            "assistant_prompt_token": assistant_tokens,
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "duration_ms": int((time.time() - start_time) * 1000),
+            "finish_reason": finish_reason,
+        }
 
     def _format_usage(self, acc: Dict, include_phase: bool = False) -> Optional[Dict]:
         """usage 字典 → 统一返回结构（去重：get_accumulated_usage / get_agent_usage 共用）。
@@ -561,15 +300,7 @@ class ReActCore:
         _agent_accumulated_usage 跨压缩轮全部阶段（stop/compacted/resume）持续累计，
         直到本次 _execute_agent 执行结束（下次执行前重置），语义为整轮累计。
         """
-        self._agent_accumulated_usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "duration_ms": 0,
-            "system_prompt_token": 0,
-            "user_prompt_token": 0,
-            "assistant_prompt_token": 0,
-            "token_usage_history": [],
-        }
+        self._agent_accumulated_usage = self._new_usage_dict()
 
     def get_agent_usage(self) -> Optional[Dict]:
         """返回 agent 级整轮累计快照（与 get_accumulated_usage 同构，不含 usage_phase）。
@@ -582,15 +313,15 @@ class ReActCore:
         """
         return self._format_usage(self._agent_accumulated_usage, include_phase=False)
 
-    def set_execution_key(self, execution_key: str) -> None:
+    def set_message_id(self, message_id: str) -> None:
         """设置执行实例唯一标识（〇·3 并发方案，flow_compiler 每次 _execute_agent 调用）。
 
         在 initialize 之后（_core 已存在）、_active_models 注册处调用；同时同步
         _tool_call_event_manager（其 _emit_to_frontend 的 stream_callback 调用同样需要
-        携带 execution_key）。同一 agent 并发 N 实例时各实例独立键，互不混淆。
+        携带 message_id）。同一 agent 并发 N 实例时各实例独立键，互不混淆。
         """
-        self._execution_key = execution_key
-        self._tool_call_event_manager.execution_key = execution_key
+        self._message_id = message_id
+        self._tool_call_event_manager.message_id = message_id
 
     def take_accumulated_usage(self) -> Optional[Dict]:
         """取走当前累计 usage 并清空（消息保存时消费，实现"每条消息独立记账"）。
@@ -601,15 +332,7 @@ class ReActCore:
         """
         result = self.get_accumulated_usage()
         if result:
-            self._accumulated_usage = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "duration_ms": 0,
-                "system_prompt_token": 0,
-                "user_prompt_token": 0,
-                "assistant_prompt_token": 0,
-                "token_usage_history": [],
-            }
+            self._accumulated_usage = self._new_usage_dict()
             # 独立快照阶段计数：每次消息保存消费清空 = 新阶段开始（phase+1），
             # 前端 agent_token_usage 处理据此识别阶段边界（压缩轮 stop/compacted/
             # resume 各自独立阶段，与回显逐消息语义一致）。
@@ -627,15 +350,7 @@ class ReActCore:
         self._last_tool_results = []
         self._interrupted = False
         self._compaction_triggered = False
-        self._accumulated_usage = {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "duration_ms": 0,
-            "system_prompt_token": 0,
-            "user_prompt_token": 0,
-            "assistant_prompt_token": 0,
-            "token_usage_history": []
-        }
+        self._accumulated_usage = self._new_usage_dict()
         self._accumulated_text = ""
         
         self._tool_call_event_manager.reset()
@@ -652,8 +367,6 @@ class ReActCore:
         full_system_prompt = self.system_prompt
         if rag_context:
             full_system_prompt += f"\n\n{rag_context}"
-        
-        completion_reason = None
 
         # ★ 工具调用轮次（max_tool_calls）= 一次 react_core 循环中 agent 允许调用 LLM API 的次数上限。
         #   flow_compiler 已保证 max_iters 与 max_tool_calls 取值一致（均来自画布节点 model_config.max_tool_calls）。
@@ -728,11 +441,8 @@ class ReActCore:
                     continue
             
             if completion_check["should_complete"]:
-                completion_reason = completion_check["reason"]
                 final_response = await self._generate_final_response(
                     reasoning_result,
-                    full_system_prompt,
-                    completion_reason,
                     precomputed_text=precomputed_text
                 )
                 response_msg = Msg(
@@ -841,11 +551,8 @@ class ReActCore:
                 self._conversation_history.append(history_msg)
             return response_msg
 
-        completion_reason = CompletionReason.MAX_ITERATIONS
         final_response = await self._generate_final_response(
-            "Maximum iterations reached",
-            full_system_prompt,
-            completion_reason
+            "Maximum iterations reached"
         )
         response_msg = Msg(
             name=self.name,
@@ -986,7 +693,7 @@ class ReActCore:
                         {"content": piece, "_is_compaction": True},
                         agent_id=self.agent_id,
                         agent_name=self.name,
-                        execution_key=self._execution_key,
+                        message_id=self._message_id,
                     )
             self._compaction_stream_buffer = []
             return summary_text
@@ -1026,7 +733,7 @@ class ReActCore:
             tools = self.tool_executor.get_available_tools()
         
         if formatted:
-            from app.core.token_estimator import estimate_context_tokens
+            from ..utils.token_estimator import estimate_context_tokens
             estimated = estimate_context_tokens(
                 formatted,
                 getattr(self.model, "model_name", ""),
@@ -1061,30 +768,25 @@ class ReActCore:
                 # 上下文占用，必须记录到 token_usage_history，否则前端显示的 token 严重偏小
                 # （例如 stop 消息只记 iter1 的 4.1k，而工具结果 3.5 万字符从未被统计）。
                 # 与被拦截请求的输入 token 一并累计，completion=0（未产生输出）。
-                self._accumulated_usage["input_tokens"] += current_input_tokens
-                self._accumulated_usage["output_tokens"] += current_output_tokens
-                self._accumulated_usage["system_prompt_token"] += current_system_tokens
-                self._accumulated_usage["user_prompt_token"] += current_user_tokens
-                self._accumulated_usage["assistant_prompt_token"] += current_assistant_tokens
+                self._accumulate_usage(
+                    self._accumulated_usage,
+                    current_input_tokens, current_output_tokens,
+                    current_system_tokens, current_user_tokens, current_assistant_tokens,
+                )
                 # agent 级整轮累计同步累加（拦截请求的输入 token 属于真实上下文占用）
-                self._agent_accumulated_usage["input_tokens"] += current_input_tokens
-                self._agent_accumulated_usage["output_tokens"] += current_output_tokens
-                self._agent_accumulated_usage["system_prompt_token"] += current_system_tokens
-                self._agent_accumulated_usage["user_prompt_token"] += current_user_tokens
-                self._agent_accumulated_usage["assistant_prompt_token"] += current_assistant_tokens
+                self._accumulate_usage(
+                    self._agent_accumulated_usage,
+                    current_input_tokens, current_output_tokens,
+                    current_system_tokens, current_user_tokens, current_assistant_tokens,
+                )
                 intercepted_iteration = len(self._accumulated_usage["token_usage_history"]) + 1
-                intercepted_entry = {
-                    "iteration": intercepted_iteration,
-                    "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
-                    "system_prompt_token": current_system_tokens,
-                    "user_prompt_token": current_user_tokens,
-                    "assistant_prompt_token": current_assistant_tokens,
-                    "prompt_tokens": current_input_tokens,
-                    "completion_tokens": current_output_tokens,
-                    "total_tokens": current_input_tokens + current_output_tokens,
-                    "duration_ms": int((time.time() - _iteration_start_time) * 1000),
-                    "finish_reason": "compaction_triggered",
-                }
+                intercepted_entry = self._build_history_entry(
+                    intercepted_iteration,
+                    current_input_tokens, current_output_tokens,
+                    current_system_tokens, current_user_tokens, current_assistant_tokens,
+                    "compaction_triggered",
+                    _iteration_start_time,
+                )
                 self._accumulated_usage["token_usage_history"].append(intercepted_entry)
                 self._agent_accumulated_usage["duration_ms"] += intercepted_entry["duration_ms"]
                 self._agent_accumulated_usage["token_usage_history"].append(intercepted_entry)
@@ -1219,20 +921,20 @@ class ReActCore:
                         )
                         if not is_assembled:
                             non_tool_blocks = [
-                                b for b in chunk.content
-                                if not (isinstance(b, dict) and b.get("type") == "tool_calls")
+                                block for block in chunk.content
+                                if not (isinstance(block, dict) and block.get("type") == "tool_calls")
                             ]
                             if non_tool_blocks:
                                 from collections import defaultdict
                                 type_groups = defaultdict(list)
-                                for b in non_tool_blocks:
-                                    bt = b.get("type", "text") if isinstance(b, dict) else getattr(b, "type", "text")
-                                    type_groups[bt].append(b)
-                                for bt, blocks in type_groups.items():
+                                for block in non_tool_blocks:
+                                    block_type = block.get("type", "text") if isinstance(block, dict) else getattr(block, "type", "text")
+                                    type_groups[block_type].append(block)
+                                for block_type, blocks in type_groups.items():
                                     single_type_chunk = ChatResponse(content=blocks)
                                     delta = single_type_chunk.to_delta()
                                     if delta:
-                                        if self._compacting and bt == "text":
+                                        if self._compacting and block_type == "text":
                                             # 压缩摘要生成中：text 缓冲，不转发给 collector/前端；
                                             # 由 compact() 在 format_compact_summary 后分块流式发射
                                             # 格式化摘要（剥离 <analysis> 草稿区，见 compact()）。
@@ -1250,10 +952,10 @@ class ReActCore:
                                             if self._compacting and isinstance(delta, dict) and bt in ("reasoning_content", "thinking"):
                                                 delta = {**delta, "_is_compaction": True}
                                             self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name,
-                                                                 execution_key=self._execution_key)
+                                                                 message_id=self._message_id)
 
                     if hasattr(chunk, "content") and chunk.content:
-                        from app.core.token_estimator import estimate_text_tokens
+                        from ..utils.token_estimator import estimate_text_tokens
                         for output_block in chunk.content:
                             if isinstance(output_block, dict):
                                 output_text = output_block.get("text") or output_block.get("thinking") or ""
@@ -1273,7 +975,7 @@ class ReActCore:
                     # API 返回精确 usage，覆盖外部 token monitor 的估算值
                     # 统一获取函数：在获取端处理无效值，后续只判断 is not None
                     # 原因：统一在获取端处理，后续逻辑简单，避免每次使用都漏判 0 或 None
-                    def _get_valid_token_value(usage, field):
+                    def get_valid_token_value(usage, field):
                         """获取有效的 token 值，无效值（None/0/空）统一转为 None"""
                         val = getattr(usage, field, None)
                         if val is None or val == 0:
@@ -1281,8 +983,8 @@ class ReActCore:
                         return val
                     
                     collected_usage = chunk.usage
-                    llm_input_tokens = _get_valid_token_value(chunk.usage, 'input_tokens')
-                    llm_output_tokens = _get_valid_token_value(chunk.usage, 'output_tokens')
+                    llm_input_tokens = get_valid_token_value(chunk.usage, 'input_tokens')
+                    llm_output_tokens = get_valid_token_value(chunk.usage, 'output_tokens')
 
                     # 用 LLM 精确值替换本轮估算值
                     if llm_input_tokens is not None:
@@ -1295,18 +997,18 @@ class ReActCore:
                         # prompt_tokens == 3 类之和、total == 3 类 + completion，数学完全自洽。
                         _est_sum = current_system_tokens + current_user_tokens + current_assistant_tokens
                         if _est_sum > 0 and current_input_tokens != _est_sum:
-                            _ratio = current_input_tokens / _est_sum
-                            _n_sys = round(current_system_tokens * _ratio)
-                            _n_user = round(current_user_tokens * _ratio)
-                            _n_asst = round(current_assistant_tokens * _ratio)
+                            scale_ratio = current_input_tokens / _est_sum
+                            _n_sys = round(current_system_tokens * scale_ratio)
+                            _n_user = round(current_user_tokens * scale_ratio)
+                            _n_asst = round(current_assistant_tokens * scale_ratio)
                             # 舍入误差归到最大项，保证 3 类之和精确等于 API prompt_tokens
-                            _diff = current_input_tokens - (_n_sys + _n_user + _n_asst)
+                            rounding_diff = current_input_tokens - (_n_sys + _n_user + _n_asst)
                             if _n_asst >= _n_user:
-                                _n_asst += _diff
+                                _n_asst += rounding_diff
                             elif _n_user >= _n_sys:
-                                _n_user += _diff
+                                _n_user += rounding_diff
                             else:
-                                _n_sys += _diff
+                                _n_sys += rounding_diff
                             current_system_tokens = _n_sys
                             current_user_tokens = _n_user
                             current_assistant_tokens = _n_asst
@@ -1332,37 +1034,30 @@ class ReActCore:
             
             logger.info(f"[ReActCore] Total stream chunks processed: {chunk_count}")
 
-            # 每轮迭代结束时，将本轮的 token 累加到总累加值
-            self._accumulated_usage["input_tokens"] += current_input_tokens
-            self._accumulated_usage["output_tokens"] += current_output_tokens
+            # 每轮迭代结束时，将本轮的 token 累加到总累加值（B3：唯一累加路径）
+            self._accumulate_usage(
+                self._accumulated_usage,
+                current_input_tokens, current_output_tokens,
+                current_system_tokens, current_user_tokens, current_assistant_tokens,
+            )
             # agent 级整轮累计同步累加（每次 LLM 调用的真实消耗，含压缩轮全部阶段）
-            self._agent_accumulated_usage["input_tokens"] += current_input_tokens
-            self._agent_accumulated_usage["output_tokens"] += current_output_tokens
+            self._accumulate_usage(
+                self._agent_accumulated_usage,
+                current_input_tokens, current_output_tokens,
+                current_system_tokens, current_user_tokens, current_assistant_tokens,
+            )
 
-            # 累加 4 类 token
-            self._accumulated_usage["system_prompt_token"] += current_system_tokens
-            self._accumulated_usage["user_prompt_token"] += current_user_tokens
-            self._accumulated_usage["assistant_prompt_token"] += current_assistant_tokens
-            self._agent_accumulated_usage["system_prompt_token"] += current_system_tokens
-            self._agent_accumulated_usage["user_prompt_token"] += current_user_tokens
-            self._agent_accumulated_usage["assistant_prompt_token"] += current_assistant_tokens
-
-            # 记录到 token_usage_history
+            # 记录到 token_usage_history（B3：唯一历史记录构造）
             # iteration = 本次 agent 循环内第几次 LLM API 调用（history 长度 + 1），
             # 不用外层 ReAct 循环下标：压缩后 _accumulated_usage 已重置，编号须从 1 重新开始
             iteration_num = len(self._accumulated_usage["token_usage_history"]) + 1
-            history_entry = {
-                "iteration": iteration_num,
-                "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
-                "system_prompt_token": current_system_tokens,
-                "user_prompt_token": current_user_tokens,
-                "assistant_prompt_token": current_assistant_tokens,
-                "prompt_tokens": current_input_tokens,
-                "completion_tokens": current_output_tokens,
-                "total_tokens": current_input_tokens + current_output_tokens,
-                "duration_ms": int((time.time() - _iteration_start_time) * 1000),
-                "finish_reason": collected_finish_reason or "unknown"
-            }
+            history_entry = self._build_history_entry(
+                iteration_num,
+                current_input_tokens, current_output_tokens,
+                current_system_tokens, current_user_tokens, current_assistant_tokens,
+                collected_finish_reason or "unknown",
+                _iteration_start_time,
+            )
             self._accumulated_usage["token_usage_history"].append(history_entry)
             self._agent_accumulated_usage["duration_ms"] += history_entry["duration_ms"]
             self._agent_accumulated_usage["token_usage_history"].append(history_entry)
@@ -1393,7 +1088,7 @@ class ReActCore:
                          "agent_usage": self.get_agent_usage()},
                         agent_id=self.agent_id,
                         agent_name=self.name,
-                        execution_key=self._execution_key,
+                        message_id=self._message_id,
                     )
                 except Exception as e:
                     logger.debug(f"[ReActCore] Failed to emit token usage update: {e}")
@@ -1480,7 +1175,7 @@ class ReActCore:
             if delta:
                 logger.info(f"[ReActCore] Non-stream delta: {list(delta.keys())}")
                 self.stream_callback(delta, agent_id=self.agent_id, agent_name=self.name,
-                                     execution_key=self._execution_key)
+                                     message_id=self._message_id)
         
         if self._last_error:
             raise RuntimeError(self._last_error)
@@ -1553,6 +1248,10 @@ class ReActCore:
             return tool_results
         logger.info(f"[_acting] Executing tool: {tool_call.get('name')} with args: {tool_call.get('arguments')}")
         if self.tool_executor:
+            # 注入当前 tool_call_id（并发工具各自 task context 隔离）：工具内 human_in_the_loop 读取
+            # 并据此把回答 Future 注册到 run_context._pending_interactions[call_id]，
+            # 并发审批按 id 精确送达，互不覆盖（单槽位覆盖 bug 根治）。
+            _tc_token = tool_call_id_var.set(tool_call.get("id"))
             try:
                 try:
                     if self._on_tool_executing:
@@ -1561,6 +1260,21 @@ class ReActCore:
                     logger.warning(f"on_tool_executing callback error: {callback_err}")
 
                 result = await self.tool_executor.execute(tool_call)
+
+                # 执行后钩子（框架自有机制，工具不反向调用框架）：SoloAgent 桥接
+                #（_on_tool_executed）检测到子代理启动声明（result 含 subagent_id + task）时
+                # 启动子执行并返回其输出，覆盖工具结果注入 LLM 上下文；无声明返回 None。
+                # 子执行的关联由 source_tool_call_id（tc.id）承载：_launch_subagent 将其
+                # 传入 _execute_agent → agent_start metadata，保存链路持久化到 task 消息，
+                # 回显按 tc.id 精确对号（流式/回显统一，无需 message_id 通道）。
+                try:
+                    if self._on_tool_executed:
+                        hook_result = await self._on_tool_executed(tool_call, result)
+                        if hook_result is not None:
+                            result = hook_result
+                except Exception as callback_err:
+                    logger.warning(f"on_tool_executed callback error: {callback_err}")
+
                 result_content = result.get("content", str(result)) if isinstance(result, dict) else str(result)
                 
                 tool_error = None
@@ -1570,7 +1284,7 @@ class ReActCore:
                 self._tool_call_event_manager.on_tool_call_result(
                     tool_call_id=tool_call.get("id"),
                     result=result,
-                    error=tool_error
+                    error=tool_error,
                 )
                 
                 result_content_str = result_content if isinstance(result_content, str) else str(result_content)
@@ -1595,19 +1309,11 @@ class ReActCore:
                 })
                 logger.info(f"[_acting] Tool {tool_call.get('name')} executed successfully, result length: {len(str(result_content))}")
 
-                try:
-                    if self._on_tool_executed:
-                        logger.info(f"[ReActCore] Calling _on_tool_executed for tool={tool_call.get('name')}")
-                        await self._on_tool_executed(tool_call, result)
-                    else:
-                        logger.info(f"[ReActCore] _on_tool_executed is None, skipping callback for tool={tool_call.get('name')}")
-                except Exception as callback_err:
-                    logger.warning(f"on_tool_executed callback error: {callback_err}")
             except asyncio.CancelledError:
                 self._tool_call_event_manager.on_tool_call_result(
                     tool_call_id=tool_call.get("id"),
                     result={"content": "任务执行被取消", "success": False, "error_message": "执行被用户取消"},
-                    error="cancelled"
+                    error="cancelled",
                 )
                 raise
             except Exception as e:
@@ -1620,7 +1326,7 @@ class ReActCore:
                         "error_message": error_str,
                         "metadata": {}
                     },
-                    error=error_str
+                    error=error_str,
                 )
                 
                 error_msg = Msg(
@@ -1649,6 +1355,8 @@ class ReActCore:
                     "id": tool_call.get("id"),
                 })
                 logger.error(f"[_acting] Tool {tool_call.get('name')} execution failed: {e}")
+            finally:
+                tool_call_id_var.reset(_tc_token)
         return tool_results
     
     def _determine_call_type(self, tool_name: str) -> str:
@@ -1683,8 +1391,6 @@ class ReActCore:
             
             logger.info(f"[_parse_tool_calls] Parsed {len(tool_calls)} tool calls from ToolCallEventManager")
             return tool_calls
-        
-        merged_tool_calls = {}
         
         for block in response.content:
             if isinstance(block, dict):
@@ -1745,7 +1451,7 @@ class ReActCore:
                 if self.stream_callback:
                     try:
                         self.stream_callback({"content": "\n\n[继续输出...]\n\n"}, agent_id=self.agent_id,
-                                             agent_name=self.name, execution_key=self._execution_key)
+                                             agent_name=self.name, message_id=self._message_id)
                     except Exception as e:
                         logger.error(f"Stream callback error: {e}")
                 return {
@@ -1807,8 +1513,6 @@ class ReActCore:
     async def _generate_final_response(
         self,
         response: Union[ChatResponse, str],
-        system_prompt: str,
-        completion_reason: Optional[CompletionReason] = None,
         precomputed_text: Optional[str] = None
     ) -> str:
         reasoning_text = self._extract_text(response, precomputed_text)
@@ -1828,16 +1532,5 @@ class ReActCore:
         
         return "Final response generated."
     
-    async def clear_history(self) -> None:
-        self._conversation_history.clear()
-        self._iteration_count = 0
-        self._last_tool_results = []
-    
-    def get_iteration_count(self) -> int:
-        return self._iteration_count
-    
     def get_conversation_history(self) -> List[Msg]:
         return self._conversation_history.copy()
-    
-    def get_last_tool_results(self) -> List[Dict[str, Any]]:
-        return self._last_tool_results.copy()

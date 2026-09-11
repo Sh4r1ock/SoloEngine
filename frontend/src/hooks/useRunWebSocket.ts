@@ -44,8 +44,8 @@ export interface ExecutionEvent {
   event_type: ExecutionEventType;
   agent_id?: string;
   agent_name?: string;
-  /** 〇·3：执行实例唯一标识（流式块级 token 注入 / agent_token_usage 块匹配键） */
-  execution_key?: string;
+  /** 流式块实例标识（session_message_id）：WS stream 消息透传，注入块级 message_id */
+  message_id?: string;
   agent_type?: string;
   content?: string;
   content_type?: string;
@@ -300,8 +300,8 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
               delta: (message as any).delta,
               agent_id: (message as any).agent_id,
               agent_name: (message as any).agent_name,
-              // 〇·3：execution_key 透传（流式块级 token 注入 / agent_token_usage 块匹配键）
-              execution_key: (message as any).execution_key,
+              // message_id 透传（流式块级 token 注入 / agent_token_usage 块匹配键）
+              message_id: (message as any).message_id,
               timestamp: (message as any).timestamp || new Date().toISOString(),
             };
             onEventRef.current?.(streamEvent);
@@ -491,6 +491,15 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
     return sendWithRetry('stop', {});
   }, [sendWithRetry]);
 
+  // 工具交互回答（审批/提问）：走独立 interaction_answer 通道，与排队消息（execute →
+  // 业务消息队列）完全隔离。后端工具 await_user_message 从 _pending_interactions 按
+  // tool_call_id 精确送达——并发工具各自 Future 独立，回答按 id 路由互不覆盖。
+  const sendInteractionAnswer = useCallback(async (content: string, toolCallId?: string) => {
+    const payload: Record<string, any> = { content };
+    if (toolCallId) payload.tool_call_id = toolCallId;
+    return sendWithRetry('interaction_answer', payload);
+  }, [sendWithRetry]);
+
   useEffect(() => {
     const connectionKey = `${agenticFlowId}:${sessionId}:${runProjectId}`;
     
@@ -520,6 +529,7 @@ export const useRunWebSocket = (options: UseRunWebSocketOptions) => {
     send,
     executeFlow,
     stopFlow,
+    sendInteractionAnswer,
   };
 };
 

@@ -37,6 +37,7 @@ SoloEngine : 运行项目API模块
 """
 import os
 import json
+import base64
 import logging
 import shutil
 from send2trash import send2trash
@@ -117,6 +118,19 @@ class FileWriteRequest(BaseModel):
 class SandboxedFileSystem:
     """沙箱文件系统 - 限制文件操作在项目文件夹内。"""
     
+    # 与前端 isBinaryFile 语义一致的已知二进制扩展名。
+    # 命中即直接按二进制读取返回 base64——纯文本字面量也可能是二进制格式
+    # （例如纯 ASCII 构造的 PDF），不能依赖"文本解码失败"来判定二进制。
+    BINARY_EXTENSIONS = {
+        "pyc", "pyo", "pyd", "exe", "dll", "so", "dylib", "bin", "dat",
+        "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp",
+        "mp3", "mp4", "wav", "avi", "mov", "mkv", "flv", "wmv",
+        "zip", "tar", "gz", "rar", "7z", "bz2",
+        "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+        "ttf", "otf", "woff", "woff2", "eot",
+        "class", "jar", "war", "ear", "sqlite", "db",
+    }
+
     def __init__(self, base_path: str):
         self.base_path = os.path.abspath(base_path)
         if not os.path.isdir(self.base_path):
@@ -127,7 +141,8 @@ class SandboxedFileSystem:
         relative_path = relative_path.lstrip("/\\")
         absolute_path = os.path.abspath(os.path.join(self.base_path, relative_path))
         
-        if not absolute_path.startswith(self.base_path):
+        # 用 commonpath 精确判定归属，避免 startswith 前缀匹配被 /proj_evil 之类的兄弟目录绕过
+        if os.path.commonpath([absolute_path, self.base_path]) != self.base_path:
             raise PermissionError(f"Access denied: path '{relative_path}' is outside the sandbox")
         
         return absolute_path
@@ -135,6 +150,11 @@ class SandboxedFileSystem:
     def list_files(self, relative_path: str = "", pattern: str = "*") -> List[Dict[str, Any]]:
         """列出文件和目录。"""
         target_path = self._resolve_path(relative_path)
+        
+        # pattern 中禁止路径分隔符（/ 与 \，Windows 上 pathlib.glob 同时接受正斜杠）
+        # 与 ..，防止 glob 经 ../ 逃逸沙箱（仅允许纯文件名通配 * ? [ ]）
+        if ".." in pattern or "/" in pattern or "\\" in pattern:
+            raise PermissionError(f"Access denied: pattern '{pattern}' must not contain path separators or '..'")
         
         if not os.path.exists(target_path):
             raise FileNotFoundError(f"Path not found: {relative_path}")
@@ -159,7 +179,13 @@ class SandboxedFileSystem:
         return sorted(results, key=lambda x: (not x["is_dir"], x["name"].lower()))
     
     def read_file(self, relative_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-        """读取文件内容。"""
+        """读取文件内容。
+
+        文本文件按指定编码读取，指定编码解码失败时回退常见中文编码
+        （gb18030 / big5）；全部解码失败（二进制文件）则读取为 base64 内容，
+        由前端 viewer（WordViewer / PDFViewer / ImageViewer / ExcelViewer 等）
+        按其既有 base64 解析逻辑渲染。
+        """
         absolute_path = self._resolve_path(relative_path)
         
         if not os.path.exists(absolute_path):
@@ -169,16 +195,60 @@ class SandboxedFileSystem:
             raise IsADirectoryError(f"Path is a directory: {relative_path}")
         
         stat = os.stat(absolute_path)
+        modified = format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE)))
         
-        with open(absolute_path, "r", encoding=encoding) as f:
-            content = f.read()
+        # 已知二进制扩展名直接按二进制读取返回 base64，
+        # 避免纯文本字面量的二进制文件（如纯 ASCII 的 PDF）被文本编码解码误判为文本。
+        ext = os.path.splitext(relative_path)[1].lstrip(".").lower()
+        if ext in self.BINARY_EXTENSIONS:
+            with open(absolute_path, "rb") as f:
+                content = base64.b64encode(f.read()).decode("ascii")
+            return {
+                "path": relative_path,
+                "content": content,
+                "size": stat.st_size,
+                "modified": modified,
+                "is_binary": True,
+                "encoding": "base64",
+            }
         
-        return {
-            "path": relative_path,
-            "content": content,
-            "size": stat.st_size,
-            "modified": format_iso(datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo(settings.DEFAULT_TIMEZONE))),
-        }
+        try:
+            with open(absolute_path, "r", encoding=encoding) as f:
+                content = f.read()
+            return {
+                "path": relative_path,
+                "content": content,
+                "size": stat.st_size,
+                "modified": modified,
+                "is_binary": False,
+                "encoding": encoding,
+            }
+        except UnicodeDecodeError:
+            for enc in ("gb18030", "big5"):
+                try:
+                    with open(absolute_path, "r", encoding=enc) as f:
+                        content = f.read()
+                    return {
+                        "path": relative_path,
+                        "content": content,
+                        "size": stat.st_size,
+                        "modified": modified,
+                        "is_binary": False,
+                        "encoding": enc,
+                    }
+                except UnicodeDecodeError:
+                    continue
+            # 全部文本编码解码失败：按二进制读取并返回 base64
+            with open(absolute_path, "rb") as f:
+                content = base64.b64encode(f.read()).decode("ascii")
+            return {
+                "path": relative_path,
+                "content": content,
+                "size": stat.st_size,
+                "modified": modified,
+                "is_binary": True,
+                "encoding": "base64",
+            }
     
     def write_file(self, relative_path: str, content: str, encoding: str = "utf-8", 
                    mode: str = "write") -> Dict[str, Any]:
@@ -248,6 +318,15 @@ class SandboxedFileSystem:
 
 
 _active_project_sessions: Dict[str, str] = {}
+
+
+def get_active_project_id(user_id: str, agentic_flow_id: str = None) -> Optional[str]:
+    """公开查询当前激活的项目 ID（A6：跨模块收敛，不直接读私有 _active_project_sessions）。
+
+    agent_tools 等跨模块调用方通过本函数访问运行面板的激活项目状态，
+    不直接 import 模块级私有字典（key 由 _get_session_key 统一生成）。
+    """
+    return _active_project_sessions.get(_get_session_key(user_id, agentic_flow_id))
 
 
 def _get_session_key(user_id: str, agentic_flow_id: str = None) -> str:
@@ -660,7 +739,9 @@ async def check_file_exists(
 
 
 @router.get("/workspace-roots")
-async def get_workspace_roots():
+async def get_workspace_roots(
+    current_user: User = Depends(get_current_user)
+):
     """获取可用的工作区根目录列表。"""
     import platform
     from pathlib import Path
@@ -716,10 +797,16 @@ async def browse_directory(
     """浏览目录内容，返回子目录和文件列表。"""
     
     if not path:
-        return await get_workspace_roots()
+        return await get_workspace_roots(current_user)
     
     try:
+        # 入口沙箱校验：浏览路径必须位于工作区数据根目录内，拒绝访问沙箱外任意绝对路径
+        from app.core.data_paths import DataPaths
+        workspace_root = os.path.abspath(DataPaths.get_data_root())
         abs_path = os.path.abspath(path)
+        
+        if os.path.commonpath([abs_path, workspace_root]) != workspace_root:
+            raise HTTPException(status_code=403, detail=f"Access denied: path is outside the workspace: {path}")
         
         if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail=f"Path not found: {path}")

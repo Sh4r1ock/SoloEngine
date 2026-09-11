@@ -242,25 +242,17 @@ Do not invoke a skill if it is already running."""
         skill_context.is_active = True
         
         folder_path = skill_context.metadata.get("folder_path", "")
-        logger.info(f"[SkillTool] Executing skill '{name}', folder_path: {folder_path}")
         
         instructions = ""
-        logger.info(f"[SkillTool] Initial instructions length: 0")
         
         if not instructions and folder_path:
             skill_md_path = os.path.join(folder_path, "SKILL.md")
-            logger.info(f"[SkillTool] Trying to read SKILL.md from: {skill_md_path}")
             if os.path.exists(skill_md_path):
                 try:
                     with open(skill_md_path, "r", encoding="utf-8") as f:
                         instructions = f.read()
-                    logger.info(f"[SkillTool] Read SKILL.md successfully, length: {len(instructions)}")
                 except Exception as e:
                     logger.warning(f"Failed to read SKILL.md for '{name}': {e}")
-        else:
-            logger.info(f"[SkillTool] Using pre-loaded instructions, length: {len(instructions) if instructions else 0}")
-        
-        logger.info(f"[SkillTool] Final instructions length: {len(instructions) if instructions else 0}")
         
         resources_used = []
         if folder_path and os.path.exists(folder_path):

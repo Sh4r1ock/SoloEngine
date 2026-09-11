@@ -90,7 +90,6 @@ class SoloAgentConfig:
     run_project_id: Optional[str] = None
     agent_id: Optional[str] = None
     session_id: Optional[str] = None
-    max_memory_length: Optional[int] = None
     
     max_iters: int = 10
     # 工具调用轮次：一次 react_core 循环中 agent 允许调用 LLM API 的次数上限。
@@ -123,74 +122,3 @@ class SoloAgentConfig:
     def __post_init__(self):
         if self.agent_id is None:
             self.agent_id = str(uuid.uuid4())
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SoloAgentConfig":
-        return cls(
-            name=data.get("name", "Agent"),
-            provider=data.get("provider", data.get("model_config", {}).get("provider", "openai")),
-            model=data.get("model", data.get("model_config", {}).get("model", "gpt-4")),
-            system_prompt=data.get("system_prompt", ""),
-            desc=data.get("desc", ""),
-            skills=data.get("skills", []),
-            tools=data.get("tools", []),
-            mcp_servers=data.get("mcp_servers", []),
-            subagents=data.get("subagents", data.get("child_agents", [])),
-            user_id=data.get("user_id"),
-            agentic_flow_id=data.get("agentic_flow_id"),
-            run_project_id=data.get("run_project_id"),
-            agent_id=data.get("agent_id"),
-            session_id=data.get("session_id"),
-            max_memory_length=data.get("max_memory_length"),
-            max_iters=data.get("max_iters", 10),
-            stream=data.get("stream", True),
-            api_key=data.get("api_key"),
-            base_url=data.get("base_url"),
-            is_full_url=data.get("is_full_url", False),
-            temperature=data.get("temperature", 0.7),
-            max_tokens=data.get("max_tokens"),
-            max_input_tokens=data.get("max_input_tokens"),  # 新增
-            max_output_tokens=data.get("max_output_tokens"),  # 新增
-            top_p=data.get("top_p", 1.0),
-            frequency_penalty=data.get("frequency_penalty", 0.0),
-            presence_penalty=data.get("presence_penalty", 0.0),
-            timeout=data.get("timeout", 60),
-            agent_type=data.get("agentType", data.get("agent_type", "custom")),
-            work_dir=data.get("work_dir"),
-            extra=data.get("extra", {}),
-        )
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "provider": self.provider,
-            "model": self.model,
-            "system_prompt": self.system_prompt,
-            "desc": self.desc,
-            "skills": self.skills,
-            "tools": self.tools,
-            "mcp_servers": self.mcp_servers,
-            "subagents": self.subagents,
-            "user_id": self.user_id,
-            "agentic_flow_id": self.agentic_flow_id,
-            "run_project_id": self.run_project_id,
-            "agent_id": self.agent_id,
-            "session_id": self.session_id,
-            "max_memory_length": self.max_memory_length,
-            "max_iters": self.max_iters,
-            "stream": self.stream,
-            "api_key": self.api_key,
-            "base_url": self.base_url,
-            "is_full_url": self.is_full_url,
-            "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
-            "max_input_tokens": self.max_input_tokens,  # 新增
-            "max_output_tokens": self.max_output_tokens,  # 新增
-            "top_p": self.top_p,
-            "frequency_penalty": self.frequency_penalty,
-            "presence_penalty": self.presence_penalty,
-            "timeout": self.timeout,
-            "agent_type": self.agent_type,
-            "work_dir": self.work_dir,
-            "extra": self.extra,
-        }

@@ -3,9 +3,11 @@ import { renderAsync } from 'docx-preview';
 import { Spin, Result, Button, Empty } from 'antd';
 import { ReloadOutlined, DownloadOutlined, FileWordOutlined } from '@ant-design/icons';
 import type { FileTab } from '../types';
-import { useEditorInstanceManager, useEditorCleanup } from './index';
+import { useEditorInstanceManager } from './index';
 import { runProjectApi } from '../../../services/runProjectApi';
 import { useRunPanelStore } from '../stores/runPanelStore';
+import { downloadFromUrl } from '../../../utils/download';
+import { getAccessToken } from '../../../utils/authStorage';
 
 interface WordViewerProps {
   instanceId: string;
@@ -20,7 +22,7 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
   const [error, setError] = useState<string | null>(null);
   const [contentInfo, setContentInfo] = useState<{ size: number; type: string } | null>(null);
   const isMountedRef = useRef(true);
-  const hasLoadedRef = useRef(false);
+  const loadedFileKeyRef = useRef<string>('');
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -38,8 +40,9 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
   const loadDocument = useCallback(async () => {
     if (!isMountedRef.current) return;
     
-    if (hasLoadedRef.current) return;
-    hasLoadedRef.current = true;
+    const fileKey = tab.path || tab.content || '';
+    if (loadedFileKeyRef.current === fileKey) return;
+    loadedFileKeyRef.current = fileKey;
     
     setLoading(true);
     setError(null);
@@ -74,7 +77,7 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
         const response = await fetch(accessUrl, {
           credentials: 'include',
           headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+            'Authorization': `Bearer ${getAccessToken() || ''}`
           }
         });
         
@@ -147,27 +150,10 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
     loadDocument();
   }, [loadDocument]);
 
-  useEditorCleanup(instanceId, cleanup);
-
   const handleDownload = useCallback(() => {
     const accessUrl = runProjectApi.getFileAccessUrl(tab.path, agenticFlowId);
-    const link = document.createElement('a');
-    link.href = accessUrl;
-    link.download = tab.name;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadFromUrl(accessUrl, tab.name);
   }, [tab.path, tab.name, agenticFlowId]);
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#f5f5f5' }}>
-        <Spin size="large">
-          <div style={{ padding: 50 }}>加载Word文档...</div>
-        </Spin>
-      </div>
-    );
-  }
 
   if (error) {
     return (
@@ -207,14 +193,22 @@ const WordViewer: React.FC<WordViewerProps> = ({ instanceId, tab }) => {
   }
 
   return (
-    <div 
-      ref={containerRef} 
-      style={{ 
-        height: '100%', 
-        overflow: 'auto',
-        background: '#f5f5f5',
-      }} 
-    />
+    <div style={{ position: 'relative', height: '100%', background: '#f5f5f5' }}>
+      {loading && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: 'rgba(245, 245, 245, 0.9)' }}>
+          <Spin size="large">
+            <div style={{ padding: 50 }}>加载Word文档...</div>
+          </Spin>
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        style={{
+          height: '100%',
+          overflow: 'auto',
+        }}
+      />
+    </div>
   );
 };
 

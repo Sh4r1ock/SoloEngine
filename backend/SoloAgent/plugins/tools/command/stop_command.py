@@ -38,7 +38,7 @@ from .base import (
     CommandNotFoundError,
     CommandToolError,
 )
-from app.core.config import settings
+from SoloAgent.config import settings
 
 
 class StopCommand(BaseCommandTool):

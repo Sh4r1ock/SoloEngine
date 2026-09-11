@@ -3,8 +3,7 @@ import os
 import logging
 from typing import Optional
 
-from app.core.database import get_db_context
-from app.models.file_change import FileContentBlobModel
+from app.core.database import get_db_context, FileContentBlobModel
 from app.utils.file_utils import compute_content_hash
 
 logger = logging.getLogger("SoloEngine")

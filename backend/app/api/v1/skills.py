@@ -34,6 +34,7 @@ import shutil
 import uuid
 import tempfile
 import json
+import zipfile
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from typing import List, Optional, Dict, Any
@@ -61,6 +62,31 @@ def get_user_skills_dir(user_id: str) -> str:
     path = DataPaths.get_user_skills_dir(user_id)
     DataPaths.ensure_dir(path)
     return path
+
+
+def _safe_extract(zip_ref: zipfile.ZipFile, target_dir: str) -> None:
+    """安全解压ZIP成员，拦截zip-slip路径遍历。
+
+    对每个成员依次校验：
+    - 拒绝相对路径跳转（"../"）或绝对路径条目
+    - 目标路径必须位于 target_dir 内（commonpath 校验）
+    不合法的条目直接跳过，仅解压合法成员。
+    """
+    target_dir = os.path.normpath(target_dir)
+    for name in zip_ref.namelist():
+        if name.startswith("../") or "/../" in name or os.path.isabs(name):
+            logger.warning(f"[SKILLS] Skipping unsafe zip entry: {name}")
+            continue
+        dest = os.path.normpath(os.path.join(target_dir, name))
+        if os.path.commonpath([target_dir, dest]) != target_dir:
+            logger.warning(f"[SKILLS] Skipping out-of-bounds zip entry: {name}")
+            continue
+        if name.endswith("/") or name.endswith("\\"):
+            os.makedirs(dest, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(dest) or target_dir, exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(zip_ref.read(name))
 
 
 def parse_skill_md(skill_md_path: str) -> Dict[str, Any]:
@@ -181,6 +207,80 @@ def delete_file_or_folder(path: str) -> bool:
     except Exception as e:
         logger.error(f"删除失败: {e}")
         return False
+
+
+def sync_system_skills(db: Session) -> int:
+    """同步系统skill到数据库。
+    
+    扫描SYSTEM_SKILLS_DIR目录，将所有系统skill存入skills_packages表（user_id='system'）。
+    
+    Args:
+        db: 数据库会话
+        
+    Returns:
+        int: 同步的skill数量
+    """
+    SYSTEM_SKILLS_DIR = DataPaths.get_system_skills_dir()
+    
+    if not os.path.exists(SYSTEM_SKILLS_DIR):
+        logger.warning(f"System skills directory not found: {SYSTEM_SKILLS_DIR}")
+        return 0
+    
+    synced_count = 0
+    
+    for skill_name in os.listdir(SYSTEM_SKILLS_DIR):
+        skill_path = os.path.join(SYSTEM_SKILLS_DIR, skill_name)
+        
+        if not os.path.isdir(skill_path):
+            continue
+        
+        skill_md_path = os.path.join(skill_path, "SKILL.md")
+        if not os.path.exists(skill_md_path):
+            continue
+        
+        skill_info = parse_skill_md(skill_md_path)
+        
+        existing = db.query(SkillsPackageModel).filter(
+            SkillsPackageModel.user_id == "system",
+            SkillsPackageModel.name == skill_name
+        ).first()
+        
+        if existing:
+            existing.folder_path = DataPaths.to_relative_path(skill_path)
+            desc = skill_info.get("description", "")
+            if desc:
+                existing.description = desc
+            tags = skill_info.get("tags", existing.tags or [])
+            if "system" not in tags:
+                tags.append("system")
+            existing.tags = tags
+            existing.pkg_version = skill_info.get("version", existing.pkg_version)
+            existing.version = (existing.version or 0) + 1
+            logger.info(f"Updated system skill: {skill_name}")
+        else:
+            from datetime import datetime, timezone
+            tags = skill_info.get("tags", [])
+            if "system" not in tags:
+                tags.append("system")
+            skill = SkillsPackageModel(
+                name=skill_name,
+                folder_path=DataPaths.to_relative_path(skill_path),
+                description=skill_info.get("description", ""),
+                user_id="system",
+                tags=tags,
+                pkg_version=skill_info.get("version", "1.0.0"),
+                is_public=True,
+                is_active=True,
+                created_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+                updated_at=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)),
+            )
+            db.add(skill)
+            logger.info(f"Created system skill: {skill_name}")
+        
+        synced_count += 1
+    
+    db.commit()
+    return synced_count
 
 
 class CreateSkillPackageRequest(BaseModel):
@@ -459,7 +559,7 @@ async def delete_package(
     """删除 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db_manager.get_skills_package(db, package_id, user_id)
+    pkg = db_manager.get_skills_package(db, package_id, user_id, for_update=True)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
@@ -529,7 +629,7 @@ async def parse_import_package(
         os.makedirs(extract_dir, exist_ok=True)
         
         with zipfile.ZipFile(temp_file_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_dir)
+            _safe_extract(zip_ref, extract_dir)
             
             # 查找SKILL.md
             skill_md_path = None
@@ -638,13 +738,22 @@ async def import_package(
         if not os.path.exists(extract_dir):
             extract_dir = temp_dir
         
+        # 兼容 ZIP 顶层为单目录的结构：若解压目录下只有一个顶层目录且其内含 SKILL.md，
+        # 则该子目录才是真正的包内容，需复制其内容而非目录本身，避免包目录内多嵌套一层
+        package_source_dir = extract_dir
+        direct_items = [i for i in os.listdir(extract_dir) if not i.startswith('.')]
+        if len(direct_items) == 1:
+            candidate = os.path.join(extract_dir, direct_items[0])
+            if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "SKILL.md")):
+                package_source_dir = candidate
+        
         # 移动到用户skills目录
         package_dir = os.path.join(user_skills_dir, name)
         if os.path.exists(package_dir):
             shutil.rmtree(package_dir)
         
         # 复制文件
-        shutil.copytree(extract_dir, package_dir)
+        shutil.copytree(package_source_dir, package_dir)
         
         # 解析tags
         tags_list = json.loads(tags)
@@ -773,7 +882,7 @@ async def activate_package(
     """激活 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db_manager.get_skills_package(db, package_id, user_id)
+    pkg = db_manager.get_skills_package(db, package_id, user_id, for_update=True)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")
@@ -801,7 +910,7 @@ async def deactivate_package(
     """停用 Skills 包。"""
     user_id = current_user.id
     
-    pkg = db_manager.get_skills_package(db, package_id, user_id)
+    pkg = db_manager.get_skills_package(db, package_id, user_id, for_update=True)
     
     if not pkg:
         raise HTTPException(status_code=404, detail=f"Package '{package_id}' not found")

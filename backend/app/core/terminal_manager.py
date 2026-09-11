@@ -33,7 +33,7 @@ import threading
 import uuid
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SoloEngine")
 
 # Windows 下依赖 pywinpty（import winpty）
 if sys.platform == "win32":
@@ -216,7 +216,8 @@ class TerminalSession:
             while not self._closed:
                 try:
                     data = self.proc.read(4096)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"[Terminal] pty read error {self.id}: {e!r}")
                     break
                 if not data:
                     continue
@@ -227,25 +228,35 @@ class TerminalSession:
                     except Exception:
                         pass
                     continue
+                logger.info(f"[Terminal] reader got {len(data)} bytes, clients={len(self.clients)}, captures={len(self._cmd_captures)}")
                 # 1) WS 广播（前端 xterm 实时显示）
                 if self.clients:
-                    asyncio.run_coroutine_threadsafe(
-                        self._broadcast({"type": "output", "data": data}), self.loop
-                    )
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            self._broadcast({"type": "output", "data": data}), self.loop
+                        )
+                    except Exception as e:
+                        logger.error(f"[Terminal] broadcast schedule error {self.id}: {e!r}")
                 # 2) 命令捕获队列（RunCommand PTY 执行时收集本次命令输出）
                 if self._cmd_captures:
-                    asyncio.run_coroutine_threadsafe(
-                        self._push_captures(data), self.loop
-                    )
+                    try:
+                        asyncio.run_coroutine_threadsafe(
+                            self._push_captures(data), self.loop
+                        )
+                    except Exception as e:
+                        logger.error(f"[Terminal] capture schedule error {self.id}: {e!r}")
         finally:
             try:
                 exit_code = getattr(self.proc, "exitstatus", 0) or 0
             except Exception:
                 exit_code = 0
-            asyncio.run_coroutine_threadsafe(
-                self._broadcast({"type": "exit", "code": exit_code}), self.loop
-            )
-            asyncio.run_coroutine_threadsafe(self._on_exit(), self.loop)
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self._broadcast({"type": "exit", "code": exit_code}), self.loop
+                )
+                asyncio.run_coroutine_threadsafe(self._on_exit(), self.loop)
+            except Exception as e:
+                logger.error(f"[Terminal] exit broadcast error {self.id}: {e!r}")
 
     async def _push_captures(self, data: str) -> None:
         """将 PTY 输出推给所有命令捕获队列（RunCommand 结果收集）。"""
@@ -274,6 +285,7 @@ class TerminalSession:
         """注册命令输出捕获队列（RunCommand PTY 执行前调用）。"""
         q: asyncio.Queue = asyncio.Queue()
         self._cmd_captures[cmd_id] = q
+        logger.info(f"[Terminal] start_capture {self.id} cmd_id={cmd_id}, total={len(self._cmd_captures)}")
         return q
 
     def stop_capture(self, cmd_id: str) -> None:
@@ -336,7 +348,7 @@ class TerminalSessionManager:
         loop = asyncio.get_running_loop()
         session = TerminalSession(terminal_id, proc, loop, workdir)
         self._sessions[terminal_id] = session
-        logger.info(f"[Terminal] Created session {terminal_id} cwd={workdir}")
+        logger.info(f"[Terminal] Created session {terminal_id} cwd={workdir}, loop={loop}")
         return session
 
     def get(self, terminal_id: str) -> Optional[TerminalSession]:

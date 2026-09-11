@@ -79,84 +79,7 @@ export interface SessionMessage {
   error?: string;
 }
 
-export interface ExecutionStep {
-  id: string;
-  step_type: string;
-  node_id: string;
-  node_name: string;
-  thought?: string;
-  action?: string;
-  observation?: string;
-  error?: string;
-  created_at: string;
-}
-
-export interface ToolCallRecordAPI {
-  id: string;
-  tool_name: string;
-  arguments: Record<string, any>;
-  result?: string;
-  error?: string;
-  created_at: string;
-}
-
 export const runApi = {
-  async executeWorkflow(
-    canvasData: any,
-    inputMessage: string,
-    projectName?: string,
-    context?: Record<string, any>
-  ): Promise<ExecutionResult> {
-    const response = await api.post('/run/execute', {
-      canvas_data: canvasData,
-      input_message: inputMessage,
-      project_name: projectName,
-      context: context,
-    });
-    
-    if (response.data && response.data.data) {
-      return response.data.data;
-    } else if (response.data && response.data.output) {
-      return response.data;
-    } else if (response.data && response.data.error) {
-      return {
-        execution_id: '',
-        status: 'error',
-        output: '',
-        error: response.data.error,
-      };
-    } else {
-      console.error('Unexpected response structure:', response.data);
-      return {
-        execution_id: '',
-        status: 'error',
-        output: '',
-        error: 'Unexpected response structure from server',
-      };
-    }
-  },
-
-  async executeNode(
-    canvasData: any,
-    nodeId: string,
-    inputMessage: string,
-    context?: Record<string, any>,
-    agenticFlowId?: string,
-    sessionId?: string,
-    runProjectId?: string
-  ): Promise<ExecutionResult> {
-    const response = await api.post('/run/execute-node', {
-      canvas_data: canvasData,
-      node_id: nodeId,
-      input_message: inputMessage,
-      context: context,
-      agentic_flow_id: agenticFlowId,
-      session_id: sessionId,
-      run_project_id: runProjectId,
-    });
-    return response.data;
-  },
-
   async executeWorkflowStream(
     canvasData: any,
     inputMessage: string,
@@ -307,32 +230,6 @@ export const runApi = {
       return data.data;
     }
     return [];
-  },
-
-  async getSessionSteps(sessionId: string): Promise<ExecutionStep[]> {
-    const response = await api.get(`/run/sessions/${sessionId}/steps`);
-    if (response.data && response.data.data) {
-      return response.data.data;
-    }
-    return response.data;
-  },
-
-  async getSessionToolCalls(sessionId: string): Promise<ToolCallRecordAPI[]> {
-    const response = await api.get(`/run/sessions/${sessionId}/tools`);
-    if (response.data && response.data.data) {
-      return response.data.data;
-    }
-    return response.data;
-  },
-
-  async exportSession(
-    sessionId: string,
-    format: string = 'json'
-  ): Promise<any> {
-    const response = await api.get(`/run/sessions/${sessionId}/export`, {
-      params: { format },
-    });
-    return response.data;
   },
 };
 

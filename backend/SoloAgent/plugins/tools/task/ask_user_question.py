@@ -27,7 +27,7 @@ import logging
 from typing import Dict, Any, List, Optional
 
 from .base import BaseTaskTool
-from .._hitl import get_run_context, await_user_message
+from ..human_in_the_loop import get_run_context, wait_for_user_message
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +212,7 @@ class AskUserQuestion(BaseTaskTool):
         执行提问，等待用户真实回答。
 
         工具本身是暂停的：execute 被 toolkit_executor await 调用，
-        内部通过 run_context 的业务消息队列等待用户在工具调用面板中选择/输入，
+        内部经 pending_interaction 等待用户在工具调用面板中选择/输入，
         收到回答后才返回给 LLM 继续执行。
 
         Args:
@@ -258,8 +258,9 @@ class AskUserQuestion(BaseTaskTool):
         formatted_text = "\n\n".join(formatted_texts)
 
         # 真实交互：等待用户在工具调用面板中选择/输入回答。
-        # 用户回答经前端 → WS execute → run.py enqueue_message 进入业务消息队列，
-        # await_user_message 内部 await 该队列即实现"工具暂停等待用户回答"。
+        # 用户回答经前端 → WS interaction_answer（携带 tool_call_id）→ 事件循环 set_result
+        # 直接送达 pending_interaction Future，wait_for_user_message 内部 await 该 Future
+        # 即实现"工具暂停等待用户回答"（回答零队列中转，不经业务消息队列）。
         run_context = get_run_context()
         if run_context is not None:
             try:
@@ -291,7 +292,7 @@ class AskUserQuestion(BaseTaskTool):
             }
 
         # 无 run_context（非 Web 执行场景）：直接报错，严禁回退。
-        # 工具必须真实等待用户回答，失败即显式报错（对齐 _hitl.await_user_input）。
+        # 工具必须真实等待用户回答，失败即显式报错（对齐 human_in_the_loop.wait_for_user_message）。
         raise RuntimeError(
             "无运行上下文（run_context）：无法等待用户回答，"
             "AskUserQuestion 工具必须在 AgenticFlow 执行环境中使用"
@@ -319,7 +320,7 @@ class AskUserQuestion(BaseTaskTool):
         Raises:
             asyncio.TimeoutError: 等待回答超时。
         """
-        answer_text = await await_user_message(run_context, "用户问答")
+        answer_text = await wait_for_user_message(run_context, "用户问答")
 
         answers: Dict[str, Any] = {}
         try:

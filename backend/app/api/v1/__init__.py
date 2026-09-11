@@ -8,21 +8,21 @@ SoloEngine : API v1 模块入口
 @date 2026-04-09
 
 功能描述：
-本模块是API v1版本的入口，导出以下子模块：
-    - tools: 工具管理API
-    - websocket: WebSocket通信API
+本模块是API v1版本的入口，包含以下子模块：
+    - auth: 认证管理API
     - config: 配置管理API
     - run: 运行管理API
     - skills: Skills管理API
     - marketplace: 市场API
-    - agent_tools: Agent工具API
+    - agentic_flows: AgenticFlow 管理API
     - run_project: 运行项目管理API
-    - settings: 设置管理API
-
-依赖:
-    - 各子模块
+    - mcp_servers: MCP服务器管理API
+    - file_changes: 文件变更管理API
+    - browser_proxy: 浏览器代理API
+    - terminal_ws: 终端 WebSocket API
+    - websocket_handler: 执行 WebSocket 通信API
 
 使用示例:
-    - from app.api.v1 import tools, websocket
+    - from app.api.v1 import auth, config, run
 """
 

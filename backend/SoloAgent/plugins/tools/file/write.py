@@ -18,7 +18,7 @@ SoloEngine : 文件写入工具模块，提供文件写入功能
 from typing import Dict, Any
 
 from .base import BaseFileTool, FileToolError
-from .._hitl import plan_mode_guard
+from ..human_in_the_loop import plan_mode_guard
 
 
 class Write(BaseFileTool):

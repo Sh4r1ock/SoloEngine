@@ -21,8 +21,10 @@ SoloEngine : 终端面板 WebSocket 通道（API 层）
 
 import logging
 
-from fastapi import APIRouter, Body, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Body, Depends, WebSocket, WebSocketDisconnect
 
+from app.core.auth import User
+from app.api.v1.auth import get_current_user
 from app.core.terminal_manager import terminal_manager
 
 logger = logging.getLogger(__name__)
@@ -35,7 +37,10 @@ router = APIRouter(prefix="/api/v1", tags=["terminal"])
 # ---------------------------------------------------------------------------
 
 @router.post("/terminal/sessions")
-async def create_terminal_session(payload: dict = Body(default={})) -> dict:
+async def create_terminal_session(
+    payload: dict = Body(default={}),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """创建终端会话，返回 terminal_id（前端标签 key + WS 连接地址）。"""
     cwd = payload.get("cwd")
     session = terminal_manager.create(cwd)
@@ -43,14 +48,19 @@ async def create_terminal_session(payload: dict = Body(default={})) -> dict:
 
 
 @router.delete("/terminal/sessions/{terminal_id}")
-async def delete_terminal_session(terminal_id: str) -> dict:
+async def delete_terminal_session(
+    terminal_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """销毁终端会话（关闭 PTY 进程，清理连接）。"""
     ok = terminal_manager.close(terminal_id)
     return {"success": ok}
 
 
 @router.get("/terminal/sessions")
-async def list_terminal_sessions() -> dict:
+async def list_terminal_sessions(
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """列出全部终端会话。"""
     return {"sessions": list(terminal_manager.get_all().keys())}
 
@@ -61,6 +71,15 @@ async def list_terminal_sessions() -> dict:
 
 @router.websocket("/terminal/ws/{terminal_id}")
 async def terminal_ws(websocket: WebSocket, terminal_id: str) -> None:
+    # token 验证：复用 AuthService.verify_access_token（含 type==access + user.is_active 完整检查）
+    from app.core.auth import auth_service
+
+    token = websocket.query_params.get("token")
+    valid, _user_id = await auth_service.verify_access_token(token)
+    if not valid:
+        await websocket.close(code=1008, reason="Invalid or expired token")
+        return
+
     session = terminal_manager.get(terminal_id)
     if session is None:
         await websocket.close(code=4004, reason="terminal not found")

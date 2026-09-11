@@ -34,7 +34,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from .base import BaseAgentTool, ToolContext, ToolPermission
-from app.core.config import settings
+from SoloAgent.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -274,31 +274,6 @@ IMPORTANT:
             }
         }
     
-    def _format_available_mcp_tools_xml(self) -> str:
-        """生成 available_mcp_tools XML (保留用于兼容性)
-
-        Returns:
-            str: available_mcp_tools XML 字符串
-        """
-        if not self._mcp_servers_info:
-            return "<available_mcp_tools>\nNo MCP tools available.\n</available_mcp_tools>"
-
-        lines = ["<available_mcp_tools>"]
-        for server_name, server_info in self._mcp_servers_info.items():
-            for tool in server_info.tools:
-                tool_name = tool.get("name", "")
-                tool_desc = tool.get("description", "")
-                is_enabled = tool.get("is_enabled", True)  # 默认启用
-
-                # 只显示启用的工具
-                if tool_name and is_enabled:
-                    if tool_desc:
-                        lines.append(f"[{server_name}] {tool_name}: {tool_desc}")
-                    else:
-                        lines.append(f"[{server_name}] {tool_name}")
-        lines.append("</available_mcp_tools>")
-        return "\n".join(lines)
-
     def _format_available_mcp_servers_xml(self) -> str:
         """生成 available_mcp_servers XML - 只包含服务器信息
 
@@ -435,43 +410,6 @@ IMPORTANT:
             "available_tools": tools_summary,
             "total_count": len(tools_summary),
             "hint": "Use tool_name='keyword' to search, or exact tool_name to get schema",
-            "metadata": {"execution_time": execution_time}
-        }
-
-    async def _search_tools(self, server_info: MCPServerInfo, query: str, execution_time: str) -> Dict[str, Any]:
-        """模糊搜索工具 - 返回名称+简介（保留用于兼容性）
-
-        Args:
-            server_info: 服务器信息
-            query: 搜索关键词
-            execution_time: 执行时间
-
-        Returns:
-            Dict[str, Any]: 搜索结果
-        """
-        query_lower = query.lower()
-        matches = []
-
-        for tool in server_info.tools:
-            name = tool.get("name", "").lower()
-            description = tool.get("description", "").lower()
-
-            # 匹配规则：名称包含 或 描述包含
-            if query_lower in name or query_lower in description:
-                matches.append({
-                    "name": tool.get("name"),
-                    "description": tool.get("description", "")[:100]
-                })
-
-        return {
-            "success": True,
-            "mode": "search",
-            "server_name": server_info.server_name,
-            "error_message": None,
-            "search_query": query,
-            "match_count": len(matches),
-            "matched_tools": matches,
-            "hint": "Use exact tool_name from results to get full schema",
             "metadata": {"execution_time": execution_time}
         }
 

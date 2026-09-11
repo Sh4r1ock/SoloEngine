@@ -11,9 +11,6 @@ interface OfficeConfig {
 interface OfficeConfigState {
   config: OfficeConfig;
   checkAvailability: () => Promise<boolean>;
-  setEnabled: (enabled: boolean) => void;
-  setUrl: (url: string) => void;
-  reset: () => void;
 }
 
 const ONLYOFFICE_CHECK_INTERVAL = APP_CONFIG.ONLYOFFICE_CHECK_INTERVAL;
@@ -75,14 +72,4 @@ export const useOfficeConfigStore = create<OfficeConfigState>((set, get) => ({
       return false;
     }
   },
-
-  setEnabled: (enabled) => set(state => ({
-    config: { ...state.config, enabled }
-  })),
-
-  setUrl: (url) => set(state => ({
-    config: { ...state.config, url, checkStatus: 'idle', lastChecked: null }
-  })),
-
-  reset: () => set({ config: { ...defaultConfig } }),
 }));

@@ -26,63 +26,8 @@ export const formatTime = (date: string | Date | null | undefined, format = 'YYY
   }
 };
 
-export const formatTimeShort = (date: string | Date | null | undefined): string => {
-  return formatTime(date, 'MM-DD HH:mm');
-};
-
-export const formatDate = (date: string | Date | null | undefined): string => {
-  return formatTime(date, 'YYYY-MM-DD');
-};
-
-export const formatDateLong = (date: string | Date | null | undefined): string => {
-  return formatTime(date, 'YYYY年MM月DD日');
-};
-
 export const formatDateTime = (date: string | Date | null | undefined): string => {
   return formatTime(date, 'YYYY-MM-DD HH:mm:ss');
-};
-
-export const now = (format = 'YYYY-MM-DD HH:mm:ss'): string => {
-  return dayjs().format(format);
-};
-
-export const nowISO = (): string => {
-  return dayjs().toISOString();
-};
-
-export const parseTime = (date: string | Date): dayjs.Dayjs => {
-  return dayjs(date);
-};
-
-export const formatRelative = (date: string | Date | null | undefined): string => {
-  if (!date) return '-';
-  try {
-    const nowDt = dayjs();
-    const target = dayjs(date);
-    const diffMinutes = nowDt.diff(target, 'minute');
-    const diffHours = nowDt.diff(target, 'hour');
-    const diffDays = nowDt.diff(target, 'day');
-
-    if (diffMinutes < 1) return '刚刚';
-    if (diffMinutes < 60) return `${diffMinutes}分钟前`;
-    if (diffHours < 24) return `${diffHours}小时前`;
-    if (diffDays < 7) return `${diffDays}天前`;
-    return formatTime(date, 'YYYY-MM-DD');
-  } catch {
-    return '-';
-  }
-};
-
-export const isToday = (date: string | Date): boolean => {
-  const today = dayjs().format('YYYY-MM-DD');
-  const target = dayjs(date).format('YYYY-MM-DD');
-  return today === target;
-};
-
-export const isYesterday = (date: string | Date): boolean => {
-  const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
-  const target = dayjs(date).format('YYYY-MM-DD');
-  return yesterday === target;
 };
 
 export const formatSmartTime = (dateStr?: string | Date | null): string => {
@@ -101,19 +46,4 @@ export const formatSmartTime = (dateStr?: string | Date | null): string => {
   } catch {
     return '';
   }
-};
-
-export default {
-  formatTime,
-  formatTimeShort,
-  formatDate,
-  formatDateLong,
-  formatDateTime,
-  formatSmartTime,
-  formatRelative,
-  now,
-  nowISO,
-  parseTime,
-  isToday,
-  isYesterday,
 };

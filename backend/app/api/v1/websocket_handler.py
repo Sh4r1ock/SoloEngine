@@ -9,7 +9,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from app.core.config import settings
 from app.core.execution_context import execution_context_manager, ExecutionContext
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("SoloEngine")
 
 
 class WebSocketRunContext:
@@ -40,7 +40,7 @@ class WebSocketRunContext:
     def _make_stream_send_callback(self):
         """创建流式发送回调，每次调用时动态获取最新 websocket"""
         ctx = self
-        def stream_send_callback(delta, agent_id=None, agent_name=None, execution_key=None):
+        def stream_send_callback(delta, agent_id=None, agent_name=None, message_id=None):
             try:
                 exec_ctx = execution_context_manager.get(
                     user_id=ctx.user_id,
@@ -59,13 +59,14 @@ class WebSocketRunContext:
                                     "delta": delta,
                                     "agent_id": agent_id,
                                     "agent_name": agent_name,
-                                    "execution_key": execution_key,
+                                    "message_id": message_id,
                                     "timestamp": datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
                                 })
                             except Exception:
                                 pass
                         task = asyncio.create_task(safe_send())
-                        ctx._run_context._pending_stream_tasks.append(task)
+                        # C7：经公开方法登记待收尾任务（不直接操作 _pending_stream_tasks）
+                        ctx._run_context.add_pending_stream_task(task)
             except Exception as e:
                 logger.error(f"Stream callback error: {e}")
         return stream_send_callback
@@ -99,22 +100,23 @@ class WebSocketRunContext:
             try:
                 data = await self.websocket.receive_json()
                 self._websocket_timestamps[self.ws_key] = self._get_timestamp()
-                await self._run_context._ws_message_queue.put(data)
+                # C7：经公开方法写入 WebSocket 传输队列（不直接操作 _ws_message_queue）
+                await self._run_context.put_ws_message(data)
                 consecutive_errors = 0
             except WebSocketDisconnect:
-                await self._run_context._ws_message_queue.put({"type": "__disconnect__"})
+                await self._run_context.put_ws_message({"type": "__disconnect__"})
                 break
             except json.JSONDecodeError as e:
                 consecutive_errors += 1
                 logger.warning(f"[WebSocket] JSON decode error ({consecutive_errors}/{settings.MAX_CONSECUTIVE_ERRORS}): {e}")
                 if consecutive_errors >= settings.MAX_CONSECUTIVE_ERRORS:
-                    await self._run_context._ws_message_queue.put({"type": "__disconnect__"})
+                    await self._run_context.put_ws_message({"type": "__disconnect__"})
                     break
             except Exception as e:
                 consecutive_errors += 1
                 logger.error(f"[WebSocket] Receiver error ({consecutive_errors}/{settings.MAX_CONSECUTIVE_ERRORS}): {e}")
                 if consecutive_errors >= settings.MAX_CONSECUTIVE_ERRORS:
-                    await self._run_context._ws_message_queue.put({"type": "__disconnect__"})
+                    await self._run_context.put_ws_message({"type": "__disconnect__"})
                     break
                 await asyncio.sleep(settings.WEBSOCKET_ERROR_BACKOFF_BASE * min(consecutive_errors, settings.WEBSOCKET_ERROR_BACKOFF_MAX_CONSECUTIVE))
 
@@ -167,16 +169,19 @@ class WebSocketRunContext:
 
         if existing_ctx and existing_ctx.status in ("running", "grace_period") and not existing_ctx.task.done():
             self._run_context = existing_ctx.run_context
-            self._run_context._agent_memories = existing_ctx.run_context._agent_memories
+            # C7：经 run_context 公开方法同步记忆 + 接管执行状态
+            #（不直接写 _agent_memories / _current_execution_task / _current_collector /
+            #  _last_user_message_id / _taken_over_event / _status / _websocket_open）
+            self._run_context.set_agent_memories(existing_ctx.run_context.get_agent_memories())
             existing_ctx.run_context.set_websocket(self.websocket)
-
-            # 同步执行状态到 run_context
-            self._run_context._current_execution_task = existing_ctx.task
-            self._run_context._current_collector = existing_ctx.collector
-            self._run_context._last_user_message_id = existing_ctx.run_context._last_user_message_id
-            self._run_context._taken_over_event = existing_ctx.taken_over_event
-            self._run_context._status = "running"
-            self._run_context._websocket_open = True
+            self._run_context.take_over_execution(
+                task=existing_ctx.task,
+                collector=existing_ctx.collector,
+                last_user_message_id=existing_ctx.run_context.get_last_user_message_id(),
+                taken_over_event=existing_ctx.taken_over_event,
+                status="running",
+                websocket_open=True,
+            )
 
             existing_ctx.status = "running"
 
@@ -189,7 +194,8 @@ class WebSocketRunContext:
 
             new_taken_over_event = asyncio.Event()
             existing_ctx.taken_over_event = new_taken_over_event
-            self._run_context._taken_over_event = new_taken_over_event
+            # C7：经公开方法替换接管信号事件（不直接写 _taken_over_event）
+            self._run_context.set_taken_over_event(new_taken_over_event)
 
             logger.info(f"[WebSocket] Took over execution: {self.session_id}")
 
@@ -202,7 +208,8 @@ class WebSocketRunContext:
             self._run_context.set_stream_send_callback(self._make_stream_send_callback())
         else:
             await self._run_context.load_memories()
-            self._run_context._agent_memories = self._run_context._agent_memories
+            # C7：经公开方法同步记忆（不直接写 _agent_memories）
+            self._run_context.set_agent_memories(self._run_context.get_agent_memories())
             self._run_context.set_websocket(self.websocket)
 
             # 注入传输层回调

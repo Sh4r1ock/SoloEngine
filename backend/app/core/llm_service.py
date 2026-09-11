@@ -40,7 +40,9 @@ SoloEngine : LLM统一服务层模块
 
 from typing import Dict, Optional, Any
 
-from SoloAgent.model import LLMFactory
+# 直接导入 llm_factory 子模块（避免经 SoloAgent.model 包级导入，
+# 否则 config.py → llm_service → SoloAgent.model 会与 SoloAgent 包初始化形成循环导入）
+from SoloAgent.model.llm_factory import LLMFactory
 from SoloAgent.model.model_response import ChatResponse
 from app.core.database import LLMConfigModel, encryption_service
 
@@ -92,33 +94,66 @@ class LLMService:
         return ""
 
     @staticmethod
+    def build_model(
+        provider: str,
+        model_name: str,
+        api_key: str,
+        base_url: Optional[str] = None,
+        is_full_url: bool = False,
+    ) -> Any:
+        """
+        统一模型创建工厂（R5：_create_model_from_config 与 api/v1/config.test_config 共用的唯一组装点）。
+
+        收敛 LLMFactory.create_model 的参数组装（provider/model_name/stream=False/
+        api_key/client_kwargs/is_full_url），消除两处重复的工厂调用。
+
+        Args:
+            provider: 提供商名称。
+            model_name: 模型名称。
+            api_key: 已解密（DB 配置）或明文（测试请求）的 API Key。
+            base_url: 基础地址（可选）。
+            is_full_url: base_url 是否为完整 URL。
+
+        Returns:
+            Any: 模型实例（ChatModelBase 子类）。
+
+        Raises:
+            ValueError: 提供商不支持。
+        """
+        return LLMFactory.create_model(
+            provider=provider,
+            model_name=model_name,
+            stream=False,
+            api_key=api_key,
+            client_kwargs={"base_url": base_url} if base_url else {},
+            is_full_url=is_full_url,
+        )
+
+    @staticmethod
     def _create_model_from_config(config: LLMConfigModel) -> Any:
         """
         根据LLM配置创建模型实例。
-        
+
         Args:
             config (LLMConfigModel): LLM配置对象。
-        
+
         Returns:
             Any: 模型实例（ChatModelBase子类）。
-        
+
         Raises:
             ValueError: 当提供商不支持时抛出。
             Exception: 当模型创建失败时抛出。
-        
+
         Note:
             - API层暂不支持流式输出，stream固定为False
             - 自动处理base_url配置
         """
         api_key = LLMService._get_decrypted_api_key(config)
-        base_url = config.base_url
-
-        return LLMFactory.create_model(
+        return LLMService.build_model(
             provider=config.provider,
             model_name=config.model_name,
-            stream=False,
             api_key=api_key,
-            client_kwargs={"base_url": base_url} if base_url else {},
+            base_url=config.base_url,
             is_full_url=bool(getattr(config, 'is_full_url', False)),
         )
 

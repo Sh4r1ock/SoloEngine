@@ -9,35 +9,27 @@ SoloEngine : 缓存管理器模块
 
 功能描述：
 本模块提供以下核心功能：
-    - 内存缓存装饰器
+    - 内存缓存
     - TTL过期机制
     - LRU缓存策略
     - 缓存统计
-    - 查询优化器
 
 依赖:
     - time: 时间处理
-    - functools: 函数工具
     - threading: 线程锁
     - typing: 类型注解支持
     - collections.OrderedDict: 有序字典
-    - logging: 日志记录
 
 使用示例:
-    - from app.core.cache import cached, global_cache
-    - @cached(ttl=300)
-    - def expensive_function(x):
-    -     return x * x
+    - from app.core.cache import global_cache
+    - global_cache.set("key", "value", ttl=300)
+    - value = global_cache.get("key")
 """
 
 import time
-import functools
 import threading
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 from collections import OrderedDict
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class LRUCache:
@@ -205,196 +197,3 @@ class LRUCache:
 from app.core.config import settings
 
 global_cache = LRUCache(max_size=settings.CACHE_MAX_SIZE, default_ttl=settings.CACHE_DEFAULT_TTL)
-
-
-def cached(
-    ttl: int = None,
-    key_prefix: str = "",
-    cache: Optional[LRUCache] = None
-) -> Callable:
-    """
-    缓存装饰器
-
-    Args:
-        ttl: 缓存过期时间（秒）
-        key_prefix: 缓存键前缀
-        cache: 使用的缓存实例，默认使用全局缓存
-        
-    Returns:
-        装饰器函数
-        
-    Example:
-        >>> @cached(ttl=300)
-        ... def expensive_function(x):
-        ...     return x * x
-    """
-    _cache = cache or global_cache
-
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs) -> Any:
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
-
-            result = _cache.get(cache_key)
-            if result is not None:
-                logger.debug(f"Cache hit for {cache_key}")
-                return result
-
-            result = func(*args, **kwargs)
-            _cache.set(cache_key, result, ttl)
-            logger.debug(f"Cache miss for {cache_key}")
-            return result
-
-        wrapper.cache_clear = lambda: _cache.clear()
-        wrapper.cache_stats = lambda: _cache.stats()
-        return wrapper
-
-    return decorator
-
-
-def async_cached(
-    ttl: int = 300,
-    key_prefix: str = "",
-    cache: Optional[LRUCache] = None
-) -> Callable:
-    """
-    异步缓存装饰器
-    
-    Args:
-        ttl: 缓存过期时间（秒）
-        key_prefix: 缓存键前缀
-        cache: 使用的缓存实例，默认使用全局缓存
-        
-    Returns:
-        装饰器函数
-        
-    Example:
-        >>> @async_cached(ttl=300)
-        ... async def expensive_async_function(x):
-        ...     return x * x
-    """
-    _cache = cache or global_cache
-
-    def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def wrapper(*args, **kwargs) -> Any:
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
-
-            result = _cache.get(cache_key)
-            if result is not None:
-                logger.debug(f"Cache hit for {cache_key}")
-                return result
-
-            result = await func(*args, **kwargs)
-            _cache.set(cache_key, result, ttl)
-            logger.debug(f"Cache miss for {cache_key}")
-            return result
-
-        wrapper.cache_clear = lambda: _cache.clear()
-        wrapper.cache_stats = lambda: _cache.stats()
-        return wrapper
-
-    return decorator
-
-
-class QueryOptimizer:
-    """
-    查询优化器
-    
-    职责:
-        - 优化SQL查询
-        - 记录查询统计
-        - 识别慢查询
-    
-    属性:
-        _query_cache (Dict): 查询缓存
-        _query_stats (Dict): 查询统计
-    
-    示例:
-        >>> optimizer = QueryOptimizer()
-        >>> optimized = optimizer.optimize_query("SELECT  *  FROM  users")
-    """
-
-    def __init__(self):
-        """初始化查询优化器"""
-        self._query_cache: Dict[str, Any] = {}
-        self._query_stats: Dict[str, Dict[str, int]] = {}
-
-    def optimize_query(self, query: str, params: Optional[Dict] = None) -> str:
-        """
-        优化查询语句
-        
-        Args:
-            query: SQL查询语句
-            params: 查询参数
-            
-        Returns:
-            优化后的查询语句
-            
-        Example:
-            >>> optimized = optimizer.optimize_query("SELECT  *  FROM  users")
-        """
-        optimized = query.strip()
-        optimized = " ".join(optimized.split())
-        return optimized
-
-    def record_query(self, query: str, execution_time: float) -> None:
-        """
-        记录查询执行信息
-        
-        Args:
-            query: SQL查询语句
-            execution_time: 执行时间（秒）
-            
-        Example:
-            >>> optimizer.record_query("SELECT * FROM users", 0.5)
-        """
-        query_hash = hash(query)
-        if query_hash not in self._query_stats:
-            self._query_stats[query_hash] = {
-                "count": 0,
-                "total_time": 0,
-                "avg_time": 0,
-                "query": query[:100],
-            }
-        stats = self._query_stats[query_hash]
-        stats["count"] += 1
-        stats["total_time"] += execution_time
-        stats["avg_time"] = stats["total_time"] / stats["count"]
-
-    def get_slow_queries(self, threshold: float = 1.0) -> list:
-        """
-        获取慢查询列表
-        
-        Args:
-            threshold: 慢查询阈值（秒）
-            
-        Returns:
-            慢查询统计列表
-            
-        Example:
-            >>> slow_queries = optimizer.get_slow_queries(threshold=1.0)
-        """
-        return [
-            stats for stats in self._query_stats.values()
-            if stats["avg_time"] > threshold
-        ]
-
-    def get_query_stats(self) -> Dict[str, Any]:
-        """
-        获取查询统计信息
-        
-        Returns:
-            查询统计信息字典
-            
-        Example:
-            >>> stats = optimizer.get_query_stats()
-        """
-        return {
-            "total_queries": len(self._query_stats),
-            "slow_queries": len(self.get_slow_queries()),
-            "stats": self._query_stats,
-        }
-
-
-query_optimizer = QueryOptimizer()

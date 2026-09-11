@@ -16,7 +16,7 @@ EnterPlanMode工具模块 - 进入计划模式实现。
 
 设计要点：
 - 无 run_context（非 Web 场景）：直接报错，严禁回退（对齐 ExitPlanMode）
-- 等待用户批准：复用 _hitl.await_user_message + parse_approval（与 ExitPlanMode._await_approval 一致）
+- 等待用户批准：复用 human_in_the_loop.wait_for_user_message + parse_approval（与 ExitPlanMode._await_approval 一致）
 - 等待超时：显式返回未进入结果（对齐 ExitPlanMode 超时处理，非兜底）
 - 批准进入后初始化 PlanNotebookPlugin（storage_path 显式取项目工作目录，不依赖默认值兜底）
 
@@ -29,7 +29,7 @@ import os
 from typing import Dict, Any, Optional
 
 from .base import BaseOtherTool
-from .._hitl import get_run_context, await_user_message, parse_approval, set_plan_mode
+from ..human_in_the_loop import get_run_context, wait_for_user_message, parse_approval, set_plan_mode
 from ...plan import PlanNotebookPlugin
 from app.core.data_paths import DataPaths
 
@@ -71,7 +71,7 @@ class EnterPlanModeTool(BaseOtherTool):
         Raises:
             RuntimeError: 无 run_context（非 AgenticFlow 执行环境）。
         """
-        # 1. 获取 run_context（共享 _hitl.get_run_context）
+        # 1. 获取 run_context（共享 human_in_the_loop.get_run_context）
         run_context = get_run_context()
         # 2. 无 run_context（非 Web 场景）：直接报错，严禁回退（对齐 ExitPlanMode 现有规范）
         if run_context is None:
@@ -79,10 +79,10 @@ class EnterPlanModeTool(BaseOtherTool):
                 "无运行上下文（run_context）：无法等待用户批准，"
                 "EnterPlanMode 工具必须在 AgenticFlow 执行环境中使用"
             )
-        # 3. 等待用户批准进入 Plan 模式（共享 await_user_message + parse_approval，
+        # 3. 等待用户批准进入 Plan 模式（共享 wait_for_user_message + parse_approval，
         #    与 ExitPlanMode._await_approval 交互模式完全一致，不依赖任何回退语义）
         try:
-            answer_text = await await_user_message(run_context, "进入计划模式确认")
+            answer_text = await wait_for_user_message(run_context, "进入计划模式确认")
         except asyncio.TimeoutError:
             # 等待超时：显式返回未进入结果（对齐 ExitPlanMode 超时处理，非兜底）
             return {

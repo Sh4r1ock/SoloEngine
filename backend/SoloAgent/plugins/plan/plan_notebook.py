@@ -40,10 +40,10 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.core.config import settings
+from SoloAgent.config import settings
 from pathlib import Path
 
-from ...core.interfaces import IPlanNotebook
+from ...core.interfaces import PlanNotebookInterface
 
 logger = logging.getLogger(__name__)
 
@@ -269,12 +269,12 @@ class PlanMemory:
         return results
 
 
-class PlanNotebookPlugin(IPlanNotebook):
+class PlanNotebookPlugin(PlanNotebookInterface):
     """
     计划笔记本插件
 
     职责:
-        - 实现IPlanNotebook接口
+        - 实现PlanNotebookInterface接口
         - 提供计划创建、管理、执行功能
         - 支持步骤管理和进度追踪
         - 自动保存计划状态

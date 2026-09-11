@@ -51,19 +51,20 @@ from typing import (
     List,
     AsyncGenerator,
     Literal,
+    Optional,
     Type,
 )
 from collections import OrderedDict
 
 from pydantic import BaseModel
 
-from app.core.config import settings
+from SoloAgent.config import settings
 
 from . import ChatResponse
 from .model_base import ChatModelBase
-from .model_usage import ChatUsage
+from .model_usage import ChatUsage, build_usage
 from ..utils.logging import logger
-from ..utils.common import _json_loads_with_repair
+from ..utils.common import json_loads_with_repair
 from ..message import (
     ToolCallsBlock,
     TextBlock,
@@ -80,36 +81,6 @@ if TYPE_CHECKING:
 else:
     ChatCompletion = "openai.types.chat.ChatCompletion"
     AsyncStream = "openai.types.chat.AsyncStream"
-
-
-def _format_audio_data_for_qwen_omni(messages: list[dict]) -> None:
-    """
-    为 Qwen-Omni 模型格式化音频数据。
-    
-    Qwen-Omni 使用 OpenAI 兼容的 API，但音频数据格式不同。
-    需要在 base64 数据前添加 "data:;base64," 前缀。
-    
-    参考：https://bailian.console.aliyun.com/?tab=doc#/doc/?type=model&url=2867839
-    
-    Args:
-        messages (list[dict]): OpenAI 格式化器生成的消息列表。
-            此函数会原地修改消息中的音频数据格式。
-    
-    Note:
-        此函数会直接修改传入的 messages 列表，不返回新列表。
-    """
-    for msg in messages:
-        if isinstance(msg.get("content"), list):
-            for block in msg["content"]:
-                if (
-                    isinstance(block, dict)
-                    and "input_audio" in block
-                    and isinstance(block["input_audio"].get("data"), str)
-                ):
-                    if not block["input_audio"]["data"].startswith("http"):
-                        block["input_audio"]["data"] = (
-                            "data:;base64," + block["input_audio"]["data"]
-                        )
 
 
 class OpenAIChatModel(ChatModelBase):
@@ -218,11 +189,11 @@ class OpenAIChatModel(ChatModelBase):
         # 追加 /chat/completions（openai.chat.completions.create），导致双份路径。
         # 剥离已存在的后缀，使 SDK 补全后的最终请求地址 = 用户填写的完整 URL。
         if is_full_url and client_kwargs:
-            _base = client_kwargs.get("base_url")
-            if _base and str(_base).rstrip("/").endswith("/chat/completions"):
+            base_url = client_kwargs.get("base_url")
+            if base_url and str(base_url).rstrip("/").endswith("/chat/completions"):
                 client_kwargs = {
                     **client_kwargs,
-                    "base_url": str(_base).rstrip("/")[: -len("/chat/completions")],
+                    "base_url": str(base_url).rstrip("/")[: -len("/chat/completions")],
                 }
 
         # 阻塞根因修复（create 阶段兜底）：未配置 timeout 时 openai SDK 默认 600s——
@@ -332,9 +303,6 @@ class OpenAIChatModel(ChatModelBase):
                 "and 'content' key for OpenAI API.",
             )
 
-        if "omni" in self.model_name.lower():
-            _format_audio_data_for_qwen_omni(messages)
-
         kwargs = {
             "model": self.model_name,
             "messages": messages,
@@ -426,6 +394,53 @@ class OpenAIChatModel(ChatModelBase):
 
         return parsed_response
 
+    def _assemble_final_chunk(
+        self,
+        contents: list,
+        usage,
+        metadata: Optional[dict],
+        finish_reason,
+        text: str,
+        thinking: str,
+        tool_calls: dict,
+        log_message: str,
+    ) -> ChatResponse:
+        """
+        统一组装流式结束时的最终 ChatResponse（M4：无 choices / 带 finish_reason 两处同构逻辑的唯一实现）。
+
+        两处调用共享：原始消息还原（original_model_message）、provider 标记、
+        日志输出、ChatResponse 构造；仅日志前缀存在差异（由 log_message 传入，保持输出文本完全不变）。
+        """
+        metadata = metadata or {}
+        original_msg = {
+            "role": "assistant"
+        }
+        if text:
+            original_msg["content"] = text
+        if thinking:
+            original_msg["reasoning_content"] = thinking
+        if tool_calls:
+            original_msg["tool_calls"] = [
+                {
+                    "id": tc["id"],
+                    "type": tc["type"],
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["input"]
+                    }
+                }
+                for tc in tool_calls.values()
+            ]
+        metadata['original_model_message'] = original_msg
+        metadata['provider'] = 'openai'
+        logger.info(log_message)
+        return ChatResponse(
+            content=contents,
+            usage=usage,
+            metadata=metadata,
+            finish_reason=finish_reason,
+        )
+
     async def _parse_openai_stream_response(
         self,
         start_datetime: datetime,
@@ -499,10 +514,10 @@ class OpenAIChatModel(ChatModelBase):
                         chunk = item
 
                     if chunk.usage:
-                        usage = ChatUsage(
-                            input_tokens=chunk.usage.prompt_tokens,
-                            output_tokens=chunk.usage.completion_tokens,
-                            time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+                        usage = build_usage(
+                            chunk.usage.prompt_tokens,
+                            chunk.usage.completion_tokens,
+                            start_datetime,
                         )
 
                     if not chunk.choices:
@@ -522,46 +537,10 @@ class OpenAIChatModel(ChatModelBase):
                                 ),
                             )
                         if contents or finish_reason:
-                            stop_reason = None
-                            if finish_reason:
-                                if finish_reason == "stop":
-                                    stop_reason = "end_turn"
-                                elif finish_reason == "tool_calls":
-                                    stop_reason = "tool_use"
-                                else:
-                                    stop_reason = finish_reason
-                            
-                            metadata = metadata or {}
-                            original_msg = {
-                                "role": "assistant"
-                            }
-                            if text:
-                                original_msg["content"] = text
-                            if thinking:
-                                original_msg["reasoning_content"] = thinking
-                            if tool_calls:
-                                original_msg["tool_calls"] = [
-                                    {
-                                        "id": tc["id"],
-                                        "type": tc["type"],
-                                        "function": {
-                                            "name": tc["name"],
-                                            "arguments": tc["input"]
-                                        }
-                                    }
-                                    for tc in tool_calls.values()
-                                ]
-                            metadata['original_model_message'] = original_msg
-                            metadata['provider'] = 'openai'
-                            
-                            logger.info(f"[OpenAI] Final chunk with finish_reason: {finish_reason}, tool_calls collected: {list(tool_calls.keys())}")
-                            
-                            res = ChatResponse(
-                                content=contents,
-                                usage=usage,
-                                metadata=metadata,
-                                stop_reason=stop_reason,
-                                finish_reason=finish_reason,
+                            res = self._assemble_final_chunk(
+                                contents, usage, metadata, finish_reason,
+                                text, thinking, tool_calls,
+                                f"[OpenAI] Final chunk with finish_reason: {finish_reason}, tool_calls collected: {list(tool_calls.keys())}",
                             )
                             yield res
                         continue
@@ -589,45 +568,10 @@ class OpenAIChatModel(ChatModelBase):
                             )
                         
                         if contents or finish_reason:
-                            stop_reason = None
-                            if finish_reason == "tool_calls":
-                                stop_reason = "tool_use"
-                            elif finish_reason == "stop":
-                                stop_reason = "end_turn"
-                            else:
-                                stop_reason = finish_reason
-                            
-                            metadata = metadata or {}
-                            original_msg = {
-                                "role": "assistant"
-                            }
-                            if text:
-                                original_msg["content"] = text
-                            if thinking:
-                                original_msg["reasoning_content"] = thinking
-                            if tool_calls:
-                                original_msg["tool_calls"] = [
-                                    {
-                                        "id": tc["id"],
-                                        "type": tc["type"],
-                                        "function": {
-                                            "name": tc["name"],
-                                            "arguments": tc["input"]
-                                        }
-                                    }
-                                    for tc in tool_calls.values()
-                                ]
-                            metadata['original_model_message'] = original_msg
-                            metadata['provider'] = 'openai'
-                            
-                            logger.info(f"[OpenAI] finish_reason={finish_reason}, tool_calls collected: {list(tool_calls.keys())}")
-                            
-                            res = ChatResponse(
-                                content=contents,
-                                usage=usage,
-                                metadata=metadata,
-                                stop_reason=stop_reason,
-                                finish_reason=finish_reason,
+                            res = self._assemble_final_chunk(
+                                contents, usage, metadata, finish_reason,
+                                text, thinking, tool_calls,
+                                f"[OpenAI] finish_reason={finish_reason}, tool_calls collected: {list(tool_calls.keys())}",
                             )
                             yield res
 
@@ -688,7 +632,7 @@ class OpenAIChatModel(ChatModelBase):
                         last_text = text
 
                         if structured_model:
-                            metadata = _json_loads_with_repair(text)
+                            metadata = json_loads_with_repair(text)
 
                     for tool_call in choice.delta.tool_calls or []:
                         logger.info(f"[OpenAI] Raw delta tool_call: index={tool_call.index}, id={tool_call.id}, name={tool_call.function.name}, args_len={len(tool_call.function.arguments) if tool_call.function.arguments else 0}")
@@ -832,24 +776,16 @@ class OpenAIChatModel(ChatModelBase):
 
         usage = None
         if response.usage:
-            usage = ChatUsage(
-                input_tokens=response.usage.prompt_tokens,
-                output_tokens=response.usage.completion_tokens,
-                time=(datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_datetime).total_seconds(),
+            usage = build_usage(
+                response.usage.prompt_tokens,
+                response.usage.completion_tokens,
+                start_datetime,
             )
         
-        stop_reason = None
         finish_reason = None
         if response.choices:
             choice = response.choices[0]
             finish_reason = getattr(choice, 'finish_reason', None)
-            if finish_reason:
-                if finish_reason == "stop":
-                    stop_reason = "end_turn"
-                elif finish_reason == "tool_calls":
-                    stop_reason = "tool_use"
-                else:
-                    stop_reason = finish_reason
 
         metadata = metadata or {}
         original_msg = {
@@ -878,7 +814,6 @@ class OpenAIChatModel(ChatModelBase):
             content=content_blocks,
             usage=usage,
             metadata=metadata,
-            stop_reason=stop_reason,
             finish_reason=finish_reason,
         )
 

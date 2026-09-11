@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Button, App, Space, DatePicker, Row, Col, Statistic, Tooltip, Select } from 'antd';
+import { Card, Button, App, Space, DatePicker, Row, Col, Statistic, Tooltip, Select, Table } from 'antd';
 import { BarChartOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import dayjs, { Dayjs } from 'dayjs';
 import { api } from '../../services/api';
 import { llmApi, LLMConfig as LLMConfigType } from '../../services/llmApi';
+import { downloadBlob } from '../../utils/download';
 
 const { RangePicker } = DatePicker;
 
@@ -41,6 +42,19 @@ const LLMConfig: React.FC = () => {
   ]);
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [modelOptions, setModelOptions] = useState<{ label: string; value: string }[]>([]);
+  const [usageRecords, setUsageRecords] = useState<any[]>([]);
+
+  const buildQueryParams = (): Record<string, string> => {
+    const params: Record<string, string> = {};
+    if (dateRange[0] && dateRange[1]) {
+      params.start_date = dateRange[0].format('YYYY-MM-DD');
+      params.end_date = dateRange[1].format('YYYY-MM-DD');
+    }
+    if (selectedModel && selectedModel !== '') {
+      params.model_name = selectedModel;
+    }
+    return params;
+  };
 
   useEffect(() => {
     loadModelOptions();
@@ -63,24 +77,25 @@ const LLMConfig: React.FC = () => {
   const loadUsage = async () => {
     setLoading(true);
     try {
-      const params: Record<string, string> = {};
-      if (dateRange[0] && dateRange[1]) {
-        params.start_date = dateRange[0].format('YYYY-MM-DD');
-        params.end_date = dateRange[1].format('YYYY-MM-DD');
-      }
-      if (selectedModel && selectedModel !== '') {
-        params.model_name = selectedModel;
-      }
+      const params = buildQueryParams();
+      const [usageResp, exportResp] = await Promise.all([
+        api.get('/llm/usage', { params }),
+        api.get('/llm/usage/export', { params: { ...params, format: 'json' } }),
+      ]);
 
-      const response = await api.get('/llm/usage', { params });
-
-      if (response.code === 200 && response.data) {
-        setUsageData(response.data);
+      if (usageResp.code === 200 && usageResp.data) {
+        setUsageData(usageResp.data);
       } else {
         setUsageData(emptyData());
       }
+      if (exportResp.code === 200) {
+        setUsageRecords(exportResp.data || []);
+      } else {
+        setUsageRecords([]);
+      }
     } catch (error) {
       setUsageData(emptyData());
+      setUsageRecords([]);
     } finally {
       setLoading(false);
     }
@@ -104,14 +119,8 @@ const LLMConfig: React.FC = () => {
 
   const handleExport = async (format: string = 'json') => {
     try {
-      const params: Record<string, string> = { format };
-      if (selectedModel && selectedModel !== '') {
-        params.model_name = selectedModel;
-      }
-      if (dateRange[0] && dateRange[1]) {
-        params.start_date = dateRange[0].format('YYYY-MM-DD');
-        params.end_date = dateRange[1].format('YYYY-MM-DD');
-      }
+      const params = buildQueryParams();
+      params.format = format;
       const response = await api.get('/llm/usage/export', { params });
 
       if (response.code === 200) {
@@ -132,15 +141,6 @@ const LLMConfig: React.FC = () => {
     } catch (error) {
       message.error('导出使用数据失败：' + String(error));
     }
-  };
-
-  const downloadBlob = (blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   const getRequestsChartOption = () => {
@@ -177,6 +177,17 @@ const LLMConfig: React.FC = () => {
     avg_tokens_per_request: 0,
     avg_time_per_request: 0,
   };
+
+  const recordColumns = [
+    { title: '序号', dataIndex: 'num', width: 70 },
+    { title: '时间', dataIndex: 'timestamp', width: 170, render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss') },
+    { title: '提供商', dataIndex: 'provider', width: 110 },
+    { title: '模型', dataIndex: 'model_name', width: 150 },
+    { title: '输入 Token', dataIndex: 'input_tokens', width: 110, align: 'right' as const },
+    { title: '输出 Token', dataIndex: 'output_tokens', width: 110, align: 'right' as const },
+    { title: '总 Token', dataIndex: 'total_tokens', width: 110, align: 'right' as const },
+    { title: '耗时 (秒)', dataIndex: 'duration_ms', width: 100, align: 'right' as const, render: (v: number) => (v / 1000).toFixed(2) },
+  ];
 
   return (
     <div>
@@ -258,6 +269,19 @@ const LLMConfig: React.FC = () => {
               <Statistic title="平均耗时 (秒)" value={summary.avg_time_per_request.toFixed(2)} />
             </Col>
           </Row>
+
+          <div style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}>
+            <div style={{ fontWeight: 500, marginBottom: 8 }}>使用明细</div>
+            <Table
+              columns={recordColumns}
+              dataSource={usageRecords}
+              rowKey="request_id"
+              size="small"
+              loading={loading}
+              pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
+              scroll={{ x: 'max-content' }}
+            />
+          </div>
         </div>
       </Card>
     </div>

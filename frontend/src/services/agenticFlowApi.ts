@@ -53,20 +53,6 @@ export interface UpdateFlowRequest {
   icon?: string;
 }
 
-export interface AgenticFlowRun {
-  id: string;
-  agentic_flow_id: string;
-  user_id: string;
-  status: string;
-  input_message: string | null;
-  output_message: string | null;
-  error: string | null;
-  token_usage: any;
-  duration_ms: number | null;
-  started_at: string;
-  completed_at: string | null;
-}
-
 class AgenticFlowApi {
   async getFlows(): Promise<AgenticFlow[]> {
     const response = await api.get('/agentic-flows');
@@ -90,18 +76,6 @@ class AgenticFlowApi {
 
   async deleteFlow(agenticFlowId: string): Promise<void> {
     await api.delete(`/agentic-flows/${agenticFlowId}`);
-  }
-
-  async getRuns(agenticFlowId: string): Promise<AgenticFlowRun[]> {
-    const response = await api.get(`/agentic-flows/${agenticFlowId}/runs`);
-    return response.data || [];
-  }
-
-  async runFlow(agenticFlowId: string, inputMessage: string): Promise<AgenticFlowRun> {
-    const response = await api.post(`/agentic-flows/${agenticFlowId}/run`, {
-      input_message: inputMessage,
-    });
-    return response.data;
   }
 
   async getCanvas(agenticFlowId: string): Promise<any> {

@@ -30,6 +30,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from fastapi import APIRouter, HTTPException, Depends
 from app.core.config import settings
+from app.core.data_paths import DataPaths
 from app.utils.timezone_utils import format_iso
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -38,7 +39,7 @@ from app.core.database import get_db, db_manager, LLMConfigModel
 from app.core.llm_service import LLMService
 from app.api.v1.auth import get_current_user
 from app.core.auth import User
-from app.api.v1.run_project import _active_project_sessions
+from app.api.v1.run_project import get_active_project_id
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,43 @@ async def _get_llm_config(
     return config
 
 
+def _assert_within_sandbox(path: str) -> None:
+    """确保路径位于沙箱（data 根目录）内，防止任意文件读写/搜索。
+
+    使用 os.path.commonpath 比较（不使用 startswith 前缀判断，避免
+    类似 /data/proj_evil 的兄弟目录绕过）。
+    """
+    sandbox_root = os.path.abspath(DataPaths.get_data_root())
+    abs_path = os.path.abspath(path)
+    try:
+        is_within = os.path.commonpath([abs_path, sandbox_root]) == sandbox_root
+    except ValueError:  # 跨盘符等无法比较的情况
+        is_within = False
+    if not is_within:
+        raise HTTPException(status_code=403, detail=f"路径不在允许的沙箱目录内: {path}")
+
+
+def _assert_public_url(url: str) -> None:
+    """browser/navigate SSRF 防护：仅允许 http/https 且 host 非本机/内网的 URL。
+
+    复用 browser_proxy._is_forbidden_target（含域名 DNS 解析 + 内网/回环/链路本地
+    IP 范围校验），与 /browser-proxy 代理端点保持同一 SSRF 防护标准。
+    """
+    from urllib.parse import urlparse
+    from app.api.v1.browser_proxy import _is_forbidden_target
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=403, detail="仅允许 http/https 协议的 URL")
+
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host or host == "localhost" or host.endswith(".localhost"):
+        raise HTTPException(status_code=403, detail="禁止访问本机地址")
+
+    if _is_forbidden_target(host):
+        raise HTTPException(status_code=403, detail="禁止访问内网/保留地址")
+
+
 @router.post("/llm/chat")
 async def llm_chat(
     request: LLMRequest,
@@ -131,7 +169,7 @@ async def llm_chat(
 ):
     """LLM对话接口 - 使用用户配置的模型。"""
     try:
-        project_id = request.project_id or _active_project_sessions.get(current_user.id)
+        project_id = request.project_id or get_active_project_id(current_user.id)
         
         config = await _get_llm_config(db, current_user.id, request.config_id)
         
@@ -186,6 +224,7 @@ async def browser_navigate(
     current_user: User = Depends(get_current_user)
 ):
     """浏览器导航接口。"""
+    _assert_public_url(request.url)
     try:
         from playwright.async_api import async_playwright
         
@@ -307,6 +346,7 @@ async def document_read(
     current_user: User = Depends(get_current_user)
 ):
     """文档读取接口。"""
+    _assert_within_sandbox(request.filename)
     try:
         if not os.path.exists(request.filename):
             return {
@@ -353,6 +393,7 @@ async def document_write(
     current_user: User = Depends(get_current_user)
 ):
     """文档写入接口。"""
+    _assert_within_sandbox(request.filename)
     try:
         os.makedirs(os.path.dirname(request.filename) or ".", exist_ok=True)
         
@@ -394,6 +435,7 @@ async def document_search(
     current_user: User = Depends(get_current_user)
 ):
     """文档搜索接口。"""
+    _assert_within_sandbox(request.path)
     try:
         import fnmatch
         

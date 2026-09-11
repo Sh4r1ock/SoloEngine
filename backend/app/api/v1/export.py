@@ -84,6 +84,34 @@ def get_flows_dir() -> str:
     return os.path.join(os.path.dirname(__file__), "..", "..", "..", "flows")
 
 
+def _safe_zip_extract(zip_ref: zipfile.ZipFile, target_dir: str, prefix: str = "") -> None:
+    """安全解压ZIP成员，拦截zip-slip路径遍历。
+
+    对每个成员依次校验：
+    - 拒绝相对路径跳转（"../"）或绝对路径条目
+    - 目标路径必须位于 target_dir 内（commonpath 校验）
+    不合法的条目直接跳过，仅解压合法成员。
+    """
+    target_dir = os.path.normpath(target_dir)
+    for name in zip_ref.namelist():
+        if name.startswith("../") or "/../" in name or os.path.isabs(name):
+            logger.warning(f"[EXPORT] Skipping unsafe zip entry: {name}")
+            continue
+        if prefix and not name.startswith(prefix):
+            continue
+        member_name = name[len(prefix):] if prefix else name
+        dest = os.path.normpath(os.path.join(target_dir, member_name))
+        if os.path.commonpath([target_dir, dest]) != target_dir:
+            logger.warning(f"[EXPORT] Skipping out-of-bounds zip entry: {name}")
+            continue
+        if name.endswith("/") or name.endswith("\\"):
+            os.makedirs(dest, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(dest) or target_dir, exist_ok=True)
+        with open(dest, "wb") as f:
+            f.write(zip_ref.read(name))
+
+
 @router.post("/project/{project_name}")
 async def export_project(
     project_name: str,
@@ -235,6 +263,9 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
                 except:
                     project_name = file.filename.rsplit(".", 1)[0]
 
+                # 净化 project_name，防止含路径分隔符导致路径穿越
+                project_name = os.path.basename(project_name)
+
                 flow_data = json.loads(zf.read("flow.json"))
 
                 flows_dir = get_flows_dir()
@@ -246,17 +277,7 @@ async def import_project(file: UploadFile = File(...), current_user: User = Depe
 
                 skills_dir = DataPaths.get_user_skills_dir(current_user.id)
                 os.makedirs(skills_dir, exist_ok=True)
-
-                for name in zf.namelist():
-                    if name.startswith("skills/"):
-                        rel_path = name[len("skills/"):]
-                        target_path = os.path.join(skills_dir, rel_path)
-                        if name.endswith("/"):
-                            os.makedirs(target_path, exist_ok=True)
-                        else:
-                            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-                            with open(target_path, "wb") as f:
-                                f.write(zf.read(name))
+                _safe_zip_extract(zf, skills_dir, prefix="skills/")
 
                 nodes_count = len(flow_data.get("nodes", []))
                 edges_count = len(flow_data.get("edges", []))

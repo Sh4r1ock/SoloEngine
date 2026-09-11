@@ -109,11 +109,6 @@ export const fileChangesApi = {
     return response;
   },
 
-  getSessionFileChangeSummaries: async (sessionId: string) => {
-    const response = await api.get(`/file-changes/summaries/${sessionId}`);
-    return response;
-  },
-
   revertFileChanges: async (request: RevertRequest) => {
     const response = await api.post('/file-changes/revert', request);
     return response;
@@ -121,16 +116,6 @@ export const fileChangesApi = {
 
   updateChangeStatus: async (request: UpdateStatusRequest) => {
     const response = await api.post('/file-changes/update-status', request);
-    return response;
-  },
-
-  getChangeDiff: async (changeId: string) => {
-    const response = await api.get(`/file-changes/diff/${changeId}`);
-    return response;
-  },
-
-  getSessionStats: async (sessionId: string) => {
-    const response = await api.get(`/file-changes/stats/${sessionId}`);
     return response;
   },
 

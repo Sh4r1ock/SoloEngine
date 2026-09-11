@@ -48,13 +48,6 @@ class ToolRegistry:
     _tool_classes: Dict[str, Type] = {}
     
     @classmethod
-    def register(cls, name: str, tool: Any, config: Dict[str, Any] = None) -> None:
-        cls._tools[name] = tool
-        if config:
-            cls._configs[name] = config
-        logger.debug(f"Registered tool: {name}")
-    
-    @classmethod
     def get_tool(cls, name: str) -> Optional[Any]:
         if name in cls._tools:
             return cls._tools[name]
@@ -159,10 +152,3 @@ class ToolRegistry:
             "description": spec.get("description", ""),
             "parameters": spec.get("parameters", {}),
         }
-
-
-def register_all_tools() -> None:
-    ToolRegistry.discover_tools()
-    for name in ToolRegistry._tool_classes:
-        ToolRegistry.get_tool(name)
-    logger.info(f"Registered {len(ToolRegistry.list_tools())} tools")

@@ -17,13 +17,12 @@ SoloEngine : 追踪工具模块，提供LLM调用追踪和性能监控
 - 性能监控
 - 调试和日志记录
 """
-import time
 import logging
 import functools
 from typing import Callable, Any, Optional, Dict
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from app.core.config import settings
+from SoloAgent.config import settings
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -193,6 +192,79 @@ class TraceManager:
         }
 
 
+def _make_trace_wrapper(func: Callable, is_async: bool) -> Callable:
+    """
+    构造追踪 wrapper（M5：trace_llm async/sync 两段同构逻辑统一）。
+
+    Args:
+        func: 被装饰的函数。
+        is_async: True=async 版（await func），False=sync 版。
+
+    Returns:
+        装饰后的函数（TraceRecord 记录执行时长/参数/结果/错误）。
+    """
+    if is_async:
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            if not TraceManager._enabled:
+                return await func(*args, **kwargs)
+            
+            record = TraceRecord(
+                function_name=func.__name__,
+                start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+                args=args,
+                kwargs=kwargs,
+            )
+            
+            try:
+                result = await func(*args, **kwargs)
+                record.result = result
+                record.success = True
+                return result
+            except Exception as e:
+                record.error = str(e)
+                record.success = False
+                raise
+            finally:
+                record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
+                record.duration_ms = (
+                    datetime.fromisoformat(record.end_time).timestamp() -
+                    datetime.fromisoformat(record.start_time).timestamp()
+                ) * 1000
+                TraceManager.record(record)
+        return async_wrapper
+    
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        if not TraceManager._enabled:
+            return func(*args, **kwargs)
+        
+        record = TraceRecord(
+            function_name=func.__name__,
+            start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
+            args=args,
+            kwargs=kwargs,
+        )
+        
+        try:
+            result = func(*args, **kwargs)
+            record.result = result
+            record.success = True
+            return result
+        except Exception as e:
+            record.error = str(e)
+            record.success = False
+            raise
+        finally:
+            record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
+            record.duration_ms = (
+                datetime.fromisoformat(record.end_time).timestamp() -
+                datetime.fromisoformat(record.start_time).timestamp()
+            ) * 1000
+            TraceManager.record(record)
+    return sync_wrapper
+
+
 def trace_llm(func: Callable) -> Callable:
     """
     LLM调用追踪装饰器
@@ -215,121 +287,8 @@ def trace_llm(func: Callable) -> Callable:
         ... async def call_llm(prompt):
         ...     return await llm.generate(prompt)
     """
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs):
-        if not TraceManager._enabled:
-            return await func(*args, **kwargs)
-        
-        record = TraceRecord(
-            function_name=func.__name__,
-            start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
-            args=args,
-            kwargs=kwargs,
-        )
-        
-        try:
-            result = await func(*args, **kwargs)
-            record.result = result
-            record.success = True
-            return result
-        except Exception as e:
-            record.error = str(e)
-            record.success = False
-            raise
-        finally:
-            record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
-            record.duration_ms = (
-                datetime.fromisoformat(record.end_time).timestamp() -
-                datetime.fromisoformat(record.start_time).timestamp()
-            ) * 1000
-            TraceManager.record(record)
-    
-    @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs):
-        if not TraceManager._enabled:
-            return func(*args, **kwargs)
-        
-        record = TraceRecord(
-            function_name=func.__name__,
-            start_time=datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat(),
-            args=args,
-            kwargs=kwargs,
-        )
-        
-        try:
-            result = func(*args, **kwargs)
-            record.result = result
-            record.success = True
-            return result
-        except Exception as e:
-            record.error = str(e)
-            record.success = False
-            raise
-        finally:
-            record.end_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)).isoformat()
-            record.duration_ms = (
-                datetime.fromisoformat(record.end_time).timestamp() -
-                datetime.fromisoformat(record.start_time).timestamp()
-            ) * 1000
-            TraceManager.record(record)
-    
     import asyncio
-    if asyncio.iscoroutinefunction(func):
-        return async_wrapper
-    return sync_wrapper
+    return _make_trace_wrapper(func, is_async=asyncio.iscoroutinefunction(func))
 
 
-def trace_format(func: Callable) -> Callable:
-    """
-    格式化追踪装饰器
-    
-    用于追踪消息格式化过程，记录执行时间和错误
-    
-    Args:
-        func: 被装饰的函数
-        
-    Returns:
-        装饰后的函数
-        
-    Example:
-        >>> @trace_format
-        ... def format_message(msg):
-        ...     return msg.strip()
-    """
-    @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs):
-        if not TraceManager._enabled:
-            return await func(*args, **kwargs)
-        
-        start_time = time.time()
-        try:
-            result = await func(*args, **kwargs)
-            duration = (time.time() - start_time) * 1000
-            logger.debug(f"Format trace: {func.__name__} - {duration:.2f}ms")
-            return result
-        except Exception as e:
-            logger.error(f"Format trace error: {func.__name__} - {e}")
-            raise
-    
-    @functools.wraps(func)
-    def sync_wrapper(*args, **kwargs):
-        if not TraceManager._enabled:
-            return func(*args, **kwargs)
-        
-        start_time = time.time()
-        try:
-            result = func(*args, **kwargs)
-            duration = (time.time() - start_time) * 1000
-            logger.debug(f"Format trace: {func.__name__} - {duration:.2f}ms")
-            return result
-        except Exception as e:
-            logger.error(f"Format trace error: {func.__name__} - {e}")
-            raise
-    
-    import asyncio
-    if asyncio.iscoroutinefunction(func):
-        return async_wrapper
-    return sync_wrapper
-
-
-__all__ = ['trace_llm', 'trace_format', 'TraceManager', 'TraceRecord']
+__all__ = ['trace_llm', 'TraceManager', 'TraceRecord']

@@ -38,12 +38,12 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import inspect
 
-from ...core.interfaces import IToolExecutor
+from ...core.interfaces import ToolExecutorInterface
 from ...exception import (
     ToolNotFoundError,
     ToolInvalidArgumentsError,
 )
-from app.core.config import settings
+from SoloAgent.config import settings
 
 
 class ToolResponse:
@@ -108,11 +108,11 @@ class ToolResponse:
         return result
 
 
-class ToolkitExecutor(IToolExecutor):
+class ToolkitExecutor(ToolExecutorInterface):
     """
     工具执行器插件。
     
-    实现 IToolExecutor 接口，管理工具注册表并执行工具调用。
+    实现 ToolExecutorInterface 接口，管理工具注册表并执行工具调用。
     支持同步和异步工具函数，自动处理不同类型的返回值。
     
     核心功能：
@@ -123,8 +123,7 @@ class ToolkitExecutor(IToolExecutor):
     
     工具注册方式：
         1. 构造函数传入配置列表
-        2. 调用 register_tool 方法
-        3. 调用 register_function 方法
+        2. 调用 register_function 方法
     
     Example:
         >>> executor = ToolkitExecutor([
@@ -297,24 +296,6 @@ class ToolkitExecutor(IToolExecutor):
             })
         return tools
     
-    async def register_tool(self, tool_spec: Dict[str, Any]) -> None:
-        """
-        注册新工具。
-        
-        通过配置字典注册工具。
-        
-        Args:
-            tool_spec (Dict[str, Any]): 工具规范，包含：
-                - name: 工具名称
-                - function: 工具函数
-                - description: 工具描述
-                - parameters: 参数规范
-        
-        Note:
-            此方法是 _register_tool_from_config 的异步包装。
-        """
-        self._register_tool_from_config(tool_spec)
-    
     def _register_tool_from_config(self, config: Dict[str, Any]) -> None:
         """
         从配置注册工具。
@@ -429,23 +410,3 @@ class ToolkitExecutor(IToolExecutor):
             parameters[param_name] = param_info
         
         return parameters
-
-
-async def search_tool(query: str, limit: int = 5) -> ToolResponse:
-    """
-    示例搜索工具。
-    
-    提供基本的搜索功能占位实现。
-    实际使用时应替换为真实的搜索服务。
-    
-    Args:
-        query (str): 搜索查询。
-        limit (int, optional): 结果数量限制。默认为 5。
-    
-    Returns:
-        ToolResponse: 搜索结果响应。
-    
-    Note:
-        这是一个示例工具，返回模拟的搜索结果。
-    """
-    return ToolResponse(content=f"Search results for '{query}' (limit: {limit})")

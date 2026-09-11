@@ -20,7 +20,7 @@ SoloEngine : 工具系统模块入口，统一导出各类工具
     - Read: 文件读取工具
     - Write: 文件写入工具
     - DeleteFile: 文件删除工具
-    - LS: 目录列表工具
+    - Ls: 目录列表工具
     - SearchReplace: 搜索替换工具
     - WebSearch: 网络搜索工具
     - WebFetch: 网页获取工具
@@ -61,7 +61,7 @@ from .toolkit_executor import ToolkitExecutor, ToolResponse
 
 from .agent import Skill, Task, MCP
 from .command import RunCommand, CheckCommandStatus, StopCommand, GetDiagnostics
-from .file import Read, Write, DeleteFile, LS, SearchReplace
+from .file import Read, Write, DeleteFile, Ls, SearchReplace
 from .network import WebSearch, WebFetch
 from .other import EnterPlanMode, ExitPlanMode, OpenPreview
 from .search import SearchCodebase, Grep, Glob
@@ -80,7 +80,7 @@ __all__ = [
     "Read",
     "Write",
     "DeleteFile",
-    "LS",
+    "Ls",
     "SearchReplace",
     "WebSearch",
     "WebFetch",

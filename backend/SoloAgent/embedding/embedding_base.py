@@ -35,9 +35,10 @@ SoloEngine : 嵌入模型基类模块
     - response = await model(["你好", "世界"])
 """
 
-from typing import Any
+from typing import Any, List, Dict
 
 from .embedding_response import EmbeddingResponse
+from .embedding_usage import EmbeddingUsage
 
 
 class EmbeddingModelBase:
@@ -101,30 +102,118 @@ class EmbeddingModelBase:
 
     async def __call__(
         self,
-        *args: Any,
+        text: List[Any],
         **kwargs: Any,
     ) -> EmbeddingResponse:
         """
-        调用嵌入API生成向量
+        公共嵌入调用骨架（R11：openai/ollama __call__ 同构逻辑统一收拢到基类）。
 
-        这是嵌入模型的主要接口方法，接收文本列表，返回嵌入响应。
+        流程：输入清理 → 组装调用参数（子类 _build_embedding_kwargs 差异）→
+        缓存检索 → 调用 API（子类 _call_embedding_api 差异）→ 缓存写入 →
+        组装 EmbeddingResponse。子类只实现两个差异钩子，不再各自重复本骨架。
 
         Args:
-            *args: 位置参数，通常是文本列表
-            **kwargs: 关键字参数，可包含input等
+            text: 输入文本列表
+            **kwargs: 额外的关键字参数
 
         Returns:
-            EmbeddingResponse: 嵌入响应，包含embeddings、usage、model
+            EmbeddingResponse: 嵌入响应
 
         Raises:
-            NotImplementedError: 子类未实现此方法时抛出
+            ValueError: 输入格式不支持时抛出
 
         示例:
             >>> response = await model(["你好", "世界"])
-            >>> for embedding in response.embeddings:
-            ...     print(len(embedding))  # 1536
+        """
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from SoloAgent.config import settings
+
+        gather_text = []
+        for _ in text:
+            if isinstance(_, dict) and "text" in _:
+                gather_text.append(_["text"])
+            elif isinstance(_, str):
+                gather_text.append(_)
+            else:
+                raise ValueError(
+                    "Input text must be a list of strings or TextBlock dicts.",
+                )
+
+        call_kwargs = self._build_embedding_kwargs(gather_text, kwargs)
+
+        cache = getattr(self, "embedding_cache", None)
+        if cache:
+            cached_embeddings = await cache.retrieve(
+                identifier=call_kwargs,
+            )
+            if cached_embeddings:
+                return EmbeddingResponse(
+                    embeddings=cached_embeddings,
+                    usage=EmbeddingUsage(
+                        tokens=0,
+                        time=0,
+                    ),
+                    source="cache",
+                )
+
+        start_time = datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE))
+        embeddings, token_usage = await self._call_embedding_api(call_kwargs)
+        time = (datetime.now(ZoneInfo(settings.DEFAULT_TIMEZONE)) - start_time).total_seconds()
+
+        if cache:
+            await cache.store(
+                identifier=call_kwargs,
+                embeddings=embeddings,
+            )
+
+        usage_kwargs: Dict[str, Any] = {}
+        if token_usage is not None:
+            usage_kwargs["tokens"] = token_usage
+        return EmbeddingResponse(
+            embeddings=embeddings,
+            usage=EmbeddingUsage(
+                time=time,
+                **usage_kwargs,
+            ),
+        )
+
+    def _build_embedding_kwargs(
+        self,
+        gather_text: List[str],
+        kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        组装嵌入 API 调用参数（R11：子类差异钩子，默认 input/model/dimensions）。
+
+        Args:
+            gather_text: 清理后的输入文本列表
+            kwargs: 调用方额外参数
+
+        Returns:
+            Dict[str, Any]: API 调用参数
+        """
+        return {
+            "input": gather_text,
+            "model": self.model_name,
+            "dimensions": self.dimensions,
+            **kwargs,
+        }
+
+    async def _call_embedding_api(
+        self,
+        call_kwargs: Dict[str, Any],
+    ):
+        """
+        调用底层嵌入 API 并返回向量与 token 用量（R11：子类差异钩子）。
+
+        Args:
+            call_kwargs: 组装后的 API 调用参数
+
+        Returns:
+            tuple: (embeddings 列表, token_usage 或 None——None 表示该 API 不提供 token 用量)
         """
         raise NotImplementedError(
             f"The {self.__class__.__name__} class does not implement "
-            f"the __call__ method.",
+            f"the _call_embedding_api method.",
         )

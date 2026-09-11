@@ -20,7 +20,7 @@ SoloEngine : OpenAI格式化器，将消息转换为OpenAI API格式
     - os: 文件操作
     - urllib.parse: URL解析
     - requests: HTTP请求
-    - .truncated_formatter_base: 截断格式化器基类
+    - .formatter_base: 格式化器基类
     - ..message: 消息类型
     - ..model.model_response: 响应类
 
@@ -37,7 +37,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from .truncated_formatter_base import TruncatedFormatterBase
+from .formatter_base import FormatterBase
 from ..utils.logging import logger
 from ..message import (
     Msg,
@@ -217,7 +217,7 @@ def _to_openai_audio_data(source: URLSource | Base64Source) -> dict:
     raise TypeError(f"Unsupported audio source: {source['type']}.")
 
 
-class OpenAIChatFormatter(TruncatedFormatterBase):
+class OpenAIChatFormatter(FormatterBase):
     """
     OpenAI聊天格式化器类
 
@@ -465,7 +465,12 @@ class OpenAIChatFormatter(TruncatedFormatterBase):
                 logger.info(f"    Msg {i} metadata keys: {list(msg.metadata.keys())}")
                 if has_original:
                     original = msg.metadata['original_model_message']
-                    logger.info(f"    Original message: role={original.get('role')}, has_rc={'reasoning_content' in original}, has_tc={'tool_calls' in original}")
+                    if isinstance(original, dict):
+                        logger.info(f"    Original message: role={original.get('role')}, has_rc={'reasoning_content' in original}, has_tc={'tool_calls' in original}")
+                    else:
+                        # SDK 对象（dashscope/anthropic Message）非 dict，无 .get() / in 操作，
+                        # 用 getattr 安全取值，避免抛 TypeError
+                        logger.info(f"    Original message (sdk object, type={type(original).__name__}): role={getattr(original, 'role', None)}")
                     logger.info(f"    Original message full: {original}")
         
         formatted = await self._format(msgs)
