@@ -1,0 +1,36 @@
+/** 登录/注册页文案。 */
+import { defineDictionary } from './define.ts'
+
+export const login = defineDictionary({
+  title: '登录 SoloEngine',
+  subtitle: '使用框架层账号进入产品页面',
+  brandTagline: '框架层管理面',
+  usernameLabel: '用户名',
+  usernamePlaceholder: '请输入用户名',
+  passwordLabel: '口令',
+  passwordPlaceholder: '请输入口令',
+  submit: '登录',
+  submitting: '登录中…',
+  registerSubmit: '注册并登录',
+  registerSubmitting: '注册中…',
+  registerToggle: '还没有账号？注册',
+  backToLogin: '已有账号？登录',
+  errorMissingFields: '用户名与口令均为必填',
+  registerHint: '注册成功后会自动登录并进入画布列表',
+}, {
+  title: 'Sign in to SoloEngine',
+  subtitle: 'Use your framework account to open the product pages',
+  brandTagline: 'Framework management surface',
+  usernameLabel: 'Username',
+  usernamePlaceholder: 'Enter your username',
+  passwordLabel: 'Password',
+  passwordPlaceholder: 'Enter your password',
+  submit: 'Sign in',
+  submitting: 'Signing in…',
+  registerSubmit: 'Register and sign in',
+  registerSubmitting: 'Registering…',
+  registerToggle: 'No account yet? Register',
+  backToLogin: 'Already have an account? Sign in',
+  errorMissingFields: 'Both username and password are required',
+  registerHint: 'A successful registration signs you in and opens the canvas list',
+})

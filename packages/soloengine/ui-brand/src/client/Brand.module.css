@@ -1,0 +1,10 @@
+.mark {
+  display: block;
+  color: var(--dsw-alias-brand-primary);
+}
+
+.name {
+  font: var(--dsw-font-s-strong-14);
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+}

@@ -1,0 +1,110 @@
+﻿.root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: var(--se-space-2);
+}
+
+.strip {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  overflow-x: auto;
+}
+
+.chip {
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-xxs-12);
+  padding: var(--se-space-1) var(--se-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chipActive {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
+.meta {
+  display: flex;
+  gap: var(--se-space-2);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.screen {
+  flex: 1;
+  min-height: 120px;
+  margin: 0;
+  padding: var(--se-space-2);
+  overflow: auto;
+  background: var(--dsw-alias-bg-layer-2);
+  border-radius: var(--se-radius-sm);
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+}
+
+.note {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.replay {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.replayHead {
+  display: flex;
+  justify-content: space-between;
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.replayEntry {
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
+  padding: var(--se-space-2);
+}
+
+.replayMeta {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.replayBody {
+  margin: 0;
+  font-family: var(--dsw-font-family);
+  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.state,
+.error {
+  padding: var(--se-space-3);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+}

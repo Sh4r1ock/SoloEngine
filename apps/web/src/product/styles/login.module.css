@@ -1,0 +1,108 @@
+/* 登录/注册页。 */
+
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: var(--se-space-6);
+  box-sizing: border-box;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+  width: 100%;
+  max-width: 380px;
+  padding: var(--se-space-6);
+  border-radius: var(--se-radius-lg);
+  background-color: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-elevation-panel);
+  border: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  color: var(--dsw-alias-brand-text);
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+}
+
+.brandTitle {
+  font: var(--dsw-font-l-20);
+}
+
+.brandTagline {
+  font: var(--dsw-font-xs-13);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.title {
+  margin: 0;
+  font: var(--dsw-font-base-strong-16);
+  color: var(--dsw-alias-label-primary);
+}
+
+.subtitle {
+  margin: 0;
+  font: var(--dsw-font-s-14);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+}
+
+.label {
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+}
+
+.hint {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-caption);
+}
+
+.linkButton {
+  border: 0;
+  padding: 0;
+  background-color: transparent;
+  color: var(--dsw-alias-link);
+  font: var(--dsw-font-s-14);
+  cursor: pointer;
+  text-align: left;
+  transition: color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.linkButton:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linkButton {
+    transition: none;
+  }
+}

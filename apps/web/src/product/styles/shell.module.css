@@ -1,0 +1,130 @@
+/* 应用外壳：左侧栏导航 + 内容区 + 底部主题/语言切换。 */
+
+.shell {
+  display: grid;
+  grid-template-columns: 216px 1fr;
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-color: var(--dsw-specific-sidebar-fill);
+  border-right: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-4);
+  color: var(--dsw-alias-brand-text);
+}
+
+.brandText {
+  font: var(--dsw-font-base-strong-16);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  padding: var(--se-space-2) var(--se-space-3);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-2) var(--se-space-3);
+  border: 0;
+  border-radius: var(--se-radius-sm);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: var(--dsw-font-s-14);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
+    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.navItem:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.navItemActive {
+  background-color: var(--dsw-specific-sidebar-nav-item-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+  padding: var(--se-space-3);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.footerGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+}
+
+.footerLabel {
+  font: var(--dsw-font-xxs-strong-12);
+  color: var(--dsw-alias-label-caption);
+}
+
+.footerRow {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  flex-wrap: wrap;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-2);
+}
+
+.userName {
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.mainScroll {
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.mainBleed {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navItem {
+    transition: none;
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "@soloengine/framework",
+  "version": "0.1.0",
+  "description": "SoloEngine 框架层：Express REST + SQLite 业务库 + AES-256-GCM 加密 + 账号域。不进 cordis 插件树（PRD-01 FR-ARCH-003）。",
+  "private": true,
+  "type": "module",
+  "main": "lib/types/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/types/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "src/db/schema.sql"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
+    "@soloengine/agent-compiler": "workspace:*",
+    "@soloengine/types": "workspace:*",
+    "diff": "^9.0.0",
+    "express": "^5.1.0",
+    "fflate": "^0.8.2",
+    "js-yaml": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3"
+  }
+}

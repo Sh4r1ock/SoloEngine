@@ -1,0 +1,21 @@
+{
+  "name": "@soloengine/agent-compiler",
+  "version": "0.1.0",
+  "description": "SoloEngine 画布编译器：画布校验 + 拓扑 + 物化标准预设 + fail loud + tool-map（不产生中间产物文件）。",
+  "private": true,
+  "type": "module",
+  "main": "lib/types/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/types/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@soloengine/types": "workspace:*"
+  }
+}

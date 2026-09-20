@@ -1,0 +1,17 @@
+{
+  "name": "@soloengine/launch",
+  "version": "0.1.0",
+  "description": "SoloEngine 启动器：install/build 编排、profile 初始化、start/stop/status/doctor、端口占用处理与就绪输出。",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "soloengine": "./bin.mjs"
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin.mjs"
+  ],
+  "license": "MIT"
+}

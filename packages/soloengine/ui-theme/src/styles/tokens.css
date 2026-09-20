@@ -1,0 +1,43 @@
+/**
+ * SoloEngine 设计语言阶梯 token（`--se-*`）——运行面板与框架层产品页面共用的**单一真源**。
+ *
+ * 依据《SoloEngine 前端样式与设计语言规范》§3 / §4 / §9 与 PRD-07 FR-UI-021：
+ * DSH 已 token 化的维度（颜色/字号/阴影/动效/边框/交互态）照搬复用 `--dsw-*`；DSH 未抽象的
+ * 三个维度（间距阶梯、圆角半径、z-index 叠加层）由 SoloEngine 自建统一阶梯。取值从 DSH 组件
+ * 实际值归纳，风格统一不突兀。
+ *
+ * 消费方式（一份定义、两处消费）：
+ * - 运行面板：`@soloengine/ui-theme/client` 把本文件作为插件自有样式注入文档；
+ * - 产品页面：`apps/web` 直接导入本文件（同一个物理文件，不做第二份数值副本）。
+ *
+ * 本文件只定义 `--se-*`；`--dsw-*` 一律由 DSH 主题样式表提供，禁止在此复制其数值。
+ */
+
+:root {
+  /* ── 间距阶梯（§3；与 DSH 组件实际间距主频值兼容）────────────────────────── */
+  --se-space-0: 0;
+  --se-space-1: 4px;
+  --se-space-2: 8px;
+  --se-space-3: 12px;
+  --se-space-4: 16px;
+  --se-space-5: 24px;
+  --se-space-6: 32px;
+  --se-space-8: 48px;
+
+  /* ── 圆角阶梯（§4；机制照搬 corner-shape，半径自建）────────────────────── */
+  --se-radius-xs: 4px;
+  --se-radius-sm: 8px;
+  --se-radius-md: 12px;
+  --se-radius-lg: 18px;
+  --se-radius-xl: 24px;
+  --se-radius-full: 999px;
+
+  /* ── z-index 叠加层（§9；portal 菜单与 Toast 必须压过 modal）────────────── */
+  --se-z-base: 0;
+  --se-z-pane: 10;
+  --se-z-handle: 11;
+  --se-z-overlay: 20;
+  --se-z-dropdown: 100;
+  --se-z-modal: 1000;
+  --se-z-portal: 1100;
+}

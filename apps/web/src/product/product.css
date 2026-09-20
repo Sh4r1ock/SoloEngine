@@ -1,0 +1,24 @@
+/*
+ * 产品页面样式入口。只做两件事：
+ * 1) 依赖 DSH 六个 token 样式表与 SoloEngine 设计语言阶梯（由 `dsh-tokens.ts`
+ *    以模块导入先行加载，原因见该文件头部说明）；阶梯数值的**唯一真源**是
+ *    `@soloengine/ui-theme/src/styles/tokens.css`（运行面板注入的是同一个文件）。
+ *
+ * 组件样式一律走 CSS Modules，颜色只用语义 token。
+ */
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-base);
+}
+
+#root {
+  height: 100%;
+}

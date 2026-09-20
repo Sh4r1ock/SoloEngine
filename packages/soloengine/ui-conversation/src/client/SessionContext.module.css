@@ -1,0 +1,26 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.value {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--se-radius-full);
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.dotIdle {
+  background: var(--dsw-alias-label-tertiary);
+}
