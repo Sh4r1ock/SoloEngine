@@ -12,6 +12,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
 import { FrameworkError, toView, type UserRow } from './accounts.ts'
+import { NODE_PRESETS } from './canvas.ts'
 
 /** 一条路由的描述（供 `/api/solo/routes` 取证与文档四向映射）。 */
 export interface RouteDescriptor {
@@ -227,9 +228,16 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('auth-logout', 'post', '/auth/logout', '登出（客户端丢弃令牌，服务端记录）', [], (req, res) => {
-    // 无服务端会话表：令牌自包含且短期有效；登出为客户端丢弃 + 结构化确认。
-    res.json({ ok: true, loggedOut: true, user: req.soloUser === undefined ? null : toView(req.soloUser) })
+  route('auth-logout', 'post', '/auth/logout', '登出（幂等：令牌已失效同样成功；带有效令牌时回显用户）', [], (req, res) => {
+    // 无服务端会话表：令牌自包含且短期有效；登出是客户端丢弃 + 结构化确认。
+    // 故**刻意不挂 authenticate**——令牌已过期的客户端也要能登出（否则用户卡在「退不出去」）。
+    // 但 `user` 必须是真信息：这里按需校验请求里带的令牌，而不是读一个永不存在的 `req.soloUser`
+    // （该字段只在 authenticate 中间件跑过之后才存在，不挂它时恒为 undefined）。
+    const header = req.header('authorization') ?? ''
+    const presented = header.startsWith('Bearer ') ? header.slice(7) : ''
+    const payload = presented === '' ? undefined : runtime.tokens.verify(presented, 'access')
+    const row = payload === undefined ? undefined : accounts.byId(payload.sub)
+    res.json({ ok: true, loggedOut: true, user: row === undefined ? null : toView(row) })
   })
 
   route('auth-me', 'get', '/auth/me', '当前用户资料', [authenticate], (req, res) => {
@@ -353,6 +361,25 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
       const user = req.soloUser as UserRow
       const body = req.body as { name?: string; version?: string }
       res.status(201).json({ ok: true, skill: runtime.skills.create(user.id, user.username, String(body.name ?? ''), body.version) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('skills-notes-get', 'get', '/skills/:id/notes', '文件备注读取（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, notes: runtime.skills.getNotes(user.id, String(req.params.id)) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('skills-notes-put', 'put', '/skills/:id/notes', '文件备注保存（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { notes?: Record<string, string> }
+      res.json({ ok: true, notes: runtime.skills.setNotes(user.id, String(req.params.id), body.notes ?? {}) })
     } catch (error) {
       failure(res, error)
     }
@@ -526,6 +553,59 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
+  route('mcp-tool-active', 'post', '/mcp/:id/tools/:tool/active', '单工具启停（PRD-05 FR-MCP-008：停用的工具在挂载时从可见集合收紧）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { active?: boolean }
+      const row = runtime.mcp.setToolActive(user.id, String(req.params.id), String(req.params.tool), body.active !== false)
+      res.json({ ok: true, server: runtime.mcp.view(row) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('mcp-upload', 'post', '/mcp/upload', '上传建服务（PRD-05 FR-MCP-007：代码/包落用户隔离目录并物化为可运行 stdio 服务器）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { name?: string; kind?: string; code?: string; archiveBase64?: string; description?: string }
+      const row = runtime.mcp.createUploaded(user.id, user.username, {
+        name: body.name, kind: body.kind, code: body.code, archiveBase64: body.archiveBase64, description: body.description,
+      })
+      res.status(201).json({ ok: true, server: runtime.mcp.view(row) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('mcp-files-list', 'get', '/mcp/:id/files', '列上传服务器的文件（在线查看）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, files: runtime.mcp.listServerFiles(user.id, user.username, String(req.params.id)) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('mcp-file-read', 'get', '/mcp/:id/file', '读上传服务器的单个文件（在线编辑的读取侧）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const path = typeof req.query.path === 'string' ? req.query.path : ''
+      res.json({ ok: true, file: runtime.mcp.readServerFile(user.id, user.username, String(req.params.id), path) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('mcp-file-write', 'put', '/mcp/:id/file', '写上传服务器的单个文件（在线编辑落盘）', [authenticate], (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { path?: string; content?: string }
+      res.json({ ok: true, file: runtime.mcp.writeServerFile(user.id, user.username, String(req.params.id), String(body.path ?? ''), String(body.content ?? '')) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
   route('mcp-call-tool', 'post', '/mcp/:id/call', '单工具试运行（真实结果或结构化错误）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
@@ -541,6 +621,12 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('canvases-list', 'get', '/canvases', '列当前用户画布（含公共模板）', [authenticate], (req, res) => {
     const user = req.soloUser as UserRow
     res.json({ ok: true, canvases: runtime.canvas.list(user.id).map(row => runtime.canvas.view(row)) })
+  })
+
+  // 三类节点预设（预填模板，PRD-02 FR-CANVAS-011「预设即预填」）：唯一真源在本模块的
+  // NODE_PRESETS，编辑器新增节点时按类型取用（前端不另立第二份清单）。
+  route('canvases-presets', 'get', '/canvases/meta/presets', '三类节点预设（预填模板，FR-CANVAS-011）', [authenticate], (_req, res) => {
+    res.json({ ok: true, presets: NODE_PRESETS })
   })
 
   route('canvases-create', 'post', '/canvases', '新建画布（三类节点预设由前端选择）', [authenticate], (req, res) => {
@@ -1015,6 +1101,27 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     try {
       const user = req.soloUser as UserRow
       res.json({ ok: true, ...await runtime.runs.usage(user.id) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  // 用量导出（NFR-OBS-002：聚合输出导出可用）。CSV 两节：按模型聚合 + 按会话明细；
+  // 数据与 /usage 同一派生（事件流折叠），不落第二副本。
+  route('usage-export', 'get', '/usage/export', '用量导出（CSV：按模型聚合 + 按会话明细）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const { sessions, byModel } = await runtime.runs.usage(user.id)
+      const lines: string[] = ['section,llm_config_id,agentic_flow_id,session_key,requests,input_tokens,output_tokens,total_tokens']
+      for (const row of byModel) {
+        lines.push(['byModel', row.llm_config_id, '', '', String(row.requests), String(row.inputTokens), String(row.outputTokens), String(row.totalTokens)].join(','))
+      }
+      for (const row of sessions) {
+        lines.push(['bySession', row.llm_config_id ?? '', row.agentic_flow_id, row.sessionKey, String(row.requests), String(row.inputTokens), String(row.outputTokens), String(row.totalTokens)].join(','))
+      }
+      res.setHeader('content-type', 'text/csv; charset=utf-8')
+      res.setHeader('content-disposition', 'attachment; filename="soloengine-usage.csv"')
+      res.send(`${lines.join('\n')}\n`)
     } catch (error) {
       failure(res, error)
     }

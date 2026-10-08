@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // 事件族与投影键的声明合并（soloengine/preview 事件、soloengine.runContext 投影）。
 import type {} from '@soloengine/open-preview/types'
 import type {} from '@soloengine/types'
+import { ChangesSummary, type ChangesFace } from './ChangesSummary.tsx'
 import { PreviewCard } from './PreviewCard.tsx'
 import { PreviewList, type PreviewFace } from './PreviewList.tsx'
 import { SessionContext } from './SessionContext.tsx'
@@ -77,5 +78,15 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
     { name: 'conversation.session.header.utilities', id: 'soloengine.previews', locale: NS, inject: previewFace },
     PreviewList,
+  ))
+  // 消息区变更汇总条（PRD-09 FR-FC-006 三处同源）：读同一份台账，点击开变更面板。
+  const changesFace = (): ChangesFace => ({
+    openChanges: () => {
+      ctx.sidebarRight.openTab('soloengine-changes', { revealIfOpened: true })
+    },
+  })
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
+    { name: 'conversation.session.header.utilities', id: 'soloengine.changes-summary', locale: NS, inject: changesFace },
+    ChangesSummary,
   ))
 }

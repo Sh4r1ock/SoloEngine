@@ -372,12 +372,25 @@ export class LlmConfigService {
       return { ok: false, kind: classifyHttpFailure(response.status), message: text.slice(0, 400), latency_ms: latency, status: response.status }
     } catch (error) {
       const latency = Date.now() - started
-      if (error instanceof Error && error.name === 'AbortError') {
-        return { ok: false, kind: 'timeout', message: `request exceeded ${String(row.timeout ?? 30)}s`, latency_ms: latency }
+      // 实测（test/soloengine/fetch-error-probe.mjs）：不可达主机的传输超时由 undici 抛
+      // `TimeoutError`（code 23，"aborted due to timeout"），并非我们自己的 `AbortError`。
+      // 只认 AbortError 会把这类真实超时错判成「未分类」。
+      if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+        // 如实报出触发方与限额：AbortError=我们的 signal 到点；TimeoutError=undici 自身传输超时。
+        const trigger = error.name === 'AbortError' ? 'request timed out' : `transport timed out (${error.message})`
+        return { ok: false, kind: 'timeout', message: `${trigger} · limit ${String(row.timeout ?? 30)}s`, latency_ms: latency }
       }
       // 失败归因必须看整条错误链：undici 的 `TypeError: fetch failed` 把真正的原因放在 `cause`，
       // 双栈主机名还会包一层 AggregateError（逐地址原因在 `errors[]`）；只看一层会全部落到 unknown。
       const chain = failureChain(error)
+      // 传输层超时通常以 `TypeError: fetch failed` 为外壳，真正原因埋在 cause 链里
+      // （undici `TimeoutError`：code 23 / "The operation was aborted due to timeout"）。
+      // 实测（test/soloengine/fetch-error-probe.mjs）：只测最外层 name 会把它错判成 unknown。
+      // undici 自己的连接超时是 `ConnectTimeoutError`（code UND_ERR_CONNECT_TIMEOUT，
+      // message "Connect Timeout Error"）——与 AbortSignal 的写法都不同，三种都要认。
+      if (/aborted due to timeout|TimeoutError|ConnectTimeoutError|Connect Timeout Error|UND_ERR_CONNECT_TIMEOUT/i.test(chain.text)) {
+        return { ok: false, kind: 'timeout', message: `transport timed out (${chain.text.slice(0, 200)})`, latency_ms: latency }
+      }
       if (/ENOTFOUND|EAI_AGAIN|EAI_FAIL|ERR_INVALID_URL|bad port/i.test(chain.text)) {
         return { ok: false, kind: 'address', message: `endpoint not usable (${chain.text.slice(0, 200)})`, latency_ms: latency }
       }

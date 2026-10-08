@@ -22,3 +22,32 @@ body {
 #root {
   height: 100%;
 }
+
+/*
+ * 键盘焦点环（WCAG 2.4.7 / R11 + R15）。
+ *
+ * 产品层此前只依赖 UA 的 `outline: auto`——它的颜色是固定的近黑 rgb(16,16,16)，
+ * 深色主题下与背景 rgb(21,21,23) 同色，键盘焦点**完全不可见**
+ * （实测：聚焦前后截图差 浅色 390px / 深色 0px）。
+ * 这里用与 ui-primitives 输入框聚焦同源的语义 token 补一条产品层焦点环，
+ * 该 token 随主题翻转（浅色近黑 rgb(15,17,21) / 深色近白 rgb(249,250,251)）。
+ * DSH 原生包禁改，故落在产品层。
+ */
+:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+}
+
+/*
+ * 成功通知文字色（NoticeLine .successLine）：DSH 的 state-success-primary
+ * （green-500 rgb(34,197,94)）在浅色底上实测只有 2.28:1（WCAG 1.4.3 需 4.5:1），
+ * 平台没有更深的成功文字别名，DSH 原生包禁改——故在产品层定义随主题翻转的别名：
+ * 浅色用平台静态 green-900（rgb(35,60,44)，白底 12:1），深色沿用 primary
+ * （green-500 在深底约 7.4:1，达标）。颜色都取自平台既有 token，不发明新色值。
+ */
+body {
+  --se-notice-success-text: var(--dsw-alias-state-success-primary);
+}
+
+body:not([data-ds-dark-theme]) {
+  --se-notice-success-text: var(--dsw-static-green-900);
+}

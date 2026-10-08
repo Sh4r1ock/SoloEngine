@@ -120,6 +120,14 @@ export interface WorkspaceWriteObservation {
   userId: string
   /** 运行项目 id（沙箱根的身份）。 */
   projectId: string
+  /**
+   * 归属会话键；产品层的写路由没有会话上下文时为 `null`。
+   *
+   * 台账查询按 `session_id` 过滤（`ChangeLedgerService.list`），所以这里不带会话键的记录
+   * **在任何面板里都不可见**——PRD-09 FR-FC-001 要求「台账出现 origin='user' 的记录」，
+   * 而排除项只是「不入 agent 回合视图、不参与按轮次撤回」（由 `turn=null` 保证，与会话归属无关）。
+   */
+  sessionKey: string | null
   /** 文件绝对路径。 */
   filePath: string
   /** 变更前内容（`null` = 变更前不存在）。 */
@@ -315,7 +323,7 @@ export class WorkspaceService {
    * @param projectId - 运行项目 id。
    * @param target - 文件路径。
    * @param text - 全文内容。
-   * @param options - 期望 mtime 与来源地址。
+   * @param options - 期望 mtime、是否仅允许新建、来源地址。
    * @returns 写入结果。
    */
   write(
@@ -323,7 +331,7 @@ export class WorkspaceService {
     projectId: string,
     target: string,
     text: string,
-    options: { expectedMtimeMs?: number | undefined; remoteAddress?: string | undefined },
+    options: { expectedMtimeMs?: number | undefined; createOnly?: boolean | undefined; sessionKey?: string | undefined; remoteAddress?: string | undefined },
   ): WorkspaceWriteResult {
     const bytes = Buffer.byteLength(text, 'utf8')
     if (bytes > MAX_WRITE_BYTES) {
@@ -337,11 +345,16 @@ export class WorkspaceService {
     if (!existsDirectory(parent)) {
       throw new FrameworkError(400, 'PARENT_MISSING', `parent directory ${parent} does not exist; create it first`)
     }
+    // 新建语义（文件树「新建文件」）：已存在即拒绝，绝不静默清空既有内容。
+    // mtime 乐观锁表达不了「必须不存在」（判据 4 只在目标存在时校验），故单列判据。
+    if (options.createOnly === true && gated.exists) {
+      throw new FrameworkError(409, 'PATH_EXISTS', `${target} already exists; a create refuses to overwrite it`)
+    }
     // 变更前内容（供变更台账记 origin='user' 的抓拍；读失败按不存在处理）。
     const before = gated.exists ? readFileSync(gated.path, 'utf8') : null
     writeFileSync(gated.path, text, 'utf8')
     const stat = statSync(gated.path)
-    this.observe({ userId, projectId, filePath: gated.path, before, after: text })
+    this.observe({ userId, projectId, sessionKey: options.sessionKey ?? null, filePath: gated.path, before, after: text })
     return {
       path: toWorkspacePath(gated.root, gated.path),
       bytes: stat.size,
@@ -408,6 +421,7 @@ export class WorkspaceService {
    * @param target - 目标路径。
    * @param confirm - 双确认标志。
    * @param remoteAddress - 请求来源。
+   * @param sessionKey - 归属会话键（供台账按会话可查；产品层无会话上下文时省略）。
    * @returns 被删除的相对路径与类型。
    */
   remove(
@@ -416,13 +430,14 @@ export class WorkspaceService {
     target: string,
     confirm: boolean,
     remoteAddress?: string,
+    sessionKey?: string,
   ): { path: string; kind: 'file' | 'directory' } {
     requireConfirm(confirm, 'delete', target)
     const gated = this.gate(userId, projectId, target, { remoteAddress, mustExist: true })
     const kind: 'file' | 'directory' = statSync(gated.path).isDirectory() ? 'directory' : 'file'
     const before = kind === 'file' ? readFileSync(gated.path, 'utf8') : null
     rmSync(gated.path, { recursive: kind === 'directory', force: false })
-    if (kind === 'file') this.observe({ userId, projectId, filePath: gated.path, before, after: null })
+    if (kind === 'file') this.observe({ userId, projectId, sessionKey: sessionKey ?? null, filePath: gated.path, before, after: null })
     return { path: toWorkspacePath(gated.root, gated.path), kind }
   }
 

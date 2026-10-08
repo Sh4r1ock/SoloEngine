@@ -2,6 +2,7 @@
  * 框架层 REST 客户端：统一 `request()`，带 Bearer 访问令牌，失败抛结构化错误。
  * 无回退、无静默降级：任何失败都以 ApiError 抛出，由调用方呈现在界面上。
  */
+import { t } from './i18n.ts'
 
 /** 框架层 REST 前缀。 */
 const API_PREFIX = '/api/solo'
@@ -61,7 +62,8 @@ export interface RequestOptions {
   method?: HttpMethod
   body?: unknown
   query?: Record<string, string | number | boolean | undefined>
-  signal?: AbortSignal
+  /** 与 query 值约定一致：显式接受 undefined（exactOptionalPropertyTypes 下调用方常以可空变量直传）。 */
+  signal?: AbortSignal | undefined
 }
 
 /** 拼接查询串（undefined 项省略）。 */
@@ -133,7 +135,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw new ApiError('BAD_RESPONSE', `${method} ${path} is not JSON: ${String(error)}`, response.status)
   }
   if (!isEnvelope(parsed)) throw new ApiError('BAD_ENVELOPE', `${method} ${path} has no ok flag`, response.status)
-  if (parsed.ok !== true) throw await failure(new Response(text, { status: response.status }))
+  if (!parsed.ok) throw await failure(new Response(text, { status: response.status }))
   return parsed as T
 }
 
@@ -154,9 +156,35 @@ export async function requestBlob(path: string): Promise<Blob> {
   return await response.blob()
 }
 
-/** 把任意异常转成可展示文案（ApiError 带 code，其余用 message）。 */
+/**
+ * 是否为「请求根本没到达服务端」这一类失败（离线、DNS、连接被中止）。
+ *
+ * 界面必须把它与业务错误分开：`message` 是引擎原文（实测中文界面直出 "Failed to fetch"），
+ * 读不懂也给不出路（R8 机器串禁止直出 / R17 可操作出路 / R31 离线区分）。
+ * 分类只在这里做一次，`describeError` 据此给出成品句子，调用方无需各写一份。
+ * @param error - 任意异常。
+ * @returns 是否为网络层失败。
+ */
+function isNetworkFailure(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'NETWORK'
+}
+
+/**
+ * 把任意异常转成可展示文案。
+ *
+ * `ApiError.code` 是机器可读标识（供调用方按码分支），**禁止直出到界面**（R8：机器码直出）；
+ * 界面句子的前缀（哪一份数据没拿到）由调用方负责，这里只提供人类可读的原因。
+ * 仅当 message 为空时才回落 code，保证错误始终有可读内容。
+ *
+ * 网络层失败的原因串本身就是引擎原文，任何调用方都译不出用户读得懂的话；实测全站几十个
+ * `产品文案 — describeError(…)` 位点都会把它原样打到界面上，所以分类在这一处完成并直接
+ * 给出成品句子（离线 / 无法连接服务端，R31），而不是要求每个位点各自判断一遍。
+ */
 export function describeError(error: unknown): string {
-  if (error instanceof ApiError) return `${error.code}: ${error.message}`
+  if (isNetworkFailure(error)) {
+    return navigator.onLine ? t('common', 'errorServerUnreachable') : t('common', 'errorOffline')
+  }
+  if (error instanceof ApiError) return error.message === '' ? error.code : error.message
   if (error instanceof Error) return error.message
   return String(error)
 }

@@ -3,7 +3,7 @@
  *
  * 依据 PRD-06 FR-ENG-014/015 与 PRD-03 FR-LLM-002/004：
  * - 把 `llm_configs` 每条启用中的配置暴露为一条 `soloengine-<id>` 模型路由；
- * - 注册是原子的：路由集合变化经 `registration.replace()` 全量替换（3 秒轮询），
+ * - 注册是原子的：路由集合变化经 `registration.replace()` 全量替换（秒级轮询），
  *   重复路由由官方注册表直接拒绝；
  * - 执行时从数据库回表解密该行密钥与地址（每次操作重新解析，改 Key 下次请求即新值）；
  * - 路由被删除后请求得到结构化 `NO_ADAPTER` 错误，**不静默回退**到默认模型；
@@ -28,12 +28,19 @@ export interface Config {
   dbPath: string
   /** 主密钥目录（`master.key` 所在）。 */
   keysDir: string
-  /** 轮询周期（毫秒），默认 3000（PRD-03 FR-LLM-004 的 3 秒热同步）。 */
+  /** 轮询周期（毫秒）。 */
   pollMs?: number
 }
 
-/** 默认轮询周期。 */
-const DEFAULT_POLL_MS = 3000
+/**
+ * 默认轮询周期 = 1000ms。
+ *
+ * 为什么不是 3000：NFR-PER-008 要求「增删改 3 秒内新路由可用」——这是一个**时延上界**，
+ * 而轮询方案的最坏时延是「一个周期 + 重算时间」。把周期设成等于上界，最坏情况必然越界
+ * （本机实测 3091ms > 3000ms 而判定失败）。故周期必须显著小于上界 3000ms；取 1000ms 使
+ * 最坏时延约为 1 秒量级，留出充足余量，同时仍是 PRD-03 所说的「秒级轮询」。
+ */
+const DEFAULT_POLL_MS = 1000
 
 /**
  * 一个实例服务全部 `soloengine-<id>` 路由：按 provider 参数把每个调用委派给
@@ -112,7 +119,7 @@ export class SoloEngineDbAdapter extends LlmAdapter {
 }
 
 /**
- * 注册 DB 模型路由并保持 3 秒热同步。
+ * 注册 DB 模型路由并保持秒级热同步（周期必须显著小于 NFR-PER-008 的 3 秒时延上界）。
  * @param ctx - 插件上下文（必须注入 `llm`）。
  * @param config - 业务库路径、主密钥目录与轮询周期。
  */
@@ -136,8 +143,26 @@ export function apply(ctx: Context, config: Config): void {
   let applied = ''
   let lastError: unknown
 
-  /** 一次同步：行事实变化即原子替换整份路由集合。 */
+  /**
+   * 一次同步。
+   *
+   * 分两段：先用廉价的行事实探测判断有没有变化，没变就什么都不做（不重算、不注册、不打印）；
+   * 变了才重算路由集合并原子替换。这样轮询周期可以短到足以满足时延上界，而不必每个周期
+   * 都为几百条路由重建一遍官方适配器实例。
+   */
   const sync = (): void => {
+    let facts: string
+    try {
+      facts = table.factSignature()
+      lastError = undefined
+    } catch (error: unknown) {
+      lastError = error
+      ctx.logger.error('soloengine-llm-db-adapter: probing llm_configs failed; keeping the current route set')
+      ctx.logger.error(error)
+      return
+    }
+    // 行事实未变即不做任何后续动作（也不重复打印）。
+    if (facts === applied) return
     let snapshot: RouteSnapshot
     try {
       snapshot = table.reload()
@@ -150,7 +175,6 @@ export function apply(ctx: Context, config: Config): void {
     }
     const routes = snapshot.routes.map(entry => entry.route)
     const skipped = snapshot.skipped.map(entry => `${entry.id}(${entry.name}): ${entry.reason}`).join('; ')
-    // 行事实未变即不做任何注册动作（也不重复打印）。
     if (snapshot.signature === applied) return
     if (registration === undefined) {
       if (routes.length === 0) {

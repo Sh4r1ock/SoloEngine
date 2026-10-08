@@ -11,11 +11,6 @@
   overflow-y: auto;
 }
 
-.pageBleed {
-  padding: 0;
-  overflow: hidden;
-}
-
 .header {
   display: flex;
   align-items: flex-start;
@@ -39,7 +34,10 @@
 .subtitle {
   margin: 0;
   font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-tertiary);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
+  /* tertiary 浅色 3.71:1（WCAG 1.4.3 需 4.5:1）→ secondary（S14 统一升级，F31）。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .headerActions {
@@ -56,6 +54,15 @@
   flex-wrap: wrap;
 }
 
+/* 工具栏搜索框：原生 Input 的 wrap 按内容收缩（实测 163px），英文占位文案放不进去
+   （canvases 140/235、skills 182/290 中英宽度，可用宽仅 159）→ 占位被静默裁切且无省略号
+   （R14 长文本容错 / R20 截断线索）。搜索框是工具栏主控件：随剩余宽度增长，上限 360px
+   避免在宽屏上拉成一条无意义的长槽；窄行由 `.toolbar` 的 flex-wrap 换行兜底。 */
+.toolbarSearch {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
 .toolbarSpacer {
   flex: 1 1 auto;
 }
@@ -69,19 +76,86 @@
   padding: var(--se-space-2) var(--se-space-3);
   border-radius: var(--se-radius-sm);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   border: 0.5px solid var(--dsw-alias-border-l3);
 }
 
 .errorLine {
   color: var(--dsw-alias-state-error-primary);
+  /* 通知边框随语气走（手册 §三.7）：错误行用状态色描边，不再用中性 l3——
+     否则红字落在灰框里形似「禁用输入框」，与输入框在视觉上无法区分。 */
+  border-color: var(--dsw-alias-state-error-primary);
 }
 
 .successLine {
-  color: var(--dsw-alias-state-success-primary);
+  /* 文字用产品层随主题翻转的成功文字别名（product.css 定义）：
+     浅色下 primary green-500 在白底只有 2.28:1，不满足 WCAG 1.4.3。 */
+  color: var(--se-notice-success-text);
+  /* 描边保持语气色（手册 §三.7），描边是装饰性的，不承担文字对比度义务。 */
+  border-color: var(--dsw-alias-state-success-primary);
 }
 
 .infoLine {
   color: var(--dsw-alias-label-secondary);
+}
+
+/* 提示文本必须可收缩换行：flex 子项默认 min-width:auto，长错误串（含 URL）会把
+   行撑破容器、把行内操作挤出去（flex 溢出根因同 .splitPane）。 */
+.errorLine > span,
+.successLine > span,
+.infoLine > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 语气图标不参与收缩：上面的 `min-width: 0` 是为文本换行设的，但它同样作用于图标盒
+   （S13 为消除无障碍树无名 image 而加的 `span[aria-hidden]` 包裹）。实测 1200 字符错误串下
+   图标被压到 1px 宽（svg 16→1，装饰图形消失）；此处显式锁定为固有尺寸。 */
+.noticeIcon {
+  flex: none;
+}
+
+/* 通知行的行内操作（重试/重新加载）：链接式按钮（规范红线 6——link token + 字重 500 +
+   悬浮点状下划线）。此前直接复用 `.mono`（等宽 + 无 hover），渲染成浏览器原生凸起按钮。 */
+.noticeAction {
+  border: 0;
+  padding: 0;
+  margin-left: auto;
+  flex: 0 0 auto;
+  background-color: transparent;
+  color: var(--dsw-alias-link);
+  font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  /* 命中区必须 ≥24×24（WCAG 2.5.8 / R11）：`padding:0` 的纯文字链接实测只有 28×22，
+     竖向差 2px。用阶梯撑到 24（与 login `.linkButton` 同一做法，红线 3 不造散值），
+     链接式外观（红线 6）保持不变。 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--se-space-5);
+  min-height: var(--se-space-5);
+}
+
+.noticeAction:hover {
+  text-decoration: underline dotted;
+}
+
+/* 破坏性确认键（手册 D47：危险动作必须可辨识）。Button 原语无 danger variant 且
+   DSH 原生包禁改，故产品层以 state-error 语义色组合 outline 风格；选择器带元素名
+   （button.dangerButton）以特异性压过原语 ghost 的 color/border，不用 !important。
+   深浅色各自取 red-600 / red-400，红底白字写死的方式禁用。 */
+button.dangerButton {
+  border: 0.5px solid var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+  background-color: transparent;
+}
+
+button.dangerButton:hover:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
 .empty {
@@ -89,8 +163,10 @@
   align-items: center;
   justify-content: center;
   padding: var(--se-space-8);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
 }
 
 .cardGrid {
@@ -112,6 +188,64 @@
 
 .card:hover {
   border-color: var(--dsw-alias-border-l4);
+}
+
+/* 用量条形图（NFR-OBS-002）：纯 CSS 横条，数据与 /usage 同一派生。 */
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-3);
+  font: var(--dsw-font-base-strong-16);
+  color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * 用量图：整图一个网格 + 行 `display: contents`。
+ *
+ * 此前每行各自是一张独立网格，轨道按**本行文字**取宽——实测三条条槽 855.8 / 809.6 / 822.8，
+ * 于是「填充百分比 × 各自条槽」失去可比性：6144 tokens 的条（16.5px）比 1 token 的条
+ * （17.1px）还短。改为整图一张网格、行把单元格交给同一网格排版，三条轨道跨行统一
+ * （与 `.listRowCols` 同一处置：列对齐只能由网格轨道承担）。
+ */
+.chart {
+  display: grid;
+  grid-template-columns: minmax(96px, 200px) 1fr auto;
+  align-items: center;
+  gap: var(--se-space-2) var(--se-space-3);
+}
+
+.chartRow {
+  display: contents;
+}
+
+.chartLabel {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartBar {
+  display: block;
+  height: 8px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-bg-module-platform);
+  overflow: hidden;
+}
+
+.chartBarFill {
+  display: block;
+  height: 100%;
+  border-radius: var(--se-radius-full);
+  /* 信息蓝填充（真源 token；原 --dsw-alias-accent-primary 不存在，静默失效成透明条）。 */
+  background-color: var(--dsw-alias-button-info-fill);
+}
+
+.chartValue {
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .cardHeader {
@@ -150,13 +284,37 @@
 
 .cardMeta {
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-tertiary);
+  /* 次级正文走次轴（比主轴小一档，由 ui-theme 从主轴派生）。 */
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 元信息片段（版本/作者/计数+量词）优先不内部断行（手册 §三.1）；整行仍可在 · 处换行。
+   边界条件：单个片段长过可用宽度时必须兜底——否则整行水平溢出卡片（实测 MCP 卡片 meta
+   scrollWidth 267 > clientWidth 230，来源类型被写成 URL 时即触发）。故片段超宽时省略号收口，
+   短片段仍保持完整。 */
+.nowrap {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
 }
 
 .cardBody {
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+
+/* 5 个删除确认弹窗把 .cardBody 用在 <p> 上：UA 段落 margin 是 `1em`，即随字号轴变化
+   （轴 14 实测 14px、轴 17 会变 17px），弹窗内节奏因此不是阶梯值（R4）。
+   原生 Modal 的 body 无 gap，这段外边距是唯一的上下间隔，故钉到 space-4 而非归零。 */
+p.cardBody {
+  margin: var(--se-space-4) 0;
 }
 
 .cardActions {
@@ -164,6 +322,16 @@
   align-items: center;
   gap: var(--se-space-2);
   flex-wrap: wrap;
+  /* 等高网格里操作钉底（手册 §三.1）：不随卡片内容高低漂浮。 */
+  margin-top: auto;
+}
+
+/* 同一张卡里 `.definition` 也在钉底组内（它自己带 `margin-top: auto`）：纵向 flex 的
+   剩余空间会被两个 auto 对半分，definition 因此上浮半份空间（实测市场 MCP 页
+   184 → 174，与同行卡片错位 10px，且这 10px 不在阶梯上）。钉底只应由组内第一个
+   元素承担，故有 definition 时把操作行的 auto 收回，间隙由 `.card` 的 gap 提供。 */
+.card:has(> .definition) > .cardActions {
+  margin-top: 0;
 }
 
 .chipRow {
@@ -171,6 +339,38 @@
   align-items: center;
   gap: var(--se-space-2);
   flex-wrap: wrap;
+}
+
+/* 原生开关视觉盒 36×20（`Switch.module.css` L14-15），命中区不足 24 高（WCAG 2.5.8 / R11）。
+   不改视觉盒尺寸：轨道圆角与滑块 `translateX(16px)` 都按 20 高计算，改 padding 会错位；
+   用绝对定位伪元素把可点区补到 36×24（`.switch` 本身 `position: relative`）。 */
+button.switchTarget::after {
+  content: '';
+  position: absolute;
+  inset: -2px 0;
+}
+
+/* 原生 CodeBlock 的复制键实测 22×18（<24×24，WCAG 2.5.8 / R11，登记 O-S11-2）。
+   原生包禁改、类名又经 CSS Modules 哈希，故按 `copyButton` 子串命中；作用域限定在它的
+   `.action` 头行里——TerminalBlock 的同名键是 `position: sticky`（改了会破坏其吸顶），
+   留待 S15 运行面板专项按其上下文处理。`button.` + 属性选择器（0,1,1）稳定压过原语的
+   单类规则（0,1,0），不依赖样式注入顺序；伪元素只扩命中区，视觉零变化。 */
+div[class*=action] > button[class*=copyButton] {
+  position: relative;
+}
+
+div[class*=action] > button[class*=copyButton]::after {
+  content: '';
+  position: absolute;
+  inset: -3px -1px;
+}
+
+/* 语气色 Tag 的文字对比度补偿（WCAG 1.4.3 / R11）：原语把 11px 文字直接染成
+   `state-*-primary`，浅色实测 success 2.09 / warning 1.96 / info 3.74 / danger 3.80（需 4.5）。
+   状态色由 10% 底纹继续承担（装饰性，文字已完整表达状态），文字回到 label-primary
+   （同底纹上 15.98~17.33，随主题翻转）。`span.` + 属性选择器保证稳定压过原语的同类名规则。 */
+span.statusTag[data-tone] {
+  color: var(--dsw-alias-label-primary);
 }
 
 .tableWrap {
@@ -182,6 +382,16 @@
 .table {
   width: 100%;
   border-collapse: collapse;
+  /* 列宽治理（手册 §三.5）：9 列表格在窄容器里不挤压 URL/ID 类长值——
+     保底宽度 + 横向滚动（tableWrap overflow-x auto），避免 https://a pi.opena 式逐字断行。 */
+  min-width: 820px;
+}
+
+/* 少列表格（插件清单 3 列）不吃上面的 820 保底：那是为多列宽表设的，套到 3 列表格上
+   反而凭空造出横向滚动——实测 880 视口下表格被撑到 820（容器只有 598），「状态」整列
+   被裁到容器外，需横向滚动才看得到；去掉保底后三列全可见，长包名在 `-` 处断行（§三.5 允许）。 */
+.tableFit {
+  min-width: 0;
 }
 
 .table th,
@@ -190,14 +400,26 @@
   padding: var(--se-space-3);
   border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
   vertical-align: middle;
 }
 
 .table th {
   font: var(--dsw-font-s-strong-14);
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-primary);
   background-color: var(--dsw-alias-bg-module-platform);
+  /* 表头单词不折行：列宽被挤压时「默认」会折成 默/认 两行（实测 23px 列宽），
+     表头应整词呈现——由 min-width/列宽治理（§三.5）保证空间，而不是折字。 */
+  white-space: nowrap;
+}
+
+/* 长值列（URL/ID/路由名）最小宽度（手册 §三.5）：优先分隔符处断行；
+   片段装不下才回落片段内断行，故保底宽度取 140px（原 190px 会把 9 列表格挤出容器）。 */
+.tableColWide {
+  min-width: 140px;
 }
 
 .table tbody tr:last-child td {
@@ -209,6 +431,70 @@
   align-items: center;
   gap: var(--se-space-1);
   flex-wrap: wrap;
+}
+
+/* 操作列最小宽度（手册 §三.5）：避免被长值列挤压成 5 行竖排（行高暴涨）。 */
+.tableColActions {
+  min-width: 170px;
+}
+
+/* 用量列不折行：auto 布局曾把它压到两字宽，表头"用量"竖排。 */
+.tableColUsage {
+  white-space: nowrap;
+}
+
+/* 宽表（模型 9 列等）：窄视口下长值列会把名称列与操作列挤到碎断或被裁。
+   抬到保底宽度，横向滚动承担溢出（手册 §三.5）。 */
+.tableWide {
+  min-width: 1000px;
+}
+
+/* 宽表把单元格左右内边距收两档（12→4）：9 列共省 144px。
+   实测 1440 视口：表格 min-content 由 1232 降到 1160，容器 1158——横向溢出 74px 收敛到 2px，
+   末列操作按钮不再被 tableWrap 右边界裁切（修复前 "Test" 被裁 16px）。 */
+.tableWide th,
+.tableWide td {
+  padding-left: var(--se-space-1);
+  padding-right: var(--se-space-1);
+}
+
+/* 短值列（提供方/模型名/状态）：不参与断行，避免 "gpt-4o-" / "mini" 两行。
+   上限防止自动布局把余量倾斜到这两列（实测：提供方被分到 158px），挤压操作列。 */
+.tableColNowrap {
+  white-space: nowrap;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 名称列（模型/技能等的名词列）：保底宽度 + 单行省略，避免被长值列挤成多行碎断。 */
+.tableColName {
+  min-width: 150px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 模态对话高度约束（原生 Modal 契约：className 作用于 .dialog、
+   contentClassName 作用于 .content；原生包禁改，差异经 prop 提升）────────── */
+.modalDialog {
+  max-height: calc(100dvh - 48px);
+}
+
+.modalWide {
+  width: min(640px, 100%);
+}
+
+.modalScroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* FR-LLM-007 选择器分组：Menu 行内的提供方前缀（次级色小字，分组排序后形成视觉分节）。 */
+.modelOptionProvider {
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .form {
@@ -237,7 +523,8 @@
 
 .fieldHint {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  /* caption 浅色 2.13:1（WCAG 1.4.3 需 4.5:1）→ secondary（S14 统一升级，F31）。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .fieldControl {
@@ -257,16 +544,36 @@
   background-color: var(--dsw-specific-input-major);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+/* 原生 Input 的内层 input 字号固定在 14px（`Input.module.css` 的 `.input`），内容字号轴
+   调不到它：实测档位 17 时同一张表单里原生 Input 14px 与产品 textarea 17px 并排，
+   而 Input 正是全站用得最多的录入控件（搜索框、各弹窗表单）——NFR-L10N-002 的
+   「全局生效」在这类控件上是断的。原生包禁改，产品层按类名子串命中补上轴；
+   `input.` + 属性选择器（0,1,1）压过原语单类（0,1,0），不依赖注入顺序。 */
+input[class*="_input_"] {
+  font-size: var(--dsh-content-font-size, 14px);
 }
 
 .textarea:focus {
   outline: none;
-  border-color: var(--dsw-alias-border-l4);
+  /* 与 ui-primitives Input 的 focus 同色（.wrap:focus-within 用 brand-primary）：
+     同为输入控件，聚焦态必须一致，否则 textarea 聚焦变灰、input 聚焦变蓝。 */
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .textareaMono {
   font: var(--dsw-font-markdown-code);
+}
+
+/* 文件编辑器主体（SkillFilePage 右列）：固定 96px 的 textarea 编辑真实代码文件过于局促——
+   弹性占满分栏剩余高度，并保证最小可编辑高度（与左列 .tree 的 320px 上限对齐）。 */
+.editorArea {
+  flex: 1 1 auto;
+  min-height: 320px;
 }
 
 .mono {
@@ -286,22 +593,74 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* label-value 定义列表（手册 §三.2）：标签列 max-content 紧贴，值列从标签后开始——
+   禁止 minmax(120px,…) 式固定空洞（历史缺陷：窄卡里值从中段才开始、标签悬空）。 */
 .definition {
   display: grid;
-  grid-template-columns: minmax(120px, max-content) 1fr;
-  gap: var(--se-space-2) var(--se-space-4);
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--se-space-1) var(--se-space-3);
   align-items: baseline;
+  /*
+   * 归属/分类行随操作区一起钉底（手册 §三.1「操作钉底」的同一规则）：
+   * 卡片描述长短不一时，同一网格行内各卡的「来源/分类」行始终对齐，不会一高一低（用户实测错位）。
+   */
+  margin-top: auto;
 }
 
 .definitionLabel {
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-caption);
+  /* 次级正文走次轴（比主轴小一档，由 ui-theme 从主轴派生）。 */
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .definitionValue {
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
+}
+
+/*
+ * 路径/长代号值（手册 §2.8）：复用既有 `.mono`（等宽 markdown-code 阶梯 + anywhere 兜底），
+ * JSX 侧由 `<PathValue>` 把每个分隔符片段包成原子行内盒 —— 片段内部不允许断行
+ * （连字符/下划线不让位），断行只发生在 `\` 与 `/` 之后：既不破词，也能自然折行。
+ */
+.pathSegment {
+  display: inline-block;
+  /* 装不下时才回落片段内断行（窄视口表格/280px 卡片），装得下时片段保持完整。 */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* 统一文件选择控件（FilePicker）：原生输入视觉隐藏，由产品按钮触发，文件名走次级字号轴。 */
+.filePicker {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+}
+
+.filePickerInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  border: 0;
+}
+
+.filePickerName {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .stepper {
@@ -314,6 +673,8 @@
   min-width: 48px;
   text-align: center;
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -335,6 +696,8 @@
   padding: var(--se-space-1) var(--se-space-2);
   border-radius: var(--se-radius-xs);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
@@ -344,13 +707,27 @@
   background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* 行内文本可收缩换行：长工具/技能名（flex 子项 min-width:auto）会撑破 checkList 并把
+   不可选原因挤出可视区（与通知行同一根因）。 */
+.checkRow > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .checkInput {
-  accent-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  /* 真源已核实的 token 名（手册 §一.1：禁止凭记忆书写 token 名）。 */
+  accent-color: var(--dsw-alias-brand-primary);
+  /* `.field` 是纵向 flex，交叉轴 stretch 会把原生复选框拉到整列宽（实测 281×13，
+     方框被推到列右端与标签脱节）；控件自身尺寸不参与拉伸，命中区由 label 承担。 */
+  align-self: flex-start;
+  /* UA 默认 margin `3px 3px 3px 4px` 会让方框偏离左基线 4px，并叠在 `.checkRow` 的
+     gap-2 上变成 12px（非阶梯值）——两处消费方同一根因，统一归零。 */
+  margin: 0;
 }
 
 .checkReason {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .tree {
@@ -374,6 +751,8 @@
   background-color: transparent;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   text-align: left;
   cursor: pointer;
   transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
@@ -381,6 +760,38 @@
 
 .treeItem:hover {
   background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 静态行（打包 layers 等只读列表）：与 .treeItem 同布局但无手型/悬停——
+   .treeItem 是为可点行设计的，只读行借用它会渲染出「看起来能点」的误导交互。 */
+.listRow {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-1) var(--se-space-2);
+  border-radius: var(--se-radius-xs);
+  font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 静态行的失败语义变体（导入被拒文件等）：error 前景色，不用「激活高亮」表达拒绝。 */
+.listRowError {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* 三列静态行（打包页「配置层」清单等）：`.listRow` 是 flex，首列按内容取宽，
+   同行各列起点逐行漂移（实测 31 行里 kind 列出现 29 个不同 x、摘要列同样 29 个，
+   截图 S11-01 目视为锯齿）。列对齐只能由网格轨道承担（同 `.chartRow`/`.definition`
+   既有做法），故在 `.listRow` 之上叠加本类，只换布局不改行内节奏。 */
+.listRowCols {
+  display: grid;
+  /* 中列必须定宽：每行是各自独立的网格，`auto` 轨道会按本行文字取宽
+     （实测 insert 29px / patch 30px → 摘要列起点 510 与 511 两值）。
+     48px 取自间距阶梯，且后端 `kind` 是 'insert' | 'patch' 闭合联合（真源
+     `packaging.ts` L27），30px 为最宽取值，故定宽不会裁字。 */
+  grid-template-columns: minmax(0, 200px) var(--se-space-8) minmax(0, 1fr);
+  align-items: baseline;
 }
 
 .treeItemActive {
@@ -401,18 +812,16 @@
   align-items: center;
   gap: var(--se-space-2);
   font: var(--dsw-font-s-14);
+  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
 }
 
 .splitPane {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  /* 右列必须 minmax(0,1fr)：1fr 等价 minmax(auto,1fr)，长 mono 路径会把列撑破容器（实测溢出根因）。 */
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: var(--se-space-4);
-  min-height: 0;
-}
-
-.scrollArea {
-  overflow-y: auto;
   min-height: 0;
 }
 

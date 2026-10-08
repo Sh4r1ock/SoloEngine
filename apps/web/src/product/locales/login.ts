@@ -16,6 +16,11 @@ export const login = defineDictionary({
   registerToggle: '还没有账号？注册',
   backToLogin: '已有账号？登录',
   errorMissingFields: '用户名与口令均为必填',
+  errorInvalidCredentials: '用户名或口令不正确',
+  errorUserDisabled: '该账号已被停用，请联系管理员',
+  errorPasswordShort: '口令至少需要 4 个字符',
+  errorUsernameTaken: '该用户名已被注册，请换一个或直接登录',
+  errorLogin: '登录失败',
   registerHint: '注册成功后会自动登录并进入画布列表',
 }, {
   title: 'Sign in to SoloEngine',
@@ -32,5 +37,10 @@ export const login = defineDictionary({
   registerToggle: 'No account yet? Register',
   backToLogin: 'Already have an account? Sign in',
   errorMissingFields: 'Both username and password are required',
+  errorInvalidCredentials: 'Incorrect username or password',
+  errorUserDisabled: 'This account is disabled; contact an administrator',
+  errorPasswordShort: 'Password must be at least 4 characters',
+  errorUsernameTaken: 'This username is already taken; pick another or sign in',
+  errorLogin: 'Sign-in failed',
   registerHint: 'A successful registration signs you in and opens the canvas list',
 })

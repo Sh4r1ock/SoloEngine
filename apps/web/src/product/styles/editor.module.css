@@ -1,10 +1,108 @@
 /* 画布编辑器：工具栏 + 画布区（网格/节点/连线）+ 右侧属性面板。 */
 
+/* 编辑器三段：工具栏 + 中间（画布区 / 预览） + 右侧属性面板。 */
 .editor {
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100%;
   min-height: 0;
+}
+
+/* 实时预览（FR-CANVAS-017）：轻量路径，只呈现纯文本流与工具状态，不复刻卡片体系。
+   面板高度由内容决定（auto 行）；日志行自身封顶滚动——不能用 max-height:%（相对
+   auto 网格行解析会把整面板压扁，历史缺陷：日志行被裁成 16px 只见半行字）。 */
+.preview {
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-bg-layer-1);
+  display: grid;
+  grid-template-rows: auto auto auto;
+  min-height: 0;
+}
+
+.previewBar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-2) var(--se-space-4);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.previewTitle {
+  font: var(--dsw-font-xs-strong-13);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.previewStatus {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  /* tertiary 浅色 bg-layer-1 上 3.71:1（WCAG 1.4.3 需 4.5:1）→ secondary（本步统一升级，下同）。 */
+  color: var(--dsw-alias-label-secondary);
+}
+
+.previewLog {
+  overflow: auto;
+  min-height: 0;
+  max-height: 240px;
+  padding: var(--se-space-2) var(--se-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+}
+
+.previewEmpty {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.previewText {
+  font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.previewTool {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.previewToolName {
+  color: var(--dsw-alias-label-primary);
+}
+
+.previewStatusLine {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
+  margin: 0;
+}
+
+.previewError {
+  font: var(--dsw-font-xs-13);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-state-error-primary);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.previewInput {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-2) var(--se-space-4);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.previewInputField {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .toolbar {
@@ -23,13 +121,22 @@
 
 .toolbarMeta {
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .body {
   display: grid;
   grid-template-columns: 1fr 336px;
   min-height: 0;
+}
+
+/* 中列：画布区在上、实时预览在下（预览可折叠，不挤走画布）。 */
+.stage {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+  min-width: 0;
 }
 
 .canvasWrap {
@@ -49,6 +156,27 @@
   height: 1600px;
 }
 
+/* 对齐辅助线：拖拽中才挂载，颜色走语义别名（随主题翻转，不写死）。 */
+.alignGuideVertical {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 1600px;
+  background-color: var(--dsw-alias-label-secondary);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.alignGuideHorizontal {
+  position: absolute;
+  left: 0;
+  height: 1px;
+  width: 2400px;
+  background-color: var(--dsw-alias-label-secondary);
+  pointer-events: none;
+  z-index: 2;
+}
+
 .edgeLayer {
   position: absolute;
   left: 0;
@@ -58,13 +186,26 @@
   pointer-events: none;
 }
 
+/*
+ * 连线命中线：SVG 根层 pointer-events:none（不挡节点/画布的拖拽与点击），可见线只有
+ * 1.5px 宽——真实命中测试（elementFromPoint）落在 .canvas 上，选中/删除委派边的交互
+ * 因此完全不可达。每条边配一条透明 12px 命中线，pointer-events 在子元素上覆盖根层的
+ * none，只承载点击、不影响视觉。
+ */
+.edgeHit {
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
 .edge {
   stroke: var(--dsw-alias-border-l4);
   stroke-width: 1.5;
 }
 
 .edgeSelected {
-  stroke: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  stroke: var(--dsw-alias-brand-primary);
 }
 
 .edgeArrow {
@@ -92,7 +233,7 @@
 }
 
 .nodeSelected {
-  border-color: var(--dsw-alias-brand-primary-new-colorprimary-new-color);
+  border-color: var(--dsw-alias-brand-primary);
 }
 
 .nodeDragging {
@@ -126,19 +267,21 @@
 
 .nodeTitle {
   font: var(--dsw-font-s-strong-14);
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-primary);
   overflow-wrap: anywhere;
 }
 
 .nodeMeta {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 
 .nodeNote {
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -167,7 +310,7 @@
 
 .panelHint {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .panelGroup {
@@ -187,6 +330,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--se-space-1);
+  /* 与 common.module 的同名 .field 对齐：flex 子项默认 min-width:auto，
+     336px 面板里长字段 label 会撑破列宽（两表同名类必须同规则）。 */
+  min-width: 0;
 }
 
 .fieldLabel {
@@ -196,7 +342,7 @@
 
 .fieldHint {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .edgeRow {
@@ -205,6 +351,7 @@
   justify-content: space-between;
   gap: var(--se-space-2);
   font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -214,7 +361,8 @@
   gap: var(--se-space-3);
   flex-wrap: wrap;
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .legendItem {

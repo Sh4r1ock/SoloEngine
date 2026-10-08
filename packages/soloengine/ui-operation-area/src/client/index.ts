@@ -114,6 +114,4 @@ export function apply(ctx: ClientContext): void {
     key: CHANGES_ID,
     locale: NS,
   }, ChangesPanel))
-
-  console.log('soloengine-ui-operation-area: follow layer + browser panel + changes panel registered')
 }

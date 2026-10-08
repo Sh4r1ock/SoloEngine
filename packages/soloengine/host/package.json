@@ -27,6 +27,9 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-mcp-client": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
     "@soloengine/framework": "workspace:*",
     "@soloengine/types": "workspace:*",
     "zod": "^4.4.3"

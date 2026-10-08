@@ -313,8 +313,15 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
       ? await trunkCrossCheck(ctx, project.folder_path, sessionKey, turn)
       : null
     if (restorePoint === null && turn !== null) {
+      // 如实区分三种「没有恢复点」的成因：越界工作区、普通目录、以及**工作树根上读取失败**
+      // （后者曾有误报——一律说成「普通目录」，把平台守卫拒绝等真实原因盖掉了）。
+      const where = boundary === 'escaping'
+        ? 'inside an enclosing repository but is not its worktree root'
+        : boundary === 'worktree-root'
+          ? 'a Git worktree root whose turn restore point could not be read (see the preceding line for the refusal)'
+          : 'an ordinary directory'
       console.log(
-        `soloengine: revert cross-check skipped for ${sessionKey} turn ${String(turn)}: ${project.folder_path} is ${boundary === 'escaping' ? 'inside an enclosing repository but is not its worktree root' : 'an ordinary directory'}; the file_changes ledger alone carries the revert`,
+        `soloengine: revert cross-check skipped for ${sessionKey} turn ${String(turn)}: ${project.folder_path} is ${where}; the file_changes ledger alone carries the revert`,
       )
     }
     for (const item of plan.restores) {
@@ -361,11 +368,12 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
 
   // 人写入（产品写路由 / 操作区桥）：只观测落账 `origin='user'`，归属用户、无 agent 归属、无工具调用；
   // 因此天然不入 agent 回合视图、不参与按轮次撤回（PRD-09 FR-FC-001 边界）。
+  // 会话键随观察带上：台账查询按 session_id 过滤，不带就会记了也无人可见。
   runtime.workspace.attachWriteObserver((observation) => {
     const recorded = ledger.record({
       userId: observation.userId,
       origin: 'user',
-      sessionKey: null,
+      sessionKey: observation.sessionKey,
       turn: null,
       agentId: null,
       filePath: observation.filePath,

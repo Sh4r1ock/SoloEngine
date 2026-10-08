@@ -1,7 +1,7 @@
 /**
  * 操作区桥（PRD-08 FR-OPS-010 / FR-OPS-012；PRD-09 FR-FC-011）。
  *
- * 运行面板（`/run/:sessionKey` 分支启动的原生客户端插件树）**不经框架层 Bearer 令牌**，
+ * 运行面板（`/run/:agenticFlowId` 分支启动的原生客户端插件树）**不经框架层 Bearer 令牌**，
  * 它走的是信任门（进程启动令牌换签名 cookie）。故操作区的读写分治在浏览器侧有两条入口：
  *
  * - 产品页面（框架层普通路由）→ `/api/solo/workspace/*`（Bearer 鉴权）；
@@ -133,6 +133,8 @@ export function mountOperationAreaBridge(ctx: Context, runtime: FrameworkRuntime
               ok: true,
               result: runtime.workspace.write(owner.userId, owner.projectId, String(body.path ?? ''), String(body.text ?? ''), {
                 ...body.expectedMtimeMs === undefined ? {} : { expectedMtimeMs: Number(body.expectedMtimeMs) },
+                ...body.createOnly === undefined ? {} : { createOnly: body.createOnly === true },
+                sessionKey,
                 ...remote === undefined ? {} : { remoteAddress: remote },
               }),
             })
@@ -164,7 +166,7 @@ export function mountOperationAreaBridge(ctx: Context, runtime: FrameworkRuntime
             const owner = ownerOf(sessionKey)
             sendJson(res, 200, {
               ok: true,
-              ...runtime.workspace.remove(owner.userId, owner.projectId, String(body.path ?? ''), body.confirm === true, remote),
+              ...runtime.workspace.remove(owner.userId, owner.projectId, String(body.path ?? ''), body.confirm === true, remote, sessionKey),
             })
             return
           }

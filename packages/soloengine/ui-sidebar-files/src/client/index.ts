@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@soloengine/types'
-import { FilesTree, type FilesFace } from './FilesTree.tsx'
+import { FilesTree, PanelFailure, type FilesFace } from './FilesTree.tsx'
 import { en, NS, zh, type SoloengineFilesKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -57,7 +57,7 @@ export function apply(ctx: ClientContext): void {
   const face = (sessionId: SessionId): FilesFace => ({
     list: async (path, signal) => {
       const result = await ctx.remote.workspaceFiles.list(sessionId, path, signal)
-      if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
+      if (!result.ok) throw new PanelFailure(result.error.code, result.error.message)
       return result.value
     },
     changes: async function* changes(signal: AbortSignal) {
@@ -87,5 +87,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: face,
   }, FilesTree))
-  console.log('soloengine-ui-sidebar-files: editable file tree registered as the extension band of kind "files"')
 }

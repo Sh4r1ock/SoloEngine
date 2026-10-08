@@ -249,8 +249,14 @@ export class CanvasService {
         tags = Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : undefined
       } catch { tags = undefined }
     }
+    // 副本名去重：固定 `X（副本）` 会让重复复制得到同名卡片，列表只能靠时间戳区分（实测两张
+    // `canvas-mu8r6m8m（副本）` 并存）。同名时依次取 `（副本2）`、`（副本3）`……
+    const taken = (name: string): boolean =>
+      (this.raw.prepare('SELECT COUNT(*) AS c FROM agentic_flows WHERE user_id = ? AND name = ?').get(userId, name) as { c: number }).c > 0
+    let copyName = `${row.name}（副本）`
+    for (let suffix = 2; taken(copyName); suffix += 1) copyName = `${row.name}（副本${String(suffix)}）`
     return this.create(userId, {
-      name: `${row.name}（副本）`,
+      name: copyName,
       ...(row.description === null ? {} : { description: row.description }),
       ...(row.icon === null ? {} : { icon: row.icon }),
       ...(tags === undefined ? {} : { tags }),
@@ -325,9 +331,12 @@ export class CanvasService {
           sessionKeys.push(session.session_key)
         }
       }
-      // 级联顺序：事件（引用会话）→ 会话（引用项目，NOT NULL）→ 项目 → 画布。
+      // 级联顺序：事件（引用会话）→ 变更台账（按 `session_key` 引用会话）→ 会话（引用项目，NOT NULL）→ 项目 → 画布。
+      // 台账行以会话键为归属，会话删了就没有任何入口能再读到它们（面板按会话键查询），
+      // 残留只会成为不可达的孤儿行，故与事件同批删除。
       for (const project of projects) {
         this.raw.prepare('DELETE FROM events WHERE session_id IN (SELECT id FROM sessions WHERE run_project_id = ?)').run(project.id)
+        this.raw.prepare('DELETE FROM file_changes WHERE session_id IN (SELECT session_key FROM sessions WHERE run_project_id = ?)').run(project.id)
         this.raw.prepare('DELETE FROM sessions WHERE run_project_id = ?').run(project.id)
       }
       this.raw.prepare('DELETE FROM run_projects WHERE agentic_flow_id = ?').run(id)

@@ -30,7 +30,49 @@ function paint(): void {
   document.documentElement.style.colorScheme = preference === 'system' ? 'light dark' : preference
   if (dark) document.body.setAttribute('data-ds-dark-theme', '')
   else document.body.removeAttribute('data-ds-dark-theme')
-  document.documentElement.style.setProperty('--dsh-content-font-size', `${String(contentFontSize)}px`)
+  // 字号变量写在 `body` 上：平台启动注入（`bootThemeInjections`）与运行期 theme-presenter 都写
+  // `document.body`，后代元素继承的是 body 的值；写在 `documentElement` 会被 body 的内联值盖住。
+  document.body.style.setProperty('--dsh-content-font-size', `${String(contentFontSize)}px`)
+  cachePreference()
+}
+
+/**
+ * 首屏预着色缓存（R15：深色保存态加载不闪浅色）。
+ *
+ * 偏好的唯一真源是服务端设置（preferences.ts），但它在 `/auth/me` 之后才返回；
+ * 若首屏只能按默认值渲染，深色用户每次加载都会先看到一整屏浅色再翻成深色（FOUC）。
+ * 这里把**最后一次成功应用的偏好**缓存进 localStorage，仅用于下次会话的首屏预着色：
+ * 服务端偏好返回后 `applyThemePreference()` 会立即覆盖它，缓存永远不参与判定真值。
+ */
+const THEME_CACHE_KEY = 'soloengine.themeCache'
+
+/** 把当前偏好写入首屏预着色缓存（存储不可用时静默——只影响下次首屏，不影响正确性）。 */
+function cachePreference(): void {
+  try {
+    window.localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ preference, fontSize: contentFontSize }))
+  } catch {
+    // localStorage 被禁用/已满：预着色降级为默认值，真实偏好仍由服务端承担。
+  }
+}
+
+// 模块加载即预着色：在 React 首次渲染前把缓存偏好落进 DOM，深色用户首屏即是深色。
+try {
+  const cached = JSON.parse(window.localStorage.getItem(THEME_CACHE_KEY) ?? 'null') as {
+    preference?: unknown
+    fontSize?: unknown
+  } | null
+  if (cached !== null && typeof cached === 'object') {
+    const cachedPreference = cached.preference
+    const cachedFontSize = cached.fontSize
+    applyThemePreference(
+      cachedPreference === 'light' || cachedPreference === 'dark' || cachedPreference === 'system'
+        ? cachedPreference
+        : 'system',
+      typeof cachedFontSize === 'number' && Number.isFinite(cachedFontSize) ? cachedFontSize : undefined,
+    )
+  }
+} catch {
+  // 缓存损坏：按默认（跟随系统）渲染，服务端偏好返回后纠正。
 }
 
 /**

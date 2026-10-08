@@ -38,10 +38,12 @@
 .gutter {
   overflow: hidden;
   text-align: right;
+  /* 上下 padding 与 .editor 对称，保证行号与文本首行/末行对齐；滚动由 onScroll 同步。 */
+  padding: var(--se-space-2) 0;
   font-family: var(--dsw-font-family);
   font-size: var(--dsh-content-font-size, 14px);
   line-height: 1.5;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
   user-select: none;
 }
 
@@ -68,6 +70,13 @@
   line-height: 1.5;
   white-space: pre;
   overflow: auto;
+}
+
+.editor[data-wrap='true'] {
+  /* 面板 owner 的换行偏好（官方 documentpreview 座位把 `wrap` 交给渲染器）：
+     此前本渲染器完全不读它，工具栏的换行开关对编辑器无效。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .document {
@@ -115,11 +124,16 @@
 }
 
 .state,
+.note,
 .error,
 .decorationNote {
   padding: var(--se-space-2);
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.note {
+  padding: 0;
 }
 
 .error {

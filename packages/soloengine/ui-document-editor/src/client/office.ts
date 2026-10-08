@@ -28,7 +28,7 @@ export type OfficeContent =
 function textsOf(root: Element | Document, localName: string): string[] {
   return [...root.getElementsByTagName('*')]
     .filter(node => node.localName === localName)
-    .map(node => node.textContent ?? '')
+    .map(node => node.textContent)
 }
 
 /**
@@ -70,8 +70,19 @@ async function parseXlsx(data: Uint8Array): Promise<OfficeContent> {
   const sheetNames = pkg.names
     .filter(name => /^xl\/worksheets\/sheet\d+\.xml$/u.test(name))
     .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+  // 工作表显示名取 workbook.xml 的 <sheet name> 序列，与 sheetN.xml 的数字序对齐
+  // （生成器普遍按此序写包）；无 workbook.xml 或数量不齐时回退文件路径呈现。
+  let displayNames: string[] | null = null
+  if (pkg.names.includes('xl/workbook.xml')) {
+    const workbook = parseXml(await pkg.readText('xl/workbook.xml'))
+    const names = [...workbook.getElementsByTagName('*')]
+      .filter(node => node.localName === 'sheet')
+      .map(node => node.getAttribute('name'))
+      .filter((name): name is string => name !== null && name !== '')
+    if (names.length === sheetNames.length) displayNames = names
+  }
   const sheets: { name: string; rows: string[][] }[] = []
-  for (const name of sheetNames) {
+  for (const [position, name] of sheetNames.entries()) {
     const sheet = parseXml(await pkg.readText(name))
     const rows: string[][] = []
     for (const row of [...sheet.getElementsByTagName('*')].filter(node => node.localName === 'row')) {
@@ -87,7 +98,7 @@ async function parseXlsx(data: Uint8Array): Promise<OfficeContent> {
       }
       rows.push(cells)
     }
-    sheets.push({ name, rows })
+    sheets.push({ name: displayNames?.[position] ?? name, rows })
   }
   return { kind: 'xlsx', sheets }
 }

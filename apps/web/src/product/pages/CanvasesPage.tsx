@@ -8,6 +8,7 @@ import { describeError, request } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { navigate, openPage } from '../router.ts'
 import { PageHeader } from '../components/PageHeader.tsx'
+import { formatTimestamp } from '../utils/time.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { Field } from '../components/Field.tsx'
 import type { CanvasView, RunProjectView, RunSessionView, UserView } from '../types.ts'
@@ -41,7 +42,7 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
       setProjects(projectResult.projects)
       setError(null)
     } catch (failure) {
-      setError(describeError(failure))
+      setError(`${t('canvases', 'errorLoad')} — ${describeError(failure)}`)
     } finally {
       setLoading(false)
     }
@@ -57,7 +58,7 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
 
   const visible = useMemo(() => {
     const keyword = search.trim().toLowerCase()
-    return canvases.filter(canvas => {
+    return canvases.filter((canvas) => {
       if (tagFilter !== null && !canvas.tags.includes(tagFilter)) return false
       if (keyword === '') return true
       const haystack = `${canvas.name} ${canvas.description ?? ''}`.toLowerCase()
@@ -102,21 +103,30 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
 
       <div className={css.toolbar}>
         <Input
+          className={css.toolbarSearch ?? ''}
           value={search}
           placeholder={t('canvases', 'searchPlaceholder')}
-          onChange={event => { setSearch(event.currentTarget.value) }}
+          aria-label={t('canvases', 'searchAria')}
+          onChange={(event) => { setSearch(event.currentTarget.value) }}
         />
         <span className={css.fieldHint}>{t('canvases', 'tagFilterLabel')}</span>
-        <Pill active={tagFilter === null} onClick={() => { setTagFilter(null) }}>{t('common', 'labelAll')}</Pill>
+        {/* 原生 Pill 只把选中态写成 class，辅助技术读不到（WCAG 4.1.2）；与市场/技能/MCP
+            各页同一惯例，产品层透传 aria-pressed。 */}
+        <Pill active={tagFilter === null} aria-pressed={tagFilter === null} onClick={() => { setTagFilter(null) }}>{t('common', 'labelAll')}</Pill>
         {allTags.map(tag => (
-          <Pill key={tag} active={tagFilter === tag} onClick={() => { setTagFilter(tag) }}>{tag}</Pill>
+          <Pill key={tag} active={tagFilter === tag} aria-pressed={tagFilter === tag} onClick={() => { setTagFilter(tag) }}>{tag}</Pill>
         ))}
       </div>
 
       <NoticeLine tone="error" text={error} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
 
       {loading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
-      {!loading && visible.length === 0 && <div className={css.empty}>{t('canvases', 'empty')}</div>}
+      {!loading && visible.length === 0 && (
+        <div className={css.empty}>
+          {/* 区分「全空」与「过滤无匹配」：两者给同一条空态文案会误导（画布明明存在）。 */}
+          {canvases.length === 0 ? t('canvases', 'empty') : t('canvases', 'noMatch')}
+        </div>
+      )}
 
       <div className={css.cardGrid}>
         {visible.map(canvas => (
@@ -126,22 +136,27 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
               <div className={css.cardTitleBlock}>
                 <h2 className={css.cardTitle}>{canvas.name}</h2>
                 <span className={css.cardMeta}>
-                  {t('canvases', 'nodesCount', { count: canvas.canvas.nodes.length })}
+                  {canvas.canvas.nodes.length === 1 ? t('canvases', 'nodesCountOne') : t('canvases', 'nodesCount', { count: canvas.canvas.nodes.length })}
                   {' · '}
-                  {t('canvases', 'edgesCount', { count: canvas.canvas.edges.length })}
+                  {canvas.canvas.edges.length === 1 ? t('canvases', 'edgesCountOne') : t('canvases', 'edgesCount', { count: canvas.canvas.edges.length })}
                 </span>
-                {canvas.updated_at !== null && (
-                  <span className={css.cardMeta}>{t('canvases', 'updatedAt', { time: canvas.updated_at })}</span>
+                {formatTimestamp(canvas.updated_at) !== '' && (
+                  <span className={css.cardMeta}>
+                    {t('canvases', 'updatedAt', { time: formatTimestamp(canvas.updated_at) })}
+                  </span>
                 )}
               </div>
             </div>
-            <div className={css.cardBody}>{canvas.description ?? t('common', 'labelNone')}</div>
+            {/* 描述为空时整行省略：孤行「无」在卡片网格里形似渲染残缺（与 MCP/技能/市场页同一规则）。 */}
+            {canvas.description !== null && canvas.description !== ''
+              ? <div className={css.cardBody}>{canvas.description}</div>
+              : null}
             <div className={css.chipRow}>
               {canvas.is_template && <Tag tone="solid">{t('canvases', 'templateBadge')}</Tag>}
               {canvas.tags.map(tag => <Tag key={tag} tone="neutral">{tag}</Tag>)}
             </div>
             <div className={css.cardActions}>
-              <Button size="sm" onClick={() => { navigate(`/canvases/${canvas.id}`) }}>{t('common', 'actionOpen')}</Button>
+              <Button size="sm" onClick={() => { navigate(`/canvas/${canvas.id}`) }}>{t('common', 'actionOpen')}</Button>
               <Button
                 size="sm"
                 icon={<IconPlayOutline16 size={14} />}
@@ -186,9 +201,9 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
       <CreateCanvasDialog
         open={createOpen}
         onClose={() => { setCreateOpen(false) }}
-        onCreated={created => {
+        onCreated={(created) => {
           setCreateOpen(false)
-          void load().then(() => { navigate(`/canvases/${created.id}`) })
+          void load().then(() => { navigate(`/canvas/${created.id}`) })
         }}
       />
 
@@ -202,7 +217,8 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
           <>
             <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
-              variant="primary"
+              variant="ghost"
+              className={css.dangerButton}
               disabled={deleteTarget === null || busyId === deleteTarget.id}
               onClick={() => {
                 const target = deleteTarget
@@ -222,10 +238,21 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
         {deleteTarget !== null && (
           <p className={css.cardBody}>
             {deleteTarget.name}
-            {' — '}
-            {t('canvases', 'deleteOwnProjects', {
-              count: projects.filter(project => project.agentic_flow_id === deleteTarget.id).length,
-            })}
+            {(() => {
+              // 没有运行项目时不写级联句：实测「删除画布会同时删除 0 个运行项目及其会话记录」
+              // 是对不存在的级联作断言（R17 只说事实），分隔符也随之收掉。
+              const count = projects.filter(project => project.agentic_flow_id === deleteTarget.id).length
+              if (count === 0) return null
+              return (
+                <>
+                  {' — '}
+                  {/* en 单复数：count=1 走单数键（避免 "1 run projects"）。 */}
+                  {count === 1
+                    ? t('canvases', 'deleteOwnProjectsOne')
+                    : t('canvases', 'deleteOwnProjects', { count })}
+                </>
+              )
+            })()}
           </p>
         )}
       </Modal>
@@ -234,7 +261,6 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
         canvas={runTarget}
         projects={projects}
         onClose={() => { setRunTarget(null) }}
-        onError={message => { setError(message) }}
         onRan={() => { setRunTarget(null) }}
       />
     </div>
@@ -288,7 +314,7 @@ function CreateCanvasDialog({ open, onClose, onCreated }: {
                   setTags('')
                   onCreated(result.canvas)
                 } catch (failure) {
-                  setError(describeError(failure))
+                  setError(`${t('canvases', 'errorCreate')} — ${describeError(failure)}`)
                 } finally {
                   setBusy(false)
                 }
@@ -303,13 +329,13 @@ function CreateCanvasDialog({ open, onClose, onCreated }: {
       <div className={css.form}>
         <NoticeLine tone="error" text={error} />
         <Field label={t('common', 'labelName')}>
-          <Input value={name} onChange={event => { setName(event.currentTarget.value) }} />
+          <Input value={name} onChange={(event) => { setName(event.currentTarget.value) }} />
         </Field>
         <Field label={t('common', 'labelDescription')}>
           <textarea
             className={css.textarea}
             value={description}
-            onChange={event => { setDescription(event.currentTarget.value) }}
+            onChange={(event) => { setDescription(event.currentTarget.value) }}
           />
         </Field>
         <div className={css.formGrid}>
@@ -317,14 +343,14 @@ function CreateCanvasDialog({ open, onClose, onCreated }: {
             <Input
               value={icon}
               placeholder={t('canvases', 'iconPlaceholder')}
-              onChange={event => { setIcon(event.currentTarget.value) }}
+              onChange={(event) => { setIcon(event.currentTarget.value) }}
             />
           </Field>
           <Field label={t('common', 'labelTags')}>
             <Input
               value={tags}
               placeholder={t('canvases', 'tagsPlaceholder')}
-              onChange={event => { setTags(event.currentTarget.value) }}
+              onChange={(event) => { setTags(event.currentTarget.value) }}
             />
           </Field>
         </div>
@@ -334,11 +360,10 @@ function CreateCanvasDialog({ open, onClose, onCreated }: {
 }
 
 /** 运行画布对话框：选择/新建运行项目后发起一次运行。 */
-function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
+function RunCanvasDialog({ canvas, projects, onClose, onRan }: {
   canvas: CanvasView | null
   projects: RunProjectView[]
   onClose: () => void
-  onError: (message: string) => void
   onRan: () => void
 }) {
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -346,6 +371,8 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
   const [name, setName] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 错误就近呈现在对话框内（与 CreateCanvasDialog 同模式）：委托到页面级会被 Modal 遮挡。
+  const [error, setError] = useState<string | null>(null)
 
   const candidates = useMemo(
     () => (canvas === null ? [] : projects.filter(project => project.agentic_flow_id === canvas.id)),
@@ -356,6 +383,7 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
     setProjectId(candidates[0]?.id ?? null)
     setFolder('')
     setName('')
+    setError(null)
   }, [canvas, candidates])
 
   const selected = candidates.find(project => project.id === projectId) ?? null
@@ -367,6 +395,7 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
       title={t('canvases', 'runTitle')}
       closeLabel={t('common', 'actionClose')}
       description={t('canvases', 'runDescription')}
+      className={css.modalDialog ?? ''}
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
@@ -375,6 +404,12 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
             disabled={busy}
             onClick={() => {
               if (canvas === null) return
+              // 新建项目路径前置校验：folder 是沙箱根必填（FR-CANVAS-040/041），
+              // 空值发给后端只会拿到 FOLDER_REQUIRED 机器码（NN/G：错误应在提交前就近拦截）。
+              if (projectId === null && folder.trim() === '') {
+                setError(t('canvases', 'projectFolderRequired'))
+                return
+              }
               setBusy(true)
               void (async () => {
                 try {
@@ -397,7 +432,7 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
                   onRan()
                   openPage(session.session.panel_path)
                 } catch (failure) {
-                  onError(`${t('canvases', 'errorRun')} — ${describeError(failure)}`)
+                  setError(`${t('canvases', 'errorRun')} — ${describeError(failure)}`)
                 } finally {
                   setBusy(false)
                 }
@@ -410,6 +445,7 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
       )}
     >
       <div className={css.form}>
+        <NoticeLine tone="error" text={error} />
         <div className={css.field}>
           <span className={css.fieldLabel}>{t('canvases', 'projectLabel')}</span>
           <div className={css.fieldControl}>
@@ -422,10 +458,10 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
                 label: `${project.name} — ${project.folder_path}`,
               }))}
               selectedId={projectId ?? undefined}
-              onSelect={id => { setProjectId(id); setMenuOpen(false) }}
+              onSelect={(id) => { setProjectId(id); setMenuOpen(false) }}
               onClose={() => { setMenuOpen(false) }}
               anchor={(
-                <Button size="sm" onClick={() => { setMenuOpen(!menuOpen) }}>
+                <Button size="sm" disabled={candidates.length === 0} onClick={() => { setMenuOpen(!menuOpen) }}>
                   {selected === null ? t('common', 'actionSelect') : selected.name}
                 </Button>
               )}
@@ -444,14 +480,14 @@ function RunCanvasDialog({ canvas, projects, onClose, onError, onRan }: {
               <Input
                 value={folder}
                 placeholder={t('canvases', 'projectFolderPlaceholder')}
-                onChange={event => { setFolder(event.currentTarget.value) }}
+                onChange={(event) => { setFolder(event.currentTarget.value) }}
               />
             </Field>
             <Field label={t('canvases', 'projectNameLabel')}>
               <Input
                 value={name}
                 placeholder={t('canvases', 'projectNamePlaceholder')}
-                onChange={event => { setName(event.currentTarget.value) }}
+                onChange={(event) => { setName(event.currentTarget.value) }}
               />
             </Field>
           </>

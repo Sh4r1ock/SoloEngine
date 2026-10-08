@@ -158,4 +158,58 @@ export class SessionLedger {
   static newKey(): string {
     return `solo-${randomUUID()}`
   }
+
+  /**
+   * 重建入口（FR-ARCH-012）：从 JSONL 日志头恢复一条缺失的归属行。
+   * 归属事实（user/flow/project）只能经 `run_projects.folder_path = cwd` 匹配恢复；
+   * 匹配不到的会话由调用方如实计入 skipped，**不捏造归属**。
+   * @param input - 会话键与恢复出的归属事实（created_at 取日志头 createdAt）。
+   */
+  recover(input: {
+    session_key: string
+    user_id: string
+    agentic_flow_id: string
+    run_project_id: string
+    created_at: number
+  }): SessionLedgerRow {
+    const existing = this.byKey(input.session_key)
+    if (existing !== undefined) return existing
+    this.raw.prepare(
+      `INSERT INTO sessions (session_key, user_id, agentic_flow_id, run_project_id, llm_config_id,
+         created_at, status)
+       VALUES (?, ?, ?, ?, NULL, ?, 'stopped')`,
+    ).run(input.session_key, input.user_id, input.agentic_flow_id, input.run_project_id, input.created_at)
+    const row = this.byKey(input.session_key)
+    if (row === undefined) throw new Error('soloengine: session ledger recover produced no row')
+    return row
+  }
+
+  /**
+   * 重建入口（FR-ARCH-012）：用一个会话的**全部持久事件**整体替换其 events 归属行。
+   * 与 appendEvent（增量）共用唯一写入方地位；重建是显式管理动作，整批一个短事务。
+   * @param sessionId - 归属行主键。
+   * @param rows - 由日志事件派生的归属行（seq 与 dsh 事件同值）。
+   */
+  replaceEvents(
+    sessionId: number,
+    rows: { seq: number; agent_id: string; parent_agent_id: string | null; parent_message_id: number | null }[],
+  ): number {
+    // 与 SoloDatabase.transaction 同法的短事务（BEGIN IMMEDIATE，抛错回滚；禁跨连接长事务）。
+    this.raw.exec('BEGIN IMMEDIATE')
+    try {
+      this.raw.prepare('DELETE FROM events WHERE session_id = ?').run(sessionId)
+      const insert = this.raw.prepare(
+        `INSERT INTO events (session_id, seq, agent_id, parent_agent_id, parent_message_id, is_deleted)
+         VALUES (?, ?, ?, ?, ?, 0)`,
+      )
+      for (const row of rows) {
+        insert.run(sessionId, row.seq, row.agent_id, row.parent_agent_id, row.parent_message_id)
+      }
+      this.raw.exec('COMMIT')
+      return rows.length
+    } catch (error) {
+      this.raw.exec('ROLLBACK')
+      throw error
+    }
+  }
 }

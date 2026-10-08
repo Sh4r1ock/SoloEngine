@@ -14,6 +14,7 @@ export const shell = defineDictionary({
   sidebarLogout: '登出',
   sidebarSwitchHint: '主题与语言',
   panelError: '面板错误',
+  sessionExpired: '登录已过期，请重新登录',
 }, {
   brand: 'SoloEngine',
   navCanvases: 'Canvases',
@@ -27,4 +28,5 @@ export const shell = defineDictionary({
   sidebarLogout: 'Sign out',
   sidebarSwitchHint: 'Theme and language',
   panelError: 'Panel error',
+  sessionExpired: 'Session expired, please sign in again',
 })

@@ -4,14 +4,16 @@
  * - 元数据存 `skills_packages` 表；正文（SKILL.md/资源）在用户技能目录（文件系统）；
  * - 两阶段导入（解析元数据 → 确认落盘），含 zip 解包防路径穿越（含 `../`/绝对路径/
  *   符号链接目标越界一律整包拒绝并报出具体条目）；
- * - 启停热生效：启用即进入该用户技能目录（dsh skill-filesystem 的 customSkillDirs 子根），
- *   停用即移除目录并驱动提供方失效（模型下一步即不见）；
+ * - 启停热生效：启用中的技能以 junction 同步进运行项目的项目层技能根
+ *   （`<project>/.dsh/skills`，即 per-user SkillProvider 的发现根），junction 的增删由
+ *   dsh skill-filesystem 的目录观察转为失效事件——模型下一步即见/不见；
+ *   停用即移除 junction（项目里的真实目录与 junction 一律不误删）；
  * - 目录安全经 UserDirectoryService.within 保证（三层隔离第 2 层）。
  *
  * @module @soloengine/framework/modules/skills
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import path, { dirname, join, resolve } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import yaml from 'js-yaml'
@@ -34,6 +36,8 @@ export interface SkillPackageRow {
   is_active: number
   is_public: number
   source: string | null
+  /** 文件备注（JSON map：path → note；PRD-04 FR-SKILL-006，不改包）。 */
+  notes: string | null
   created_at: string | null
   updated_at: string | null
   version: number
@@ -318,13 +322,91 @@ export class SkillService {
     return this.view(this.byIdScoped(userId, id) as SkillPackageRow)
   }
 
-  /** 启用/停用（热生效由 harness 侧目录变化驱动）。 */
+  /** 启用/停用（热生效：junction 农场同步 + skill-filesystem 文件观察驱动失效）。 */
   setActive(userId: string, id: string, active: boolean): SkillPackageView {
     const row = this.byIdScoped(userId, id)
     if (row === undefined) throw new FrameworkError(404, 'SKILL_NOT_FOUND', `skill ${id} not found`)
     this.raw.prepare('UPDATE skills_packages SET is_active = ?, updated_at = ?, version = version + 1 WHERE id = ? AND (user_id = ? OR user_id IS NULL)')
       .run(active ? 1 : 0, new Date().toISOString(), id, userId)
+    // 热生效（PRD-04 FR-SKILL-005）：把该用户**全部活跃运行项目**的项目层技能根重同步一遍。
+    // junction 的增删由 dsh skill-filesystem 的目录观察转成失效事件——模型下一步即见/不见。
+    const projects = this.raw.prepare(
+      'SELECT folder_path FROM run_projects WHERE user_id = ? AND is_active = 1',
+    ).all(userId) as { folder_path: string }[]
+    for (const project of projects) {
+      try {
+        this.syncProjectSkills(userId, project.folder_path)
+      } catch (error) {
+        // 单项目同步失败不吞错：显式打行（台账里可见），继续同步其余项目。
+        console.log(`soloengine: syncing skills into project ${project.folder_path} failed: ${String(error)}`)
+      }
+    }
     return this.view(this.byIdScoped(userId, id) as SkillPackageRow)
+  }
+
+  /** 文件备注读取（PRD-04 FR-SKILL-006：备注存台账列、不改包；返回 path → note map）。 */
+  getNotes(userId: string, id: string): Record<string, string> {
+    const row = this.byIdScoped(userId, id)
+    if (row === undefined) throw new FrameworkError(404, 'SKILL_NOT_FOUND', `skill ${id} not found`)
+    if (row.notes === null || row.notes === '') return {}
+    try {
+      const parsed = JSON.parse(row.notes) as unknown
+      return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, string> : {}
+    } catch {
+      return {}
+    }
+  }
+
+  /** 文件备注保存（整包覆盖式 map；空串条目视为删除）。 */
+  setNotes(userId: string, id: string, notes: Record<string, string>): Record<string, string> {
+    const row = this.byIdScoped(userId, id)
+    if (row === undefined) throw new FrameworkError(404, 'SKILL_NOT_FOUND', `skill ${id} not found`)
+    const clean: Record<string, string> = {}
+    for (const [key, value] of Object.entries(notes)) {
+      if (typeof value === 'string' && value !== '') clean[key] = value
+    }
+    this.raw.prepare(
+      'UPDATE skills_packages SET notes = ?, updated_at = ? WHERE id = ? AND (user_id = ? OR user_id IS NULL)',
+    ).run(JSON.stringify(clean), new Date().toISOString(), id, userId)
+    return clean
+  }
+
+  /**
+   * per-user SkillProvider（PRD-04 FR-SKILL-007 / 决策 7）的落地形态：
+   * 把该用户「启用中」的技能以 Windows junction / POSIX symlink 形式同步进一个运行项目的
+   * 项目层技能根（`<project>/.dsh/skills`）。运行项目的项目层即**该用户**启用技能的发现根
+   * （项目层在 dsh 技能分层中最近，同名项胜出），天然按用户×项目隔离；junction 的增删由
+   * skill-filesystem 的文件观察转为失效事件（启停热生效、清缓存、注册表版本随观察递增）。
+   *
+   * @param userId - 归属用户。
+   * @param projectFolderPath - 运行项目目录（沙箱根）。
+   */
+  syncProjectSkills(userId: string, projectFolderPath: string): void {
+    if (String(projectFolderPath ?? '').trim() === '') return
+    const enabled = this.raw.prepare(
+      `SELECT name, folder_path FROM skills_packages
+        WHERE (user_id = ? OR user_id IS NULL) AND is_active = 1 AND folder_path IS NOT NULL`,
+    ).all(userId) as { name: string; folder_path: string }[]
+    const targetRoot = join(projectFolderPath, '.dsh', 'skills')
+    mkdirSync(targetRoot, { recursive: true })
+    const wanted = new Map(enabled.map(row => [row.name, row.folder_path]))
+    // 只移除**我们自己创建的 junction**（符号链接判定）：项目里用户自建的真实技能目录不动。
+    for (const entry of readdirSync(targetRoot)) {
+      const full = join(targetRoot, entry)
+      try {
+        if (!lstatSync(full).isSymbolicLink()) continue
+      } catch { continue }
+      if (wanted.has(entry)) continue
+      rmSync(full, { recursive: true, force: true })
+      console.log(`soloengine: skill "${entry}" left the active set of user ${userId}; junction removed from ${targetRoot}`)
+    }
+    for (const [name, folder] of wanted) {
+      const link = join(targetRoot, name)
+      if (existsSync(link)) continue
+      if (!existsSync(folder)) continue
+      symlinkSync(resolve(folder), link, 'junction')
+      console.log(`soloengine: skill "${name}" is active for user ${userId}; junction created at ${link}`)
+    }
   }
 
   /** 删除技能（删除目录与记录）。 */

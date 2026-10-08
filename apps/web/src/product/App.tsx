@@ -1,10 +1,12 @@
 /** 产品页面应用：路由分发 + 登录门禁 + 偏好加载。 */
 import { useCallback, useEffect, useState } from 'react'
-import { clearTokens, describeError, readAccessToken, request } from './api.ts'
+import { ApiError, clearTokens, describeError, readAccessToken, request } from './api.ts'
 import { t, useLocale } from './i18n.ts'
 import { navigate, useRoute } from './router.ts'
 import { loadPreferences, resetPreferences } from './preferences.ts'
 import { AppShell } from './components/AppShell.tsx'
+import { ErrorBoundary } from './components/ErrorBoundary.tsx'
+import { NoticeLine } from './components/NoticeLine.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { CanvasesPage } from './pages/CanvasesPage.tsx'
 import { CanvasEditorPage } from './pages/CanvasEditorPage.tsx'
@@ -18,9 +20,9 @@ import { SettingsPage } from './pages/SettingsPage.tsx'
 import type { UserView } from './types.ts'
 import css from './styles/common.module.css'
 
-/** 已知路径前缀（未知路径落到画布列表）。 */
+/** 已知路径前缀（未知路径落到画布列表）。画布编辑器是单数 `/canvas/:id`，列表是复数。 */
 const KNOWN_PREFIXES: readonly string[] = [
-  '/login', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
+  '/login', '/canvas', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
 ]
 
 /** 判定路径是否已知。 */
@@ -35,37 +37,50 @@ export function ProductApp() {
   const [user, setUser] = useState<UserView | null>(null)
   const [checked, setChecked] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 进入登录页的原因决定提示语气：令牌失效是「会话过期」的提示（info），其余才是错误。
+  const [errorTone, setErrorTone] = useState<'error' | 'info'>('error')
 
-  // 已有令牌时校验身份；失败即清令牌回到登录页。
-  useEffect(() => {
-    const token = readAccessToken()
-    if (token === null) {
+  /**
+   * 探测身份：成功即进入产品；只有 401 / UNAUTHENTICATED 才算令牌失效（清令牌回登录页）。
+   *
+   * 其余失败（服务不可达、离线、5xx）不销毁令牌：这一轮只是「没问到」，清令牌会把一次
+   * 网络抖动变成强制重新登录（实测 abort `/auth/me` 后当场落到 /login 且令牌被清空）。
+   */
+  const probe = useCallback(async (): Promise<void> => {
+    if (readAccessToken() === null) {
       setChecked(true)
       return
     }
-    void (async () => {
-      try {
-        const result = await request<{ ok: true; user: UserView }>('/auth/me')
-        setUser(result.user)
-        await loadPreferences()
-      } catch (failure) {
-        clearTokens()
-        setUser(null)
-        setError(`${t('shell', 'panelError')} — ${describeError(failure)}`)
-      } finally {
-        setChecked(true)
-      }
-    })()
+    try {
+      const result = await request<{ ok: true; user: UserView }>('/auth/me')
+      setUser(result.user)
+      setError(null)
+      await loadPreferences()
+    } catch (failure) {
+      // 令牌失效（401 / UNAUTHENTICATED）是正常生命周期事件，不是产品故障：
+      // 直接抛出机器码 `UNAUTHENTICATED: a valid access token is required` 会让用户
+      // 在登录页看到一行原始接口错误（用户实测缺陷），故改用产品文案 + info 语气。
+      const expired = failure instanceof ApiError && (failure.status === 401 || failure.code === 'UNAUTHENTICATED')
+      if (expired) clearTokens()
+      setUser(null)
+      setError(expired ? t('shell', 'sessionExpired') : `${t('shell', 'panelError')} — ${describeError(failure)}`)
+      setErrorTone(expired ? 'info' : 'error')
+    } finally {
+      setChecked(true)
+    }
   }, [])
 
-  // 未知路径 → 画布列表。
+  useEffect(() => { void probe() }, [probe])
+
+  // 未知路径 → 画布列表（replace：规范化修正不应新增历史条目，否则后退会回到非法路径并被再次规范化，形成弹跳循环）。
   useEffect(() => {
-    if (!isKnownPath(route.pathname)) navigate('/canvases')
+    if (!isKnownPath(route.pathname)) navigate('/canvases', { replace: true })
   }, [route.pathname])
 
-  // 未登录且不在登录页 → 重定向登录。
+  // 未登录且不在登录页 → 重定向登录。令牌还在（只是这一轮没问到服务器）时不重定向，
+  // 否则「服务瞬断 → 被赶到登录页」依旧会把用户当成已退出。
   useEffect(() => {
-    if (checked && user === null && route.name !== 'login') navigate('/login')
+    if (checked && user === null && readAccessToken() === null && route.name !== 'login') navigate('/login')
   }, [checked, user, route.name])
 
   // 已登录却在登录页 → 回到画布列表。
@@ -98,8 +113,22 @@ export function ProductApp() {
     return <div className={css.empty}>{t('common', 'stateLoading')}</div>
   }
 
-  if (route.name === 'login' || user === null) {
-    return <LoginPage onAuthenticated={onAuthenticated} initialError={error} />
+  if (route.name === 'login' || (user === null && readAccessToken() === null)) {
+    return <LoginPage onAuthenticated={onAuthenticated} initialError={error} initialTone={errorTone} />
+  }
+
+  // 令牌仍在、这一轮身份探测没成功：留在当前路由，给出原因与就地重试，
+  // 不把人当成已退出（重试沿用各页 `actionRetry` → 重新加载数据的同一惯例）。
+  if (user === null) {
+    return (
+      <div className={css.page}>
+        <NoticeLine
+          tone="error"
+          text={error}
+          action={{ label: t('common', 'actionRetry'), onClick: () => { void probe() } }}
+        />
+      </div>
+    )
   }
 
   const page = (() => {
@@ -124,7 +153,9 @@ export function ProductApp() {
       bleed={route.name === 'canvas'}
       onLogout={logout}
     >
-      {page}
+      {/* resetKey 让路由身份变化时重置边界：否则一次渲染失败会把后续页面永久钉在降级态，
+          切换路由也无法恢复（R24「单区块失败不拖垮整页」的前提是能从故障里走出来）。 */}
+      <ErrorBoundary resetKey={`${route.pathname}?${route.query.toString()}`}>{page}</ErrorBoundary>
     </AppShell>
   )
 }

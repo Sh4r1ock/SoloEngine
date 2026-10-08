@@ -10,7 +10,8 @@
  * - 运行面板：`@soloengine/ui-theme/client` 把本文件作为插件自有样式注入文档；
  * - 产品页面：`apps/web` 直接导入本文件（同一个物理文件，不做第二份数值副本）。
  *
- * 本文件只定义 `--se-*`；`--dsw-*` 一律由 DSH 主题样式表提供，禁止在此复制其数值。
+ * 本文件定义 `--se-*`，以及文末对代码着色 `--shiki-token-*`（CodeBlock 自带钩子，非
+ * `--dsw-*` 语义色）的对比度校正；`--dsw-*` 一律由 DSH 主题样式表提供，禁止在此复制其数值。
  */
 
 :root {
@@ -40,4 +41,74 @@
   --se-z-dropdown: 100;
   --se-z-modal: 1000;
   --se-z-portal: 1100;
+}
+
+/* ── 代码着色浅色调色板的对比度校正（WCAG 1.4.3）────────────────────────────
+ *
+ * `--shiki-token-*` 是 CodeBlock 自带的覆写钩子（真源
+ * `packages/client/ui-theme/src/styles/shiki.css`，原生包禁改），不是 `--dsw-*`
+ * 语义色，因此不属于上方「禁止复制 DSH 数值」的约束范围。
+ *
+ * 实测（浅色、代码块底 rgb(249,250,251)、11px/400 需 4.5:1）：9 个 token 里 6 个
+ * 不达标 —— comment 3.18 / string 3.30 / parameter 3.43 / string-expression 4.18 /
+ * constant 4.02 / keyword 4.42（证据 test/测试过程/S11/audit-shiki-light.json）。
+ * 深色下同一套 9 个 token 全部 6.95~11.67 通过（audit-shiki-dark.json），故只校正浅色。
+ * 取值按「保持色相的最小加深」算到 ≥4.6 后取整，不改色相家族、不动字号。
+ *
+ * 选择器用 `body` 而非 `:root`：深色覆盖挂在 `body[data-ds-dark-theme]`（特异性更高），
+ * 因此无论本表与 DSH 表的加载先后如何，深色都取自己的值、浅色取这里的值。 */
+body {
+  --shiki-token-constant: #1a74c5;
+  --shiki-token-string: #278238;
+  --shiki-token-comment: #6b7278;
+  --shiki-token-keyword: #d03169;
+  --shiki-token-parameter: #c34b0a;
+  --shiki-token-string-expression: #28823a;
+}
+
+/* ── 浅色下原生三级文本色的对比度校正（WCAG 1.4.3）────────────────────────────
+ *
+ * 实测（运行面板，白底、13px/400 需 4.5:1）：`--dsw-alias-label-tertiary` 原值
+ * rgb(129,133,140) 只有 **3.71**，面板上多处**承载信息**的文本因此不达标：
+ * 会话页签「轨迹」、消息时间戳、用量「26 tok」、系统提示词来源名、行内分隔符
+ * （证据 test/测试过程/S15/S15-座位4-operation-area.md 补记 7 的普查读数）。
+ *
+ * 取值 #6b7278 = 白底 **4.88**、代码块底色 4.67，与上方 shiki 校正同一取值族（同色相
+ * 家族的最小加深），不改字号、不动布局。深色同一令牌实测 8.79 已达标，故不校正：
+ * DSH 的深色覆盖挂在 `body[data-ds-dark-theme]`（特异性高于本条 `body`），
+ * 因此深色取它自己的值、浅色取这里的值。 */
+/* 特异性取 `html body`（0,0,2）：原生浅色声明就在 `body`（0,0,1）且加载在本表之后，
+ * 同级写法则我们被覆盖（实测时间戳仍取旧值 rgb(129,133,140)）；而原生深色挂在
+ * `body[data-ds-dark-theme]`（0,1,1）仍高于本条，故深色照旧取它自己的值。 */
+html body {
+  --dsw-alias-label-tertiary: #6b7278;
+}
+
+/* `--dsw-alias-label-caption` 原生取 bluish-400（#adb2b8），白底只有 **2.13**，而它承载的是
+ * 要读的信息，不是禁用态：实测命中「模型推理等级 High」（`.kXebsa_triggerEffort`）与
+ * 对话输入框占位墨色（`.V_JJJW_placeholder`）等 6 处 caption 族表面（WCAG 1.4.3 的豁免只覆盖
+ * 非活动组件，占位符不在豁免内）。取值 #757575 = 白底 **4.6**，是达标的最小加深，且仍浅于
+ * 上面校正后的 tertiary（#6b7278），标签阶梯的明暗次序不变。禁用/弱化族走
+ * `--dsw-alias-label-dimmed`，本条不碰，避免让禁用项看起来可点。特异性同上一条：`html body`
+ * （0,0,2）压过原生浅色 `body`，仍让位深色 `body[data-ds-dark-theme]`（0,1,1）。 */
+html body {
+  --dsw-alias-label-caption: #757575;
+}
+
+/* 同一令牌在深色也不达标：实测推理等级与输入框占位墨色 `rgb(129,133,140)` 落在
+ * `rgb(44,44,46)` 上只有 **3.76**。取值 #9a9fa6 在同一底色上 **5.03**，且仍暗于深色的
+ * tertiary（#adb2b8）——深色里「更次要 = 更暗」的阶梯次序不变。特异性 `html body[data-ds-dark-theme]`
+ * （0,1,2）只压过原生同属性的深色声明，不触碰浅色。 */
+html body[data-ds-dark-theme] {
+  --dsw-alias-label-caption: #9a9fa6;
+}
+
+/* 激活页签的选中态墨色走 `--dsw-alias-state-business-primary`，浅色原生取
+ * `--dsw-static-deepseek-500`（rgb(65,118,230)），白底实测 **4.23** < 4.5（R7/R11 的
+ * WCAG AA 判据）。不自造新色：改指同一调色板里既有的下一档 `--dsw-static-deepseek-600`
+ * （rgb(72,104,178)），白底 **5.39**，而白字压在该强调色上同样是 5.39（原 4.23）——
+ * 两个方向一起变好，主按钮/选中态/焦点环的观感仍是同一族品牌蓝，只是深一档。
+ * 深色取 `deepseek-400`（原生另一条声明），本条只写浅色，不触碰深色。 */
+html body {
+  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-600);
 }

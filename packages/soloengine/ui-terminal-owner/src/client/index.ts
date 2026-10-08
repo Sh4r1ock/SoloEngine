@@ -4,7 +4,11 @@
  * 依据 PRD-08 FR-OPS-003/005 与《SoloEngine Harness插件体系完整介绍》§三 runmode：
  * 以**同名 kind `terminal` 的 `extension` 档**注册（官方档位契约：一个 kind 至多一个 builtin
  * 与一个 extension，extension 生效），保留官方契约（kind、tab 参数 `{terminalId}`、多标签、
- * 刷新后恢复、行式契约），把传输实现替换为 `ctx.terminals` 的 owner 归属会话桥。
+ * 行式契约），把传输实现替换为 `ctx.terminals` 的 owner 归属会话桥。
+ *
+ * 实测边界（2026-09-25，运行面板）：**存活的是 Host 侧的终端进程**，不是右栏的 tab 条——
+ * 页面刷新后右栏 tab 条回到空态（官方座位的 tab 记录不落盘），重新打开终端时由 `refreshList`
+ * 接回本会话已有的 owner 终端。故此处不再声称「刷新后恢复」。
  *
  * 形态纪律：同一功能只装载一个插件——本包生效时官方 `ui-sidebar-terminal` 的正文不渲染
  * （其 body 注册在它自己的 id 下），组合层同时把该行禁用（见 host/cordis.patch.yml）。
@@ -59,5 +63,4 @@ export function apply(ctx: ClientContext): void {
     key: TERMINAL_ID,
     locale: NS,
   }, TerminalPanel))
-  console.log('soloengine-ui-terminal-owner: terminal panel registered as the extension band of kind "terminal"')
 }

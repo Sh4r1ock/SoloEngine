@@ -36,7 +36,9 @@
 }
 
 .disclosure {
-  width: 14px;
+  width: 24px;
+  min-height: 24px;
+  flex-shrink: 0;
   border: 0;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
@@ -44,14 +46,15 @@
   font: var(--dsw-font-xxs-12);
 }
 
+/* 禁用只是「文件没有子级」，图形仍要看得清（1.4.11 对比度），故只改光标不降透明度。 */
 .disclosure:disabled {
   cursor: default;
-  opacity: 0.5;
 }
 
 .label {
   flex: 1;
   min-width: 0;
+  min-height: 24px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -69,12 +72,22 @@
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   font: var(--dsw-font-xxs-12);
+  min-width: 24px;
+  min-height: 24px;
   opacity: 0;
 }
 
 .row:hover .action,
+.row:focus-within .action,
 .rowCurrent .action {
   opacity: 1;
+}
+
+/* 触屏（无 hover）设备上常显操作按钮，保证重命名/删除可达。 */
+@media (hover: none) {
+  .action {
+    opacity: 1;
+  }
 }
 
 .confirm {
@@ -101,7 +114,7 @@
 .error {
   padding: var(--se-space-2);
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .error {

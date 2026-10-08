@@ -3,23 +3,23 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
 }
 
 .strip {
   display: flex;
   align-items: center;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
   overflow-x: auto;
-  padding-bottom: var(--se-space-1, 4px);
+  padding-bottom: var(--se-space-1);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
   max-width: 220px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-sm, 8px);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
   overflow: hidden;
 }
 
@@ -32,7 +32,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding: 2px 6px;
+  padding: 0 var(--se-space-2);
+  min-height: 24px;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
   background: transparent;
@@ -41,51 +42,57 @@
 }
 
 .chipClose,
-.add,
-.control {
+.add {
   border: 0;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font: var(--dsw-font-xxs-12);
-  padding: 2px 6px;
-}
-
-.control:disabled {
-  opacity: 0.4;
-  cursor: default;
+  padding: 0 var(--se-space-2);
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .bar {
   display: flex;
   align-items: center;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
 }
 
-.address {
+.addressField {
+  /* 地址字段用平台 Input 原语：自带发丝边框、聚焦环与**内容字轴字号**
+     （原自制 `<input class=address>` 写死 12px，类名不含 `_input_`，
+     正好绕过产品层为字轴补的那条规则 → 字轴在这块面板上断链）。
+     弹性宽度由本容器承担：CSS 模块在 noUncheckedIndexedAccess 下把类名读作
+     string | undefined，而原语的 className 不收 undefined，故不往原语上传类名。 */
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 var(--se-space-2, 8px);
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-sm, 8px);
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
+  display: flex;
+}
+
+.addressField > span {
+  flex: 1;
+  min-width: 0;
 }
 
 .frame {
   flex: 1;
   min-height: 0;
   width: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-sm, 8px);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
   background: var(--dsw-alias-bg-base);
 }
 
 .empty,
-.state {
-  padding: var(--se-space-3, 12px);
+.state,
+/* 加载行与空态同族（中性墨色、同字号同内边距）：只有 `.state` 单独转成错误色。 */
+.loading {
+  padding: var(--se-space-3);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
+}
+
+.state {
+  color: var(--dsw-alias-state-error-primary);
 }

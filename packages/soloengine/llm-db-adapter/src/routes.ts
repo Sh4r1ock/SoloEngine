@@ -15,9 +15,9 @@
  * @module @soloengine/llm-db-adapter/routes
  */
 
-import { createDecipheriv } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { createDecipheriv, randomBytes } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
@@ -76,6 +76,48 @@ export interface RouteSnapshot {
 
 /** 主密钥字节长度。 */
 const MASTER_KEY_BYTES = 32
+
+/** 决定路由集合的**行事实**列：任一变化都必须换路由（签名必须是全表事实，含停用行）。 */
+const FACT_COLUMNS = `id, provider, model_name, base_url, is_full_url, is_active,
+     max_tokens, max_input_tokens, max_output_tokens, temperature, timeout, version, updated_at`
+
+/** 行事实的行形状（签名只需要这些列，不需要密钥等重列）。 */
+type FactRow = Pick<LlmConfigRow,
+  'id' | 'provider' | 'model_name' | 'base_url' | 'is_full_url' | 'is_active'
+  | 'max_tokens' | 'max_input_tokens' | 'max_output_tokens' | 'temperature' | 'timeout'
+  | 'version' | 'updated_at'>
+
+/**
+ * 决定一条路由的行事实元组（列序即签名的语义）。
+ * @param row - 行事实。
+ * @returns 元组；单例签名与全表签名都由它派生，二者不可能漂移。
+ */
+function rowTuple(row: FactRow): unknown[] {
+  return [
+    row.id, row.provider, row.model_name, row.base_url, row.is_full_url, row.is_active,
+    row.max_tokens, row.max_input_tokens, row.max_output_tokens, row.temperature, row.timeout,
+    row.version, row.updated_at,
+  ]
+}
+
+/**
+ * 由行事实派生签名（纯函数：`reload()` 与轻量探测必须算出同一个值）。
+ * @param rows - 行事实；必须覆盖**全部**行（含停用行），按 id 有序。
+ * @returns 该事实集合的稳定签名。
+ */
+function factSignatureOf(rows: readonly FactRow[]): string {
+  return JSON.stringify(rows.map(rowTuple))
+}
+
+/**
+ * 单行的行事实签名：判断**该行**是否需要重新派生。
+ * @param row - 行事实。
+ * @returns 该行的事实签名。
+ */
+function rowSignature(row: FactRow): string {
+  return JSON.stringify(rowTuple(row))
+}
+
 /** 路由引用前缀：官方 `credentialRef` 只接受 `[A-Za-z_][A-Za-z0-9_]*`，故 UUID 的短横线转下划线。 */
 const REF_PREFIX = 'SOLOENGINE_LLM_CONFIG_'
 
@@ -157,8 +199,24 @@ export function deriveBaseRoot(row: LlmConfigRow, protocol: DeepSeekProtocol): s
   return trimmed
 }
 
-/** 主密钥：读取并校验（缺失/非法/长度错一律抛错，不回退）。 */
+/**
+ * 主密钥：装载（不存在则**首次生成**），非法/长度错一律抛错，不回退。
+ *
+ * 语义与 `@soloengine/framework` 的 `MasterKey`（装载或首次生成，32 字节随机、十六进制落盘、
+ * 属主可读写）完全一致——但这里**有意不 import 框架**：适配器是平台侧插件，激活顺序在框架层
+ * 插件之前（组合层先于宿主），而全新部署（新卷 / 新容器 / 新机器）上主密钥要到框架首次落库
+ * 才生成。若这里只读不建，首启必然 ENOENT（容器实测命中：`1 entry did not activate`）。
+ * 两处写同一文件、同一算法，先到者生成、后到者装载，结果收敛。
+ * @param path - 主密钥文件绝对路径。
+ * @returns 32 字节主密钥。
+ */
 export function readMasterKey(path: string): Buffer {
+  if (!existsSync(path)) {
+    mkdirSync(dirname(path), { recursive: true })
+    const generated = randomBytes(MASTER_KEY_BYTES)
+    writeFileSync(path, generated.toString('hex'), { encoding: 'utf8', mode: 0o600 })
+    return generated
+  }
   const raw = readFileSync(path, 'utf8').trim()
   if (!/^[0-9a-fA-F]+$/u.test(raw)) throw new Error(`master key at ${path} is not hexadecimal`)
   if (raw.length !== MASTER_KEY_BYTES * 2) {
@@ -187,6 +245,15 @@ export class RouteTable {
   private readonly masterKeyPath: string
   private readonly masterKey: Buffer
   private routes = new Map<string, RouteEntry>()
+  /**
+   * 行 id → 已派生的路由与其派生时的事实。
+   *
+   * 用途：热同步只重新派生**事实变了的行**，其余行沿用既有适配器实例。每次全表重建会让任何
+   * 一处改动都触发 N 条路由重建（N 随配置数增长），把同步耗时绑在资产总量上——而 NFR-PER-008
+   * 是有硬预算的时延上界。沿用未变行者也符合 FR-ENG-015 的「不串代」：每条路由的代际只在
+   * 自己的事实变化时才推进，元数据解析与请求派发始终取自同一个适配器实例。
+   */
+  private readonly derived = new Map<string, { entry: RouteEntry; facts: string }>()
   private skipped: RouteSkip[] = []
   private signature = ''
   private database: DatabaseSync | undefined
@@ -272,7 +339,27 @@ export class RouteTable {
   }
 
   /**
+   * 轻量「行事实」探测：**不派生任何适配器**，只读签名列。
+   *
+   * 存在的理由：热同步有 ≤3 秒的时延上界（NFR-PER-008），轮询周期必须显著小于该上界，
+   * 而每个周期都派生一遍全部路由（每条路由一个官方适配器实例）是纯浪费。故把「有没有变」
+   * 与「变了就重算」拆开——前者每个周期都跑一次廉价查询，后者只在事实真的变了才发生。
+   *
+   * @returns 当前全表行事实签名；与 `reload()` 返回的签名同一个值域。
+   */
+  factSignature(): string {
+    const rows = this.open().prepare(
+      `SELECT ${FACT_COLUMNS} FROM llm_configs ORDER BY id`,
+    ).all() as unknown as FactRow[]
+    return factSignatureOf(rows)
+  }
+
+  /**
    * 重新读取业务库并派生路由集合。
+   *
+   * 签名取全表行事实（`factSignature`），与轻量探测同值——否则二者不一致会让每个周期都
+   * 判定为「变了」，重算就失去意义。
+   *
    * @returns 本次快照（含签名与逐行拒绝原因）。
    */
   reload(): RouteSnapshot {
@@ -285,10 +372,23 @@ export class RouteTable {
 
     const routes = new Map<string, RouteEntry>()
     const skipped: RouteSkip[] = []
+    const live = new Set<string>()
     for (const row of rows) {
+      const route = `soloengine-${row.id}`
+      live.add(row.id)
+      const facts = rowSignature(row)
+      const cached = this.derived.get(row.id)
+      // 事实未变：沿用既有适配器（不重建 = 不换代，也不把 N 条路由的重算压进时延预算）。
+      if (cached !== undefined && cached.facts === facts) {
+        routes.set(route, cached.entry)
+        continue
+      }
       try {
-        routes.set(`soloengine-${row.id}`, this.derive(row))
+        const entry = this.derive(row)
+        this.derived.set(row.id, { entry, facts })
+        routes.set(route, entry)
       } catch (error) {
+        // 派生失败不缓存：下一周期天然重试（今天的失败不是明天的结论）。
         skipped.push({
           id: row.id,
           name: row.name,
@@ -296,13 +396,13 @@ export class RouteTable {
         })
       }
     }
+    // 被删除或停用的行：其派生缓存一并回收（路由注销后不该在内存里留存）。
+    for (const id of [...this.derived.keys()]) {
+      if (!live.has(id)) this.derived.delete(id)
+    }
     this.routes = routes
     this.skipped = skipped
-    this.signature = JSON.stringify(rows.map(row => [
-      row.id, row.provider, row.model_name, row.base_url, row.is_full_url, row.is_active,
-      row.max_tokens, row.max_input_tokens, row.max_output_tokens, row.temperature, row.timeout,
-      row.version, row.updated_at,
-    ]))
+    this.signature = this.factSignature()
     return { routes: this.entries, skipped, signature: this.signature }
   }
 

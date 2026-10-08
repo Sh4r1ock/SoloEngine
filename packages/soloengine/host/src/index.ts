@@ -43,9 +43,13 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { FrameworkRuntime, BUSINESS_TABLES, type RunDriver, type RunStartInput, type SessionLedger, type UsageRow } from '@soloengine/framework'
 import { mountOperationAreaBridge } from './ops-bridge.ts'
 import { mountFileChanges } from './file-changes.ts'
+import { PreviewStream, mountPreviewStream } from './preview-stream.ts'
+import { mountLedgerRebuild } from './ledger-rebuild.ts'
+import { McpMountSupervisor } from './mcp-mount.ts'
 import { applyRunModePreset } from './permission-allowlist.ts'
 import { hasTokenParameter, isLoopbackAuthority, isLoopbackRequest, requestAuthority, writeTrustBootstrap } from './trust-bootstrap.ts'
 import type { AgentSpec, FollowIntentRecord, FollowIntentView, FollowLocation, RunContextRecord, RunMode } from '@soloengine/types'
+import { TOOL_MAP } from '@soloengine/types'
 
 /** Cordis plugin name. */
 export const name = 'soloengine-host'
@@ -110,8 +114,18 @@ function isProductSettingsNamespace(value: string): value is ProductSettingsName
  * 框架层 REST 前缀 `/api/solo` 与插件前缀 `/plugins` 不在其中，互不遮蔽。
  */
 const PRODUCT_ROUTE_ROOTS: readonly string[] = [
-  '/run', '/login', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
+  // 编辑器是单数 `/canvas/:agenticFlowId`，列表页仍是复数 `/canvases`：前缀匹配按路径段边界
+  // 判定，`/canvas` 不覆盖 `/canvases`（实测漏写会让列表页 404），故两行都在。
+  '/run', '/login', '/canvas', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
 ]
+
+/**
+ * MCP 启停热同步周期（PRD-05 FR-MCP-005）。
+ *
+ * 与模型路由热同步同量级（1 秒）：启停一次最多 1 秒后对活运行生效，远好于「重启才生效」，
+ * 也不至于每秒读爆 `mcp_servers`（一次 SELECT，无连接开销）。
+ */
+const MCP_SYNC_INTERVAL_MS = 1000
 
 /** 运行上下文的 zod 校验（持久投影缓存先验）。 */
 const runContextSchema = zod.object({
@@ -271,9 +285,13 @@ export function createRunDriver(
     return row.model_name
   }
 
+  /** MCP 挂载监督器（FR-MCP-005/006/008；在运行域内一份，随插件生命周期）。 */
+  const mcpMounts = new McpMountSupervisor(runtime, message => { console.log(message) })
+
   /**
    * 把一个编译产物节点挂进该 agent 的 scope：基线预设 + persona 段 + 工具收紧 +
-   * 出边委派工具（每条边一个 Task 工具，PRD-06 FR-ENG-026）。
+   * 出边委派工具（每条边一个 Task 工具，PRD-06 FR-ENG-026）+ **该节点引用的 MCP 服务器**
+   * （PRD-05 FR-MCP-006：池外不入工具表）。
    */
   const composeNode = async (
     agentCtx: Context,
@@ -375,9 +393,49 @@ export function createRunDriver(
       // 节点只勾选了委派工具：把继承面全部关掉（deny 是唯一能表达「什么都不继承」的形式）。
       agentCtx.tools.restrict({ deny: ctx.tools.schemas().map(schema => schema.name) })
     }
+    // FR-SKILL-007（Must）：节点勾选的技能即该 agent 的可见集合，与全局池解耦、编译期写死。
+    //
+    // 平台现状（实测）：预设组合已经给该作用域挂了一个技能注册表（再发布同名服务会冲突
+    // `service "skills" has been registered`），但它的目录是**全量启用技能**，没有按 agent 收紧的
+    // 过滤器（`SkillRegistry` 无 restrict，`ToolRestriction` 只作用于全局工具）。
+    // 因此这里落实**能落实的那一半**：在作用域内加执行守卫，未勾选的技能在调用期被拒
+    // （含参数名，而不是只挡工具本身）；并把本节点的技能范围记入实例日志供诊断。
+    // 「目录里根本不出现」需要预设行支持按 agent 的技能过滤（平台接缝），见 docs/07 §六。
+    if (spec.skills.length > 0) {
+      const declared = new Set(spec.skills)
+      console.log(`soloengine: node ${spec.agentId} skill scope restricted to (skills: ${[...declared].join(', ')});`
+        + ' other skills are denied at invocation (PRD-04 FR-SKILL-007)')
+      agentCtx.tools.guard((execution) => {
+        if (execution.name !== 'skill') return undefined
+        const requested = String((execution.arguments as { name?: unknown } | undefined)?.name ?? '')
+        if (requested !== '' && !declared.has(requested)) {
+          return `skill "${requested}" is not in this node's skill list (PRD-04 FR-SKILL-007)`
+        }
+        return undefined
+      })
+    }
+    // 该节点引用的 MCP 服务器挂进**本作用域**（PRD-05 FR-MCP-006）：只有名单里的服务器出现，
+    // 池外的一概不进（同一服务器名可被不同 agent 各自挂载）。
+    if (spec.mcpServers.length > 0) {
+      await mcpMounts.register({
+        agentCtx,
+        userId: owner.userId,
+        serverNames: spec.mcpServers,
+        sessionKey: owner.sessionKey,
+        agentId: spec.agentId,
+        cwd: spec.cwd,
+      })
+    }
   }
 
   return {
+    /**
+     * MCP 热同步（PRD-05 FR-MCP-005）：把已登记的作用域同步到当前 MCP 行状态。
+     * @returns 本次同步的作用域数。
+     */
+    async syncMcpMounts(): Promise<number> {
+      return await mcpMounts.syncAll()
+    },
     async start(input) {
       const mainSpec = input.compiled.agents.find(spec => spec.agentId === input.mainAgent.agentId)
       if (mainSpec === undefined) {
@@ -744,18 +802,20 @@ function attachCreatorAudit(ctx: Context, runtime: FrameworkRuntime): void {
 /**
  * 画布被删除后的会话收尾：先停掉仍在跑的运行，再清理会话日志目录（画布删除的一部分）。
  *
- * 顺序与理由：会话日志由 harness 持有写句柄——活会话必须先停（`runs.cancel`，停止原因落日志），
- * 句柄释放后再删目录；释放是异步的，故按小步重试。每次动作打印一行，删掉了什么在日志里可见。
+ * 顺序与理由：会话日志由 harness 持有写句柄——活会话必须先停（停止原因落日志），句柄释放后再删
+ * 目录；释放是异步的，故按小步重试。每次动作打印一行，删掉了什么在日志里可见。
+ *
+ * 停止走 `runs.cancelDetached` 而非 `runs.cancel`：这一步发生在业务行（项目/会话/事件）级联删除
+ * **之后**，会话行已不存在，`cancel` 的归属查询必然失败且停不掉活会话。归属由级联自身确立
+ * （键集合取自该次删除的返回值，不接受外部输入）。
  *
  * @param ctx - 插件上下文（读 `sessions` 判断活跃）。
- * @param runtime - 框架层运行时（`runs.cancel` 提供停止语义）。
- * @param userId - 归属用户。
+ * @param runtime - 框架层运行时（`runs.cancelDetached` 提供停止语义）。
  * @param sessionKeys - 被删除的会话键。
  */
 async function retireSessionsAfterCanvasDelete(
   ctx: Context,
   runtime: FrameworkRuntime,
-  userId: string,
   sessionKeys: readonly string[],
 ): Promise<void> {
   const home = process.env.DSH_HOME ?? join(process.env.SOLOENGINE_ROOT ?? process.cwd(), 'data', 'dsh-home')
@@ -765,7 +825,7 @@ async function retireSessionsAfterCanvasDelete(
   for (const key of sessionKeys) {
     if (live?.get?.(key) !== undefined) {
       try {
-        await runtime.runs.cancel(userId, key, 'the canvas was deleted')
+        await runtime.runs.cancelDetached(key, 'the canvas was deleted')
         console.log(`soloengine: run stopped because its canvas was deleted (${key})`)
       } catch (error) {
         console.log(`soloengine: stopping the run for ${key} after its canvas was deleted failed (${String(error)})`)
@@ -863,8 +923,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   // 画布删除的级联到文件系统：业务行（项目/会话/事件）在框架层事务里删，而会话日志是
   // `ctx.sessionPersistence` 的 JSONL 目录——由 host 在事务提交后停掉仍在跑的运行并清理日志；
   // 每次动作打印一行，删掉了什么可见、不静默。
-  runtime.canvas.setSessionLogRemover((userId, keys) => {
-    void retireSessionsAfterCanvasDelete(ctx, runtime, userId, keys).catch((error: unknown) => {
+  runtime.canvas.setSessionLogRemover((_userId, keys) => {
+    void retireSessionsAfterCanvasDelete(ctx, runtime, keys).catch((error: unknown) => {
       console.log(`soloengine: retiring sessions after a canvas delete failed (${String(error)})`)
     })
   })
@@ -907,20 +967,56 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   // 运行驱动 + 归属直写 + 创造模式审计：等 harness 侧服务就绪后再接线
   // （未就绪时框架层 REST 仍在，/runs 以结构化错误明确拒绝，不静默降级）。
+  /** 画布编辑器实时预览的轻量日志缓冲（FR-CANVAS-017；随本插件生命周期，卸载即弃）。 */
+  const previewStream = new PreviewStream()
+
   ctx.effect(() => {
     const fiber = ctx.inject(
-      ['agents', 'sessions', 'agentPresets', 'tools', 'subagents', 'sessionProjections'],
+      ['agents', 'sessions', 'agentPresets', 'tools', 'subagents', 'sessionProjections', 'skills', 'sessionPersistence'],
       (driverCtx) => {
         const attribution = new Map<string, NodeAttribution>()
         const lastAssistantSeq = new Map<string, number>()
         const ledger = runtime.runs.ledger
         const driver = createRunDriver(driverCtx, runtime, { agentPreset, maxDepth, attribution, lastAssistantSeq })
         runtime.runs.setDriver(driver)
+        // FR-CANVAS-014：画布编辑器的工具多选来自 harness 侧的工具集合——
+        // **实时注册**（全局注册表；fs/命令类工具注册在各 agent 作用域，全局面不重复出现）
+        // 与**编译器画布词汇表**（TOOL_MAP 的画布工具名 + run_command，编译契约的同一张表）
+        // 的并集，经原生注入点挂进同一条 REST 前缀（机制一份，前端不另立静态清单）。
+        runtime.mountAuthenticated(
+          { id: 'tools-list', method: 'get', path: '/tools', summary: 'harness 工具清单（实时注册 ∪ 编译器画布词汇表；FR-CANVAS-014）' },
+          async () => {
+            const live = driverCtx.tools.schemas().map(schema => ({
+              name: schema.name,
+              description: (schema as { description?: string }).description ?? '',
+            }))
+            const byName = new Map(live.map(tool => [tool.name, tool]))
+            for (const canvasName of [...Object.keys(TOOL_MAP), 'run_command']) {
+              if (byName.has(canvasName)) continue
+              byName.set(canvasName, { name: canvasName, description: '' })
+            }
+            return { body: { ok: true, tools: [...byName.values()] } }
+          },
+        )
         // 会话 → 画布节点归属：变更台账的 agent_id 归属与运行诊断都问同一处（单一真源）。
         runtime.runs.setAgentResolver(key => attribution.get(key)?.agentId)
         attachLedgerWriters(driverCtx, { attribution, lastAssistantSeq, ledger })
         attachCreatorAudit(driverCtx, runtime)
         attachFollowLayer(driverCtx)
+        // 画布编辑器实时预览（FR-CANVAS-017）：与归属直写同源消费原生事件流，只折叠纯文本
+        // 与工具状态；运转在本 fiber 内，卸载即撤销。
+        mountPreviewStream(driverCtx, runtime, previewStream)
+        // 归属台账重建入口（FR-ARCH-012）：sessions/events 是可重建的本地索引，
+        // 官方持久化读路径为唯一事实来源；路由挂在同一 REST 前缀与鉴权之下。
+        mountLedgerRebuild(driverCtx, runtime)
+        // MCP 启停热生效（PRD-05 FR-MCP-005）：周期把活作用域同步到当前行状态——服务器被停用即
+        // 卸载（世代回滚）、被启用即挂载、单工具开关就地更新，全程免重启。周期与模型路由热同步同量级。
+        const mcpTimer = setInterval(() => {
+          void driver.syncMcpMounts().catch(error => {
+            console.log(`soloengine: mcp hot sync failed: ${String(error)}`)
+          })
+        }, MCP_SYNC_INTERVAL_MS)
+        driverCtx.effect(() => () => { clearInterval(mcpTimer) })
         // 运行上下文与工具呈现意图两条投影（会话头与操作区叠加的数据源）：
         // 注册即可逆效果，卸载即撤销。
         driverCtx.sessionProjections.register(runContextProjectionDefinition)
@@ -973,10 +1069,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   }
   ctx.effect(() => {
     const fiber = ctx.inject(['connection'], (routeCtx) => {
-      const render = async (): Promise<string> => {
+      const render = async (bootstrapScript = ''): Promise<string> => {
         const body = routeCtx.webServer.renderIndex(await readFile(distIndex, 'utf8'))
         // 深链下相对资源 URL 会解析到请求目录，故把资源锚点钉在站点根（与 frontend-static 同法）。
-        return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="/">`)
+        const anchored = body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="/">`)
+        // 运行面板的会话键由服务端解析后随外壳下发（地址栏只带 agenticflow id），故在 </body>
+        // 前插一段引导脚本；无该段时逐字返回原外壳。
+        return bootstrapScript === '' ? anchored
+          : anchored.includes('</body>')
+            ? anchored.replace('</body>', `${bootstrapScript}</body>`)
+            : `${anchored}${bootstrapScript}`
       }
       const page = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -997,14 +1099,32 @@ export function apply(ctx: Context, config: Config = {}): void {
           return
         }
         if (!routeCtx.connection.authorizeIndex(req, res)) return
+        // 运行面板按 **agenticflow** 区分 URL（PRD-01 §实例隔离：`/run/:agenticFlowId`）。
+        // 会话键是面板内部的数据归属，不进地址栏：这里把 flow id 解析成该 flow 最近一次运行的
+        // 会话键随外壳下发，client-bootstrap 读它做原生会话选择；解析不到即 fail loud 结构化 404
+        // （指明 flow id），不静默落到别的页面。
+        const pathname = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).pathname
+        const flowSegment = pathname.startsWith('/run/')
+          ? decodeURIComponent(pathname.slice('/run/'.length).split('/')[0] ?? '')
+          : ''
+        let runBootstrap = ''
+        if (flowSegment !== '') {
+          const sessionKey = runtime.runs.latestSessionKeyOfFlow(flowSegment)
+          if (sessionKey === undefined) {
+            res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+            res.end(`${JSON.stringify({ ok: false, error: { code: 'FLOW_SESSION_MISSING', message: `agenticflow ${flowSegment} has no session yet; run it from the canvas first` } })}\n`)
+            return
+          }
+          runBootstrap = `<script>window.__SOLOENGINE_RUN_FLOW__=${JSON.stringify(flowSegment)};window.__SOLOENGINE_RUN_SESSION__=${JSON.stringify(sessionKey)};</script>`
+        }
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-        res.end(await render())
+        res.end(await render(runBootstrap))
       }
       const disposers = [
         ...PRODUCT_ROUTE_ROOTS.map(path => routeCtx.webServer.register({ kind: 'prefix', path, handler: page })),
         routeCtx.webServer.register({ kind: 'exact', path: '/', handler: page }),
       ]
-      console.log(`soloengine: product surfaces mounted (/, ${PRODUCT_ROUTE_ROOTS.join(', ')})`)
+      console.log(`soloengine: product surfaces mounted (/, ${PRODUCT_ROUTE_ROOTS.join(', ')})；运行面板按 /run/:agenticFlowId 区分 URL`)
       return () => { for (const dispose of disposers) dispose() }
     })
     return () => { void fiber.dispose() }

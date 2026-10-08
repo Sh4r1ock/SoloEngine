@@ -89,8 +89,33 @@ export class SoloDatabase {
     this.raw.exec('PRAGMA temp_store = MEMORY')
     this.raw.exec('PRAGMA foreign_keys = ON')
     this.raw.exec(readFileSync(schemaPath(), 'utf8'))
+    this.applyIncrementalColumns()
     this.raw.exec('PRAGMA user_version = 1')
     this.schemaVersion = 1
+  }
+
+  /**
+   * 增量列迁移（幂等）。
+   *
+   * `CREATE TABLE IF NOT EXISTS` 不会给**已存在**的表补列，故新增列必须在这里显式补一次，
+   * 否则老库升上来会缺列（症状是运行期才炸的 `no such column`）。补列一律 `ADD COLUMN`，
+   * 不改已有列、不搬数据（SQLite 的 ADD COLUMN 是元数据操作，不重写表）。
+   */
+  private applyIncrementalColumns(): void {
+    const additions: { table: string; column: string; ddl: string }[] = [
+      // PRD-05 FR-MCP-008：单工具启停的停用清单。
+      { table: 'mcp_servers', column: 'disabled_tools', ddl: 'disabled_tools TEXT' },
+      // PRD-04 FR-SKILL-006：文件备注（JSON map：path → note），存台账不改包。
+      { table: 'skills_packages', column: 'notes', ddl: 'notes TEXT' },
+    ]
+    for (const { table, column, ddl } of additions) {
+      const columns = (this.raw.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[])
+        .map(row => row.name)
+      if (columns.length === 0) continue // 表还不存在：schema.sql 已按新列建过。
+      if (columns.includes(column)) continue
+      this.raw.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`)
+      console.log(`soloengine: migrated ${table}.${column} (added)`)
+    }
   }
 
   /**

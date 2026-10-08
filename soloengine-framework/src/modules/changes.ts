@@ -679,7 +679,14 @@ export class ChangeLedgerService {
         throw new FrameworkError(404, 'CHANGE_NOT_FOUND', `file change ${input.changeId} not found for this user`)
       }
       if (input.hunkIds === undefined || input.hunkIds.length === 0) {
-        throw new FrameworkError(400, 'HUNK_IDS_REQUIRED', 'per-hunk review requires hunkIds')
+        // 逐文件裁决（PRD-09 FR-FC-005 的中间粒度）：带 changeId 而不带 hunkIds 就是对**这一条
+        // 变更记录整体**下裁决。此前这里直接 400 要求 hunkIds，而 L686 遇到无 hunk 结构的记录时
+        // 又让用户「改为按文件审阅」——按文件的路径根本不存在，逐文件按钮 100% 失败，
+        // 空文件/二进制这类无行级差异的记录更是永远无法裁决。
+        const hunks = parseHunks(row)
+        if (hunks !== null) for (const hunk of hunks) hunk.status = input.status
+        this.writeHunks(row.id, hunks, input.status)
+        return { updated: [row.id] }
       }
       const hunks = parseHunks(row)
       if (hunks === null) {

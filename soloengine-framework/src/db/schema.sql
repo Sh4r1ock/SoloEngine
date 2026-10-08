@@ -113,6 +113,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_agentic_flow_id ON sessions(agentic_flow
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_flow_user ON sessions(agentic_flow_id, user_id);
+-- 归属列全部索引（PRD-12 FR-STO-007）：run_project_id / llm_config_id 也是归属引用列。
+CREATE INDEX IF NOT EXISTS idx_sessions_run_project_id ON sessions(run_project_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_llm_config_id ON sessions(llm_config_id);
 
 CREATE TABLE IF NOT EXISTS events (
   session_id        INTEGER NOT NULL REFERENCES sessions(id),
@@ -141,6 +144,7 @@ CREATE TABLE IF NOT EXISTS skills_packages (
   is_active   INTEGER NOT NULL DEFAULT 1,
   is_public   INTEGER NOT NULL DEFAULT 0,
   source      TEXT,
+  notes       TEXT,
   created_at  TEXT,
   updated_at  TEXT,
   version     INTEGER NOT NULL DEFAULT 1
@@ -165,7 +169,11 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   source         TEXT,
   created_at     TEXT,
   updated_at     TEXT,
-  version        INTEGER NOT NULL DEFAULT 1
+  version        INTEGER NOT NULL DEFAULT 1,
+  -- 单工具启停（PRD-05 FR-MCP-008）：被停用的工具名列表（JSON 数组）。
+  -- **放在末尾是刻意的**：老库靠 `ALTER TABLE ADD COLUMN` 补列，SQLite 把新列追加在末尾，
+  -- 故新建库的列序要与升级库对齐，否则「DDL 与活库逐列一致」这条不变式只对新库成立。
+  disabled_tools TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_user_id ON mcp_servers(user_id);
 
@@ -224,6 +232,8 @@ CREATE INDEX IF NOT EXISTS idx_file_changes_session_message ON file_changes(sess
 CREATE INDEX IF NOT EXISTS idx_file_changes_file_path ON file_changes(file_path);
 CREATE INDEX IF NOT EXISTS idx_file_changes_tool_call_id ON file_changes(tool_call_id);
 CREATE INDEX IF NOT EXISTS idx_file_changes_origin_status ON file_changes(origin, status);
+-- 归属列全部索引（PRD-12 FR-STO-007）：user_id 是 file_changes 的归属列。
+CREATE INDEX IF NOT EXISTS idx_file_changes_user_id ON file_changes(user_id);
 
 -- ── 资产：创造模式审计 ───────────────────────────────────────────────────────
 

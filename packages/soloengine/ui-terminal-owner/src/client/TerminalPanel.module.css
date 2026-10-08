@@ -20,6 +20,7 @@
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
   padding: var(--se-space-1) var(--se-space-2);
+  min-height: 24px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -29,11 +30,16 @@
   color: var(--dsw-alias-label-primary);
 }
 
+.errorInline {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .meta {
   display: flex;
   gap: var(--se-space-2);
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
+  /* tertiary 在浅色白底仅 2.13:1（WCAG 1.4.3 需 4.5:1）→ secondary，与产品层 F31 同一裁定。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .screen {
@@ -44,8 +50,12 @@
   overflow: auto;
   background: var(--dsw-alias-bg-layer-2);
   border-radius: var(--se-radius-sm);
-  font-family: var(--dsw-font-family);
-  font-size: var(--dsh-content-font-size, 14px);
+  /* 终端输出必须等宽：`--dsw-font-family` 是中文优先的比例字族，`ls -l`、表格与
+     对齐列会逐字错位（终端面按列对齐是其内容语义的一部分）。
+     `--dsw-font-markdown-code` 是 `size/line family` 简写值，配 `font-family:` 会被整条丢弃；
+     单取字族要用 `-font-family` 令牌（此处字号另走内容字轴，故不并用简写）。 */
+  font-family: var(--dsw-font-markdown-code-font-family);
+  font-size: var(--dsh-content-font-size);
   line-height: 1.5;
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
@@ -60,7 +70,7 @@
 
 .note {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .replay {
@@ -86,13 +96,14 @@
 
 .replayMeta {
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .replayBody {
   margin: 0;
-  font-family: var(--dsw-font-family);
-  font-size: var(--dsh-content-font-size, 14px);
+  /* 回放体是持久化的工具输出原文，与实时终端同一等宽要求（取 `-font-family` 令牌，理由见 `.screen`）。 */
+  font-family: var(--dsw-font-markdown-code-font-family);
+  font-size: var(--dsh-content-font-size);
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
   word-break: break-all;

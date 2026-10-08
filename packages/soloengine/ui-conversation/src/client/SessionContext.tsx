@@ -11,7 +11,6 @@
 import { Pill } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import styles from './SessionContext.module.css'
-import type { SoloengineConversationKey } from './locales.ts'
 
 /** 会话头动作座位的组件 props（owner 无值；session 作用域提供标准 hook 座位）。 */
 export type SessionContextProps =
@@ -49,12 +48,13 @@ export function SessionContext({ useSession, useProjection, t }: SessionContextP
       </Pill>
       {project === undefined ? null : (
         <Pill>
-          <span className={styles.value}>{`${t('context.project')} · ${project}`}</span>
+          {/* `.value` 带 max-width + 省略号：完整值须有出口（同 PathValue/FilePicker 做法）。 */}
+          <span className={styles.value} title={`${t('context.project')} · ${project}`}>{`${t('context.project')} · ${project}`}</span>
         </Pill>
       )}
       {modeKey === undefined ? null : (
         <Pill>
-          <span className={styles.value}>{`${t('context.mode')} · ${t(`mode.${modeKey}` as SoloengineConversationKey)}`}</span>
+          <span className={styles.value}>{`${t('context.mode')} · ${t(`mode.${modeKey}`)}`}</span>
         </Pill>
       )}
     </div>

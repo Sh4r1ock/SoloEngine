@@ -72,6 +72,13 @@ export interface RunDriver {
   live(sessionKey: string): { live: boolean; agentId: string | null; status: string }
   /** 用量派生（从事件流折叠，不落第二副本）。 */
   usage(): Promise<UsageRow[]>
+  /**
+   * MCP 热同步（PRD-05 FR-MCP-005）：把活作用域同步到当前 MCP 行状态。
+   *
+   * 启停与单工具开关都要**免重启**生效，故由 host 周期调用本方法；返回本次同步的作用域数，
+   * 供调用方观察（0 表示当前没有活作用域，属正常）。
+   */
+  syncMcpMounts(): Promise<number>
 }
 
 /** 用量派生行（按会话）。 */
@@ -212,6 +219,38 @@ export class RunService {
   }
 
   /**
+   * 编译期提示：节点引用了「被停用或不存在」的技能 / MCP 服务器（PRD-02 §边界表）。
+   *
+   * 口径按 PRD 自己的标注「[待确认：提示粒度]」：这里选择**实例日志提示**（运行诊断可见、
+   * 不阻断运行）——模型配置被删是另一条边界（fail loud 拒绝运行），技能/MCP 被停用只影响
+   * 能力面，运行仍应可发起，挂载层自然不会把停用资产挂进作用域（见 host 的 MCP 挂载层）。
+   * @param userId - 归属用户。
+   * @param canvasId - 画布 ID。
+   * @param compiled - 编译产物。
+   */
+  private noticeUnavailableRefs(userId: string, canvasId: string, compiled: CompileResult): void {
+    for (const spec of compiled.agents) {
+      for (const name of spec.mcpServers) {
+        const row = this.runtime.mcp.byNameScoped(userId, name)
+        if (row === undefined) {
+          console.log(`soloengine: canvas ${canvasId} node ${spec.agentId} references MCP server "${name}" that does not exist or is not visible; its tools will not be mounted`)
+        } else if (row.is_active !== 1) {
+          console.log(`soloengine: canvas ${canvasId} node ${spec.agentId} references MCP server "${name}" that is disabled; its tools will not be mounted (enable it or remove the reference)`)
+        }
+      }
+      for (const name of spec.skills) {
+        const rows = this.runtime.skills.list(userId)
+        const row = rows.find(item => item.name === name)
+        if (row === undefined) {
+          console.log(`soloengine: canvas ${canvasId} node ${spec.agentId} references skill "${name}" that does not exist or is not visible; it stays unavailable to this agent`)
+        } else if (row.is_active !== 1) {
+          console.log(`soloengine: canvas ${canvasId} node ${spec.agentId} references skill "${name}" that is disabled; it stays unavailable to this agent (enable it or remove the reference)`)
+        }
+      }
+    }
+  }
+
+  /**
    * 发起一次运行：现场编译 → 建归属行 → 建 mainagent。
    * @param userId - 归属用户。
    * @param input - 画布、运行项目与可选的显式会话键（固定入口直达用）。
@@ -231,6 +270,7 @@ export class RunService {
         `run project ${project.id} belongs to canvas ${project.agentic_flow_id}, not ${input.canvasId}`)
     }
     const { compiled, settings, canvasData } = this.compile(userId, input.canvasId, project.folder_path)
+    this.noticeUnavailableRefs(userId, input.canvasId, compiled)
     const sessionKey = input.sessionKey === undefined
       ? SessionLedger.newKey()
       : requireExplicitSessionKey(input.sessionKey)
@@ -256,6 +296,13 @@ export class RunService {
     })
     const row = this.ledger.byKey(sessionKey)
     if (row === undefined) throw new FrameworkError(500, 'LEDGER_INSERT_FAILED', 'session ledger row missing after insert')
+    // per-user SkillProvider（PRD-04 FR-SKILL-007）：运行前把该用户启用中的技能同步进
+    // 项目层技能根（junction 农场），使本次运行的技能发现根 = 该用户的启用集合。
+    try {
+      this.runtime.skills.syncProjectSkills(userId, project.folder_path)
+    } catch (error) {
+      console.log(`soloengine: syncing skills into project ${project.folder_path} failed: ${String(error)}`)
+    }
     try {
       await driver.start({
         sessionKey,
@@ -289,6 +336,18 @@ export class RunService {
     return row
   }
 
+  /**
+   * 某 agenticflow 的最新会话键（运行面板 URL 的解析依据：`/run/:agenticFlowId`）。
+   * @param flowId - 画布（agenticflow）ID。
+   * @returns 最新会话键；该 flow 还没有任何会话时 undefined。
+   */
+  latestSessionKeyOfFlow(flowId: string): string | undefined {
+    const row = this.raw.prepare(
+      'SELECT session_key FROM sessions WHERE agentic_flow_id = ? ORDER BY created_at DESC LIMIT 1',
+    ).get(flowId) as { session_key: string } | undefined
+    return row?.session_key
+  }
+
   /** 归属行 + 活状态 → 对外视图。 */
   view(row: SessionLedgerRow): RunSessionView {
     const live = this.driver?.live(row.session_key)
@@ -304,7 +363,7 @@ export class RunService {
       duration_ms: row.duration_ms,
       live: live?.live ?? false,
       main_agent_id: live?.agentId ?? null,
-      panel_path: `/run/${row.session_key}`,
+      panel_path: `/run/${row.agentic_flow_id}`,
     }
   }
 
@@ -347,6 +406,19 @@ export class RunService {
     await driver.cancel(sessionKey, reason)
     this.ledger.setStatus(row.id, 'stopped', { completedAt: Date.now() })
     return this.view(this.requireOwned(userId, sessionKey))
+  }
+
+  /**
+   * 停掉一个归属行已被级联删除的活会话（画布删除的收尾）。
+   *
+   * 与 `cancel` 的差别只有一处：级联已经删掉 sessions 行，无法再做归属查询与状态回写，故此路径
+   * 直接调运行驱动停会话。归属由调用方确立——级联事务在画布所有者的身份下执行，键集合来自该
+   * 次删除的返回值，不接受外部输入。
+   * @param sessionKey - 会话键。
+   * @param reason - 停止原因（落会话日志）。
+   */
+  async cancelDetached(sessionKey: string, reason: string): Promise<void> {
+    await this.requireDriver().cancel(sessionKey, reason)
   }
 
   /**

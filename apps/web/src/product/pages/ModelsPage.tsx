@@ -1,11 +1,12 @@
-﻿/** 模型配置页。 */
+/** 模型配置页。 */
 import { useCallback, useEffect, useState } from 'react'
-import { Button, IconTrashOutline16, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { describeError, request } from '../api.ts'
+import { Button, IconPlusOutline16, IconTrashOutline16, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ApiError, describeError, request, requestBlob } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { PageHeader } from '../components/PageHeader.tsx'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { Field } from '../components/Field.tsx'
+import { PathValue } from '../components/PathValue.tsx'
 import type { ModelTestResult, ModelUsageRow, ModelView } from '../types.ts'
 import css from '../styles/common.module.css'
 
@@ -19,7 +20,7 @@ interface TestState {
  * 渲染模型配置页。
  */
 export function ModelsPage() {
-  useLocale()
+  const locale = useLocale()
   const [models, setModels] = useState<ModelView[]>([])
   const [usage, setUsage] = useState<ModelUsageRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,13 +42,28 @@ export function ModelsPage() {
       setUsage(usageResult.byModel)
       setError(null)
     } catch (failure) {
-      setError(describeError(failure))
+      setError(`${t('models', 'errorLoad')} — ${describeError(failure)}`)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  /** 用量导出（NFR-OBS-002）：CSV 由事件流派生数据生成，浏览器侧只负责下载。 */
+  const exportUsage = async (): Promise<void> => {
+    try {
+      const blob = await requestBlob('/usage/export')
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'soloengine-usage.csv'
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (failure) {
+      setError(`${t('models', 'errorExport')} — ${describeError(failure)}`)
+    }
+  }
 
   const act = (id: string, action: () => Promise<void>, failureKey: string): void => {
     setBusyId(id)
@@ -70,72 +86,125 @@ export function ModelsPage() {
         subtitle={t('models', 'subtitle')}
         actions={(
           <>
-            <Button variant="primary" onClick={() => { setCreateOpen(true) }}>{t('models', 'create')}</Button>
+            <Button variant="primary" icon={<IconPlusOutline16 size={14} />} onClick={() => { setCreateOpen(true) }}>{t('models', 'create')}</Button>
             <Button onClick={() => { void load() }}>{t('common', 'actionRefresh')}</Button>
           </>
         )}
       />
 
       <NoticeLine tone="error" text={error} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
-      {test !== null && (
-        <NoticeLine
-          tone={test.result.ok ? 'success' : 'error'}
-          text={[
-            test.result.ok ? t('models', 'testOk') : t('models', 'testFail'),
-            test.result.kind === undefined ? null : t('models', kindKey(test.result.kind)),
-            test.result.latency_ms === undefined ? null : t('models', 'testLatency', { ms: test.result.latency_ms }),
-            test.result.status === undefined ? null : t('models', 'testStatus', { status: test.result.status }),
-            test.result.provider === undefined ? null : test.result.provider,
-            test.result.message === undefined ? null : test.result.message,
-          ].filter(part => part !== null).join(' · ')}
-        />
-      )}
+      {test !== null && (() => {
+        // 结果行点名被测模型：`test.id` 此前只存不用，165 行表格里一行「连通失败」无从归属；
+        // 被测行已不在当前清单（被删除）时结果一并消失，不留悬空提示。
+        const tested = models.find(model => model.id === test.id)
+        if (tested === undefined) return null
+        // 已归类的失败不再附原始失败链：链里是 `UND_ERR_CONNECT_TIMEOUT` 这类机器码（R8 禁止直出），
+        // 归因文案已给出类别；未归类时它是唯一线索，保留。
+        const classified = test.result.kind !== undefined && test.result.kind !== 'unknown'
+        return (
+          <NoticeLine
+            tone={test.result.ok ? 'success' : 'error'}
+            text={[
+              tested.name,
+              test.result.ok ? t('models', 'testOk') : t('models', 'testFail'),
+              test.result.kind === undefined ? null : t('models', kindKey(test.result.kind)),
+              test.result.latency_ms === undefined ? null : t('models', 'testLatency', { ms: test.result.latency_ms }),
+              test.result.status === undefined ? null : t('models', 'testStatus', { status: test.result.status }),
+              test.result.provider === undefined ? null : test.result.provider,
+              classified || test.result.message === undefined ? null : test.result.message,
+            ].filter(part => part !== null).join(' · ')}
+          />
+        )
+      })()}
 
       {loading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
       {!loading && models.length === 0 && <div className={css.empty}>{t('models', 'empty')}</div>}
 
+      {usage.length > 0 && (
+        <div className={css.card}>
+          <div className={css.chartHeader}>
+            <span>{t('models', 'usageChartTitle')}</span>
+            <Button size="sm" onClick={() => { void exportUsage() }}>{t('models', 'usageExport')}</Button>
+          </div>
+          <div className={css.chart} role="img" aria-label={t('models', 'usageChartTitle')}>
+            {(() => {
+              const maxTokens = Math.max(...usage.map(row => row.totalTokens), 1)
+              return usage.map(row => (
+                <div key={row.llm_config_id} className={css.chartRow}>
+                  <span className={css.chartLabel}>{models.find(model => model.id === row.llm_config_id)?.name ?? row.llm_config_id}</span>
+                  <span className={css.chartBar}>
+                    <span
+                      className={css.chartBarFill}
+                      style={{ width: `${Math.max(2, Math.round((row.totalTokens / maxTokens) * 100))}%` }}
+                    />
+                  </span>
+                  <span className={`${css.chartValue} ${css.mono}`}>
+                    {/* R27：tokens 计数千分位**跟随界面语言**（写死 `en-US` 会让中文界面用英文区域
+                        取值，属同族缺陷）；count=1 走单数键（复数键会渲染成 "1 tokens"）。 */}
+                    {row.totalTokens === 1
+                      ? t('models', 'usageTokensOne')
+                      : t('models', 'usageTokens', { count: row.totalTokens.toLocaleString(locale) })}
+                  </span>
+                </div>
+              ))
+            })()}
+          </div>
+        </div>
+      )}
+
       {models.length > 0 && (
-        <div className={css.tableWrap}>
-          <table className={css.table}>
+        <div className={css.tableWrap} tabIndex={0} role="region" aria-label={t('models', 'tableRegion')}>
+          {/* 窄视口下表格在包装内横向滚动（1024 实测 1013 > 742）：可滚动区域必须可用键盘操作，
+              否则只用鼠标能看到右侧列（WCAG 2.1.1）。region 名走字典，不硬编码。 */}
+          <table className={`${css.table ?? ''} ${css.tableWide ?? ''}`}>
             <thead>
               <tr>
-                <th>{t('models', 'tableName')}</th>
-                <th>{t('models', 'tableProvider')}</th>
-                <th>{t('models', 'tableModel')}</th>
-                <th>{t('models', 'tableBaseUrl')}</th>
-                <th>{t('models', 'tableRoute')}</th>
+                <th className={css.tableColName}>{t('models', 'tableName')}</th>
+                <th className={css.tableColNowrap}>{t('models', 'tableProvider')}</th>
+                <th className={css.tableColNowrap}>{t('models', 'tableModel')}</th>
+                <th className={css.tableColWide}>{t('models', 'tableBaseUrl')}</th>
+                <th className={css.tableColWide}>{t('models', 'tableRoute')}</th>
                 <th>{t('models', 'tableDefault')}</th>
                 <th>{t('models', 'tableActive')}</th>
-                <th>{t('models', 'tableUsage')}</th>
-                <th>{t('common', 'labelAction')}</th>
+                <th className={css.tableColUsage}>{t('models', 'tableUsage')}</th>
+                <th className={css.tableColActions}>{t('common', 'labelAction')}</th>
               </tr>
             </thead>
             <tbody>
-              {models.map(model => {
+              {models.map((model) => {
                 const row = usage.find(item => item.llm_config_id === model.id)
                 return (
                   <tr key={model.id}>
-                    <td>{model.name}</td>
-                    <td>{model.provider}</td>
-                    <td>{model.model_name}</td>
+                    {/* 名称列 max-width 180 + nowrap 截断（实测 73/165 行被裁）：截断值必须给出
+                        完整读取途径，与同表 `.mono` 列的 PathValue 同一规则。 */}
+                    <td className={css.tableColName} title={model.name}>{model.name}</td>
+                    <td className={css.tableColNowrap}>{model.provider}</td>
+                    <td className={css.tableColNowrap}>{model.model_name}</td>
                     <td className={css.mono}>
                       {model.base_url === null || model.base_url === ''
                         ? t('common', 'labelNone')
-                        : model.base_url}
+                        : <PathValue value={model.base_url} />}
                     </td>
-                    <td className={css.mono}>{model.model_route}</td>
+                    <td className={css.mono}><PathValue value={model.model_route} /></td>
                     <td>{model.is_default ? <Tag tone="solid">{t('common', 'stateDefault')}</Tag> : t('common', 'stateNo')}</td>
                     <td>
-                      <Tag tone={model.is_active ? 'success' : 'warning'}>
+                      <Tag tone={model.is_active ? 'success' : 'warning'} className={css.statusTag}>
                         {model.is_active ? t('common', 'stateActive') : t('common', 'stateInactive')}
                       </Tag>
                     </td>
-                    <td>
+                    <td className={css.tableColUsage}>
                       {row === undefined
                         ? t('common', 'labelNone')
-                        : `${t('models', 'usageRequests', { count: row.requests })} · ${t('models', 'usageTokens', { count: row.totalTokens })}`}
+                        : [
+                          row.requests === 1
+                            ? t('models', 'usageRequestsOne')
+                            : t('models', 'usageRequests', { count: row.requests.toLocaleString(locale) }),
+                          row.totalTokens === 1
+                            ? t('models', 'usageTokensOne')
+                            : t('models', 'usageTokens', { count: row.totalTokens.toLocaleString(locale) }),
+                        ].join(' · ')}
                     </td>
-                    <td>
+                    <td className={css.tableColActions}>
                       <div className={css.rowActions}>
                         <Button size="sm" onClick={() => { setEditTarget(model) }}>{t('common', 'actionEdit')}</Button>
                         <Button
@@ -212,7 +281,6 @@ export function ModelsPage() {
         target={editTarget}
         onClose={() => { setCreateOpen(false); setEditTarget(null) }}
         onSaved={() => { setCreateOpen(false); setEditTarget(null); void load() }}
-        onError={message => { setError(message) }}
       />
 
       <Modal
@@ -225,7 +293,8 @@ export function ModelsPage() {
           <>
             <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
-              variant="primary"
+              variant="ghost"
+              className={css.dangerButton}
               disabled={deleteTarget === null || busyId === deleteTarget.id}
               onClick={() => {
                 const target = deleteTarget
@@ -275,12 +344,11 @@ function numberField(value: string): number | undefined {
 }
 
 /** 新建 / 编辑模型配置对话框。 */
-function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
+function ModelFormDialog({ open, target, onClose, onSaved }: {
   open: boolean
   target: ModelView | null
   onClose: () => void
   onSaved: () => void
-  onError: (message: string) => void
 }) {
   const [name, setName] = useState('')
   const [provider, setProvider] = useState('deepseek')
@@ -346,7 +414,8 @@ function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
       onClose={onClose}
       title={target === null ? t('models', 'createTitle') : t('models', 'editTitle')}
       closeLabel={t('common', 'actionClose')}
-      contentClassName={css.scrollArea ?? ''}
+      className={`${css.modalDialog ?? ''} ${css.modalWide ?? ''}`}
+      contentClassName={css.modalScroll ?? ''}
       footer={(
         <>
           <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
@@ -357,6 +426,31 @@ function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
               if (name.trim() === '' || provider.trim() === '' || modelName.trim() === '') {
                 setError(t('models', 'errorRequired'))
                 return
+              }
+              // 数字字段合法性前置校验：numberField 曾把非法输入（如 "abc"）静默变成
+              // undefined 丢弃——用户以为保存了值，实际字段缺失（违反「不静默」）。
+              const numericInputs = [
+                temperature, maxTokens, maxInputTokens, maxOutputTokens, topP,
+                frequencyPenalty, presencePenalty, timeout, maxToolCalls,
+              ]
+              if (numericInputs.some(value => value.trim() !== '' && !Number.isFinite(Number(value.trim())))) {
+                setError(t('models', 'errorNumeric'))
+                return
+              }
+              // 扩展参数同处前置校验（判据与字段提示语一致）：直出后端的
+              // `extra_params is not valid JSON: SyntaxError: …` 是实现细节直出（R8）。
+              const extra = extraParams.trim()
+              if (extra !== '') {
+                let parsedExtra: unknown
+                try {
+                  parsedExtra = JSON.parse(extra)
+                } catch {
+                  parsedExtra = null
+                }
+                if (parsedExtra === null || typeof parsedExtra !== 'object' || Array.isArray(parsedExtra)) {
+                  setError(t('models', 'errorJson'))
+                  return
+                }
               }
               setBusy(true)
               setError(null)
@@ -377,8 +471,11 @@ function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
                   else await request(`/models/${target.id}`, { method: 'PATCH', body })
                   onSaved()
                 } catch (failure) {
-                  setError(describeError(failure))
-                  onError(`${t('models', 'errorSave')} — ${describeError(failure)}`)
+                  // 错误就近呈现在对话框内（带本地化前缀）；不再向页面级重复投递（会被 Modal 遮挡）。
+                  // 版本冲突另有既定产品文案（含「刷新后重试」出路）：直出后端英文串会把配置 id 与
+                  // 版本号这类实现细节推给用户（R8/R17）。
+                  const conflict = failure instanceof ApiError && failure.code === 'VERSION_CONFLICT'
+                  setError(conflict ? t('models', 'versionConflict') : `${t('models', 'errorSave')} — ${describeError(failure)}`)
                 } finally {
                   setBusy(false)
                 }
@@ -394,13 +491,13 @@ function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
         <NoticeLine tone="error" text={error} />
         <div className={css.formGrid}>
           <Field label={t('models', 'fieldName')}>
-            <Input value={name} onChange={event => { setName(event.currentTarget.value) }} />
+            <Input value={name} onChange={(event) => { setName(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldProvider')} hint={t('models', 'fieldProviderHint')}>
-            <Input value={provider} onChange={event => { setProvider(event.currentTarget.value) }} />
+            <Input value={provider} onChange={(event) => { setProvider(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldModelName')}>
-            <Input value={modelName} onChange={event => { setModelName(event.currentTarget.value) }} />
+            <Input value={modelName} onChange={(event) => { setModelName(event.currentTarget.value) }} />
           </Field>
           <Field
             label={t('models', 'fieldApiKey')}
@@ -412,53 +509,53 @@ function ModelFormDialog({ open, target, onClose, onSaved, onError }: {
               type="password"
               value={apiKey}
               placeholder={t('models', 'secretPlaceholder')}
-              onChange={event => { setApiKey(event.currentTarget.value) }}
+              onChange={(event) => { setApiKey(event.currentTarget.value) }}
             />
           </Field>
           <Field label={t('models', 'fieldBaseUrl')} hint={t('models', 'fieldBaseUrlHint')}>
-            <Input value={baseUrl} onChange={event => { setBaseUrl(event.currentTarget.value) }} />
+            <Input value={baseUrl} onChange={(event) => { setBaseUrl(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldIsFullUrl')}>
             <input
               className={css.checkInput}
               type="checkbox"
               checked={isFullUrl}
-              onChange={event => { setIsFullUrl(event.currentTarget.checked) }}
+              onChange={(event) => { setIsFullUrl(event.currentTarget.checked) }}
             />
           </Field>
           <Field label={t('models', 'fieldTemperature')}>
-            <Input value={temperature} onChange={event => { setTemperature(event.currentTarget.value) }} />
+            <Input value={temperature} onChange={(event) => { setTemperature(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldMaxTokens')}>
-            <Input value={maxTokens} onChange={event => { setMaxTokens(event.currentTarget.value) }} />
+            <Input value={maxTokens} onChange={(event) => { setMaxTokens(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldMaxInputTokens')}>
-            <Input value={maxInputTokens} onChange={event => { setMaxInputTokens(event.currentTarget.value) }} />
+            <Input value={maxInputTokens} onChange={(event) => { setMaxInputTokens(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldMaxOutputTokens')}>
-            <Input value={maxOutputTokens} onChange={event => { setMaxOutputTokens(event.currentTarget.value) }} />
+            <Input value={maxOutputTokens} onChange={(event) => { setMaxOutputTokens(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldTopP')}>
-            <Input value={topP} onChange={event => { setTopP(event.currentTarget.value) }} />
+            <Input value={topP} onChange={(event) => { setTopP(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldFrequencyPenalty')}>
-            <Input value={frequencyPenalty} onChange={event => { setFrequencyPenalty(event.currentTarget.value) }} />
+            <Input value={frequencyPenalty} onChange={(event) => { setFrequencyPenalty(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldPresencePenalty')}>
-            <Input value={presencePenalty} onChange={event => { setPresencePenalty(event.currentTarget.value) }} />
+            <Input value={presencePenalty} onChange={(event) => { setPresencePenalty(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldTimeout')}>
-            <Input value={timeout} onChange={event => { setTimeoutValue(event.currentTarget.value) }} />
+            <Input value={timeout} onChange={(event) => { setTimeoutValue(event.currentTarget.value) }} />
           </Field>
           <Field label={t('models', 'fieldMaxToolCalls')}>
-            <Input value={maxToolCalls} onChange={event => { setMaxToolCalls(event.currentTarget.value) }} />
+            <Input value={maxToolCalls} onChange={(event) => { setMaxToolCalls(event.currentTarget.value) }} />
           </Field>
         </div>
         <Field label={t('models', 'fieldExtraParams')} hint={t('models', 'fieldExtraParamsHint')}>
           <textarea
             className={`${css.textarea} ${css.textareaMono}`}
             value={extraParams}
-            onChange={event => { setExtraParams(event.currentTarget.value) }}
+            onChange={(event) => { setExtraParams(event.currentTarget.value) }}
           />
         </Field>
       </div>

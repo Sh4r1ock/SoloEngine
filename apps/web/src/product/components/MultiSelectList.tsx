@@ -27,7 +27,7 @@ export function MultiSelectList({ options, selected, emptyText, onToggle }: {
   }
   return (
     <div className={css.checkList}>
-      {options.map(option => {
+      {options.map((option) => {
         const disabled = option.disabledReason !== null
         return (
           <label key={option.id} className={css.checkRow}>
@@ -36,7 +36,7 @@ export function MultiSelectList({ options, selected, emptyText, onToggle }: {
               type="checkbox"
               checked={selected.includes(option.id)}
               disabled={disabled}
-              onChange={event => { onToggle(option.id, event.currentTarget.checked) }}
+              onChange={(event) => { onToggle(option.id, event.currentTarget.checked) }}
             />
             <span>{option.label}</span>
             {option.disabledReason !== null && (

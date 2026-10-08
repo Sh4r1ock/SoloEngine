@@ -9,7 +9,6 @@
 
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import styles from './PreviewCard.module.css'
-import type { SoloenginePreviewChatData } from './preview-definition.ts'
 
 /** 键控渲染器的组件 props（owner 给出本 key 的节点）。 */
 export type PreviewCardProps =
@@ -22,7 +21,8 @@ export type PreviewCardProps =
  * @returns 预览卡片。
  */
 export function PreviewCard({ node, t }: PreviewCardProps) {
-  const data = node.data as SoloenginePreviewChatData
+  // 键控座位已把 `node.data` 收窄到本 key 的数据体，无需再断言。
+  const data = node.data
   return (
     <div className={styles.card}>
       <div className={styles.head}>{t('preview.title')}</div>

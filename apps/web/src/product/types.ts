@@ -151,6 +151,8 @@ export interface McpServerView {
   author: string | null
   tags: string | null
   tools: string | null
+  /** 已停用的工具名（PRD-05 FR-MCP-008 单工具启停）。 */
+  disabledTools?: string[]
   source: string | null
   created_at: string | null
   updated_at: string | null
@@ -278,7 +280,8 @@ export interface RunSessionView {
   llm_config_id: string | null
   status: string
   error: string | null
-  created_at: string | null
+  /** 后端为 epoch 毫秒数（runs.ts SessionLedgerRow 直通），非 ISO 字符串。 */
+  created_at: number
   duration_ms: number | null
   live: boolean
   main_agent_id: string | null
@@ -316,7 +319,8 @@ export interface PackagingPreview {
   preset: { mainAgentId: string; agents: unknown[]; edges: unknown[] }
   canvasHash: string
   revision: number
-  containsSecrets: false
+  /** 打包预览保证不含密钥；保留 boolean 形状以匹配线上字段语义。 */
+  containsSecrets: boolean
 }
 
 /** 打包运行（契约 3）。 */

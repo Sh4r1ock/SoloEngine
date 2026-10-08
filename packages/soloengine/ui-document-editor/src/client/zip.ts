@@ -17,14 +17,29 @@ interface ZipEntry {
 
 /** ZIP 解析失败（明确报出原因，不静默降级）。 */
 export class ZipError extends Error {
+  /** 机器可读码（供界面按码取本地化句子，诊断原文只进日志）。 */
+  readonly code: ZipFailureCode
+
   /**
-   * @param message - 人类可读原因。
+   * @param code - 机器可读码。
+   * @param message - 面向开发者的诊断原文（含部件名等具体项）。
    */
-  constructor(message: string) {
+  constructor(code: ZipFailureCode, message: string) {
     super(message)
     this.name = 'ZipError'
+    this.code = code
   }
 }
+
+/** ZIP/OPC 解析失败的稳定码集（界面侧本地化按此分支）。 */
+export type ZipFailureCode =
+  | 'not-zip'
+  | 'truncated'
+  | 'bad-signature'
+  | 'unsupported-method'
+  | 'missing-part'
+  | 'malformed-xml'
+  | 'too-large'
 
 /**
  * 读取中央目录（从文件尾向前找 EOCD）。
@@ -35,16 +50,18 @@ function readDirectory(bytes: Uint8Array): ZipEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   let eocd = -1
   const floor = Math.max(0, bytes.length - 66_000)
-  for (let index = bytes.length - 22; index >= floor; index -= 1) {
+  for (let index = Math.max(0, bytes.length - 22); index >= floor; index -= 1) {
     if (view.getUint32(index, true) === 0x0605_4b50) { eocd = index; break }
   }
-  if (eocd === -1) throw new ZipError('not a ZIP container: end-of-central-directory record not found')
+  if (eocd === -1) throw new ZipError('not-zip', 'not a ZIP container: end-of-central-directory record not found')
   const count = view.getUint16(eocd + 10, true)
   let offset = view.getUint32(eocd + 16, true)
   const entries: ZipEntry[] = []
   for (let index = 0; index < count; index += 1) {
-    if (offset + 46 > bytes.length) throw new ZipError('truncated central directory')
-    if (view.getUint32(offset, true) !== 0x0201_4b50) throw new ZipError(`central directory entry ${String(index)} has a bad signature`)
+    if (offset + 46 > bytes.length) throw new ZipError('truncated', 'truncated central directory')
+    if (view.getUint32(offset, true) !== 0x0201_4b50) {
+      throw new ZipError('bad-signature', `central directory entry ${String(index)} has a bad signature`)
+    }
     const method = view.getUint16(offset + 10, true)
     const compressedSize = view.getUint32(offset + 20, true)
     const nameLength = view.getUint16(offset + 28, true)
@@ -58,6 +75,9 @@ function readDirectory(bytes: Uint8Array): ZipEntry[] {
   return entries
 }
 
+/** 单个部件解压上限（防御压缩炸弹：Office 包可以几十 KB inflate 到 GB 级，不设限即整页崩）。 */
+const MAX_PART_BYTES = 64 * 1024 * 1024
+
 /**
  * 解出一个部件的字节。
  * @param bytes - 整包字节。
@@ -66,17 +86,40 @@ function readDirectory(bytes: Uint8Array): ZipEntry[] {
  */
 async function readEntry(bytes: Uint8Array, entry: ZipEntry): Promise<Uint8Array> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  if (entry.localHeaderOffset + 30 > bytes.length) {
+    throw new ZipError('truncated', `local header of ${entry.name} points outside the container`)
+  }
   if (view.getUint32(entry.localHeaderOffset, true) !== 0x0403_4b50) {
-    throw new ZipError(`local header of ${entry.name} has a bad signature`)
+    throw new ZipError('bad-signature', `local header of ${entry.name} has a bad signature`)
   }
   const nameLength = view.getUint16(entry.localHeaderOffset + 26, true)
   const extraLength = view.getUint16(entry.localHeaderOffset + 28, true)
   const start = entry.localHeaderOffset + 30 + nameLength + extraLength
   const raw = bytes.subarray(start, start + entry.compressedSize)
   if (entry.method === 0) return raw
-  if (entry.method !== 8) throw new ZipError(`${entry.name} uses unsupported compression method ${String(entry.method)}`)
+  if (entry.method !== 8) throw new ZipError('unsupported-method', `${entry.name} uses unsupported compression method ${String(entry.method)}`)
   const stream = new Blob([raw as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    if (chunk.value.byteLength === 0) continue
+    total += chunk.value.byteLength
+    if (total > MAX_PART_BYTES) {
+      await reader.cancel()
+      throw new ZipError('too-large', `${entry.name} inflates beyond the ${String(MAX_PART_BYTES)} byte part limit`)
+    }
+    chunks.push(chunk.value)
+  }
+  const output = new Uint8Array(total)
+  let written = 0
+  for (const chunk of chunks) {
+    output.set(chunk, written)
+    written += chunk.byteLength
+  }
+  return output
 }
 
 /**
@@ -93,7 +136,7 @@ export function openPackage(data: Uint8Array): {
   const byName = new Map(entries.map(entry => [entry.name, entry]))
   const entryOf = (name: string): ZipEntry => {
     const entry = byName.get(name)
-    if (entry === undefined) throw new ZipError(`part ${name} is missing from the package`)
+    if (entry === undefined) throw new ZipError('missing-part', `part ${name} is missing from the package`)
     return entry
   }
   return {
@@ -111,6 +154,6 @@ export function openPackage(data: Uint8Array): {
 export function parseXml(text: string): Document {
   const document = new DOMParser().parseFromString(text, 'application/xml')
   const failure = document.querySelector('parsererror')
-  if (failure !== null) throw new ZipError(`XML part is not well formed: ${failure.textContent ?? ''}`)
+  if (failure !== null) throw new ZipError('malformed-xml', `XML part is not well formed: ${failure.textContent}`)
   return document
 }

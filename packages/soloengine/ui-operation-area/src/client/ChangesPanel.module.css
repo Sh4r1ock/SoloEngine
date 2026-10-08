@@ -3,7 +3,7 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  gap: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
 }
 
 .summary {
@@ -13,8 +13,8 @@
 
 .notice,
 .noticeError {
-  padding: var(--se-space-2, 8px);
-  border-radius: var(--se-radius-sm, 8px);
+  padding: var(--se-space-2);
+  border-radius: var(--se-radius-sm);
   background: var(--dsw-alias-bg-layer-2);
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-primary);
@@ -28,21 +28,21 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-3, 12px);
+  gap: var(--se-space-3);
   min-height: 0;
 }
 
 .turn {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
 }
 
 .turnHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
 }
 
 .turnLabel {
@@ -56,29 +56,29 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
 }
 
 .item {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-sm, 8px);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
   overflow: hidden;
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: var(--se-space-2, 8px);
-  padding-right: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
+  padding-right: var(--se-space-2);
 }
 
 .head {
   display: flex;
   align-items: center;
-  gap: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
   flex: 1;
   min-width: 0;
-  padding: var(--se-space-2, 8px);
+  padding: var(--se-space-2);
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -105,16 +105,16 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
   flex-shrink: 0;
 }
 
 .action,
 .actionDanger {
-  padding: 0 var(--se-space-2, 8px);
+  padding: 0 var(--se-space-2);
   height: 24px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-sm, 8px);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-sm);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xxs-12);
@@ -137,18 +137,18 @@
 }
 
 .hunks {
-  padding: 0 var(--se-space-2, 8px) var(--se-space-2, 8px);
+  padding: 0 var(--se-space-2) var(--se-space-2);
 }
 
 .hunk {
-  margin-top: var(--se-space-1, 4px);
+  margin-top: var(--se-space-1);
 }
 
 .hunkHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
 }
 
 .hunkHeader {
@@ -158,21 +158,25 @@
 
 .hunkBody {
   margin: 0;
-  padding: var(--se-space-1, 4px) var(--se-space-2, 8px);
+  padding: var(--se-space-1) var(--se-space-2);
   overflow-x: auto;
   background: var(--dsw-alias-bg-layer-2);
-  border-radius: var(--se-radius-sm, 8px);
+  border-radius: var(--se-radius-sm);
   font: var(--dsw-font-xxs-12);
+  /* 差异行按列对齐（每行首字符是 ` `/`-`/`+`，其后是源码本体）：比例字族会让加减行与缩进
+     整体错位。`--dsw-font-markdown-code` 是 `size/line family` 简写值，只能配 `font:` 简写；
+     单覆盖字族必须取 `-font-family` 令牌，否则整条声明被解析器丢弃（实测踩过）。 */
+  font-family: var(--dsw-font-markdown-code-font-family);
   color: var(--dsw-alias-label-primary);
 }
 
 .plan {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: var(--se-radius-md, 12px);
-  padding: var(--se-space-3, 12px);
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--se-radius-md);
+  padding: var(--se-space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-2, 8px);
+  gap: var(--se-space-2);
 }
 
 .planTitle {
@@ -191,7 +195,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1, 4px);
+  gap: var(--se-space-1);
 }
 
 .planItem {
@@ -201,7 +205,7 @@
 }
 
 .state {
-  padding: var(--se-space-3, 12px);
+  padding: var(--se-space-3);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
 }

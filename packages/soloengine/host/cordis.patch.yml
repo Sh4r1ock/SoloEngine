@@ -27,13 +27,18 @@
 
     # ── 阶段 5 引擎接入：DB 密钥模型路由 + 特有工具 + 预览记录（完全自研，Host 面）────
 
-    # DB 密钥模型适配器：llm_configs 每行 → 一条 soloengine-<id> 路由，3 秒轮询热同步。
+    # DB 密钥模型适配器：llm_configs 每行 → 一条 soloengine-<id> 路由，秒级轮询热同步。
+    #
+    # pollMs 必须**显著小于** NFR-PER-008 的 3 秒上界：轮询方案的最坏时延 =「一个周期 + 重算」，
+    # 周期取得与上界相同（此处曾配 3000）必然越界——本机实测 3059ms > 3000ms 判定失败。
+    # 1000ms 是适配器自身的默认值（见 @soloengine/llm-db-adapter 的 DEFAULT_POLL_MS 说明），
+    # 最坏时延落在 1 秒量级，仍是 PRD-03/FR-ENG-015 所说的「秒级轮询」。
     - id: soloengine-llm-db-adapter
       name: '@soloengine/llm-db-adapter'
       config:
         dbPath: !!js process.env.SOLOENGINE_DB
         keysDir: !!js process.env.SOLOENGINE_KEYS_DIR
-        pollMs: 3000
+        pollMs: 1000
 
     # 特有工具：get_diagnostics（运行诊断）。
     - id: soloengine-tools
@@ -59,7 +64,7 @@
     - id: soloengine-ui-conversation
       name: '@soloengine/ui-conversation'
 
-    # URL 直达会话：/run/:sessionKey → 原生会话选择（等列表基线就绪，未知键明确报错）。
+    # URL 直达会话：/run/:agenticFlowId → 该画布最近一次运行的原生会话选择（等列表基线就绪，未知键明确报错）。
     - id: soloengine-client-bootstrap
       name: '@soloengine/client-bootstrap'
 
@@ -124,15 +129,34 @@
 
 # ── 覆盖（patch 整体替换该行 config，故每行重述它拥有的全部键）──────────────
 
+# 溢写（PRD-06 FR-ENG-023）：基线 dsh-base 已装载 spill-local + spill-policy（阈值 50000 字节）。
+# 本层覆写为 PRD 规定的 5MB（5 * 1024 * 1024 = 5242880 字节）：模型可见结果超过 5MB 才溢写外存，
+# 模型侧只见头尾预览 + 定位符。外存根固定到实例数据目录（v8 目录结构 data/spill/），不落系统临时目录。
+# patch 整体替换 config，故两行各自重述它们拥有的全部键（基线 spill-local 无显式 config、
+# spill-policy 仅 maxInlineBytes 一键）。
+- id: spill-local
+  config:
+    root: !!js process.env.SOLOENGINE_ROOT + '/data/spill'
+
+- id: spill-policy
+  config:
+    maxInlineBytes: 5242880
+
 # dsh 的非会话 KV（workspace 注册、投影缓存）改走 SQLite 后端，与业务表同库。
 - id: storage-domain
   config:
     backend: sqlite
 
-# 会话全文检索：opt-in 打开并指向同一业务库（派生只读索引，可重建）。
+# 会话全文检索：opt-in 打开，**指向专用派生索引文件**（可丢弃、可重建，见《持久化存储完整设计》
+# §2.1 表：全文搜索索引 = 可丢弃的派生只读索引）。
+#
+# 纪律：该插件的 `path` 必须是空文件或它自己签名的索引库——它按 PRAGMA application_id / user_version
+# 校验，遇到任何别的库（例如业务库）会**拒绝打开**（"is not an empty or recognized derived index"）；
+# 一旦拒绝，冷会话的 `observeSession` 就查不到（面板表现为「历史加载失败：session … not found」）。
+# 故索引独立成文件，放 harness home 的 index/ 下，与业务库（soloengine.db）分开。
 - id: session-query-sqlite
   config:
-    path: !!js process.env.SOLOENGINE_DB
+    path: !!js dshHomePath('index/session-search.db')
     openAt: first-search
 
 # 技能发现的自定义根：框架层启用中的技能目录（PRD-04 接线）。
@@ -190,4 +214,14 @@
   disabled: true
 
 - id: ui-sidebar-terminal
+  disabled: true
+
+# 品牌行：平台的官方品牌填充与 @soloengine/ui-brand 注册的是**同一对 single 座位**
+# （`sidebar.brand.mark` / `sidebar.brand.name`，声明者是 ui-sidebar）。single 座位在同优先级
+# 上二次注册会 fail loud 抛出（`single slot "…" already has a registration`），该 entry 的 fiber
+# 随即 FAILED，boot 审计把整页判为启动失败（运行面板显示 `Failed to load plugins
+# @deepseek-ai/dsh-client-ui-brand-official`）。@soloengine/ui-brand 的注册点即产品品牌的
+# 「替换点」，故按「同一功能只装载一个插件」禁用平台行——与上面两行同法（卸载本插件后
+# 按原样装回即可恢复官方品牌）。
+- id: ui-brand-official
   disabled: true

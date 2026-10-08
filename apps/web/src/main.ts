@@ -4,7 +4,7 @@
  * 信任门引导回跳（配合宿主 `trust-bootstrap.ts`）：本机回环的首次未认证访问由宿主 303 到
  * **同一 authority** 的进程令牌 URL 换取签名 cookie，原路径写进 `soloengine-return` cookie。
  * 这里在挂载任何应用之前取用一次即清，把地址栏还原为原深链——所以
- * `http://localhost:8991/run/<sessionKey>` 全新浏览器直开即可落到该运行面板，无需点击。
+ * `http://localhost:8991/run/<agenticFlowId>` 全新浏览器直开即可落到该画布的运行面板，无需点击。
  */
 import { AppWebEntry } from '@deepseek-ai/dsh-client-web'
 

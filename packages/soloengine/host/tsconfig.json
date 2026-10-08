@@ -48,7 +48,13 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../mcp/mcp-client"
+    },
+    {
       "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../skill/skill"
     },
     {
       "path": "../../subagent/subagent"

@@ -9,13 +9,17 @@ export const zh = {
   'status.idle': '空闲',
   'context.project': '项目',
   'context.mode': '运行模式',
-  'mode.ask': '逐次审批',
-  'mode.allowlist': '白名单',
-  'mode.auto': '自动',
+  /* 运行模式三档的名字以设置面（画布编辑器节点面板 `editor.runMode*`）为准：
+     同一选项在配置处叫「白名单自动」、在运行头叫「白名单」，用户无法确认是同一物
+     （R3/R7 同语义同词）。EN 侧同理统一为 Automatic。 */
+  'mode.ask': '逐次确认',
+  'mode.allowlist': '白名单自动',
+  'mode.auto': '全自动',
   'preview.title': '预览',
-  'preview.open': '打开 {title}',
   'preview.utilities': '预览记录',
   'preview.empty': '暂无预览记录',
+  'changes.summary': '文件变更 {count} 条（+{added} / −{removed}）',
+  'changes.summaryOne': '文件变更 1 条（+{added} / −{removed}）',
 }
 
 /** 英文字典（键集与 zh 完全一致）。 */
@@ -26,11 +30,12 @@ export const en: Record<keyof typeof zh, string> = {
   'context.mode': 'Run mode',
   'mode.ask': 'Ask every time',
   'mode.allowlist': 'Allowlist',
-  'mode.auto': 'Auto',
+  'mode.auto': 'Automatic',
   'preview.title': 'Preview',
-  'preview.open': 'Open {title}',
   'preview.utilities': 'Previews',
   'preview.empty': 'No previews yet',
+  'changes.summary': '{count} file changes (+{added} / −{removed})',
+  'changes.summaryOne': '1 file change (+{added} / −{removed})',
 }
 
 /** 本命名空间的键集联合。 */

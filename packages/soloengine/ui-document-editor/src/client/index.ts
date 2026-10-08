@@ -58,12 +58,13 @@ const OFFICE_EXTENSIONS = ['.docx', '.xlsx', '.pptx']
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'soloengine-ui-document-editor:dictionaries')
+  const t = ctx.locale.bind(NS)
 
   ctx.effect(() => ctx.documentPreviews.register({
     id: EDITOR_ID,
     extensions: EDITABLE_EXTENSIONS,
     priority: 'extension',
-    title: () => 'Editor',
+    title: () => t('editor.title'),
     loading: 'text-pages',
     wrap: true,
   }), 'soloengine-ui-document-editor:textRenderer')
@@ -74,10 +75,8 @@ export function apply(ctx: ClientContext): void {
     extensions: OFFICE_EXTENSIONS,
     binaryExtensions: OFFICE_EXTENSIONS,
     priority: 'extension',
-    title: () => 'Document',
+    title: () => t('office.title'),
     loading: 'bytes-complete',
   }), 'soloengine-ui-document-editor:officeRenderer')
   ctx.slots.register({ name: 'sidebar.right.tab.document', key: OFFICE_ID, locale: NS }, OfficeView)
-
-  console.log('soloengine-ui-document-editor: editable text renderer + in-browser Office renderers registered')
 }

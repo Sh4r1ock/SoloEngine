@@ -83,6 +83,7 @@ export interface CompileResult {
 export type CompileFailureCode =
   | 'NO_ENTRY' | 'MULTIPLE_ENTRY_AMBIGUOUS' | 'MISSING_MODEL' | 'MISSING_REQUIRED'
   | 'UNKNOWN_TOOL' | 'CYCLIC_DELEGATION' | 'DUPLICATE_NODE' | 'EMPTY_CANVAS'
+  | 'NODE_NAME_REQUIRED'
 
 /** 编译失败的结构化错误。 */
 export interface CompileFailure {

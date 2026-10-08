@@ -70,11 +70,12 @@ export function FollowWatcher({ useProjection, useSessions, sessionId, openFile,
       try {
         dispatch()
         setFailure(null)
-      } catch (error) {
+      } catch {
         attempts += 1
         if (attempts >= RETRY_ATTEMPTS) {
-          // 重试耗尽：把真实失败原文呈现出来（不静默吞错、不假装已跟随）。
-          setFailure(error instanceof Error ? error.message : String(error))
+          // 重试耗尽即如实报失败（不静默吞错），但给人看的是**已判定的原因**：
+          // 这条路径上唯一的可能就是右栏会话座位始终没挂载，原生抛的是英文诊断原文。
+          setFailure(t('follow.failed'))
           return
         }
         timer = setTimeout(attempt, RETRY_DELAY_MS)
@@ -85,10 +86,10 @@ export function FollowWatcher({ useProjection, useSessions, sessionId, openFile,
       cancelled = true
       if (timer !== undefined) clearTimeout(timer)
     }
-  }, [intent, context, cwd, sessionId, openFile, openTerminal])
+  }, [intent, context, cwd, sessionId, openFile, openTerminal, t])
 
   if (failure === null) return null
-  return <span role="alert">{`${t('follow.failed')}: ${failure}`}</span>
+  return <span role="alert">{failure}</span>
 }
 
 /** 本组件使用的字典键（供类型收窄）。 */

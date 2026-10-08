@@ -42,19 +42,25 @@
 
 .brandTagline {
   font: var(--dsw-font-xs-13);
-  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  /* label-tertiary 浅色白底仅 3.71:1（WCAG 1.4.3 需 4.5:1）；label-secondary 浅 5.80 / 暗更高，双模式达标。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .title {
   margin: 0;
-  font: var(--dsw-font-base-strong-16);
+  /* 全站页面主标题同一规则（common `.title` / 手册 §二 PageHeader）：16px 时字号轴 17 档
+     副标题（17px）会大过本页 h1，标题层级倒置。 */
+  font: var(--dsw-font-l-20);
   color: var(--dsw-alias-label-primary);
 }
 
 .subtitle {
   margin: 0;
   font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size, 14px);
+  /* 同上：tertiary→secondary 对比度修复。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .form {
@@ -82,23 +88,31 @@
 }
 
 .hint {
+  /* 与同文件 .title/.subtitle 同规则：段落 UA 默认 margin 会叠在 flex gap 上，
+     使节奏变成 24px（非阶梯值）、卡片底比顶多 12px。 */
+  margin: 0;
   font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-caption);
+  /* label-caption 浅色白底仅 2.13:1（WCAG 1.4.3 需 4.5:1）；label-secondary 双模式达标。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .linkButton {
   border: 0;
   padding: 0;
+  /* WCAG 2.5.8（R11）：纯文本按钮的行盒只有 22px 高，命中区不足 24×24；用阶梯撑到 24。 */
+  min-height: var(--se-space-5);
   background-color: transparent;
   color: var(--dsw-alias-link);
   font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
   cursor: pointer;
   text-align: left;
   transition: color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
 .linkButton:hover {
-  color: var(--dsw-alias-label-primary);
+  /* 与 common `.noticeAction` 同一规则（手册红线 6）：链接悬浮 = 点状下划线，不只变色。 */
+  text-decoration: underline dotted;
 }
 
 @media (prefers-reduced-motion: reduce) {

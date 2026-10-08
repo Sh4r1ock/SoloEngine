@@ -17,8 +17,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { navigate, type RouteName } from '../router.ts'
 import { t, useLocale } from '../i18n.ts'
-import { updateLocalePreference, updateTheme, usePreferences } from '../preferences.ts'
-import { describeError } from '../api.ts'
+import { preferenceFailureText, updateLocalePreference, updateTheme, usePreferences } from '../preferences.ts'
 import { useToastHost } from './Toaster.tsx'
 import type { UserView } from '../types.ts'
 import css from '../styles/shell.module.css'
@@ -62,8 +61,8 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
   const toast = useToastHost()
 
   const runPreference = (action: () => Promise<void>): void => {
-    action().catch(error => {
-      toast.show(`${t('common', 'errorTitle')} — ${describeError(error)}`)
+    action().catch((failure: unknown) => {
+      toast.show(`${t('common', 'errorTitle')} — ${preferenceFailureText(failure)}`)
     })
   }
 
@@ -80,6 +79,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
               key={entry.labelKey}
               type="button"
               className={entry.routes.includes(active) ? `${css.navItem} ${css.navItemActive}` : css.navItem}
+              aria-current={entry.routes.includes(active) ? 'page' : undefined}
               onClick={() => { navigate(entry.path) }}
             >
               {entry.icon}
@@ -91,8 +91,12 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
           <div className={css.footerGroup}>
             <span className={css.footerLabel}>{t('common', 'themeLabel')}</span>
             <div className={css.footerRow}>
+              {/* 原生 Pill 只把选中态写成 class，辅助技术读不到（实测 aria-pressed 全为 null，
+                  WCAG 4.1.2）；与设置页/市场/打包各页同一惯例，产品层透传 aria-pressed。
+                  图标按钮的名字由 aria-label 承担。 */}
               <Pill
                 active={preferences.theme.preference === 'light'}
+                aria-pressed={preferences.theme.preference === 'light'}
                 aria-label={t('common', 'themeLight')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'light' })) }}
               >
@@ -100,6 +104,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
               </Pill>
               <Pill
                 active={preferences.theme.preference === 'dark'}
+                aria-pressed={preferences.theme.preference === 'dark'}
                 aria-label={t('common', 'themeDark')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'dark' })) }}
               >
@@ -107,6 +112,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
               </Pill>
               <Pill
                 active={preferences.theme.preference === 'system'}
+                aria-pressed={preferences.theme.preference === 'system'}
                 aria-label={t('common', 'themeSystem')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'system' })) }}
               >
@@ -119,12 +125,14 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
             <div className={css.footerRow}>
               <Pill
                 active={locale === 'zh'}
+                aria-pressed={locale === 'zh'}
                 onClick={() => { runPreference(() => updateLocalePreference('zh')) }}
               >
                 {t('common', 'languageZh')}
               </Pill>
               <Pill
                 active={locale === 'en'}
+                aria-pressed={locale === 'en'}
                 onClick={() => { runPreference(() => updateLocalePreference('en')) }}
               >
                 {t('common', 'languageEn')}

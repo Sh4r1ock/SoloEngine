@@ -1,7 +1,7 @@
 {
   "name": "@soloengine/client-bootstrap",
   "version": "0.1.0",
-  "description": "SoloEngine URL 直达会话与启动接线（自研客户端）：/run/:sessionKey → 原生会话选择。",
+  "description": "SoloEngine URL 直达会话与启动接线（自研客户端）：/run/:agenticFlowId → 该画布最近一次运行的原生会话选择。",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

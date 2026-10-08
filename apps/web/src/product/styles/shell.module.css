@@ -47,6 +47,7 @@
   background-color: transparent;
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-s-14);
+  font-size: var(--dsh-content-font-size, 14px);
   text-align: left;
   cursor: pointer;
   transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
@@ -79,7 +80,8 @@
 
 .footerLabel {
   font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-caption);
+  /* label-caption 在浅色侧栏上仅 2.04:1（WCAG 1.4.3 需 4.5:1）；label-secondary 浅 5.55 / 深 11.43 双模式达标。 */
+  color: var(--dsw-alias-label-secondary);
 }
 
 .footerRow {

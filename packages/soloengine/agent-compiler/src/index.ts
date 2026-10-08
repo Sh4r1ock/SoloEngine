@@ -96,24 +96,32 @@ export function compileCanvas(params: CompileParams): CompileResult {
     throw new CompileError({ code: 'EMPTY_CANVAS', message: 'canvas has no agent nodes to compile' })
   }
 
-  // 节点 ID 唯一性。
+  // 节点 ID 唯一性与必填项（FR-CANVAS-022 缺必填 fail loud：节点名）。
   const seen = new Set<string>()
   for (const node of realNodes) {
     if (seen.has(node.node_id)) {
       throw new CompileError({ code: 'DUPLICATE_NODE', nodeId: node.node_id, message: `node ${node.node_id} appears more than once` })
     }
     seen.add(node.node_id)
+    if (String(node.name ?? '').trim() === '') {
+      throw new CompileError({ code: 'NODE_NAME_REQUIRED', nodeId: node.node_id, message: `node ${node.node_id} has no name` })
+    }
   }
 
-  // 入口判定：coordinator 节点。
+  // 入口判定：coordinator 节点（FR-CANVAS-022：多节点无协调者拒绝；单节点画布以唯一节点为入口）。
   const coordinators = realNodes.filter(node => node.agent_type === 'coordinator')
   const notices: string[] = []
   let mainId: string
   if (coordinators.length === 0) {
-    throw new CompileError({
-      code: 'NO_ENTRY',
-      message: 'canvas has multiple agent nodes but no coordinator; an entry node is required',
-    })
+    if (realNodes.length > 1) {
+      throw new CompileError({
+        code: 'NO_ENTRY',
+        message: 'canvas has multiple agent nodes but no coordinator; an entry node is required',
+      })
+    }
+    const single = realNodes[0] as CanvasNodeInput
+    mainId = single.node_id
+    notices.push(`single agent node "${single.name}" (${single.node_id}) without a coordinator; using it as the entry`)
   }
   if (coordinators.length > 1) {
     const last = coordinators[coordinators.length - 1] as CanvasNodeInput
@@ -191,7 +199,20 @@ export function compileCanvas(params: CompileParams): CompileResult {
       ...(node.sampling === undefined ? {} : { sampling: node.sampling }),
     })
   }
-  const agents = resolved.map(node => agentMap.get(node.node_id) as AgentSpec)
+  // FR-CANVAS-023 自下而上物化（《框架设计》§3.13）：委派子树按后序 DFS 自叶子向根排序——
+  // 被委派者先于委派者物化，运行期挂载委派边时目标 agent 已就绪；
+  // 不在委派树上的节点按输入顺序追加（循环已在 detectCycle 排除，递归必终止）。
+  const emitted = new Set<string>()
+  const ordered: string[] = []
+  const emit = (id: string): void => {
+    if (emitted.has(id)) return
+    emitted.add(id)
+    for (const child of graph.get(id) ?? []) emit(child)
+    ordered.push(id)
+  }
+  emit(mainId)
+  for (const node of resolved) emit(node.node_id)
+  const agents = ordered.map(id => agentMap.get(id) as AgentSpec)
 
   // 语义哈希：布局（position）不参与。
   const semantic = agents.map(agent => ({
