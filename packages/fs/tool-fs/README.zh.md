@@ -48,7 +48,7 @@ kind: "package-reference"
 | `write` | `file_path`、`content` | 创建或完整替换文件；有策略插件时，覆盖要求先在未变版本上执行 `read`，创建不需要 |
 | `edit` | `file_path`、`old_string`、`new_string`、`replace_all?` | 字面量替换，除非 `replace_all` 为 true 否则要求唯一匹配；有策略插件时，要求先执行 `read` 且文件未变 |
 
-字段名使用 snake_case，与 Claude Code 和现有 harness 工具 schema 一致。成功返回紧凑信封——读取窗口、图像引用或 `Created file`/`Updated file` 确认——`write`/`edit` 还会派生可回放的 diff 卡片元数据供 UI 展示。
+字段名使用 snake_case，与 Claude Code 和现有 harness 工具 schema 一致。`write` 和 `edit` 的路径描述要求模型先输出 `file_path`，再输出内容或替换字符串；这用于引导流式展示，不强制 JSON 成员顺序。成功返回紧凑信封——读取窗口、图像引用或 `Created file`/`Updated file` 确认——`write`/`edit` 还会派生可回放的 diff 卡片元数据供 UI 展示。
 
 ### 配置
 
@@ -67,7 +67,7 @@ kind: "package-reference"
 
 `read` 与 `read_image` 的路径授权完全由 `ctx.fs` 负责；媒体类型声明和文件签名只决定 `read_image` 是否接受该后端返回的字节。
 
-挂载策略插件后，`write` 与 `edit` 从 `fs/*` 意图槽位取得防护，因此未读目标或陈旧观察会以 `FS_NOT_OBSERVED` 或 `FS_STALE_VERSION` 及恢复指令失败。使用施加沙箱限制的后端（`fs-sandbox`）时，`write`/`edit` 还会公开 `sandbox_permissions` 与 `justification`；被拒绝的变更返回 `[sandbox: file access denied under <mode> mode]` 标记与同轮次升级提示，获批的重试可以在该次调用中加盖严格更宽的模式。
+挂载策略插件后，`write` 与 `edit` 从 `fs/*` 意图槽位取得防护，因此未读目标或陈旧观察会以 `FS_NOT_OBSERVED` 或 `FS_STALE_VERSION` 及恢复指令失败。使用施加沙箱限制的后端（`fs-sandbox`）时，`write`/`edit` 还会公开 `sandbox_permissions` 与 `justification`；被拒绝的变更返回 `[sandbox: file access denied under <mode> mode]` 标记与同轮次升级提示，获批的重试可以在该次调用中加盖严格更宽的模式。理由字段提示模型使用用户当前提问的语言。
 
 ### 失败与恢复
 
@@ -138,19 +138,19 @@ kind: "package-reference"
 ##### Read 指导
 
 ```markdown
-Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.
+Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.
 ```
 
 ##### Write 指导
 
 ```markdown
-Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.
+Read an existing file before overwriting it with write (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 ```
 
 ##### Edit 指导
 
 ```markdown
-Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.
+Read a file before editing it (the default fs-observation-policy requires it), unless you just created or edited it in this session.
 ```
 
 #### Token 影响
@@ -255,5 +255,3 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。这个模型侧 adapter 没有独立 lifecycle stream；执行关系由它调用的 capability seam 负责。

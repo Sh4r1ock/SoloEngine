@@ -22,7 +22,7 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
-八个包承担文件系统角色；子系统参考文档完整收录各项约定与错误分类体系。
+七个包承担文件系统角色；子系统参考文档完整收录各项约定与错误分类体系。
 
 | 包 | 职责 | ctx 键 |
 |---|---|---|
@@ -33,7 +33,6 @@ kind: "package-group"
 | [`tool-fs/`](tool-fs/README.zh.md) | 面向模型的 `read`、`read_image`、`write` 与 `edit` 工具及其执行器 | 注册到 `ctx.tools` |
 | [`tool-fs-search/`](tool-fs-search/README.zh.md) | 由打包 ripgrep 二进制支持的面向模型 `glob` 与 `grep` 发现工具 | 注册到 `ctx.tools` |
 | [`tool-str-replace-editor/`](tool-str-replace-editor/README.zh.md) | 独立的 `str_replace_editor` 工具：基于 `ctx.fs` 的 `view`、`create`、`str_replace` 与 `insert` | 注册到 `ctx.tools` |
-| [`tool-present/`](tool-present/README.zh.md) | 显式保存交付文件的不可变快照 | 注册到 `ctx.tools` |
 
 策略是插件，不是工具注入的服务：移除它会留下裸提供方的无条件变更行为，而不会破坏工具。`fs-sandbox` 的模式围栏与编辑前读取门禁可以组合。`tool-fs-search` 有意不扩展提供方约定——搜索是由进程支持的 ripgrep 工作流，因此文件系统后端无需承担通用搜索 API。
 
@@ -45,7 +44,7 @@ kind: "package-group"
 先从子系统参考文档了解共享词汇与错误分类体系，再看塑造该家族的设计决策。
 
 - [文件系统子系统](../../docs/subsystems/filesystem.zh.md)——目标、结果、防护、策略事件与错误分类体系。
-- [跨能力族 fs 沙箱决策](../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.zh.md)——文件系统 seam 上共享的沙箱模式围栏。
+- [跨能力族 fs 沙箱参考](../sandbox/sandbox-policy/README.zh.md)——文件系统 seam 上共享的沙箱模式围栏。
 - [可移植执行世界消费方决策](../../.agents/notes/implemented/architecture/2026-07-28-portable-execution-world-consumers.zh.md)——文件系统与子进程提供方为何共享一个执行世界。
 
 <a id="dev-note"></a>

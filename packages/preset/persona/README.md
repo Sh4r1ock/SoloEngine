@@ -73,7 +73,6 @@ The row registers scoped persona prefix and suffix sections using the registry's
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, persona section registration, runtime-context suppression |
-| — | No runtime invariant companion is published; this row owns no event stream or mutable runtime data — it registers prompt sections and the prompt registry owns identity, complete-prompt enforcement, shadowing, and disposal. |
 
 </details>
 
@@ -84,7 +83,7 @@ The row registers scoped persona prefix and suffix sections using the registry's
 
 Read these pages when the package-level contract is not enough; they move from the preset composition to the prompt registry this row feeds.
 
-- [agent-presets package](../agent-presets/README.md) — the preset composition this row mounts into.
+- [agent-presets package](../agent-preset-registry/README.md) — the preset composition this row mounts into.
 - [System prompt subsystem](../../../docs/subsystems/system-prompt.md) — sections, assembly, and the persona slot this row shadows.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-persona) — every accepted config field and its source declaration.
 

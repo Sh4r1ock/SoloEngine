@@ -39,7 +39,7 @@ kind: "package-reference"
 
 ### 查找可引用的会话
 
-`listCandidates(agent, query?, limit?)` 列出除 agent 自身外的会话，按 id、工作目录或投影标题做不区分大小写的过滤，并把同目录会话排在前面。每个候选以其最新标题作为 mention 标签；标题缺失或不可读时回退到会话 id，并报告其工作目录是否就是发起方 agent 的工作目录，宿主因此可以只在位置能区分该行时才显示它。浏览器消费方通过 `ctx.remote.sessionReferenceResolver.candidates` 调用同一发现能力，该方法会为每个候选附上规范 mention。
+`listCandidates(agent, query?, limit?)` 列出除 agent 自身外的会话，按 id、工作目录、投影标题或显示标题做不区分大小写的过滤，并把同目录会话排在前面。每个候选的 `label` 使用最新标题；标题缺失或不可读时回退到会话 id。显示标题优先使用 subagent 的持久创建 label，再回退到该标题。候选还会报告其工作目录是否就是发起方 agent 的工作目录，宿主因此可以只在位置能区分该行时才显示它。浏览器消费方通过 `ctx.remote.sessionReferenceResolver.candidates` 调用同一发现能力；该方法在 `displayTitle` 存在时用它标记规范 mention。
 
 ### 配置
 
@@ -83,7 +83,6 @@ kind: "package-reference"
 | [`src/serialization.ts`](src/serialization.ts) | 快照载荷的标签安全 JSON 转义 |
 | [`src/spill.ts`](src/spill.ts) | 完整 transcript 序列化与模型可见省略通知 |
 | [`src/types.ts`](src/types.ts) | `SessionReferenceInput`／`Candidate` 与来源类型 |
-| — | 不发布运行时不变式伴生入口；准备过程返回构建时已校验的不可变单次快照；持久上下文的准入、冻结与回放由 agent 层和会话层负责。 |
 
 ### 主要流程
 
@@ -99,7 +98,7 @@ kind: "package-reference"
 包级约定不够用时阅读以下页面。它们从共享引用表面进入设计决策与其背后的读取服务。
 
 - [会话引用子系统](../../../docs/subsystems/session-reference.zh.md)——规范 URI、投影规则与稳定的错误分类体系。
-- [会话引用 spill 复用](../../../.agents/notes/implemented/bug-fix/2026-09-05-session-reference-spill-reuse.zh.md)——快照身份、省略通知、存储归属与替代方案。
+- [历史会话引用 spill 复用](../../../.agents/notes/archived/bug-fix/2026-09-05-session-reference-spill-reuse.md)——快照身份、省略通知、存储归属与替代方案。
 - [会话查询子系统](../../../docs/subsystems/session-query.zh.md)——提供会话表层的读取服务。
 - [上下文组地图](../README.zh.md)——相邻的请求上下文包。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-reference)——每个受支持配置字段及其源声明。

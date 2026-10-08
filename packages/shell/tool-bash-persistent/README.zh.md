@@ -56,7 +56,7 @@ kind: "package-reference"
 
 ### 可能出什么问题
 
-没有拥有者 agent 会话的调用会以 `bash requires an owning agent session` 失败，没有 PTY 后端的组合会激活该工具，但首次调用以 `no PTY backend registered for "shell"` 失败。交互式前台子进程（例如 REPL）只有在后端证明其 stdin 等待时才提前返回部分输出；否则调用一直运行到 `timeoutMs`，随后关闭不确定的 shell 并报告重置。取消也会重置并丢弃结果，即使完整状态标记已经可观察。
+没有拥有者 agent 会话的调用会以 `bash requires an owning agent session` 失败，没有 PTY 后端的组合会激活该工具，但首次调用以 `no PTY backend registered for "shell"` 失败。交互式前台子进程（例如 REPL）只有在后端证明其 stdin 等待时才提前返回部分输出；否则调用一直运行到 `timeoutMs`，随后关闭不确定的 shell 并报告重置。取消也会重置并丢弃结果，即使完整状态标记已经可观察。清理完成后，ToolRuntime 发布 `Error: tool call aborted`，错误码为 `ABORTED`；取消原因不作为命令输出渲染。排队期间被取消的调用不发送命令。
 
 -----
 
@@ -80,7 +80,6 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：shell 注册表、命令包装、scrollback 轮询、提取与渲染 |
-| — | 不发布运行时不变式伴生入口；适配器私有的 owner-to-shell 缓存没有可观察的事件或数据关系。shell 复用仍可通过工具执行观察。生命周期测试会验证其清理行为，无需仅为不变式增加公共 API。 |
 
 ### 命令流程
 

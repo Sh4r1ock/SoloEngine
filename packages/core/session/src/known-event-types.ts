@@ -34,6 +34,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'compaction/start',
   'compaction/summary',
   'deliverables/presented',
+  'developer/message',
   'feedback/message-delete',
   'feedback/message-put',
   'feedback/record',
@@ -54,9 +55,6 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'session/end-seed',
   'session/title',
   'session/title-llm-request',
-  'soloengine/follow',
-  'soloengine/preview',
-  'soloengine/run-context',
   'step/end',
   'step/start',
   'subagent/catalog',
@@ -80,6 +78,7 @@ export const KNOWN_SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   'turn/start',
   'user/message',
   'web/deepseek-search-llm-request',
+  'workspace/changes',
 ])
 
 /** Event types whose model-visible effects require an explicit pure interpreter. */

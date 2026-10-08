@@ -20,6 +20,9 @@
  * guide registers through those stages unmodified, exactly as a type shipped
  * from another package does — `ui-sidebar-documentpreview` is the live proof.
  */
+import type {} from '@deepseek-ai/dsh-client-shortcuts/client'
+import { observeSidebarFocus } from './focus.ts'
+import { registerSidebarShortcuts } from './shortcuts.ts'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -33,7 +36,9 @@ import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
-import { RightbarRoot } from './shell/RightbarRoot.tsx'
+import { closeWithPaneFocus, openWithPaneFocus } from './shell/close-focus.ts'
+import { RightbarRoot, type RightbarRootInjected } from './shell/RightbarRoot.tsx'
+import { SidebarSessionViews } from './session-views.ts'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
 import { createSidebarRightStore } from './stores.ts'
@@ -43,12 +48,13 @@ import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { defaultSeed } from './contract/seed.ts'
 
+export type { SidebarRightTarget } from './focus.ts'
 export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
 export type { GuideBodyProps, GuideInjected } from './tabs/guide/GuideBody.tsx'
 export type { ExpandButtonProps } from './shell/ExpandButton.tsx'
 export type { SidebarRightState, SurfaceState } from './stores.ts'
 export type {
-  ISidebarRight, SidebarRightBinding, SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions,
+  ISidebarRight, SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions,
   SidebarRightPlacement, SidebarRightCloseHandler, SurfaceActions,
 } from './service.ts'
 export type {
@@ -65,15 +71,16 @@ export type {
 } from './contract/params.ts'
 // The layout ids and rectangle the navigation face takes, so a caller needs no import from the kit.
 export type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
-export type { PinResource, SidebarRightNavigator, TabOccurrence } from './tab-domain.ts'
+export type { PinResource, SidebarRightNavigator, TabOccurrence, SidebarRightOccurrenceId } from './tab-domain.ts'
 export type { SidebarRightKey } from './locales.ts'
 export type { OpenContentIntent } from './stores.ts'
+export type { SidebarRightOpenTab } from './tab-inventory.ts'
 
 /** This package's copy namespace. */
 const NS = 'sidebarRight'
 
 /** Required browser services: the slot registry, the frame's panel actions, copy, and the resource model. */
-export const inject = ['slots', 'layout', 'locale', 'resources']
+export const inject = ['slots', 'layout', 'locale', 'resources', 'sessions', 'uiSession', 'shortcuts']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -101,10 +108,45 @@ export function apply(ctx: ClientContext): void {
   // its own apply top level for the same reason.
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
-  const { controller, adopt } = createSidebarRightController(
+  const views = new SidebarSessionViews(ctx.sessions)
+  ctx.effect(() => {
+    const current = ctx.uiSession.adapter.current
+    const sync = (): void => { views.select(current.getSnapshot().key as SessionId | undefined) }
+    const unsubscribe = current.subscribe(sync)
+    sync()
+    return () => { unsubscribe(); views.dispose() }
+  }, 'ui-sidebar-right: retained Session views')
+  const layout: ILayout = ctx.layout
+  // The automatic fullscreen rule as the seats last rendered it: the frame
+  // hands them its width as owner props, and every seat reports the same rule.
+  let autoFullscreen = false
+  const { controller, adopt, forget, show, measure } = createSidebarRightController(
     tabs,
     (address, signal) => { ctx.resources.pin(address, signal) },
+    {
+      autoFullscreen: () => autoFullscreen,
+      openWithFocus: (sessionId, open) => { openWithPaneFocus(document, sessionId, open) },
+      closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
+    },
   )
+  // The Session on screen: the selected one while the Conversation fills the
+  // main column. Both sources notify before React renders their change, so the
+  // service names the arriving Session before any component of that commit
+  // reads it, and its seat mints the Session's store in the same render.
+  ctx.effect(() => {
+    const sync = (): void => {
+      const selected = views.source.getSnapshot().find(view => view.selected)
+      show(layout.panelInfo.getSnapshot().activePanelId === null ? selected?.sessionId : undefined)
+    }
+    const unsubscribeViews = views.source.subscribe(sync)
+    const unsubscribePanel = layout.panelInfo.subscribe(sync)
+    sync()
+    return () => {
+      unsubscribeViews()
+      unsubscribePanel()
+      show(undefined)
+    }
+  }, 'ui-sidebar-right: on-screen Session')
   const disposeRegistry = ctx.reflect.provide('sidebarRightTabs', tabs)
   const disposeService = ctx.reflect.provide('sidebarRight', controller)
   // Registered first, so it tears down last: the faces outlive every seat and
@@ -118,31 +160,44 @@ export function apply(ctx: ClientContext): void {
   }, 'ui-sidebar-right: service faces')
 
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-right: dictionaries')
+  ctx.effect(() => registerSidebarShortcuts(ctx.shortcuts, controller, t, () => {
+    void ctx.shortcuts.closeWindow().catch((error: unknown) => { console.error('Window close failed', error) })
+  }), 'ui-sidebar-right: shortcuts')
+  if (typeof document !== 'undefined') ctx.effect(() => observeSidebarFocus(document), 'ui-sidebar-right: focus')
 
   ctx.effect(() => {
     const handle = createSidebarRightStore(() => defaultSeed(tabs))
-    // The runtime mints one instance of this handle per session (the scope key
-    // is the session id) and caches it per key. Each is adopted as it is minted,
-    // so a tab's own action reaches its session's store while another session
-    // is on screen, and that store's commits sync the Tab domain themselves.
-    const adoptions: Array<() => void> = []
+    // Each Session Context generation owns one Store. Background tab actions
+    // use the latest adoption for that Session.
+    const adoptions = new Map<SessionId, () => void>()
     const store: typeof handle = {
       ...handle,
       create: (scopeKey) => {
         const instance = handle.create(scopeKey)
-        if (scopeKey !== undefined) adoptions.push(adopt(scopeKey as SessionId, instance))
-        return instance
+        if (scopeKey !== undefined) {
+          const sessionId = scopeKey as SessionId
+          adoptions.get(sessionId)?.()
+          adoptions.set(sessionId, adopt(sessionId, instance))
+        }
+        return { ...instance, clearPersisted() {
+          instance.clearPersisted()
+          if (scopeKey !== undefined) forget(scopeKey as SessionId)
+        } }
       },
     }
-    const layout: ILayout = ctx.layout
-    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab'> = {
+    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence' | 'closeTab' | 'measureRoom'> = {
       syncPresentation({ shown, track, fullscreen }) {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
       },
-      bindService: binding => controller.bind(binding),
+      reportAutoFullscreen: (value) => { autoFullscreen = value },
+      splitPane: (paneId) => { controller.split(paneId) },
+      toggleFullscreen: () => { const target = controller.commandTarget(); if (target !== undefined) controller.toggleFullscreen(target) },
       openTab: (kind, options) => { controller.openTab(kind, options) },
-      hooks: { tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() } },
+      hooks: {
+        shortcuts: ctx.shortcuts.catalog,
+        tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() },
+      },
     }
 
     const disposeTypes = [tabs.register(guideDefinition(t))]
@@ -150,6 +205,10 @@ export function apply(ctx: ClientContext): void {
       yield ctx.slots.register({
         name: 'rightbar',
         children: { 'rightbar.session': { kind: 'single', scope: 'session' } },
+        inject: (): RightbarRootInjected => ({
+          hooks: { views: views.source },
+          mountView: reference => views.mount(reference),
+        }),
       }, RightbarRoot)
       yield ctx.slots.register({
         name: 'rightbar.session',
@@ -162,6 +221,7 @@ export function apply(ctx: ClientContext): void {
         store,
         inject: (sessionId): SidebarRightInjected => ({
           ...injected,
+          measureRoom: (canSplitPane) => { measure(sessionId, canSplitPane) },
           closeTab: (tabId) => {
             try { controller.closeIn(sessionId, tabId) }
             catch (error) { console.error('Sidebar tab close failed:', error) }
@@ -179,11 +239,15 @@ export function apply(ctx: ClientContext): void {
       name: 'conversation.session.header.corner',
       locale: NS,
       store,
+      inject: () => ({ hooks: { shortcuts: ctx.shortcuts.catalog } }),
     }, ExpandButton))
     // Stage two for the guide: it declares the chain child it hosts and reads
     // the registry's entry boxes, which an ordinary type has no reason to do.
     const guideInjected: GuideInjected = {
-      hooks: { guideEntries: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.guide() } },
+      hooks: {
+        shortcuts: ctx.shortcuts.catalog,
+        guideEntries: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.guide() },
+      },
     }
     const disposeGuide = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
@@ -208,7 +272,8 @@ export function apply(ctx: ClientContext): void {
       disposeExpand()
       disposeSeat()
       for (const dispose of disposeTypes.reverse()) dispose()
-      for (const release of adoptions) release()
+      for (const release of adoptions.values()) release()
+      adoptions.clear()
     }
   }, 'ui-sidebar-right: seats and shipped tab type')
 }

@@ -1,0 +1,12 @@
+{
+  "$comment": "profile 的 bundle 层清单（顺序即层序；SoloEngine 组合层恒在最后，故其 patch 覆盖后者生效）。这是**唯一真源**：启动器 `soloengine-launch/bin.mjs` 的 init 读本文件写进 profile 清单，不在启动器里再写第二份。",
+  "bundles": [
+    "@deepseek-ai/dsh-base",
+    "@deepseek-ai/dsh-web-app",
+    "@anionex/dsh-turn-rewind",
+    "dsh-permission-rules",
+    "dsh-approve-for-me",
+    "@soloengine/host"
+  ],
+  "patchReload": "live"
+}

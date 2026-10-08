@@ -73,6 +73,8 @@ const output = handle.collected.stdout?.readFrom(0)
 
 对于交互式程序，`spawnTerminal` 分配真实 PTY：写入文本、读取 UTF-8 输出、检查当前前台进程组并向其发送信号，以及等待一次 `terminate()`，让提供方仍可观察到的每个会话成员完全停稳。就绪状态、scrollback 与提示符策略仍归 PTY 消费方所有。
 
+终端请求可显式启用 `shellActivity`。`inspectActivity()` 结合支持的 shell 生命周期信号与自有任务观察，返回 `idle`、`busy` 或 `unknown`，以及句柄内的 revision。不支持或不完整的观察不能推出空闲；输入会使已有提示符证据失效。启用后，根 shell 退出时继续持有剩余工作，不把该退出视为终止后代进程的许可。保活和清理期限由消费者决定。
+
 ### 每个子进程起步时的环境
 
 子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。
@@ -101,7 +103,6 @@ const output = handle.collected.stdout?.readFrom(0)
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `SubprocessRuntime`、`ctx.subprocess` 注册、共享的 `scrubbedParentEnv` 清除 |
 | [`src/types.ts`](src/types.ts) | 词汇：spawn spec、stdio 模式、句柄、读取器、结果、`DSH_*` 命名空间 |
-| — | 不发布运行时不变式伴生入口；这个无状态 Service Definition 负责 spawn spec 与句柄类型，观察则由 Service Providers 负责。 |
 
 ### 数据模型与流程
 

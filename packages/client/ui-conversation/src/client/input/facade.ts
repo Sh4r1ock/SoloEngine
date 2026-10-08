@@ -9,20 +9,22 @@
  * listeners onto it.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import {
   createSnapshotStore, type ObservableSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-store'
 import type { LexicalEditor } from 'lexical'
 import type {
-  CommandClaim, ConsumeTokenRequest, DraftAttachmentId,
+  CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions, DraftInitializationResult,
   InputActions, InputEffect, InputNotice, InputState, InputTriggerController, PickOutcome,
-  QueuedMessage, SessionInput, SubmitAttempt, SubmitAttachment, SubmitOutcome,
+  SessionInput, SubmitAttempt, SubmitAttachment, SubmitOutcome,
 } from '../contract/input.ts'
 import type {
-  ArbitrateKey, ArbitrateOutcome, ComposerKeyboard, Occurrence, ReferenceInsert, TokenSpan,
+  ArbitrateKey, ArbitrateOutcome, ComposerKeyboard, DraftInput, DraftSnapshot, Occurrence, ReferenceInsert, TokenSpan,
 } from '../contract/draft-editor.ts'
-import type { InputSubmitMode } from '../contract/composer-submission.ts'
+import type { InputSubmitMode, MessageSubmission, MessageSubmissionState } from '../contract/composer-submission.ts'
 import { SubmitMachine } from './machine.ts'
+import { resolveDraftInput, snapshotDraft } from '../draft.ts'
 import { DraftEditorRuntime } from './editor/runtime.ts'
 import type { EditorProjection } from './editor/projection.ts'
 
@@ -32,20 +34,23 @@ export interface PopupDismissFace {
 }
 
 /**
- * Construction dependencies of one facade. The slash/popup faces are THUNKS: the
- * shell is created inside the sessions provide materialization (before the
- * scope record is queryable), where `slash.sessionOf`/`command.popupFor`
- * cannot resolve yet — resolution defers to first interactive use.
+ * Construction dependencies of one input model. Trigger and popup callbacks
+ * resolve the currently available Session-scoped services on demand. InputHub
+ * owns the lexicon subscription through the Session scope's inject lifecycle.
  */
 export interface SessionInputDeps {
   /** Session-scope ctx handed to claim.submit transactions. */
   actx: Context
+  /** Snapshot the Session facts before asynchronous command arbitration. */
+  submissionState?: () => MessageSubmissionState
+  /** Notify one ordinary message attempt before reference serialization. */
+  messageSubmitted?: (submission: MessageSubmission) => void
   /** Enter adjudication face resolver; absent/undefined answer = every '/' line falls to the default sink. */
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
   popup?: (() => PopupDismissFace | undefined) | undefined
-  /** Queue read face; overlaid onto InputState.queue (absent = empty). */
-  queue?: ObservableSnapshot<readonly QueuedMessage[]> | undefined
+  /** Agent Inbox projection; its next-turn list is overlaid onto InputState.queue. */
+  inbox?: ObservableSnapshot<InboxState | undefined> | undefined
   /**
    * Steer every still-pending queued message into the running turn, in FIFO
    * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
@@ -88,9 +93,9 @@ function projectionContentChanged(prev: EditorProjection, next: EditorProjection
   })
 }
 
-const EMPTY_QUEUE: readonly QueuedMessage[] = []
+const EMPTY_QUEUE: InboxState['next-turn'] = []
 
-/** No-pipeline lexicon: zero text-ref decorations. */
+/** Unavailable catalogs contain no named text references. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
 
 /** Editor and attachment snapshot owned by one detached default send. */
@@ -116,7 +121,14 @@ export class SessionInputShell implements SessionInput {
   }
   /** The public provide-channel action face (one stable identity per session). */
   readonly actions: InputActions = {
+    captureInsertion: () => ({ ...this.caretSpan(), draftRev: this.rev }),
+    insertText: (text, span) => {
+      if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting' || this.disposed) return false
+      if (span.draftRev !== this.rev) return false
+      return this.draftEditor.insertAsyncText(span, text)
+    },
     setDraft: (text) => { this.setDraft(text) },
+    persistDraft: () => { this.persistCurrentDraft() },
     addAttachments: ids => this.addAttachments(ids),
     removeAttachment: (id) => { this.removeAttachment(id) },
     pruneAttachments: (ids) => { this.pruneAttachments(ids) },
@@ -131,11 +143,12 @@ export class SessionInputShell implements SessionInput {
   private rev = 0
   private readonly unregister: () => void
   private noticeSeq = 0
-  private lastMirroredDraft = ''
+  private lastPublishedDraft: DraftSnapshot | undefined
+  private draftSnapshotCache: { revision: number; value: DraftSnapshot } | undefined
   private attachmentIds: readonly DraftAttachmentId[] = []
   private disposed = false
-  /** Draft persistence mirror (Conversation store write; receives the clipboard projection). */
-  private mirrorFn: ((text: string) => void) | undefined
+  /** Conversation store writer for the current semantic document. */
+  private persistDraft: ((draft: DraftSnapshot) => void) | undefined
   /** The mounted composer's file-picker opener (scoped pick-files event target). */
   private filePicker: Parameters<ComposerKeyboard['bindFilePicker']>[0] | undefined
   /** Default sends retained until admission settles or scope disposal releases their attachments. */
@@ -152,6 +165,8 @@ export class SessionInputShell implements SessionInput {
     readonly attachmentIds: readonly DraftAttachmentId[]
   }>()
 
+  private readonly unsubscribeInbox: (() => void) | undefined
+
   constructor(private readonly deps: SessionInputDeps) {
     this.draftEditor = new DraftEditorRuntime({
       onUpdate: () => { this.onEditorUpdate() },
@@ -163,7 +178,7 @@ export class SessionInputShell implements SessionInput {
     })
     this.unregister = this.draftEditor.register()
     this.state = createSnapshotStore<InputState>(this.compose())
-    deps.queue?.subscribe(() => { this.publish() })
+    this.unsubscribeInbox = deps.inbox?.subscribe(() => { this.publish() })
   }
 
   // ---- editor plumbing ----
@@ -197,16 +212,72 @@ export class SessionInputShell implements SessionInput {
    * Replace the whole draft (persisted-draft seed and programmatic writes).
    * Placeholder-sanitized; newlines split paragraphs; the caret lands at the
    * end. Merged into history so a seed is not an undoable step of its own.
-   * @param text - the full next draft.
+   * @param text - plain text or the complete semantic document.
    */
-  setDraft(text: string): void {
-    this.draftEditor.setDraft(text)
+  setDraft(text: DraftInput): void {
+    const draft = resolveDraftInput(text)
+    if (draft.references.length === 0) this.draftEditor.setDraft(draft.text)
+    else this.draftEditor.restoreDraft(draft.text, draft.references)
+  }
+
+  /** Reconnect optional catalog notifications without waiting for another edit. */
+  refreshLexiconSubscription(): void {
+    if (!this.disposed) this.draftEditor.refreshLexiconSubscription()
+  }
+
+  /** Current semantic document, stable until its content revision changes. */
+  get draftSnapshot(): DraftSnapshot {
+    if (this.draftSnapshotCache?.revision === this.rev) return this.draftSnapshotCache.value
+    const value = snapshotDraft(this.projection.clipboardText, this.projection.occurrences)
+    this.draftSnapshotCache = { revision: this.rev, value }
+    return value
+  }
+
+  /** Persist the latest document without changing the editor or binding a writer. */
+  persistCurrentDraft(): void {
+    this.persistDraft?.(this.draftSnapshot)
+  }
+
+  /**
+   * Apply one new-task request to this already-initialized input model.
+   * @param options - replacement content and explicit permission to clear existing text.
+   * @returns applied when the requested text is adopted, even if unchanged;
+   * preserved when the current draft is kept; blocked after disposal or during a pending submission.
+   */
+  requestDraftInitialization(options: DraftInitializationOptions): DraftInitializationResult {
+    if (this.draftInitializationBlocked()) return 'blocked'
+    if (options.prompt === undefined && options.clearPreviousDraft !== true) return 'preserved'
+    if (options.clearPreviousDraft !== true && (this.snapshot.draft !== '' || this.attachmentIds.length > 0)) {
+      return 'preserved'
+    }
+    this.setDraft(options.prompt ?? '')
+    return 'applied'
+  }
+
+  private draftInitializationBlocked(): boolean {
+    const { phase } = this.core.state
+    return this.disposed || phase === 'adjudicating' || phase === 'submitting'
+      || this.detachedDrafts.size > 0 || this.attachmentFlights.size > 0
   }
 
   /** Append ordered attachment ids unless an admission transaction is locked. */
   addAttachments(ids: readonly DraftAttachmentId[]): boolean {
     if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
     if (ids.length === 0) return true
+    this.attachmentIds = [...this.attachmentIds, ...ids]
+    this.publish()
+    return true
+  }
+
+  /**
+   * Add validated file references and attachment ids while admission is editable.
+   * @param references - reference chips in source order.
+   * @param ids - newly allocated attachment ids.
+   * @returns false when admission is locked or the editor refuses the insertion.
+   */
+  addFiles(references: readonly ReferenceInsert[], ids: readonly DraftAttachmentId[]): boolean {
+    if (this.snapshot.phase === 'adjudicating' || this.snapshot.phase === 'submitting') return false
+    if (!this.draftEditor.insertFileReferences(references)) return false
     this.attachmentIds = [...this.attachmentIds, ...ids]
     this.publish()
     return true
@@ -267,7 +338,16 @@ export class SessionInputShell implements SessionInput {
    * (adjudicating/submitting) force-closes the transient layers: the popup
    * dismisses and the menu tracks frozen.
    */
-  submit(mode: InputSubmitMode = 'queue'): void {
+  submit(mode: InputSubmitMode = 'queue', source?: 'click' | 'enter'): void {
+    if (this.disposed) return
+    const timestamp = Date.now()
+    let state: MessageSubmissionState | undefined
+    if (this.snapshot.phase === 'plain' && (this.snapshot.draft.trim() !== '' || this.attachmentIds.length > 0)) {
+      try { state = this.deps.submissionState?.() } catch (_error) { /* Optional Session observations cannot interrupt submission. */ }
+    }
+    const submission: MessageSubmission = Object.freeze({
+      timestamp, mode, ...source === undefined ? {} : { source }, ...state === undefined ? {} : { state },
+    })
     if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain') {
         const attachmentIds = [...this.attachmentIds]
@@ -276,6 +356,7 @@ export class SessionInputShell implements SessionInput {
         const flight = this.attachmentFlightSeq
         this.attachmentFlights.set(flight, { controller, attachmentIds })
         this.commitSend(attachmentIds)
+        this.notifySubmission(submission)
         void this.deps.defaultSink('', attachmentIds, mode, controller.signal).then((outcome) => {
           if (this.disposed || !this.attachmentFlights.delete(flight)) return
           if (outcome.kind === 'success') return
@@ -298,7 +379,7 @@ export class SessionInputShell implements SessionInput {
       this.notify('error', this.deps.commandAttachments.unsupportedNotice(before.claim?.token ?? before.draft))
       return
     }
-    this.dispatchRun(({ type: 'enter', mode, draft: this.projection.clipboardText }))
+    this.dispatchRun({ type: 'enter', mode, draft: this.projection.clipboardText, submission })
     const phase = this.snapshot.phase
     if (phase === 'adjudicating' || phase === 'submitting') {
       this.deps.popup?.()?.dismiss()
@@ -449,6 +530,16 @@ export class SessionInputShell implements SessionInput {
     this.notices.set({ level, text, seq: this.noticeSeq })
   }
 
+  /**
+   * Return the keyboard to the composer with the caret it last held. Lexical's
+   * own focus restores its stored selection; a bare DOM focus on the
+   * contenteditable would land the caret at the start instead.
+   */
+  focus(): void {
+    this.editor.getRootElement()?.focus({ preventScroll: true })
+    this.editor.focus()
+  }
+
   // ---- wiring-layer extras (not on the frozen SessionInput face) ----
 
   /**
@@ -468,6 +559,7 @@ export class SessionInputShell implements SessionInput {
     }
     this.disposed = true
     this.dispatchRun(({ type: 'release' }))
+    this.unsubscribeInbox?.()
     this.unregister()
     this.detachedDrafts.clear()
     this.failedDetached.clear()
@@ -481,17 +573,14 @@ export class SessionInputShell implements SessionInput {
   }
 
   /**
-   * Bind the draft persistence mirror (Conversation store write). Adopt-on-bind: the
-   * store draft may hold a persisted value from a previous mount; the caller
-   * seeds it via setDraft BEFORE binding, and afterwards every editor-adopted
-   * draft mirrors out.
-   * @param write - store draft write.
+   * Bind the Conversation store writer without importing or saving content.
+   * @param write - semantic draft writer; persistCurrentDraft flushes the initial value.
    * @returns the unbind disposer.
    */
-  bindMirror(write: (text: string) => void): () => void {
-    this.mirrorFn = write
+  bindDraftPersistence(write: (draft: DraftSnapshot) => void): () => void {
+    this.persistDraft = write
     return () => {
-      if (this.mirrorFn === write) this.mirrorFn = undefined
+      if (this.persistDraft === write) this.persistDraft = undefined
     }
   }
 
@@ -538,7 +627,8 @@ export class SessionInputShell implements SessionInput {
   /** Dispatch + execute, refreshing the claim decoration when the styled token flips. */
   private dispatchRun(ev: Parameters<SubmitMachine['dispatch']>[0]): void {
     const beforeToken = this.activeClaimToken()
-    this.run(this.core.dispatch(ev))
+    const effects = this.core.dispatch(ev)
+    this.run(effects)
     if (this.activeClaimToken() !== beforeToken) this.draftEditor.refreshClaimDecoration()
   }
 
@@ -599,6 +689,7 @@ export class SessionInputShell implements SessionInput {
     draft: string,
     mode: InputSubmitMode,
   ): void {
+    this.notifySubmission(attempt.submission)
     const attachmentIds = [...this.attachmentIds]
     this.attachmentIds = []
     const occurrences = this.projection.occurrences
@@ -641,6 +732,11 @@ export class SessionInputShell implements SessionInput {
         this.settleDetachedFailure(attempt, message)
       },
     )
+  }
+
+  private notifySubmission(submission: MessageSubmission | undefined): void {
+    if (submission === undefined) return
+    try { this.deps.messageSubmitted?.(submission) } catch (_error) { /* Notification consumers cannot interrupt submission. */ }
   }
 
   /** Settle one detached default send independently of other sends. */
@@ -790,16 +886,17 @@ export class SessionInputShell implements SessionInput {
       phase: core.phase,
       ...(core.claim !== undefined ? { claim: core.claim } : {}),
       occurrences: this.projection.occurrences,
-      queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
+      queue: this.deps.inbox?.getSnapshot()?.['next-turn'] ?? EMPTY_QUEUE,
     }
   }
 
   private publish(): void {
     const next = this.compose()
     this.state.set(next)
-    if (next.draft !== this.lastMirroredDraft) {
-      this.lastMirroredDraft = next.draft
-      this.mirrorFn?.(next.draft)
+    const draft = this.draftSnapshot
+    if (draft !== this.lastPublishedDraft) {
+      this.lastPublishedDraft = draft
+      this.persistDraft?.(draft)
     }
   }
 }

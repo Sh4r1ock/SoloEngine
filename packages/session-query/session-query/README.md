@@ -62,7 +62,7 @@ The inherited knobs are set through the mounted backend's config:
 
 ### Failures and recovery
 
-Failures are typed with a stable `SessionQueryError.code`. The ones you will meet: `SESSION_QUERY_SESSION_NOT_FOUND` when an id is absent; `SESSION_QUERY_SOURCE_CONFLICT` when live and persisted observations of one session disagree on immutable headers; `SESSION_QUERY_PERSISTENCE_FAILED` when mounted persistence is unreadable; `SESSION_QUERY_CORRUPT_SESSION` when a durable record fails Session validation; and `SESSION_QUERY_INVALID_SURFACE` when a loaded log breaks the surface contract. Reads targeting a known live session never consult persistence, so a failing backend cannot make current in-memory history unreadable.
+Failures are typed with a stable `SessionQueryError.code`. The ones you will meet: `SESSION_QUERY_SESSION_NOT_FOUND` when an id is absent; `SESSION_QUERY_SOURCE_CONFLICT` when live and persisted observations of one session disagree on immutable headers; `SESSION_QUERY_PERSISTENCE_FAILED` when mounted persistence is unreadable; `SESSION_QUERY_CORRUPT_SESSION` when a durable record fails Session validation or a live or prepared observation fails projection computation; and `SESSION_QUERY_INVALID_SURFACE` when a loaded log breaks the surface contract. Projection failures retain the original error as `cause`. Reads targeting a known live session never consult persistence, so a failing backend cannot make current in-memory history unreadable.
 
 -----
 
@@ -100,7 +100,6 @@ The decision history lives in the [unified service decision](../../../.agents/no
 | [`src/documents.ts`](src/documents.ts) | Surface-aware semantic document projection |
 | [`src/tracing.ts`](src/tracing.ts) | One-shot session-lineage and event-relationship tracing |
 | [`src/sources.ts`](src/sources.ts) | Immutable-header compatibility check |
-| — | No runtime invariant companion is published; query results are immutable per-call projections whose lineage and event relations are validated while they are built; the service retains no observable result state. |
 
 ### Corpus resolution
 

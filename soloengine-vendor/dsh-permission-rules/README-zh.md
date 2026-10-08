@@ -1,0 +1,297 @@
+<div align="center">
+
+# 🛡️ dsh-permission-rules
+- **1024 商店渠道**：先 `npm i -g dsh1024`，再 `dsh1024 plugin --profile web add dsh-permission-rules`（计入 [deepseek1024.com](https://deepseek1024.com) 安装排行）。
+
+**DeepSeek Harness 的 Claude Code 风格声明式权限规则。**
+
+*规则裁决已知的。评审模型裁决未知的。*
+
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Gitee](https://img.shields.io/badge/Gitee-mirror-c71d23?logo=gitee)](https://gitee.com/perrylink/dsh-permission-rules)
+[![DSH plugin](https://img.shields.io/badge/dsh--plugin-✅-green)](https://github.com/topics/dsh-plugin)
+[![dsh-doctor](https://raw.githubusercontent.com/PerryLink/dsh-plugin-doctor/main/badges/PerryLink__dsh-permission-rules.svg)](https://github.com/PerryLink/dsh-plugin-doctor#verified-徽章)
+[![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-brightgreen.svg)](#)
+[![CI](https://img.shields.io/github/actions/workflow/status/PerryLink/dsh-permission-rules/ci.yml?branch=main&label=CI)](https://github.com/PerryLink/dsh-permission-rules/actions)
+[![Version](https://img.shields.io/github/v/tag/PerryLink/dsh-permission-rules?label=version)](https://github.com/PerryLink/dsh-permission-rules/releases)
+[![npm version](https://img.shields.io/npm/v/dsh-permission-rules)](https://www.npmjs.com/package/dsh-permission-rules)
+[![npm downloads](https://img.shields.io/npm/dm/dsh-permission-rules)](https://www.npmjs.com/package/dsh-permission-rules)
+
+[English](README.md) · [简体中文](README-zh.md) · [Español](README-es.md) · [Português](README-pt.md) · [हिन्दी](README-hi.md)
+
+</div>
+
+---
+
+## Compatibility
+
+| Surface | Status |
+|---|---|
+| Harness | DeepSeek Harness `dsh-v0.1.5-rc.2`（2026-09-09 已适配，完整门禁链 + profile 安装冒烟）：其 `Session.append` 仍无法盖章 `ignorable` 标记——已在已发布的 `0.1.5-rc.2` 包上实测，第三参数被静默丢弃，信封字段仅用于存量日志读取——故整条 `0.1.5-alpha` 线在首次追加前即被预检为未盖章，会话日志审计默认停用。`0.1.3-alpha` 线同样沿用 surface-only 追加签名。两条线的日志迁移连已标记的未分类插件事件也拒绝：在 `0.1.3-alpha` 宿主打开日志前 `strip` 掉 v1 审计行，在 `0.1.5-alpha` 宿主迁移前 `strip` 掉 v2 审计行（v3 原生日志只需 `repair`）。 |
+| Node | `^22.19.0 || >=24.0.0` |
+| Platforms | 全部（host + Web 设置客户端） |
+| Model | 任意（deny/ask 原因经工具结果呈现） |
+
+## What you get
+
+`dsh-permission-rules` 在 `tools/pre-execute` waterfall 上为每次工具调用前置一个有序的 **`allow` / `deny` / `ask`** 规则列表——确定、即时、可审计，由你用纯 YAML 编写：
+
+- **`deny`** 阻断调用；规则的 `reason` 成为模型可见的错误。
+- **`ask`** 走官方审批接缝（挂载 `dsh-auto-review` 用第二模型作答，或由人作答；两者皆无时 harness 失败关闭）。
+- **`allow`**（及未命中）严格经 `next()` 委托——下游监听器绝不会被短路。
+
+每次命中**和**每次透传都作为 `permissionRules/decision` 会话事件审计落盘（仅日志——不会向模型上下文额外注入任何内容）。
+
+- **丰富匹配** —— 工具名 glob（含 `mcp__*`）、agent 身份选择器（`main` / `subagent` / `preset:*`）、参数键/值 glob **或** 正则（含 `!pattern` 取反与 `absent` 键维度）、**任意嵌套深度**的工作区相对路径 glob、`when` 宿主条件（环境变量、平台），以及 **shell 命令分解**（`argv`：命令词、参数 token、管道签名）用于 token 级精确命令匹配。
+- **内置高危基线** —— 随附的 deny/ask 规则集（破坏性命令、权限提升、下载即执行、敏感路径），默认开启并追加在用户规则之后（更近的用户规则可覆盖）；用 `builtin.enabled` 开关。
+- **分层规则文件** —— 可选 `searchUp` 从会话 cwd 到文件系统根合并每个 `.dsh/rules.yaml`，就近优先。
+- **试运行上线** —— `enforce: false` 审计策略*会*做什么，同时放行每个调用。
+- **热重载** —— Chokidar 监听带去抖；损坏的编辑保留旧规则、绝不崩溃。在 WSL 主机上（或规则文件位于 `/mnt/<盘符>` 下时）监听切换为轮询，因为该处的原生变更事件不可靠。
+- **失败大声** —— 非法 YAML、未知 action/字段、坏 glob/正则、易回溯模式或超过 `maxRules` 的规则在加载期失败。
+
+## Rule syntax
+
+```yaml
+# <project>/.dsh/rules.yaml
+rules:
+  - match: { tools: [bash, pwsh], params: { command: "git push*" }, paths: ["**/secrets/**"] }
+    action: deny
+    reason: "No pushes from protected paths"
+
+  - match: { tools: [edit, write] }
+    action: ask
+    reason: "File writes need confirmation"
+```
+
+- **匹配维度** —— `tools`（glob，含 `mcp__*`）、`agents`（`main` / `subagent` / `preset:<name>`；未知身份永不匹配——失败关闭）、`params`（键/值 glob 或正则，`!pattern` 取反，`absent` 键维度）、`paths`（任意嵌套深度抽取的工作区相对 glob）、`when`（`env` 变量 glob/正则 + 封闭 `platform` 列表），以及 `network`（`domains` / `ips` / `ports` / `schemes`——glob、通配符、CIDR、端口范围）。
+- **动作** —— `allow` / `deny` / `ask`，按文件顺序求值，首个命中胜出。
+- **规则元数据** —— `enabled: false`（可见但失效）、`description`、`tags`；未知字段加载失败。
+- **Schema** —— JSON Schema 见 [docs/rules-format.schema.json](docs/rules-format.schema.json)（编辑器补全 `# yaml-language-server: $schema=...`）；完整词汇表与 5 条安全基线见 [docs/rules-format.en.md](docs/rules-format.en.md)。
+
+## Network policy
+
+Codex 风格的**进程级网络策略**：shell 子进程流量经内置本地 **HTTP/CONNECT 代理**，每个连接由有序网络规则或映射到官方沙箱预设的三档模式裁决：
+
+- **`deny-all`** —— 只读沙箱预设：阻断所有出站。
+- **`whitelist`** —— workspace-write 预设：放行列表目标，其余按 `unlisted: ask`（或 `deny`）。
+- **`allow-all`** —— danger-full-access 预设：放行一切。
+- **`auto`**（默认）—— 跟随沙箱预设；无沙箱策略服务的宿主上解析为 `autoFallback`（`allow-all`）。
+
+- **匹配** —— `match.network` 用 `domains` / `ips` / `ports` / `schemes`（glob、通配符、CIDR、端口范围；数值型 YAML 端口可接受）。`tools/pre-execute` 热路径上的 URL 候选抽取作用于 web 工具参数与嵌入 bash/pwsh 命令文本的 URL；回环目标可按 `loopback` 策略短路规则。IPv4 映射的 IPv6 字面量在匹配前归一化为 IPv4 形式；代理按裁决到的地址建连，不做二次 DNS 解析——裁决未解析出任何地址的连接以 502 关闭失败，绝不按名字拨号。
+- **上游链式** —— `network.upstreamProxy`（默认 `off`）把本代理**放行**的连接送上上游代理：CONNECT 向上游要一条隧道（`CONNECT host:port`），纯 HTTP 请求以绝对形式转发给它。被拦截的目标永远到不了上游——它照旧收到本插件的结构化 403。即使配置了上游，两类情况也绝不链式：**回环**目标（本机之外的代理无法路由它的回环），以及由 **`ips` 作用域规则**产生的任何裁决（链式会把主机名交给上游，"连接落在规则看过的地址上"（issue #21）恰恰会在规则真正在意地址的地方不再成立；这些裁决仍按裁决到的地址直连），再加上目标 scheme 没有可用上游的情况。上游自身的主机名是运维配置而非 agent 输入，不参与这些规则的裁决。带凭据的 URL 绝不原样输出：警告、`/rules network` 与设置页快照都会把口令打码（`http://user:***@host:port`）。上游不可达、超时（10 秒）或返回非 2xx 一律 **502**——刻意没有静默回退直连，配置错误因此始终可见。
+- **审计** —— 被拒连接向所属会话追加 `permissionRules/network`（同样的自适应 `ignorable` 门），块计数器与近期拦截在 `/rules network` 与设置页展示。
+- **诊断** —— 被拦截的连接带 `[network: …]` 消息，点名被拦目标、做出裁决的模式或规则，以及处置办法。
+- **设置页放行** —— 每条近期拦截都提供**放行**动作：它在真正裁决该连接的最近一个规则文件的**最前面**（索引 0）写入一条最小的 `match: { network: { domains: [<主机>] } }` / `action: allow` 规则——被拦截连接所归属工作区的项目文件（配置了绝对 `rulesFile` 时即该文件）；对无会话归属的宿主级拦截，则写宿主链解析出的文件（绝对 `rulesFile` → 已存在的 `<processCwd>/<rulesFile>` → 配置的 `fallbackPath` → `<processCwd>/<rulesFile>`，不存在则创建）。加载了多个工作区时，页面先提供工作区选择器——任何已加载的工作区链都优先于宿主链。之所以放在索引 0：规则首个匹配生效，追加在既有 `deny` 之后只会成为死文本。只写 `domains`：该维度包含子域且与端口/scheme 无关，因此同一主机在下一个端口上不会被重新拦截；既有注释与未改动规则原样保留，文本与手工编辑走同一道校验门。写入即刻生效——缓存的工作区链**与**无会话宿主链都会重读，无需重启、无需 `/rules reload`——随后重新计算裁决，因此提示报告的是**真实**结果，绝不在连接仍被拦截时声称成功。以下情况一律拒绝且磁盘文件分毫不动：未知工作区、不在已知规则源内的目标、只读的内置基线、无法读取或解析的文件；连接已被放行时不写入任何内容。`network.allowHostAction: false` 隐藏按钮并让 RPC 拒绝。
+
+## Quick start
+
+```sh
+# 1. install the bundle into your profile
+dsh plugin --profile web add "github:PerryLink/dsh-permission-rules#main"
+
+# or from npm (published releases)
+dsh plugin --profile web add dsh-permission-rules
+
+# 2. restart and verify the row
+dsh --profile web --dump-config | grep -A4 'id: permission-rules'
+```
+
+## Install & uninstall
+
+- **git channel**（最新 `main`）：`dsh plugin --profile web add "github:PerryLink/dsh-permission-rules#main"` —— `prepare` 脚本仅用生产依赖构建。
+- **npm channel**（发布版本）：`dsh plugin --profile web add dsh-permission-rules`。
+- **tarball channel**：在本仓库执行 `pnpm pack`，然后 `dsh plugin --profile web add ./dsh-permission-rules-<version>.tgz`。
+- **uninstall**：`dsh plugin --profile web remove dsh-permission-rules`。
+
+## Configuration
+
+所有可调项均为 Schemastery `Config` 字段（可在 cordis.yml 中修改）。按 id 覆盖会整行替换——重述你需要的每个键。
+
+| Key | Default | Meaning |
+|---|---|---|
+| `rulesFile` | `.dsh/rules.yaml` | 规则文件位置；相对 = 相对调用会话 cwd 解析，绝对 = 全局并在挂载时校验 |
+| `fallbackPath` | *(none)* | 按 cwd 发现无果时使用的规则文件；挂载时校验 |
+| `badFilePolicy` | `fail` | 坏规则文件：`fail` 响亮地令待处理工具调用出错；`ignore-with-warning` 警告并空继续 |
+| `maxRules` | `256` | 生效源链上规则总数的硬上限 |
+| `maxCachedWorkspaces` | `512` | 缓存的工作区规则加载硬上限（LRU 逐出） |
+| `patternMode` | `glob` | `params`/`paths`/`when.env` 模式风格：`glob` 或 `regex`（工具名始终为 glob） |
+| `watch` | `true` | Chokidar 监听 + 变更重载 |
+| `watchStabilityThresholdMs` | `200` | 重载去抖窗口（毫秒） |
+| `language` | `en` | `/rules` 输出语言：`en`、`zh`、`es`、`pt`、`hi` |
+| `caseInsensitivePaths` | *(win32)* | `paths` 模式与工作区根比较忽略 ASCII 大小写；Windows 上为 `true` |
+| `audit` | `all` | 审计粒度：`all` 记录每次命中与透传；`hits` 跳过透传事件 |
+| `searchUp` | `false` | 从会话 cwd 向上遍历父目录并合并每个找到的规则文件，就近优先 |
+| `maxGlobStars` | `2` | 每个 glob 模式无界 `*`/`**` 量词的硬上限 |
+| `enforce` | `true` | `false` = 试运行：deny/ask 命中带 `dryRun` 标记审计，每个调用都透传 |
+| `allowUnmarkedAudit` | `false` | 前标记宿主丢弃 `ignorable` 标记；插件以一次性警告禁用会话日志审计。设 `true` 重新启用 |
+| `network.enabled` | `true` | 代理、环境注入与 web 工具模式默认的总开关 |
+| `network.mode` | `auto` | 策略模式：`auto` 跟随沙箱预设，或 `deny-all` / `whitelist` / `allow-all` |
+| `network.autoFallback` | `allow-all` | `auto` 无沙箱策略服务时使用的模式 |
+| `network.unlisted` | `ask` | 白名单模式下未命中规则目标：`ask` 或 `deny` |
+| `network.proxyBind` | `127.0.0.1` | 本地代理绑定地址（仅回环） |
+| `network.proxyPort` | `0` | 本地代理端口；`0` 选空闲临时端口 |
+| `network.proxyMaxRecent` | `100` | 设置页保留的近期拦截记录上限 |
+| `network.loopback` | `allow` | 回环目标：`allow`（Codex 对齐）或 `policy` |
+| `network.injectEnv` | `true` | 是否为子进程注入代理环境变量 |
+| `network.noProxy` | `clear` | 子进程 NO_PROXY 处理：`clear` 强制策略或 `preserve` |
+| `network.upstreamProxy` | `off` | 本插件**放行**连接的上游代理：`off` 直连、`inherit` 沿用启动环境的代理名，或显式 `http(s)://` 代理 URL |
+| `network.allowHostAction` | `true` | 设置页逐条「放行」动作：`false` 隐藏「放行」按钮并让 `permissionRules/allowHost` RPC 拒绝（规则编辑器不受影响） |
+| `builtin.enabled` | `true` | 内置高危基线：`false` 完全禁用随附的 deny/ask 规则集 |
+| `builtin.path` | *(随附)* | 替换基线文件（绝对路径，或相对 `process.cwd()`）；挂载时校验 |
+
+## Tools & surfaces
+
+| Surface | Kind | Notes |
+|---|---|---|
+| `tools/pre-execute` | listener | 首个匹配的 allow/deny/ask 规则 + 网络 URL 候选抽取 |
+| `/rules` | command | `list` · `reload` · `decisions [n]` · `test <tool> <json>` |
+| `permissionRules/decision` | event | 每次命中与透传的仅日志审计 |
+| `permissionRules/network` | event | 被拒连接的代理层审计 |
+| HTTP/CONNECT proxy | service | 治理 shell 子进程流量的内置本地代理 |
+| settings page | client | 网络模式编辑器、规则编辑器、块计数器、近期拦截（每条可一键放行） |
+
+```
+/rules                        list the active rules, their source files, and any last-reload error
+/rules list                   explicit alias for the bare listing
+/rules reload                 re-read the rule-file chain for this workspace
+/rules decisions [n]          show the last n permission decisions of this session (default 10)
+/rules test <tool> <json>     dry-evaluate the rules against a hypothetical call
+```
+
+`/rules test` 也接受前置标志：`--cwd <dir>`、`--env KEY=VALUE`（可重复）、`--agent <selector>`（可重复）与 `--platform <name>`。在多文件链（如 `searchUp`）中，每条列出的规则行都归属到其自身源文件。
+
+## Permissions & data
+
+- **Permissions**：workshop 清单声明 `files:read`、`files:watch`、`files:write`、`session:append` 与 `network:outbound`。`ask` 决策走官方审批接缝——不重实现、不绕过。
+- **Data**：规则文件从磁盘读取；不写任何规则数据。无模型调用、无评审子代理。
+- **Session log**：`permissionRules/decision` 绝不注入模型上下文，并以信封的 `ignorable: true` 标记追加，任何 harness 构建都能加载日志。
+
+## Security boundaries
+
+- **是策略，不是内核。** `paths` 候选只来自一组文档化的参数键（任意嵌套深度、有深度上限），且仅工作区相对路径匹配。
+- **这里没有评审者。** 插件绝不生成子代理或调用模型——产出 `ask` 决策就是其工作的终点。
+- **不改沙箱。** OS 级沙箱策略属于沙箱接缝，与本插件无关。
+- **响亮地拒绝错误配置。** 未知 YAML 字段、未知 action 与坏模式在加载期被拒绝。
+- **回溯界限。** glob 模式以 `maxGlobStars` 限制无界星号展开；正则模式拒绝嵌套无界量词与量化重叠字面交替。
+- **关闭失败的拨号。** 明文 HTTP 转发与 CONNECT 隧道只连接裁决到的地址；裁决未解析出任何地址的 allow 以 502 关闭失败，而不是按名字拨号（issue #23）。
+
+## Known limitations
+
+- **前标记宿主与拒绝型宿主上的审计标记。** `permissionRules/decision` 以 `ignorable: true` 追加；`Session.append` 早于该标记的宿主（`0.1.0-rc.1`–`rc.7` 与 `0.1.1-rc.1`–`rc.7` 线）静默丢弃它，`0.1.2-rc` 线沿用 alpha.5 表面（append 无任何选项能写该标记），`0.1.2-alpha` 线在读取时连已标记的插件事件也拒绝，`0.1.3-alpha` 与 `0.1.5-alpha` 线同样沿用 surface-only 追加签名（已在已发布的 `0.1.3-alpha.1`/`0.1.5-alpha.1` 包上核验）——运行时在首次追加前即预检这些线并以一次性警告禁用会话日志审计。跨代迁移同样拒绝已标记的审计行：`0.1.3-alpha` 的 v1→v2 门拒绝未知 v1 事件，`0.1.5-alpha` 的 v2→v3 门拒绝一切未分类事件（其清单冻结为已发布 v2 词汇），故在 0.1.3 宿主打开日志前 `strip` v1 行、在升级到 0.1.5 宿主前 `strip` v2 行。v3 原生日志接受已标记的插件行，只需 `repair`。设 `allowUnmarkedAudit: true` 重新启用；用 `scripts/repair-session-logs.mjs` 修复已写日志（标记无济于事的宿主用其 `strip` 模式移除审计行）。
+- **路径候选是启发式的。** 只有文档化的参数键参与路径匹配，且工作区相对匹配仅在 `caseInsensitivePaths` 开启时忽略 ASCII 大小写。
+- **glob 是保守子集。** 无花括号展开——写两个模式，或用正则模式。
+- **正则回溯守卫是结构性的、非穷尽的。** 对不可信文件优先用 glob 模式。
+- **宿主自身的出站请求不经过本代理。** 注入的代理环境覆盖**派生的 shell 子进程**（这正是注入的用途），以及在请求时读取代理变量名的消费者；它**不覆盖**宿主进程自身基于 `fetch` 的流量——launcher 在第一个插件挂载之前就用**启动环境**装好了 undici 的全局 dispatcher，该 dispatcher 按策略而非按环境路由，且 Node 在启动时采样代理环境，因此后挂载的插件无法改变它。结论：供应商端点**不需要**允许规则，`network.injectEnv: false` 也不会把宿主进程移出任何东西。2026-09-10 实测于 Node 22；用 `scripts/host-egress-probe.mjs` 可复现。
+- **链式只覆盖到达本代理的流量。** 在 `dsh-v0.1.3-alpha.1` 及之后的宿主上，harness 自身的启动期代理策略与其子进程环境覆盖可能优先于本插件注入的代理名，因此 `network.upstreamProxy` 描述的是本代理所处理连接的去向——它不是关于宿主进程每一条出站路径的断言。
+
+## Collaborating with dsh-auto-review
+
+- `dsh-permission-rules` 产出 `ask`；`dsh-auto-review` 在 `approval/request` waterfall 上以只读第二模型裁决作答（或委托给人）。两者都挂载即得完整闭环。
+- 集成测试：`permissionRules/decision` → `approval/asked` → `autoReview/verdict` → `approval/decided`，评审者以脚本化 mock 替换。
+- 官方 harness 的 `never` 审批策略与每个失败关闭保证保持不变。
+
+## Session log repair
+
+在 `ignorable` 标记出现之前写入的会话日志可能被较新 harness 构建拒绝（`SessionFormatUnsupportedError`）。随附的 `scripts/repair-session-logs.mjs` 仅重写目标审计行以携带 `ignorable: true`，保帧、带备份：
+
+```sh
+node scripts/repair-session-logs.mjs scan [--home DIR]      # 报告外来行，不改任何内容
+node scripts/repair-session-logs.mjs repair [--home DIR] [--dry-run]
+node scripts/repair-session-logs.mjs strip [--home DIR] [--dry-run]
+```
+
+`--home` 默认 `$DSH_HOME/sessions`（或 `~/.dsh/sessions`）。工具按规范基名发现每一代日志——`session.jsonl`、`session.v2.jsonl`、`session.v3.jsonl`，各自可选 `.zstd` 压缩——请按世代选择模式：
+
+- **v3（`session.v3.jsonl`，`0.1.5-alpha` 线原生写出）** —— 读取路径接受已标记的插件行，`repair` 即可。
+- **v2（`session.v2.jsonl`，`0.1.3-alpha` 线写出）** —— `repair` 可让写出它的宿主打开日志，但 `0.1.5-alpha` 的 v2→v3 迁移连已标记的未分类事件也拒绝：请在升级到 `0.1.5-alpha` 宿主**之前**对 v2 日志执行 `strip`。
+- **v1（`session.jsonl`）** —— `0.1.3-alpha` 的 v1→v2 迁移连已标记的未知 v1 事件也拒绝：请在 0.1.3 或更新宿主首次打开日志前执行 `strip`。
+
+## Development
+
+```sh
+pnpm install            # node ^22.19 || >=24
+pnpm run typecheck      # tsc, src + tests
+pnpm run lint           # eslint, src + tests + scripts
+pnpm test               # vitest: 24 spec files
+pnpm run test:coverage  # coverage gate (90/80/90/90)
+pnpm run build          # tsc declarations + tsdown bundles (lib/)
+pnpm run pack:check     # build + pack (the published artifact)
+node scripts/check-readme-sync.mjs   # five-language README sync gate (also in CI)
+```
+
+无头端到端验证记录见 [VERIFICATION.md](VERIFICATION.md)。
+
+## Topics
+
+`dsh`, `dsh-plugin`, `deepseek-harness`, `permission`, `policy`, `allow-deny-ask`, `approval`, `safety`, `network`, `network-policy`, `proxy`
+
+## Contributors
+
+- [@PerryLink](https://github.com/PerryLink) —— 创建者与维护者：规则词汇与求值、运行时、HMR 监听、会话日志审计、网络策略 + 代理，以及五语文档。
+- [@22xuan](https://github.com/22xuan) —— 关于 rc.6 宿主静默丢弃审计事件 `ignorable` 标记的详细报告（[#2](https://github.com/PerryLink/dsh-permission-rules/issues/2)）与上游 harness 讨论；v0.4.1 的运行时宿主能力检测与文档更正直接源自该分析。
+- [@sjh9714](https://github.com/sjh9714) —— 提出共享规则语法测试向量语料（[#4](https://github.com/PerryLink/dsh-permission-rules/issues/4)、[#5](https://github.com/PerryLink/dsh-permission-rules/issues/5)），已于 v0.5.1 以 `docs/rule-test-vectors/` 落地，并在[方案讨论](https://github.com/PerryLink/dsh-permission-rules/discussions/10)中补充了 AST 分解的边界用例。
+- [@weipeng1999](https://github.com/weipeng1999) —— 提出基于 AST 的命令分解功能（[#8](https://github.com/PerryLink/dsh-permission-rules/issues/8)），促成该方案讨论。
+- [@alexchenzl](https://github.com/alexchenzl) —— DSH 目录收录请求（[#7](https://github.com/PerryLink/dsh-permission-rules/issues/7)）。
+- [@zl190](https://github.com/zl190) —— 报告并验证了 `0.1.0-rc.7` harness 兼容性缺口（[PR #9](https://github.com/PerryLink/dsh-permission-rules/pulls/9)）。
+- [@cuohua](https://github.com/cuohua) —— 报告版本门仅覆盖 `0.1.0` 线后，`0.1.1-rc` 线仍静默丢弃 `ignorable` 标记（[#11](https://github.com/PerryLink/dsh-permission-rules/issues/11)）；加宽后的版本门直接源自该分析。
+
+## PerryLink DSH Plugin Family
+
+这是 [PerryLink](https://github.com/PerryLink) 维护的 [40 个 DeepSeek Harness 插件](https://github.com/PerryLink) 之一。如果它能帮到你，其他的也会：
+
+| Plugin | One-liner |
+|---|---|
+| **[dsh-auto-review](https://github.com/PerryLink/dsh-auto-review)** | 审批链上的第二模型自动审查，默认失败关闭 | |
+| **[dsh-background-agents](https://github.com/PerryLink/dsh-background-agents)** | 带 Web UI 侧栏、消息与中断的持久后台子代理 | |
+| **[dsh-budget](https://github.com/PerryLink/dsh-budget)** | DeepSeek Harness 的成本治理：预算、碳排与延迟一屏呈现。 | |
+| **[dsh-checkpoint-rewind](https://github.com/PerryLink/dsh-checkpoint-rewind)** | Claude Code /rewind 等价：快照、会话 fork、一次性恢复 | |
+| **[dsh-claude-move](https://github.com/PerryLink/dsh-claude-move)** | 把 Claude Code 会话、记忆、技能与 CLAUDE.md 迁入 DSH | |
+| **[dsh-click](https://github.com/PerryLink/dsh-click)** | 跨平台原生桌面控制（DeepSeek Harness），Windows 优先。 | |
+| **[dsh-composer-history](https://github.com/PerryLink/dsh-composer-history)** | Web 输入框的终端式历史：方向键、Ctrl+R 搜索 | |
+| **[dsh-data-quality](https://github.com/PerryLink/dsh-data-quality)** | 数据集质量检查与引文核查（本插件可选消费的数字核查桥） | |
+| **[dsh-defend](https://github.com/PerryLink/dsh-defend)** | DeepSeek Harness 的提示注入、越狱与密钥泄露防护。 | |
+| **[dsh-doublecheck](https://github.com/PerryLink/dsh-doublecheck)** | 工程纪律守卫：需求质询、测试门禁、对手评审 | |
+| **[dsh-draw](https://github.com/PerryLink/dsh-draw)** | DeepSeek Harness 的统一静态图像生成路由。 | |
+| **[dsh-fast](https://github.com/PerryLink/dsh-fast)** | DeepSeek Harness 只读性能诊断。 | |
+| **[dsh-fund-research](https://github.com/PerryLink/dsh-fund-research)** | 面向中国公募基金的确定性研究报告 | |
+| **[dsh-github](https://github.com/PerryLink/dsh-github)** | 面向 DSH 的 GitHub PR/issues 集成，每次写入经审批门控 | |
+| **[dsh-industry-research](https://github.com/PerryLink/dsh-industry-research)** | 行业研究编排，经本插件的 `ctx.researchReport.assemble` 封存交付物 | |
+| **[dsh-library](https://github.com/PerryLink/dsh-library)** | DeepSeek Harness 的本地文档知识库。 | |
+| **[dsh-local-ai](https://github.com/PerryLink/dsh-local-ai)** | DeepSeek Harness 的本地模型（Ollama）接入。 | |
+| **[dsh-lsp-actions](https://github.com/PerryLink/dsh-lsp-actions)** | 通过语言服务器的 LSP 诊断、格式化、补全、代码操作与重命名 | |
+| **[dsh-mask](https://github.com/PerryLink/dsh-mask)** | PII 脱敏中间件：模型边界匿名化、展示层还原 | |
+| **[dsh-mcp-panel](https://github.com/PerryLink/dsh-mcp-panel)** | 只读 MCP 运行时面板：/mcp 命令 + 带状态、工具与错误的 Settings 标签页 | |
+| **[dsh-memento](https://github.com/PerryLink/dsh-memento)** | 审批门控的跨会话记忆：ctx.memory 接缝 + SQLite + 记忆工具 | |
+| **[dsh-observe](https://github.com/PerryLink/dsh-observe)** | DeepSeek Harness 的 OpenTelemetry 与 Langfuse 可观测导出器。 | |
+| **[dsh-output-styles](https://github.com/PerryLink/dsh-output-styles)** | Claude Code outputStyles 等价的运行时风格切换 | |
+| **[dsh-personal-directive](https://github.com/PerryLink/dsh-personal-directive)** | 个人指令注入器：顶栏开关（框架版） |
+| **[dsh-plugin-guide](https://github.com/PerryLink/dsh-plugin-guide)** | 作为按需代理技能的插件开发知识库 | |
+| **[dsh-plugin-doctor](https://github.com/PerryLink/dsh-plugin-doctor)** | Zero-dependency static + sandbox smoke detector for DSH plugins | |
+| **[dsh-reach](https://github.com/PerryLink/dsh-reach)** | 多渠道审批/提问桥接：微信/Telegram/飞书，会话控制台 |
+| **[dsh-research-report](https://github.com/PerryLink/dsh-research-report)** | 可验证研究报告引擎：内容寻址证据账本与封存版本 | |
+| **[dsh-score](https://github.com/PerryLink/dsh-score)** | DeepSeek Harness 插件的多维质量评分。 | |
+| **[dsh-session-pin](https://github.com/PerryLink/dsh-session-pin)** | 在 Web 侧栏置顶会话，带持久排序 | |
+| **[dsh-session-sync](https://github.com/PerryLink/dsh-session-sync)** | DeepSeek Harness 的跨设备会话同步——会话存储的专用 git 镜像。 | |
+| **[dsh-skill-pack-security](https://github.com/PerryLink/dsh-skill-pack-security)** | 安全审计技能包：密钥扫描、依赖与供应链审查 | |
+| **[dsh-talk](https://github.com/PerryLink/dsh-talk)** | DeepSeek Harness 的语音优先会话闭环：对它说，听它答。 | |
+| **[dsh-test-drive](https://github.com/PerryLink/dsh-test-drive)** | DeepSeek Harness 插件的隔离试装冒烟。 | |
+| **[dsh-ticktick](https://github.com/PerryLink/dsh-ticktick)** | TickTick/滴答清单任务桥接：会话头面板 + 11 个工具 |
+| **[dsh-translate](https://github.com/PerryLink/dsh-translate)** | DeepSeek Harness 的厂商参数翻译与确定性 JSON 修复。 | |
+| **[dsh-wechat](https://github.com/pan17/dsh-wechat)** | 微信 ↔ DSH 桥接（Tencent iLink 机器人）：文本/图片/文件/语音，聊天内审批卡片 |
+| **[dsh-autotier](https://github.com/PerryLink/dsh-autotier)** | Automatic strong/cheap model-tier routing with deterministic risk guards and a `/tier` command | |
+| **[dsh-catalog](https://github.com/PerryLink/dsh-catalog)** | DSH Desktop Market standard catalog source for the PerryLink family | |
+| **[dsh-cert-mcp](https://github.com/PerryLink/dsh-cert-mcp)** | Read-only MCP server exposing the certification registry: grades, snapshots and five-dimension evidence | |
+| **[dsh-kit](https://github.com/PerryLink/dsh-kit)** | One-command starter pack that installs the core family | |
+| **[dsh-plugin-certification](https://github.com/PerryLink/dsh-plugin-certification)** | Community certification registry with repro-checkable grades and badges | |
+| **[dsh-plugin-kit](https://github.com/PerryLink/dsh-plugin-kit)** | Shared zero-runtime-dependency toolkit for the PerryLink DSH plugins | |
+| **[dsh-plugin-portal](https://github.com/PerryLink/dsh-plugin-portal)** | Zero-dependency static portal rendering the whole plugin family as one page | |
+| **[dsh-plugin-upgrade-015](https://github.com/PerryLink/dsh-plugin-upgrade-015)** | Merged `0.1.3-alpha.1` → `0.1.5-rc.1` upgrade corridor card plus a zero-dependency seam scanner | |
+| **[dsh-team-rooms](https://github.com/PerryLink/dsh-team-rooms)** | Cross-session team rooms: shared message bus, task board and timeline | |
+
+## License
+
+[Apache License 2.0](LICENSE) © 2026 dsh-permission-rules contributors
+
+### 从 DSH Desktop 市场安装
+
+所有 PerryLink 插件均可在 DSH Desktop 内置市场中浏览：**市场 → 来源 → 添加来源 → 粘贴** `https://perrylink-dsh-catalog.perrylink.workers.dev/catalog-source.json` **→ 选中**。安装仍需通过市场的 npm 身份校验与你的确认。

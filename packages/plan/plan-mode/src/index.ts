@@ -16,8 +16,7 @@
  * or leaving plan mode changes only the prompt section, not the request tool
  * catalog.
  *
- * Agent Note:
- * - .agents/notes/implemented/simplification/2026-07-22-plan-specific-collaboration-state.md
+ * See packages/plan/plan-mode/README.md.
  *
  * @module @deepseek-ai/dsh-plan-mode
  */
@@ -28,6 +27,7 @@ import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
@@ -35,6 +35,11 @@ import type { CommandDefinitionId, CommandId } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PlanProjection, PlanUnitState } from './types.ts'
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'plan-mode': { kind: 'plan-mode' } & ContextFormed
+  }
+}
 export type * from './types.ts'
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -77,7 +82,6 @@ const KEEP_PLANNING_LABEL = 'Keep planning'
 
 const EXIT_DESCRIPTION
   = 'Use only in plan mode. Present your plan for the user\'s review and, on approval, leave plan mode. '
-  + 'Send the COMPLETE plan as markdown, starting with a # heading that names it. '
   + 'The user may approve (carry out the plan from your next step) or keep '
   + 'planning — their feedback comes back in the tool result; revise and present again.'
 
@@ -312,7 +316,7 @@ export class PlanModeController extends Service {
             // Presentation only: a capable UI renders the plan as a review
             // decision instead of a generic question, and answers with one of
             // the labels above either way.
-            intent: { kind: 'plan-review', approve: APPROVE_LABEL },
+            intent: { kind: 'plan-review', approve: APPROVE_LABEL, callId: exec.callId },
           }],
           agent,
           signal: exec.signal,
@@ -458,7 +462,7 @@ export class PlanModeController extends Service {
     return createUserMessage({
       content: [{ type: 'text', text }],
       // The narration is already one sentence, so it is its own summary.
-      source: { kind: 'plugin', plugin: 'plan-mode', form: 'notice', summary: text },
+      source: { kind: 'plan-mode', form: 'notice', summary: text },
     })
   }
 }

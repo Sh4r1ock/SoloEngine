@@ -3,14 +3,21 @@ export { apply, Config, inject } from './apply.ts'
 export type { Config as ConversationConfig } from './apply.ts'
 export { UiConversation } from './conversation/assembly.ts'
 export type { ConversationBinding } from './conversation/assembly.ts'
+export type { ConversationGroupRegistry } from './conversation/group-registry.ts'
+export type {
+  ConversationGroupContext, ConversationGroupData, ConversationGroupDataMap,
+  ConversationGroupDefinition, ConversationGroupedView, ConversationGroupInput,
+  GroupKey, GroupNodePosition, GroupReference, GroupSnapshot, GroupUpdate, NodeChange, NodeKey,
+  NodeReference, RenderEntry,
+} from './contract/groups.ts'
 export { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 export type { IConversation } from './service.ts'
 export type {
   ConversationContextReader, ConversationLocation,
   ConversationLocationData, ConversationLocationDataScope, ConversationLocationDataSource,
   ConversationLocationDataStore,
-  ConversationMatch, ConversationMatchResult, ConversationNodeContext,
-  ConversationNodeDefinition, ConversationPreviousContext, ConversationPublication,
+  ConversationMatch, ConversationMatchHandler, ConversationMatchResult, ConversationNodeContext,
+  ConversationNodeDefinition, ConversationNodeDefinitionInput, ConversationPreviousContext, ConversationPublication,
   ConversationStartMatch,
   ConversationStepDataMap, ConversationTimelineSnapshot, ConversationTurnDataMap,
   ConversationViewBuilder, ConversationViewDefinition, ConversationViewNode,
@@ -23,8 +30,8 @@ export type {
 export type {
   AssistantBlock, AssistantMessageNode, AssistantProviderMetadataView, AssistantRequestConfig,
   AssistantTiming, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
-  ModelRetryNode, PartialAssistant, RunningToolCall, SteeringMessageNode, TodoItem,
-  ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
+  ModelRetryNode, PartialAssistant, PreparingToolCall, RunningToolCall, StartedToolCall, SteeringMessageNode, TodoItem,
+  ToolCallBlock, ToolArgs, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
   UserMessageNode,
 } from './contract/records.ts'
 export type {
@@ -40,7 +47,7 @@ export type { ConversationStoreState, ConversationViewRequest, ViewTab } from '.
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'
 export type {
-  ConversationEventDefinitions, ConversationViewDefinitions,
+  ConversationEventDefinitions, ConversationGroupDefinitions, ConversationViewDefinitions,
 } from './conversation/assembler.ts'
 export { ConversationDefinitionRegistry } from './conversation/definition-registry.ts'
 export { ConversationEventRegistry } from './conversation/event-registry.ts'
@@ -54,19 +61,22 @@ export type {
   ComposerFileAttachment, ComposerImageAttachment, DraftFileUpload, DraftFileUploads,
   ComposerBarInjected, ComposerBarOwnerProps, ComposerBarProps, ComposerChainProps,
   ConversationHeaderActionOwnerProps, ConversationHeaderCornerOwnerProps, ConversationHeaderLineageOwnerProps,
+  ConversationContentInputProps, ConversationContentProps,
   ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionHeaderSlotProps,
-  ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps,
+  ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps, ConversationViewsProps,
+  ConversationWidthControlsInputProps, ConversationWidthControlsProps,
   ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps,
   HeroAgentPresetOwnerProps, HeroBrandMarkOwnerProps, InputControlOwnerProps, InputZone,
   MessageImageLoader, MessageImageSource, MessageImagesOwnerProps, RenderMessageImages, UseConversation,
   UseConversationViews,
 } from './contract/slots.ts'
 export type {
-  BeginCommandRequest, CommandClaim, ConsumeTokenRequest, DraftAttachmentId, InputActions,
+  BeginCommandRequest, CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions,
+  DraftInitializationResult, InputActions,
   InputState, InsertReferenceRequest, InsertTextRequest, PickOutcome, SessionInput,
   SessionInputResolver, SubmitAttachment, SubmitOutcome,
 } from './contract/input.ts'
-export type { ArbitrateKey, ArbitrateOutcome, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts'
+export type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftReference, DraftSnapshot, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts'
 export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts'
 
 declare module '@deepseek-ai/cordis' {

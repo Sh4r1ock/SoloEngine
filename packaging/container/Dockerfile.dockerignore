@@ -1,0 +1,30 @@
+# 构建上下文裁剪：容器镜像只需源码与清单，依赖在镜像内按锁文件安装（与本地同一条启动器命令）。
+# 需要 BuildKit（Docker Desktop 默认）才会读取本文件（`<Dockerfile>.dockerignore` 约定）。
+
+# 依赖与产物：镜像内重新安装与构建，复制进来既慢又会带 Windows 二进制。
+node_modules
+**/node_modules
+apps/desktop/.desktop-build
+
+# 运行时数据：`data/` 是持久卷内容，绝不进镜像（含业务库、主密钥、会话日志）。
+data
+
+# 测试与本地产物：用例脚本、日志、工作区都不参与镜像。
+test
+.uploads
+.e2e-workspace
+.pytest_cache
+**/*.log
+
+# 版本库与工具目录：镜像内不需要，且体积大。
+.git
+.git.zip
+.github
+.idea
+.trae
+.trae-html-share-packages
+.codebuddy
+.qoder
+.workbuddy
+.claude
+.dsh-build

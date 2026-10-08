@@ -38,7 +38,7 @@ kind: "package-reference"
 
 `host` 只接受两个值：`127.0.0.1`（默认姿态，仅回环）与 `0.0.0.0`（有意向网络开放——服务器自身不携带 TLS、认证或来源策略）。`port` 为 0 时请求 OS 分配端口；之后用 `ctx.webServer.port` 读取正在监听的端口。
 
-设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
+设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩或为 `multipart/form-data`；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
 
 ### 注册路由
 
@@ -75,7 +75,6 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` 服务：路由表、回退席位、index 渲染、匹配、生命周期 |
-| — | 不发布运行时不变式伴生入口；路由注册与释放通过同一服务修改同一张路由表，register/dispose 探针只会重复执行实现。真实路由与 HMR 测试负责验证该行为。 |
 | [`src/injections.ts`](src/injections.ts) | 结构化 `IndexInjection` 行与 `renderIndexInjections` 行渲染 |
 
 </details>
@@ -89,7 +88,7 @@ index 启动输入分两层。`collectIndexInjections()` 收集一张全新的�
 
 - [HTTP 服务器子系统](../../../docs/subsystems/web-server.zh.md)——路由、匹配顺序与服务器接受的配置。
 - [SPA dist 服务器](../frontend-static/README.zh.md)——回退席位的随附持有者。
-- [Web 配置树启动与传输分层](../../../.agents/notes/implemented/architecture/2026-07-24-web-config-tree-boot-and-transport-layering.zh.md)——功能插件为何拥有每条路由。
+- [Web 配置树启动与传输分层](../../boot/app-boot/README.zh.md)——功能插件为何拥有每条路由。
 - [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-host-webserver)——每个受支持配置字段及其源声明。
 
 -----

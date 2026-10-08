@@ -95,9 +95,10 @@ function createGzipMiddleware(config: ResolvedConfig): NodeMiddleware {
       if (response.getHeader('content-range') !== undefined) return false
       const contentType = response.getHeader('content-type')
       if (typeof contentType === 'string' && contentType.toLowerCase().startsWith('text/event-stream')) return false
+      if (typeof contentType === 'string' && /^multipart\/form-data(?:;|$)/i.test(contentType)) return true
       return compressionMiddleware.filter(request, response)
     },
-  }) as unknown as NodeMiddleware
+  }) as NodeMiddleware
 
   return (req, res, next) => {
     // The Web Worker tunnel has no socket and transfers identity bytes.
@@ -288,14 +289,6 @@ export class WebServer extends Service {
         socket.destroy()
       }
     })
-
-    // Idle-connection lifetime. Node's 5s `keepAliveTimeout` default closes a socket a client may
-    // still hold in its pool; the client then reuses it for a POST, which is not retried, and the
-    // request dies with ECONNRESET before this server ever sees it. The deployment surface serves
-    // scripts and integrators besides the browser, so idle sockets live a minute and the header
-    // deadline stays above it (Node requires headersTimeout > keepAliveTimeout).
-    this.server.keepAliveTimeout = 60_000
-    this.server.headersTimeout = 65_000
 
     await new Promise<void>((resolve, reject) => {
       this.server.once('error', reject)

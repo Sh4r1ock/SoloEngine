@@ -102,6 +102,8 @@ Each `measure()` call synchronizes the fold to the current durable tail, then re
 
 `contextBreakdown` retains plain-JSON `{ seq, heuristicTokens, system }` entries in surface order and reuses the measurement plan/commit fold. Its state and surface transitions are O(current retained surface), not O(1) and not O(total historical log); replaced entries and message bodies are not retained. State version 5 invalidates checkpoints priced with offload metadata. `contextPressure` remains the scalar shadow-price consumer: replacements without adjacent claims contribute zero delta. The usage fold retains one last-sample slot because legal logs never report usage for an earlier step after a later step reports usage.
 
+`./estimate` exports the stateless text/content estimators used by tool-result retention. Model adapters supply request-image costs through `imageRequestPricing`.
+
 </details>
 
 -----
@@ -154,4 +156,4 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 
 </details>
 
-**Runtime invariant:** No companion is published. Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and fixed estimator, so their heuristic surface totals agree by construction rather than through independent mutable observations. Route-priced totals deliberately differ.
+Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and fixed estimator, so their heuristic surface totals agree by construction. Route-priced totals deliberately differ.

@@ -1,0 +1,359 @@
+import { ChangeLedgerError } from './errors.js'
+import { isAbsolute } from 'node:path'
+import { validateRelativePath } from './path-utils.js'
+import { hashTree } from './snapshot.js'
+import {
+  GIT_CHECKPOINT_FORMAT_VERSION,
+  LEDGER_FORMAT_VERSION,
+  type CaptureSkip,
+  type CaptureTruncation,
+  type RepositoryState,
+  type RestoreOperation,
+  type RestorePointKind,
+  type RestorePointManifest,
+  type SnapshotEntry,
+} from './types.js'
+
+const HASH_PATTERN = /^[0-9a-f]{64}$/
+const GIT_OBJECT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+const ID_PATTERN = /^(?:rp|op)_[0-9a-z]+_[0-9a-f]{12}$/
+
+/** Validate a restore-point id before using it in a filesystem path. */
+export function validateRestorePointId(value: string): string {
+  if (!ID_PATTERN.test(value) || !value.startsWith('rp_')) {
+    throw new ChangeLedgerError('INVALID_RESTORE_POINT_ID', `invalid restore-point id ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/** Validate a restore-operation id before using it in a filesystem path. */
+export function validateOperationId(value: string): string {
+  if (!ID_PATTERN.test(value) || !value.startsWith('op_')) {
+    throw new ChangeLedgerError('INVALID_OPERATION_ID', `invalid restore-operation id ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/** Parse an untrusted durable restore-point manifest. */
+export function parseManifest(value: unknown): RestorePointManifest {
+  const record = objectRecord(value, 'restore-point manifest')
+  const version = record.version
+  if (version !== LEDGER_FORMAT_VERSION && version !== GIT_CHECKPOINT_FORMAT_VERSION) {
+    corrupt(`unsupported restore-point version ${String(version)}`)
+  }
+  const id = stringField(record, 'id')
+  validateRestorePointId(id)
+  const kind = record.kind
+  if (kind !== 'user' && kind !== 'rescue' && kind !== 'turn') {
+    corrupt('restore-point kind must be "user", "rescue", or "turn"')
+  }
+  const restorePointKind: RestorePointKind = kind
+  const workspace = absoluteString(record, 'workspace')
+  const repository = parseRepository(record.repository)
+  if (repository.root !== workspace) corrupt('repository.root must equal workspace')
+  const entriesRecord = objectRecord(record.entries, 'restore-point entries')
+  const entries: Record<string, SnapshotEntry> = Object.create(null) as Record<string, SnapshotEntry>
+  let totalBytes = 0
+  for (const [path, entryValue] of Object.entries(entriesRecord)) {
+    validateRelativePath(path)
+    const entry = parseEntry(entryValue, path, version)
+    entries[path] = entry
+    if (entry.kind === 'file') totalBytes += entry.size
+  }
+  const fileCount = nonNegativeInteger(record, 'fileCount')
+  if (fileCount !== Object.keys(entries).length) corrupt('restore-point fileCount does not match entries')
+  const storedTotal = nonNegativeInteger(record, 'totalBytes')
+  if (storedTotal !== totalBytes) corrupt('restore-point totalBytes does not match entries')
+  const treeHash = hashField(record, 'treeHash')
+  if (treeHash !== hashTree(entries)) corrupt('restore-point treeHash does not match entries')
+  const createdAt = nonNegativeInteger(record, 'createdAt')
+  const restoreCount = nonNegativeInteger(record, 'restoreCount')
+  const sessionId = optionalString(record, 'sessionId')
+  const label = optionalString(record, 'label')
+  const parentRestorePoint = optionalString(record, 'parentRestorePoint')
+  if (parentRestorePoint !== undefined) validateRestorePointId(parentRestorePoint)
+  const turn = optionalNonNegativeInteger(record, 'turn')
+  const turnStartSeq = optionalNonNegativeInteger(record, 'turnStartSeq')
+  const turnEndSeq = optionalNonNegativeInteger(record, 'turnEndSeq')
+  if (kind === 'turn') {
+    if (sessionId === undefined || turn === undefined || (turnStartSeq === undefined) === (turnEndSeq === undefined)) {
+      corrupt('turn restore points require sessionId, turn, and exactly one turn boundary')
+    }
+  } else if (turn !== undefined || turnStartSeq !== undefined || turnEndSeq !== undefined) {
+    corrupt('only turn restore points may carry turn metadata')
+  }
+  const lastRestoredAt = optionalNonNegativeInteger(record, 'lastRestoredAt')
+  const skipped = parseCaptureSkips(record.skipped)
+  const skippedCount = optionalNonNegativeInteger(record, 'skippedCount')
+  if (skippedCount !== undefined && skippedCount < (skipped?.length ?? 0)) {
+    corrupt('skippedCount cannot be smaller than the recorded skipped paths')
+  }
+  const truncatedValue = record.truncated
+  if (truncatedValue !== undefined && truncatedValue !== 'file-limit' && truncatedValue !== 'snapshot-limit') {
+    corrupt('truncated must be "file-limit" or "snapshot-limit"')
+  }
+  const truncated: CaptureTruncation | undefined = truncatedValue
+  const common = {
+    id,
+    kind: restorePointKind,
+    workspace,
+    repository,
+    ...(skipped === undefined ? {} : { skipped }),
+    ...(skippedCount === undefined ? {} : { skippedCount }),
+    ...(truncated === undefined ? {} : { truncated }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(label === undefined ? {} : { label }),
+    ...(parentRestorePoint === undefined ? {} : { parentRestorePoint }),
+    ...(turn === undefined ? {} : { turn }),
+    ...(turnStartSeq === undefined ? {} : { turnStartSeq }),
+    ...(turnEndSeq === undefined ? {} : { turnEndSeq }),
+    createdAt,
+    treeHash,
+    fileCount,
+    totalBytes,
+    entries,
+    restoreCount,
+    ...(lastRestoredAt === undefined ? {} : { lastRestoredAt }),
+  }
+  if (version === LEDGER_FORMAT_VERSION) return { version, ...common }
+  if (restorePointKind !== 'turn') corrupt('Git-native v2 restore points are automatic turn checkpoints')
+  if (repository.type !== 'git') corrupt('Git-native v2 restore points must fence a Git workspace')
+  return { version, ...common, repository, git: parseGitCheckpoint(record.git, id) }
+}
+
+/** Parse an untrusted durable restore-operation journal. */
+export function parseOperation(value: unknown): RestoreOperation {
+  const record = objectRecord(value, 'restore operation')
+  if (record.version !== LEDGER_FORMAT_VERSION) corrupt(`unsupported restore-operation version ${String(record.version)}`)
+  const id = stringField(record, 'id')
+  validateOperationId(id)
+  const restorePointId = stringField(record, 'restorePointId')
+  const rescuePointId = stringField(record, 'rescuePointId')
+  validateRestorePointId(restorePointId)
+  validateRestorePointId(rescuePointId)
+  const workspace = absoluteString(record, 'workspace')
+  const pathsValue = record.paths
+  if (!Array.isArray(pathsValue)) corrupt('restore-operation paths must be an array')
+  const paths = pathsValue.map((path) => validateRelativePath(requireString(path, 'restore-operation path')))
+  if (new Set(paths).size !== paths.length) corrupt('restore-operation paths contain duplicates')
+  const state = record.state
+  if (state !== 'running'
+    && state !== 'rollback-running'
+    && state !== 'completed'
+    && state !== 'rolled-back'
+    && state !== 'interrupted'
+    && state !== 'recovery-required') {
+    corrupt(`invalid restore-operation state ${JSON.stringify(state)}`)
+  }
+  const sessionId = optionalString(record, 'sessionId')
+  const startedAt = nonNegativeInteger(record, 'startedAt')
+  const finishedAt = optionalNonNegativeInteger(record, 'finishedAt')
+  const error = optionalString(record, 'error')
+  const rollbackError = optionalString(record, 'rollbackError')
+  return {
+    version: LEDGER_FORMAT_VERSION,
+    id,
+    workspace,
+    restorePointId,
+    rescuePointId,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    paths,
+    startedAt,
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    state,
+    ...(error === undefined ? {} : { error }),
+    ...(rollbackError === undefined ? {} : { rollbackError }),
+  }
+}
+
+/** Validate one SHA-256 blob name. */
+export function validateBlobHash(value: string): string {
+  if (!HASH_PATTERN.test(value)) {
+    throw new ChangeLedgerError('STATE_CORRUPT', `invalid blob hash ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
+/**
+ * Parse the durable workspace fence of one manifest.
+ *
+ * A missing `type` is the only legacy interpretation: manifests written before
+ * ordinary-directory support are always Git workspaces and are upgraded in
+ * memory. Directory fences must not carry Git-only fields.
+ * @param value - persisted `repository` field.
+ * @returns the validated workspace state.
+ */
+/**
+ * Parse the optional bounded list of eligible paths a restore point could not store.
+ * @param value - persisted `skipped` field.
+ * @returns the validated list, or undefined when the manifest carries none.
+ */
+function parseCaptureSkips(value: unknown): readonly CaptureSkip[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) corrupt('skipped must be an array')
+  return value.map((entry) => {
+    const record = objectRecord(entry, 'skipped path')
+    const path = validateRelativePath(requireString(record.path, 'skipped path'))
+    const reason = record.reason
+    if (reason !== 'file-too-large' && reason !== 'unsupported-file-type') {
+      corrupt('skipped reason must be "file-too-large" or "unsupported-file-type"')
+    }
+    return { path, reason }
+  })
+}
+
+function parseRepository(value: unknown): RepositoryState {
+  const record = objectRecord(value, 'repository state')
+  const root = absoluteString(record, 'root')
+  if (record.type === 'directory') {
+    for (const key of ['commonDir', 'head', 'branch', 'operation', 'stagedPaths']) {
+      if (record[key] !== undefined) corrupt(`directory workspace state must not contain ${key}`)
+    }
+    return { type: 'directory', root }
+  }
+  if (record.type !== undefined && record.type !== 'git') {
+    corrupt('workspace state type must be "git" or "directory"')
+  }
+  const commonDir = absoluteString(record, 'commonDir')
+  const head = optionalHash(record, 'head')
+  const branch = optionalString(record, 'branch')
+  const operation = optionalString(record, 'operation')
+  const stagedValue = record.stagedPaths
+  if (!Array.isArray(stagedValue)) corrupt('repository stagedPaths must be an array')
+  const stagedPaths = stagedValue.map((path) => validateRelativePath(requireString(path, 'staged path')))
+  return {
+    type: 'git',
+    root,
+    commonDir,
+    ...(head === undefined ? {} : { head }),
+    ...(branch === undefined ? {} : { branch }),
+    ...(operation === undefined ? {} : { operation }),
+    stagedPaths,
+  }
+}
+
+function parseEntry(
+  value: unknown,
+  path: string,
+  version: typeof LEDGER_FORMAT_VERSION | typeof GIT_CHECKPOINT_FORMAT_VERSION,
+): SnapshotEntry {
+  const record = objectRecord(value, `snapshot entry ${JSON.stringify(path)}`)
+  const kind = record.kind
+  const mode = nonNegativeInteger(record, 'mode')
+  if (mode > 0o777) corrupt(`snapshot mode is out of range for ${JSON.stringify(path)}`)
+  if (kind === 'file') {
+    const blob = stringField(record, 'blob')
+    if (version === LEDGER_FORMAT_VERSION) validateBlobHash(blob)
+    else validateGitObject(blob)
+    return {
+      kind,
+      blob,
+      size: nonNegativeInteger(record, 'size'),
+      mode,
+      ...(version === GIT_CHECKPOINT_FORMAT_VERSION ? { provider: 'git' as const } : {}),
+    }
+  }
+  if (kind === 'symlink') {
+    const target = stringField(record, 'target')
+    if (target.includes('\0')) corrupt(`snapshot symlink target contains a NUL byte for ${JSON.stringify(path)}`)
+    return { kind, target, mode }
+  }
+  corrupt(`invalid snapshot entry kind for ${JSON.stringify(path)}`)
+}
+
+function parseGitCheckpoint(value: unknown, restorePointId: string) {
+  const record = objectRecord(value, 'Git checkpoint metadata')
+  const objectFormat = record.objectFormat
+  if (objectFormat !== 'sha1' && objectFormat !== 'sha256') corrupt('Git checkpoint objectFormat must be sha1 or sha256')
+  const trust = record.trust
+  if (trust !== 'metadata-fenced' && trust !== 'byte-verified') corrupt('Git checkpoint trust is invalid')
+  const expectedLength = objectFormat === 'sha1' ? 40 : 64
+  const object = (key: string) => {
+    const oid = validateGitObject(stringField(record, key))
+    if (oid.length !== expectedLength) corrupt(`${key} length does not match Git object format`)
+    return oid
+  }
+  const storeId = hexIdentifier(record, 'storeId')
+  const worktreeId = hexIdentifier(record, 'worktreeId')
+  const ref = stringField(record, 'ref')
+  if (ref !== `refs/dsh-turn-rewind/v2/${storeId}/${worktreeId}/${restorePointId}`) {
+    corrupt('Git checkpoint ref does not match its durable store/worktree/restore-point identity')
+  }
+  return {
+    objectFormat,
+    trust,
+    storeId,
+    worktreeId,
+    headTree: object('headTree'),
+    indexTree: object('indexTree'),
+    worktreeTree: object('worktreeTree'),
+    envelopeTree: object('envelopeTree'),
+    commit: object('commit'),
+    ref,
+    newlyStoredBytes: nonNegativeInteger(record, 'newlyStoredBytes'),
+  } as const
+}
+
+function hexIdentifier(record: Record<string, unknown>, key: string): string {
+  const value = stringField(record, key)
+  if (!/^[0-9a-f]{32}$/.test(value)) corrupt(`${key} must be a 128-bit lowercase hexadecimal identifier`)
+  return value
+}
+
+function validateGitObject(value: string): string {
+  if (!GIT_OBJECT_PATTERN.test(value)) corrupt('invalid Git object id')
+  return value
+}
+
+function objectRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) corrupt(`${label} must be an object`)
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) corrupt(`${label} must be a plain object`)
+  return value as Record<string, unknown>
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  return requireString(record[key], key)
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value === '') corrupt(`${label} must be a non-empty string`)
+  return value
+}
+
+function optionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  return value === undefined ? undefined : requireString(value, key)
+}
+
+function absoluteString(record: Record<string, unknown>, key: string): string {
+  const value = stringField(record, key)
+  if (!isAbsolute(value)) corrupt(`${key} must be an absolute path`)
+  return value
+}
+
+function hashField(record: Record<string, unknown>, key: string): string {
+  return validateBlobHash(stringField(record, key))
+}
+
+function optionalHash(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key]
+  if (value === undefined) return undefined
+  const hash = requireString(value, key)
+  if (!GIT_OBJECT_PATTERN.test(hash)) corrupt(`${key} must be a Git object id`)
+  return hash
+}
+
+function nonNegativeInteger(record: Record<string, unknown>, key: string): number {
+  const value = record[key]
+  if (!Number.isSafeInteger(value) || (value as number) < 0) corrupt(`${key} must be a non-negative safe integer`)
+  return value as number
+}
+
+function optionalNonNegativeInteger(record: Record<string, unknown>, key: string): number | undefined {
+  return record[key] === undefined ? undefined : nonNegativeInteger(record, key)
+}
+
+function corrupt(message: string): never {
+  throw new ChangeLedgerError('STATE_CORRUPT', message)
+}

@@ -73,6 +73,8 @@ Termination and waiting use one provider-managed range. `terminate()` starts the
 
 For interactive programs, `spawnTerminal` allocates a real PTY: write text, read UTF-8 output, inspect and signal the current foreground process group, and await one `terminate()` that settles every session member the provider can still observe. Readiness, scrollback, and prompt policy stay with the PTY consumer.
 
+A terminal request can opt into `shellActivity`. `inspectActivity()` combines supported shell lifecycle evidence with owned-job observations and returns `idle`, `busy` or `unknown`, plus a handle-scoped revision. Unsupported or incomplete observations never imply idle; input invalidates existing prompt evidence. Opted-in terminals keep remaining work owned after the root shell exits instead of using that exit as permission to terminate descendants. Consumers own retention and cleanup deadlines.
+
 ### Environment every child starts from
 
 Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
@@ -101,7 +103,6 @@ The seam is built on one separation: the service owns process coordinates and li
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `SubprocessRuntime`, `ctx.subprocess` registration, the shared `scrubbedParentEnv` scrub |
 | [`src/types.ts`](src/types.ts) | Vocabulary: spawn spec, stdio modes, handles, readers, outcomes, `DSH_*` namespace |
-| — | No runtime invariant companion is published; this stateless Service Definition owns spawn-spec/handle types, while Service Providers own observations. |
 
 ### Data model and flow
 

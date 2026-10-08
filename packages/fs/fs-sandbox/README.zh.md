@@ -47,7 +47,7 @@ kind: "package-reference"
 
 ### 可观察的成功与失败
 
-读取、列出与元数据操作与 `fs-local` 完全一致。被拒绝的变更返回携带有效模式的 `FS_SANDBOX_DENIED` 错误；经工具，模型会看到 `[sandbox: file access denied under <mode> mode]` 及唯一一次获批更宽权限的重试提示，与 bash 的拒绝完全相同。获得批准升级的会话可以在该次调用中以严格更宽的模式重试同一操作。
+读取、列出、元数据操作与只读监听均与 `fs-local` 完全一致；变更围栏不限制观察。被拒绝的变更返回携带有效模式的 `FS_SANDBOX_DENIED` 错误；经工具，模型会看到 `[sandbox: file access denied under <mode> mode]` 及唯一一次获批更宽权限的重试提示，与 bash 的拒绝完全相同。获得批准升级的会话可以在该次调用中以严格更宽的模式重试同一操作。
 
 -----
 
@@ -92,7 +92,7 @@ kind: "package-reference"
 - [fs-local](../fs-local/README.zh.md)——本后端扩展的本地后端。
 - [sandbox-policy](../../sandbox/sandbox-policy/README.zh.md)——本后端所需的共享逐会话策略解析器。
 - [进程沙箱子系统](../../../docs/subsystems/sandbox.zh.md)——模式、逐调用策略与故障关闭错误。
-- [跨能力族 fs 沙箱决策](../../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.zh.md)——共享模式围栏及其升级编排。
+- [跨能力族 fs 沙箱参考](../../sandbox/sandbox-policy/README.zh.md)——共享模式围栏及其升级编排。
 
 -----
 
@@ -133,5 +133,3 @@ kind: "package-reference"
 无。
 
 </details>
-
-**运行时不变式：** 不发布伴生入口。这个无状态适配器把策略与文件系统关系委托给各自所属的 seam。

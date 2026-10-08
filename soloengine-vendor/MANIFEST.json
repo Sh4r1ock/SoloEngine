@@ -1,0 +1,47 @@
+{
+  "generatedFrom": "soloengine-launch/bin.mjs PLUGIN_DEPENDENCIES",
+  "packages": [
+    {
+      "name": "@anionex/dsh-turn-rewind",
+      "version": "0.3.8",
+      "license": "BSD-3-Clause",
+      "licenseFile": "LICENSE",
+      "upstream": "https://github.com/anionex/dsh-turn-rewind",
+      "tier": "第三方复用（实现主干）",
+      "consumption": "bundle 层 + 组合层 config（turnCheckpointMode 由本产品按工作区边界切 auto）",
+      "modifications": "无源码改动",
+      "vendoredPath": "soloengine-vendor/dsh-turn-rewind",
+      "files": 66,
+      "bytes": 1106424,
+      "sha256": "47f725ad10e8466cb2f637414a55999f7ddb9a186889f1df0b3592a991739700"
+    },
+    {
+      "name": "dsh-permission-rules",
+      "version": "0.7.4",
+      "license": "Apache-2.0",
+      "licenseFile": "LICENSE",
+      "upstream": "https://www.npmjs.com/package/dsh-permission-rules",
+      "tier": "第三方复用（白名单三缝隙之一）",
+      "consumption": "bundle 层；四档预设表由组合层整行重述覆写",
+      "modifications": "无源码改动",
+      "vendoredPath": "soloengine-vendor/dsh-permission-rules",
+      "files": 86,
+      "bytes": 1819618,
+      "sha256": "db418445778cf3d607cd28942060ffbf75771e73d74c62bc533b2ea124b41f7a"
+    },
+    {
+      "name": "dsh-approve-for-me",
+      "version": "0.2.4",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "upstream": "https://www.npmjs.com/package/dsh-approve-for-me",
+      "tier": "第三方复用（审批应答器）",
+      "consumption": "bundle 层 + 组合层 config（sandbox/approval/名称与说明）",
+      "modifications": "无源码改动",
+      "vendoredPath": "soloengine-vendor/dsh-approve-for-me",
+      "files": 29,
+      "bytes": 213228,
+      "sha256": "3bc7232338d384047df368784fb2cd4bfff09bd794fac6e3c5a562c030bec010"
+    }
+  ]
+}

@@ -51,8 +51,6 @@ MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中�
 
 [MCP 辅助库](src/mcp.ts)在串行 `agent/created` 中建立连接；[AgentLoop](../../core/agent-loop/README.zh.md#understand-the-implementation)保留排队输入并负责创建回滚。提示词组装读取已初始化的目录。辅助库在资源清理期间保留提供方注册，并通过 [MCP 客户端](../../mcp/mcp-client/README.zh.md)处理传输、schema 发现、结果转换与持久图像接纳。
 
-不发布运行时不变量伴随入口：资源所有权与待处理工作是私有生命周期状态，没有可供比较的独立维护运行时投影。所属测试覆盖隔离、释放与清理失败。
-
 </details>
 
 -----
@@ -85,6 +83,7 @@ MCP 提供方使用 `@deepseek-ai/dsh-experimental-browser-use-runtime/mcp` 中�
 - **附加范围** — 独占所有权作用于一个资源管理器，不约束独立提供方、进程或外部浏览器客户端。
 - **取消** — abort 信号与连接关闭无法撤销已交付的浏览器操作。同时忽略两者的上游操作可能延迟清理。
 - **恢复** — 关闭失败会保留所有权；此管理器不重试释放，也不从 Session 日志恢复浏览器状态。
+- **共享宿主运行时** — profile 会把本包与 dsh 安装并排安装，因此 `@deepseek-ai/dsh-scope` 与 `@deepseek-ai/dsh-mcp-client` 保持为 peer 依赖。写成 `dependencies` 会再装一份 `dsh-scope`，它的作用域标记宿主注册表读不到：每个 Agent 的 MCP 工具都会注册到全局工具层，第二个 Agent 的创建随之失败。
 
 <a id="dev-note"></a>
 ### 开发备注

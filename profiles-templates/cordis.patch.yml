@@ -1,0 +1,3 @@
+# SoloEngine profile 的用户 patch 层：在每个 bundle 层之后应用。
+# 一个 YAML 数组；用于部署特定的 id 覆写、禁用与插入（允许 `!!js` 表达式）。
+[]

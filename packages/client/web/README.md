@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Use it when you assemble the browser application: `apps/web`'s Vite entry runs `new AppWebEntry(container).run()` against the mount point, and the boot page carries the user through activation. Ordinary browser callers pass no options. A pre-injected page transport is the default ahead of the `seams` override: when `globalThis.__DSH_TRANSPORT__` carries `loadBundle`, the module stage adopts it as the bundle transport and skips the immediate-tier HTTP prefetch, while explicit `seams` still win (for example jsdom tests, where external `<script>` execution cannot reach the page context).
 
+Static application pages install `__DSH_BOOT_READY__` before the entry runs. The boot page renders immediately while `run()` waits; the page owner applies the Host rows with `applyIndexInjections` (also exported from `./injections`) and resolves the deferred after all scripts finish. A rejected deferred renders a boot failure unless the caller supplies `run(onFailure)` to present the error externally while retaining the loading page. Desktop uses this callback to request native recovery. Desktop and WebWorker share the injection interpreter; server-side `tapIndex` HTML transforms apply only to served documents.
+
 The shell base styles apply automatic CJK/Latin spacing to ordinary content in supporting browsers. Semantic code and terminal, diff, read, and search output containers retain literal source spacing and column alignment; browsers without `text-autospace` support ignore both declarations.
 
 ### What boot looks like
@@ -50,6 +52,8 @@ The package accepts no plugin config of its own; the generated [configuration ca
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -67,17 +71,21 @@ The kernel owns exactly three things: the module system, the Cordis Loader, and 
 
 The boot page is plain DOM with local CSS whose fallback fonts and colors match the theme tokens that arrive during loading. `internal/status` events drive one spinner node and per-entry labels; hydration preserves the node and animation phase through the application commit, and `fail()` renders the thrown reason. React mounting, slot rendering, and assembly live in `ui-renderer`; `ui-layout` owns the assembled browser-title projection.
 
+The boot kernel delegates manifest entry creation to Client Modules so live graph synchronization owns the same entry identities after startup. The initial activation audit remains strict; later page-local failures appear in Settings → Plugins → Plugin list.
+
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Library entry: `AppWebEntry`, `getStaticModules`, platform tables |
-| [`src/boot.ts`](src/boot.ts) | `AppWebEntry`: module stage, boot page, immediate-tier prefetch, then `bootClient` + `mountClient` |
+| [`src/boot.ts`](src/boot.ts) | `AppWebEntry`: module stage, boot page, immediate-tier prefetch, window drag-rect watcher install, then `bootClient` + `mountClient` |
 | [`src/boot-client.ts`](src/boot-client.ts) | `bootClient` / `assertEntriesActive`: Loader mount, one entry per manifest row, activation audit |
 | [`src/mount.ts`](src/mount.ts) | `mountClient`: renderer handoff through a `uiRenderer` dependency fiber |
 | [`src/boot-page.ts`](src/boot-page.ts) | Framework-free boot page: spinner, per-entry status, failure rendering |
 | [`src/platform.ts`](src/platform.ts) | `PLATFORM_MODULES` / `PRELOADED_CLIENT_EXTERNALS`: the implicit external baseline |
 | [`src/seed.ts`](src/seed.ts) | Static module table handed to the loader at boot |
+| [`src/window-drag/regions.ts`](src/window-drag/regions.ts) | The darwin app-region composition model, and the interactive selector `base.css` subtracts |
+| [`src/window-drag/recall.ts`](src/window-drag/recall.ts) | The shell's one window drag-rect watcher (electron/electron#32341): measure the marked rows per frame and pulse the recall mark while they move |
 
 </details>
 
@@ -123,5 +131,3 @@ These limits define what the boot kernel does not support. They are current pack
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The Vite entry shell provides boot glue and module-table seeding, emits no Cordis events, and holds no cross-plugin mutable state; the boot chain (loading page → settled → one-flip UI) is verified by the web smoke e2e against the real carrier.

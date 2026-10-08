@@ -9,6 +9,7 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRetryEventData } from '@deepseek-ai/dsh-llm-retry/types'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 import type { ContextProducerView, KnownContextForm } from './context-producer.ts'
+import type { PartialArguments } from '@deepseek-ai/dsh-util-values'
 export type { TodoItem }
 
 /** Request configuration recorded for one provider call. */
@@ -160,6 +161,10 @@ export interface ToolResultNode {
   callId: string
   /** Parent Tool call for a PTC dispatch result; absent on a root Session result. */
   parentCallId?: string
+  /** Wire tool name from the paired tool/call; empty when that call left the loaded window. */
+  name: string
+  /** The argument view of the paired call; see {@link ToolArgs}. */
+  args: ToolArgs
   /** Call head backfilled from the in-window tool/call; null when window truncation left the call outside (card head shows callId). */
   call: { name: string; argsRaw: string } | null
   /** Unix epoch ms of the paired tool/call when the call is still in-window; used for call-row duration. */
@@ -197,13 +202,9 @@ export interface CompactionSummaryNode {
 }
 
 /**
- * Fallback for surface events this UI version does not know: the documented
- * default arm of `SessionEventMap`, which is merge-extensible, so the
- * projection's switch cannot end in `assertNever`. No event produces this node
- * because `isAppendSurfaceEvent` admits only the four types in core's
- * `SurfaceEventType`, and each has its own arm (`system/message` is claimed by
- * a Chat Definition that renders no transcript row) — and it exists so widening
- * that set core-side degrades to a raw row instead of dropping the event silently.
+ * Fallback for unclaimed append-surface events. The merge-extensible
+ * SessionEventMap permits unfamiliar events to retain a raw presentation.
+ * Known unsupported developer events throw before fallback selection.
  */
 export interface UnknownSurfaceNode {
   kind: 'unknown'
@@ -261,22 +262,49 @@ export type ConversationNode =
   | CompactionSummaryNode
   | UnknownSurfaceNode
 
-/** In-flight tool card material: tool/call seen, tool/result not yet. */
-export interface RunningToolCall {
+/** Identity and placement shared by tool preparation and dispatch. */
+interface ToolCallHead {
   callId: string
   /** Parent Tool call for a PTC dispatch start; absent on a root Session call. */
   parentCallId?: string
   name: string
-  argsRaw: string
   turn: number
   step: number
-  /** Unix epoch ms when the tool/call event was logged. */
+  /** Unix epoch ms when this stage began. */
   time: number
   /** Child calls owned by this call, in dispatch order. */
   subCalls: readonly ToolCallBlock[]
+  /** The argument view; see {@link ToolArgs}. */
+  args: ToolArgs
 }
 
-/** One running or settled call, recursively owning its child calls. */
+/**
+ * Lazy top-level argument readers shared by preparing, start, and result;
+ * {@link PartialArguments} defines field, prefix, length, and completion reads.
+ * A preparing view grows in place. Read it during render or view construction,
+ * not into independent state keyed only by the args or block object identity.
+ * The Definition publishes the initial named block, then republishes when an
+ * observed answer changes. Unread fields alone do not request republication.
+ * Dispatched views are sealed over finished text or parsed values. The view is
+ * empty for a result whose `tool/call` left the loaded window.
+ */
+export type ToolArgs = PartialArguments
+
+/** A named model call whose complete arguments are not yet available to tool views. */
+export interface PreparingToolCall extends ToolCallHead {
+  readonly phase: 'preparing'
+}
+
+/** A dispatched tool call with complete arguments and no result yet. */
+export interface StartedToolCall extends ToolCallHead {
+  readonly phase: 'start'
+  readonly argsRaw: string
+}
+
+/** A tool still preparing or awaiting its result. */
+export type RunningToolCall = PreparingToolCall | StartedToolCall
+
+/** One preparing, dispatched, or settled call, recursively owning its child calls. */
 export type ToolCallBlock = RunningToolCall | ToolResultNode
 
 /** In-progress assistant output (chunk accumulator product). */

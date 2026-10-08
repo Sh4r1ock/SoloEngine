@@ -611,7 +611,7 @@ export class PackagingService {
   private presetTemplatePath(): string {
     const looked: string[] = []
     for (const anchor of this.presetTemplateAnchors()) {
-      const packageDir = packageDirFrom('@deepseek-ai/dsh-agent-presets', anchor)
+      const packageDir = packageDirFrom('@deepseek-ai/dsh-agent-preset-registry', anchor)
       if (packageDir === undefined) {
         looked.push(`from ${anchor}`)
         continue

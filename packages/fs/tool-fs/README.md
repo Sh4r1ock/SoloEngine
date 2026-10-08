@@ -48,7 +48,7 @@ The policy plugin is optional: without it the tools run against the bare provide
 | `write` | `file_path`, `content` | Creates or fully replaces a file; with the policy plugin, overwriting requires a prior `read` at the unchanged version, creating does not |
 | `edit` | `file_path`, `old_string`, `new_string`, `replace_all?` | Literal replacement requiring a unique match unless `replace_all` is true; with the policy plugin, requires a prior `read` and an unchanged file |
 
-Field names are snake_case to match Claude Code and existing harness tool schemas. Successes return compact envelopes — a read window, an image reference, or a `Created file`/`Updated file` confirmation — and `write`/`edit` derive replayable diff-card metadata for UI presentation.
+Field names are snake_case to match Claude Code and existing harness tool schemas. The `write` and `edit` path descriptions ask the model to emit `file_path` before the content or replacement strings; this guides streaming presentation but does not enforce JSON member order. Successes return compact envelopes — a read window, an image reference, or a `Created file`/`Updated file` confirmation — and `write`/`edit` derive replayable diff-card metadata for UI presentation.
 
 ### Configuration
 
@@ -67,7 +67,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 Path authorization for `read` and `read_image` belongs entirely to `ctx.fs`; media-type declarations and file signatures only decide whether `read_image` accepts the bytes returned by that backend.
 
-With the policy plugin mounted, `write` and `edit` obtain their guard from the `fs/*` intent slots, so an unread target or a stale observation fails with `FS_NOT_OBSERVED` or `FS_STALE_VERSION` and a recovery instruction. Under a confining backend (`fs-sandbox`), `write`/`edit` additionally advertise `sandbox_permissions` and `justification`; a denied mutation returns the `[sandbox: file access denied under <mode> mode]` marker with the same-turn escalation hint, and an approved retry may stamp a strictly wider mode for that one call.
+With the policy plugin mounted, `write` and `edit` obtain their guard from the `fs/*` intent slots, so an unread target or a stale observation fails with `FS_NOT_OBSERVED` or `FS_STALE_VERSION` and a recovery instruction. Under a confining backend (`fs-sandbox`), `write`/`edit` additionally advertise `sandbox_permissions` and `justification`; a denied mutation returns the `[sandbox: file access denied under <mode> mode]` marker with the same-turn escalation hint, and an approved retry may stamp a strictly wider mode for that one call. The justification asks the model to use the language of the current user request.
 
 ### Failures and recovery
 
@@ -138,19 +138,19 @@ At assembly time, each guidance section checks `ctx.tools.get(name, scope)` and 
 ##### Read guidance
 
 ```markdown
-Use the read tool — not shell commands like cat — to inspect text files. Results include line numbers. Use offset and limit to continue reading large files.
+Use the read tool — not shell commands like cat — to inspect text files. Use offset and limit to continue reading large files.
 ```
 
 ##### Write guidance
 
 ```markdown
-Use the write tool to create files or completely replace file contents. Existing files are overwritten, so read an existing file first (the default fs-observation-policy requires it) and prefer edit for targeted changes.
+Read an existing file before overwriting it with write (the default fs-observation-policy requires it) and prefer edit for targeted changes.
 ```
 
 ##### Edit guidance
 
 ```markdown
-Use the edit tool for targeted changes to existing UTF-8 text files. It replaces literal old_string with new_string; by default old_string must appear exactly once. If old_string appears multiple times, provide a more specific old_string or set replace_all to true. Read the file first (the default fs-observation-policy requires it), unless you just created or edited it in this session.
+Read a file before editing it (the default fs-observation-policy requires it), unless you just created or edited it in this session.
 ```
 
 #### Token effect
@@ -255,5 +255,3 @@ These limits define when the tool suite is a poor fit or needs special operation
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. This model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls.

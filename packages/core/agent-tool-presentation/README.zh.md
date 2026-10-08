@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 [agent preset](../../preset/agent-presets/README.zh.md) 中使用 `dsh-agent-tool-presentation`，可固定模型看到全部原生工具 schema、只有带生成 SDK 的 `run_code`，还是同时看到两种形态。每个 preset 可独立选择，因此 native 与 PTC agent 可以共享同一进程，而不共享工具目录。选择 `ptc` 或 `both` 需要兼容的 PTC 运行时；没有该运行时的部署会在挂载时拒绝 preset，不会等到收到第一条提示词。使用本包时 `mode` 字段为必填；省略本包则沿用部署默认值。
+在 [agent preset](../../preset/agent-preset-registry/README.zh.md) 中使用 `dsh-agent-tool-presentation`，可固定模型看到全部原生工具 schema、只有带生成 SDK 的 `run_code`，还是同时看到两种形态。每个 preset 可独立选择，因此 native 与 PTC agent 可以共享同一进程，而不共享工具目录。选择 `ptc` 或 `both` 需要兼容的 PTC 运行时；没有该运行时的部署会在挂载时拒绝 preset，不会等到收到第一条提示词。使用本包时 `mode` 字段为必填；省略本包则沿用部署默认值。
 
 ## 目录
 
@@ -68,11 +68,10 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`mode` 配置、把 `ctx.tools.presentAs` 接到挂载作用域的 `apply` |
-| — | 不发布运行时不变式伴生入口；本包只对 `ctx.tools` 发起一次 scoped 调用，不持有自己的事件或快照；它建立的是「某个 agent 的组装采用哪种呈现方式」这一关系，该关系由工具注册表持有，`dsh-tools` 会在工具注册表中观察该关系。 |
 
 ### 行为说明
 
-`native` 立即生效。PTC 模式则等待 `ctx.ptcRuntime`——这是一个宿主平面服务：针对未组装运行时的部署选择 PTC mode 的 preset 会让这一行停在 pending，`dsh-agent-presets` 会指名此 id 拒绝挂载。`presentAs` 本身就是 effect，因此该声明随这一行撤销，无需第二个包装层拥有它。
+`native` 立即生效。PTC 模式则等待 `ctx.ptcRuntime`——这是一个宿主平面服务：针对未组装运行时的部署选择 PTC mode 的 preset 会让这一行停在 pending，`dsh-agent-preset-registry` 会指名此 id 拒绝挂载。`presentAs` 本身就是 effect，因此该声明随这一行撤销，无需第二个包装层拥有它。
 
 </details>
 
@@ -84,9 +83,9 @@ kind: "package-reference"
 包级约定对大多数消费方已经足够；需要周边领域时再阅读以下页面。
 
 - [tools 包](../tools/README.zh.md)——工具呈现模式与 `presentAs` API。
-- [agent-presets 包](../../preset/agent-presets/README.zh.md)——preset 如何组合 agent 及其常驻挂载。
+- [agent-presets 包](../../preset/agent-preset-registry/README.zh.md)——preset 如何组合 agent 及其常驻挂载。
 - [Node ptc-runtime 包](../../ptc-runtime/ptc-runtime-node/README.zh.md)——PTC 模式所需的 TypeScript 运行时。
-- [PTC mode 执行器塌缩 note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.zh.md)——通告面与可调用面为何保持一致。
+- [历史PTC mode 执行器塌缩 note](../../../.agents/notes/archived/bug-fix/2026-08-07-ptc-executor-collapse.md)——通告面与可调用面为何保持一致。
 - [core 分组地图](../README.zh.md)——core 各包如何组合。
 
 -----

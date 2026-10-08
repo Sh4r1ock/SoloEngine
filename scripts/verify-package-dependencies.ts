@@ -20,7 +20,9 @@ import {
 
 const GATE = 'verify-package-dependencies'
 const CORDIS = '@deepseek-ai/cordis'
-const WORKSPACE_RANGE = 'workspace:^'
+function workspaceRange(name: string): 'workspace:*' | 'workspace:~' {
+  return name === '@deepseek-ai/dsh' || name.startsWith('@deepseek-ai/dsh-') ? 'workspace:*' : 'workspace:~'
+}
 const RELEASE_MANIFEST_GLOB = 'packages/!(experimental)/*/package.json'
 const WORKSPACE_MANIFEST_GLOBS = [
   'apps/*/package.json',
@@ -451,7 +453,7 @@ function readAllSourceUses(root: string, pkg: WorkspacePackageManifest): Map<str
  * @param pkg - Package manifest and directory.
  * @param role - Selected dependency policy role.
  * @param workspaceNames - Workspace package identities.
- * @param policy - Reviewed Host export and configuration-only classifications.
+ * @param policy - Reviewed Host exports, required services, and development-only relationships.
  * @param generatedHostSource - Host module already emitted in memory by a batched Typert pass.
  * @returns Source-derived dependency facts without writing build artifacts.
  */
@@ -467,17 +469,27 @@ export function readPackageDependencyFacts(
   const hostRuntime = role === 'client-only'
     ? { packageUses: new Map<string, string[]>(), exportUses: [] }
     : readHostRuntimeUses(root, pkg, generatedHostSource)
+  const servicePeers = policy.requiredServicePeers?.[pkg.name] ?? []
+  const allSourceUses = readAllSourceUses(root, pkg)
+  for (const name of servicePeers) {
+    if (!workspaceNames.has(name) || !allSourceUses.has(name)) {
+      throw new Error(`${pkg.manifestPath}: requiredServicePeers must name a referenced workspace package: ${name}`)
+    }
+  }
   return {
     manifestPath: pkg.manifestPath,
     role,
     manifest: pkg.manifest,
     workspaceNames,
-    allSourceUses: readAllSourceUses(root, pkg),
+    allSourceUses,
     hostRuntimeSourceUses: hostRuntime.packageUses,
     hostRuntimeExportUses: hostRuntime.exportUses,
-    peerRequiredHostDependencies: new Set(hostRuntime.exportUses
-      .filter(use => policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true)
-      .map(use => use.packageName)),
+    peerRequiredHostDependencies: new Set([
+      ...hostRuntime.exportUses
+        .filter(use => policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true)
+        .map(use => use.packageName),
+      ...servicePeers,
+    ]),
     configurationOnlyDevDependencies: new Set(
       policy.configurationOnlyDevDependencies[pkg.manifest.name ?? ''] ?? [],
     ),
@@ -570,9 +582,10 @@ export function readPackageDependencyState(
     policyViolations: [
       ...discovered.violations,
       ...collectHostDependencyExportPolicyViolations(facts, workspaceNames, policy),
-      ...Object.keys(policy.configurationOnlyDevDependencies)
-        .filter(name => !selectedNames.has(name))
-        .map(name => `configurationOnlyDevDependencies names unmanaged package ${name}`),
+      ...(['configurationOnlyDevDependencies', 'requiredServicePeers'] as const).flatMap(field =>
+        Object.keys(policy[field] ?? {})
+          .filter(name => !selectedNames.has(name))
+          .map(name => `${field} names unmanaged package ${name}`)),
     ].sort(),
     workspaceNames,
   }
@@ -620,6 +633,9 @@ export function expectedPackageDependencies(
       : 'dependencies'
     for (const path of paths) add(name, expectedSection, path)
   }
+  for (const name of facts.peerRequiredHostDependencies) {
+    if (!facts.hostRuntimeSourceUses.has(name)) add(name, 'peer-dev', 'required Cordis service')
+  }
   return new Map([...expected].map(([name, rule]) => [name, {
     section: rule.section,
     origins: [...rule.origins].sort(),
@@ -659,13 +675,13 @@ export function formatManagedRuntimeDependencies(state: PackageDependencyState):
   ]
 }
 
-/** Format Host runtime edges retained as peers by their imported export classification. */
+/** Format Host runtime edges retained as peers for shared exports or required services. */
 export function formatPeerRequiredRuntimeDependencies(state: PackageDependencyState): string[] {
   const rows = managedRuntimeEdges(state, 'peer-dev')
   const packages = new Set(rows.map(row => row.consumer)).size
   return [
-    `${GATE}: ${String(rows.length)} Host runtime edge(s) remain in peerDependencies because their exports require shared identity across ${String(packages)} package(s):`,
-    ...rows.map(row => `  ${row.consumer} -> ${row.dependency}: ${row.exports.join(', ')}`),
+    `${GATE}: ${String(rows.length)} Host runtime edge(s) remain in peerDependencies for shared exports or required services across ${String(packages)} package(s):`,
+    ...rows.map(row => `  ${row.consumer} -> ${row.dependency}: ${row.exports.join(', ') || 'required Cordis service'}`),
   ]
 }
 
@@ -694,15 +710,16 @@ export function collectPackageDependencyViolations(state: PackageDependencyState
   for (const facts of state.facts) {
     for (const [name, rule] of expectedPackageDependencies(facts)) {
       const actual = declaredSections(facts.manifest, name)
+      const expectedRange = workspaceRange(name)
       if (rule.section === 'peer-dev') {
         if (actual.length === 2
           && actual.includes('peerDependencies')
           && actual.includes('devDependencies')
-          && section(facts.manifest, 'peerDependencies')[name] === WORKSPACE_RANGE
-          && section(facts.manifest, 'devDependencies')[name] === WORKSPACE_RANGE
+          && section(facts.manifest, 'peerDependencies')[name] === expectedRange
+          && section(facts.manifest, 'devDependencies')[name] === expectedRange
           && facts.manifest.peerDependenciesMeta?.[name] === undefined) continue
         violations.push(
-          `${facts.manifestPath}: ${name} must be matching peerDependencies + devDependencies at ${WORKSPACE_RANGE}; found ${describeSections(actual)}`,
+          `${facts.manifestPath}: ${name} must be matching peerDependencies + devDependencies at ${expectedRange}; found ${describeSections(actual)}`,
         )
         continue
       }
@@ -710,17 +727,18 @@ export function collectPackageDependencyViolations(state: PackageDependencyState
       const range = section(facts.manifest, expectedSection)[name]
       if (actual.length === 1
         && actual[0] === expectedSection
-        && (!facts.workspaceNames.has(name) || range === WORKSPACE_RANGE)) continue
+        && (!facts.workspaceNames.has(name) || range === expectedRange)) continue
       violations.push(
         `${facts.manifestPath}: ${name} (${rule.origins.join(', ')}) must be ${expectedSection}-only`
-        + (facts.workspaceNames.has(name) ? ` at ${WORKSPACE_RANGE}` : '')
+        + (facts.workspaceNames.has(name) ? ` at ${expectedRange}` : '')
         + `; found ${describeSections(actual)}`,
       )
     }
     for (const sectionName of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const) {
       for (const [name, range] of Object.entries(section(facts.manifest, sectionName))) {
-        if (!facts.workspaceNames.has(name) || range === WORKSPACE_RANGE) continue
-        violations.push(`${facts.manifestPath}: ${sectionName}.${name} must use ${WORKSPACE_RANGE}, found ${range}`)
+        const expectedRange = workspaceRange(name)
+        if (!facts.workspaceNames.has(name) || range === expectedRange) continue
+        violations.push(`${facts.manifestPath}: ${sectionName}.${name} must use ${expectedRange}, found ${range}`)
       }
     }
     for (const name of Object.keys(facts.manifest.peerDependenciesMeta ?? {})) {
@@ -765,7 +783,7 @@ function preferredRange(
   name: string,
   target: ExpectedPackageDependency['section'],
 ): string {
-  if (name === CORDIS || facts.workspaceNames.has(name)) return WORKSPACE_RANGE
+  if (name === CORDIS || facts.workspaceNames.has(name)) return workspaceRange(name)
   const order: readonly DependencySection[] = target === 'dependencies'
     ? ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
     : ['devDependencies', 'peerDependencies', 'dependencies', 'optionalDependencies']
@@ -790,8 +808,8 @@ export function repairPackageDependencyManifest(facts: PackageDependencyFacts): 
       for (const sectionName of ['dependencies', 'optionalDependencies'] as const) {
         deleteDependency(facts.manifest, sectionName, name)
       }
-      mutableSection(facts.manifest, 'peerDependencies')[name] = WORKSPACE_RANGE
-      mutableSection(facts.manifest, 'devDependencies')[name] = WORKSPACE_RANGE
+      mutableSection(facts.manifest, 'peerDependencies')[name] = range
+      mutableSection(facts.manifest, 'devDependencies')[name] = range
       deletePeerMeta(facts.manifest, name)
       continue
     }
@@ -806,7 +824,7 @@ export function repairPackageDependencyManifest(facts: PackageDependencyFacts): 
   }
   for (const sectionName of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'] as const) {
     for (const name of Object.keys(section(facts.manifest, sectionName))) {
-      if (facts.workspaceNames.has(name)) mutableSection(facts.manifest, sectionName)[name] = WORKSPACE_RANGE
+      if (facts.workspaceNames.has(name)) mutableSection(facts.manifest, sectionName)[name] = workspaceRange(name)
     }
   }
 }

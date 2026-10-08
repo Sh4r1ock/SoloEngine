@@ -6,7 +6,7 @@ import type { Readable, Writable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { FsError, type FsTarget, type FsWriteIntent, type FsVersion } from '@deepseek-ai/dsh-fs'
 import { SandboxedFileSystem } from '@deepseek-ai/dsh-fs-sandbox'
-import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
+import type {} from '@deepseek-ai/dsh-subprocess'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { LocalSandboxProvider } from '@deepseek-ai/dsh-sandbox-local'
 import { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
@@ -123,9 +123,9 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       await processes.resizeTerminal(input.id, input.cols, input.rows)
       return null
     }
-    if (method === 'terminal.write' || method === 'terminal.inspect' || method === 'terminal.signal') {
+    if (method === 'terminal.write' || method === 'terminal.inspect' || method === 'terminal.activity' || method === 'terminal.signal') {
       const input = z.object({ id: processIdSchema, value: z.string().optional() }).strict().parse(raw)
-      return processes.terminal(input.id, method === 'terminal.write' ? 'write' : method === 'terminal.inspect' ? 'inspect' : 'signal', input.value)
+      return processes.terminal(input.id, method === 'terminal.write' ? 'write' : method === 'terminal.inspect' ? 'inspect' : method === 'terminal.activity' ? 'activity' : 'signal', input.value)
     }
     if (method === 'executable') {
       const input = z.object({ command: z.string(), env: environmentSchema.optional() }).strict().parse(raw)
@@ -135,7 +135,11 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       try {
         return await ctx.subprocess.resolveExecutable(input.command, env, signal)
       } catch (error) {
-        if (error instanceof SubprocessExecutableNotFoundError) throw new RemoteOperationError(error.message, 'SUBPROCESS_EXECUTABLE_NOT_FOUND')
+        if (typeof error === 'object' && error !== null
+          && 'name' in error && error.name === 'SubprocessExecutableNotFoundError'
+          && 'message' in error && typeof error.message === 'string') {
+          throw new RemoteOperationError(error.message, 'SUBPROCESS_EXECUTABLE_NOT_FOUND')
+        }
         throw error
       }
     }
