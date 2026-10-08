@@ -40,21 +40,22 @@
 | 升级 = 壳 + 运行时 + 离线依赖同一签名单元（含差分） | `apps/desktop/electron-builder.config.mjs`（`nsis.differentialPackage: true`、macOS `dmg`+`zip`）、`src/update-coordinator.ts` | `update-coordinator.spec.ts` / `desktop-auto-update-environment.spec.ts` |
 | 桌面无 webServer | `apps/desktop-host/config/desktop.cordis.patch.yml` 按行 id 关闭 `webserver`/`web-runtime`/`web-startup`/`client-hmr` 等；`apps/desktop-host/src/index.ts` 以帧化字节管道承载 API 与资产 | 该 patch 文件与 `desktop-host` 的入口即证据（无监听端口代码路径） |
 
-## 交付边界（本机不可实测的环节，如实记录）
+## 交付边界与实测结果
 
-**桌面安装包（NSIS / DMG）与「全新 Windows 双击可用」不在本机实测**，原因与本机实测证据：
+**Windows 产物已在本机真实产出并真实启动**（2026-09-20）：
 
-1. `apps/desktop/node_modules/electron` 无 `dist/`（Electron 二进制未随依赖落盘），Windows 的 electron 缓存里
-   只有 `electron-v40.6.0-win32-x64.zip`，而 `apps/desktop/package.json` 要求 `electron@^44`；
-2. `electron-builder` 的运行时依赖（`chalk`/`yargs`/`builder-util`/`app-builder-bin` 等）在
-   `apps/desktop/node_modules` 与仓库根均不存在 → CLI 无法加载；
-3. `%LOCALAPPDATA%\electron-builder` 缓存目录不存在（NSIS 与 winCodeSign 需首次联网下载）；
-4. `apps/desktop/.desktop-build`（Node 归档与 tarball 缓存）不存在。
+| 产物 | 路径 | 实测 |
+|---|---|---|
+| NSIS 安装包 | `apps/desktop/.desktop-build/targets/win-x64/unsigned-artifacts/deepseek-harness-0.1.6-alpha.1-win-x64.exe`（163.31 MB） | electron-builder 26.15.3 全链跑通：`@electron/rebuild` → asar → signtool 元数据 → `nsis` 打包（首次联网取 nsis-3.0.4.1 / nsis-resources-3.4.1 / 7zip）→ 生成 `.exe.blockmap`（差分更新用） |
+| 免安装目录 | 同目录 `win-unpacked/`（`DeepSeek Harness.exe` 233 MB + `resources/{app.asar, app.asar.unpacked, runtime}`） | 以隔离 `DSH_HOME` 真实启动：写出 `profiles/desktop/desktop-runtime-state.json`（runtimeId/版本/平台/架构）与 `storages/workspace.json`，窗口渲染出产品登录页（截图 `test/logs/shots/desktop-first-launch.png`，记录 `test/soloengine/records/stage8-desktop-first-launch.json`） |
 
-因此本机只能取证到**机制层**（上表的 spec 全绿）与**编排层**（`prepare-profile.mjs` 的真实副作用 +
-`build-windows.mjs` 的前置条件 fail loud）。产线环境具备 Electron 缓存、签名证书与联网后，按
-`build-windows.mjs` 即可产出安装包与免安装目录；macOS 同理（且必须在 macOS 构建机上执行，见
-`desktop/macos/README.md`）。
+本机实测到的层：**机制层**（`npx vitest run apps/desktop/tests` 197 通过）、**编排层**（`prepare-profile.mjs` 的真实副作用 + 前置条件 fail loud）、**产物层**（上表两行）。仍然只交付配置与脚本的是 **macOS DMG**：`package-target.ts` 本身拒绝非 darwin 宿主，故不在本机实测（见 `desktop/macos/README.md`）。
+
+构建期踩到并修掉的平台缺陷（都在本仓库留下了修复）：
+
+1. **载荷冒烟夹具的失效期望**：`apps/desktop/tests/fixtures/runtime-payload-smoke.mjs` 原先无条件 `require('fs-ext')`，而 `fs-ext` 在本仓库整棵依赖图里不存在（无清单、无锁文件条目、无源码引用；文件锁由 `native/system` 的 flock 绑定承担）——任何主机都过不了这一步，Windows 产物因此完全无法产出。现在夹具改为「可解析则验证 seek 契约；不可解析则断言没有任何载荷清单声明它」，并如实输出 `fsExt: "absent"`。
+2. **免安装目录只走签名路径**：`package:win:x64:dir` 需要代码签名证书，与 `package:win:x64:unsigned` 不成对。补 `package:win:x64:dir:unsigned`（平台脚本同一口径），编排据此调用。
+3. **编排自身的判定与顺序**：预检原先按 `apps/desktop/node_modules/<传递依赖>` 目录名判定（pnpm 布局下传递依赖在 `.pnpm/<pkg>@<ver>/node_modules`），会把已装好的打包器误报成缺失；且自己重列 prepare 步骤并把顺序排错（`prepare:packages` 需要先 `release:pack`）。现在只做「可解析 + app id 必填」的预检，步骤一律委派平台命令。
 
 ## 复现命令
 
@@ -68,6 +69,14 @@ node packaging/desktop/prepare-profile.mjs --from data/packaging/<run-id>/profil
 # 3) 桌面机制层取证（平台自带 spec）
 npx vitest run apps/desktop/tests
 
-# 4) 产线环境产出 Windows 产物（本机缺前置依赖，会 fail loud 报出缺项）
-node packaging/desktop/build-windows.mjs
+# 4) 产出 Windows 产物（安装包 + 免安装目录；需要 electron 二进制与一次联网取 NSIS）
+$env:DSH_DESKTOP_APP_ID='com.soloengine.desktop'
+node packaging/desktop/build-windows.mjs --unsigned
+
+# 5) 容器形态（同一程序、同一条启动路径）
+docker build -f packaging/container/Dockerfile `
+  --build-arg DSH_CLIENT_COMMIT_HASH=$(git rev-parse HEAD) -t soloengine:local .
+docker run -d --name soloengine -p 8991:8991 -v soloengine-data:/app/data `
+  -e SOLOENGINE_HOST=0.0.0.0 soloengine:local
 ```
+

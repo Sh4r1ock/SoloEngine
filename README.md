@@ -15,13 +15,7 @@
 
 <div align="center">
 
-[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE)
-[![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
+[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/) [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/) [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE) [![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
 
 </div>
 

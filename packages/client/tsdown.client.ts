@@ -33,6 +33,16 @@ const INLINE_CSS_VIRTUAL_PREFIX = '\0dsh-inline-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 const INLINE_CSS_QUERY = '?inline'
 
+/**
+ * Strip one leading UTF-8 BOM (U+FEFF). A BOM is legal only at the very start
+ * of a stylesheet *file*; lightningcss passes it through into the injected
+ * style text, where a mid-document BOM makes the browser drop the first rule
+ * of the sheet (e.g. the `.root` flex/height layout contract silently dies).
+ */
+function stripLeadingBom(text: string): string {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
+}
+
 /** Emit one plugin-owned style injector and an optional CSS Modules export. */
 function styleInjectionModule(
   id: string,
@@ -41,7 +51,7 @@ function styleInjectionModule(
   classMap?: Readonly<Record<string, string>>,
 ): string {
   const source = [
-    `const css = ${JSON.stringify(css)};`,
+    `const css = ${JSON.stringify(stripLeadingBom(css))};`,
     `const tagId = ${JSON.stringify(`${id}/${basename(fileId)}`)};`,
     'if (typeof document !== \'undefined\' && document.querySelector(\'style[data-plugin-css=\' + JSON.stringify(tagId) + \']\') === null) {',
     '  const tag = document.createElement(\'style\');',
@@ -545,7 +555,7 @@ function clientConfig(id: string, entry: string): UserConfig {
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const { code } = transform({ filename: fileId, code: source, minify: true })
-        return `export default ${JSON.stringify(code.toString())};`
+        return `export default ${JSON.stringify(stripLeadingBom(code.toString()))};`
       },
     }, {
       name: 'dsh-css-global-inline',
