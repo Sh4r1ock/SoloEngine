@@ -113,22 +113,41 @@ function assertRow(raw: unknown, label: string, inserted: boolean): PatchRow {
   return parsed
 }
 
+/** `!!js` 求值用的最小 `ctx` 桩事实（框架层按清单可确定的键）。 */
+export interface DisabledEvalContext {
+  /** profile 名（读自 profile 清单）。 */
+  readonly profileName: string
+  /** profile 目录绝对路径。 */
+  readonly profileDir: string
+  /** profile 自己的 patch 层路径。 */
+  readonly patchPath: string
+}
+
 /**
  * 按 cordis 组合层的语义求值 `disabled`（布尔直接取用；`!!js` 表达式真实求值）。
+ *
+ * loader 的 `ctx` 是服务访问器：`ctx.get(name)` 取服务、没有则 undefined。框架层不在
+ * 该 cordis 容器内，但组合层表达式的实际用量只有 `ctx.get('profileContext')`——它的事实
+ * （name/dir/patchPath）框架层已从 profile 清单与原位路径确定，故以最小桩回答该键；
+ * 未列出的服务返回 undefined（与「容器里没有该服务」同义）。此前桩为 `{}`，任何
+ * `ctx.get(...)` 表达式都必然 TypeError（实测 `plugin-manager` 行 422 PLUGIN_PATCH_INVALID）。
  * @param value - 原始值。
  * @param label - 错误定位标识。
  * @param id - 行 id（错误定位）。
+ * @param profile - profile 清单事实（`ctx.get('profileContext')` 的回答）。
  * @returns 是否禁用。
  */
-export function evaluateDisabled(value: unknown, label: string, id: string): boolean {
+export function evaluateDisabled(value: unknown, label: string, id: string, profile: DisabledEvalContext): boolean {
   if (value === undefined) return false
   if (typeof value === 'boolean') return value
   if (isJsExpression(value)) {
     let result: unknown
     try {
       // 与 cordis loader 相同的求值语义：`!!js <expression>` 在进程内求值。
+      const profileContext = { name: profile.profileName, dir: profile.profileDir, patchPath: profile.patchPath }
+      const ctx = { get: (name: string): unknown => (name === 'profileContext' ? profileContext : undefined) }
       const evaluate = new Function('process', 'dshHomePath', 'ctx', `return (${value.__js})`)
-      result = evaluate(process, () => '', {})
+      result = evaluate(process, () => '', ctx)
     } catch (error) {
       throw new FrameworkError(422, 'PLUGIN_PATCH_INVALID',
         `${label} row ${id} disabled expression ${JSON.stringify(value.__js)} could not be evaluated: ${String(error)}`)
@@ -356,7 +375,16 @@ export class PluginService {
         if (dsh !== undefined && dsh.client !== undefined) kind = 'client'
       }
       if (kind === 'client' && !clientEntries.includes(name)) clientEntries.push(name)
-      out.push({ id: row.id, name, kind, disabled: evaluateDisabled(row.disabled, 'cordis patch', row.id) })
+      out.push({
+        id: row.id,
+        name,
+        kind,
+        disabled: evaluateDisabled(row.disabled, 'cordis patch', row.id, {
+          profileName: profile.name,
+          profileDir: this.profileDir(),
+          patchPath: this.profilePatchPath(),
+        }),
+      })
     }
     return { profile, rows: out, clientEntries, unresolved }
   }

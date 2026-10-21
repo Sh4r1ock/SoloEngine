@@ -3,16 +3,16 @@ import type { ReactNode } from 'react'
 import {
   Button,
   FishLogo,
-  IconArchiveOutline20,
-  IconBranchOutline16,
-  IconBrowseOutline16,
-  IconDarkOutline16,
-  IconDataOutline16,
-  IconDatabaseOutline16,
-  IconFollowsystemOutline16,
-  IconLightOutline16,
-  IconSettingsOutline16,
-  IconSkillOutline16,
+  IconArchiveOutlineMedium,
+  IconBranchOutlineRegular,
+  IconBrowseOutlineRegular,
+  IconDarkOutlineRegular,
+  IconDataOutlineRegular,
+  IconDatabaseOutlineRegular,
+  IconFollowsystemOutlineRegular,
+  IconLightOutlineRegular,
+  IconSettingsOutlineRegular,
+  IconSkillOutlineRegular,
   Pill,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { navigate, type RouteName } from '../router.ts'
@@ -32,13 +32,13 @@ interface NavEntry {
 }
 
 const NAV: NavEntry[] = [
-  { routes: ['canvases', 'canvas'], path: '/canvases', labelKey: 'navCanvases', icon: <IconBranchOutline16 size={16} /> },
-  { routes: ['models'], path: '/models', labelKey: 'navModels', icon: <IconDataOutline16 size={16} /> },
-  { routes: ['skills', 'skill'], path: '/skills', labelKey: 'navSkills', icon: <IconSkillOutline16 size={16} /> },
-  { routes: ['mcp'], path: '/mcp', labelKey: 'navMcp', icon: <IconDatabaseOutline16 size={16} /> },
-  { routes: ['market'], path: '/market', labelKey: 'navMarket', icon: <IconBrowseOutline16 size={16} /> },
-  { routes: ['packaging'], path: '/packaging', labelKey: 'navPackaging', icon: <IconArchiveOutline20 size={16} /> },
-  { routes: ['settings'], path: '/settings', labelKey: 'navSettings', icon: <IconSettingsOutline16 size={16} /> },
+  { routes: ['canvases', 'canvas'], path: '/canvases', labelKey: 'navCanvases', icon: <IconBranchOutlineRegular size={16} /> },
+  { routes: ['models'], path: '/models', labelKey: 'navModels', icon: <IconDataOutlineRegular size={16} /> },
+  { routes: ['skills', 'skill'], path: '/skills', labelKey: 'navSkills', icon: <IconSkillOutlineRegular size={16} /> },
+  { routes: ['mcp'], path: '/mcp', labelKey: 'navMcp', icon: <IconDatabaseOutlineRegular size={16} /> },
+  { routes: ['market'], path: '/market', labelKey: 'navMarket', icon: <IconBrowseOutlineRegular size={16} /> },
+  { routes: ['packaging'], path: '/packaging', labelKey: 'navPackaging', icon: <IconArchiveOutlineMedium size={16} /> },
+  { routes: ['settings'], path: '/settings', labelKey: 'navSettings', icon: <IconSettingsOutlineRegular size={16} /> },
 ]
 
 /**
@@ -100,7 +100,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
                 aria-label={t('common', 'themeLight')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'light' })) }}
               >
-                <IconLightOutline16 size={14} />
+                <IconLightOutlineRegular size={14} />
               </Pill>
               <Pill
                 active={preferences.theme.preference === 'dark'}
@@ -108,7 +108,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
                 aria-label={t('common', 'themeDark')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'dark' })) }}
               >
-                <IconDarkOutline16 size={14} />
+                <IconDarkOutlineRegular size={14} />
               </Pill>
               <Pill
                 active={preferences.theme.preference === 'system'}
@@ -116,7 +116,7 @@ export function AppShell({ active, user, bleed = false, onLogout, children }: {
                 aria-label={t('common', 'themeSystem')}
                 onClick={() => { runPreference(() => updateTheme({ preference: 'system' })) }}
               >
-                <IconFollowsystemOutline16 size={14} />
+                <IconFollowsystemOutlineRegular size={14} />
               </Pill>
             </div>
           </div>

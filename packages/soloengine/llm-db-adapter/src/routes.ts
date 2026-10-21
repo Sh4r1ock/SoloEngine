@@ -20,9 +20,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_TOKENS, DEFAULT_STREAM_IDLE_TIMEOUT_MS, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
-import type { DeepSeekAdapter, DeepSeekConnectionOptions, DeepSeekProtocol } from '@deepseek-ai/dsh-llm-deepseek'
+import type { DeepSeekAdapter, DeepSeekConnectionOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter as DeepSeekAdapterClass } from '@deepseek-ai/dsh-llm-deepseek'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { LlmError } from '@deepseek-ai/dsh-llm'
@@ -133,18 +132,8 @@ export function configIdFromCredentialRef(ref: string): string {
   }
   return ref.slice(REF_PREFIX.length).replace(/_/gu, '-')
 }
-/** chat-completions 的端点后缀（官方适配器自行追加）。 */
-const CHAT_SUFFIX = '/chat/completions'
 /** Messages 协议的端点后缀（官方适配器自行追加 `/v1/messages`）。 */
 const MESSAGES_SUFFIX = '/v1/messages'
-
-/** 提供方 → 线协议（PRD-03 FR-LLM-005 首期清单）。 */
-const PROVIDER_PROTOCOL: Record<string, DeepSeekProtocol> = {
-  deepseek: 'chat-completions',
-  openai: 'chat-completions',
-  'openai-compatible': 'chat-completions',
-  anthropic: 'messages',
-}
 
 /** 提供方 → 默认接入地址（与框架层 `PROVIDER_DEFAULTS` 同源事实）。 */
 const PROVIDER_BASE_URL: Record<string, string> = {
@@ -163,13 +152,12 @@ export interface RouteTableOptions {
 }
 
 /**
- * 解析一行的接入地址根：官方适配器自行追加协议端点，故这里必须给出根。
+ * 解析一行的接入地址根：官方适配器（Messages-only）自行追加 `/v1/messages`，故这里必须给出根。
  * @param row - 配置行。
- * @param protocol - 该行选定的线协议。
  * @returns 协议根地址。
  * @throws 当地址缺失或与「完整 URL」声明不符（fail loud，不猜测）。
  */
-export function deriveBaseRoot(row: LlmConfigRow, protocol: DeepSeekProtocol): string {
+export function deriveBaseRoot(row: LlmConfigRow): string {
   const raw = (row.base_url ?? '').trim()
   const fallback = PROVIDER_BASE_URL[row.provider] ?? ''
   const value = raw === '' ? fallback : raw
@@ -180,22 +168,14 @@ export function deriveBaseRoot(row: LlmConfigRow, protocol: DeepSeekProtocol): s
   }
   const trimmed = value.replace(/\/+$/u, '')
   if (row.is_full_url === 1) {
-    if (protocol === 'messages') {
-      if (trimmed.endsWith(MESSAGES_SUFFIX)) return trimmed.slice(0, -MESSAGES_SUFFIX.length)
-      if (trimmed.endsWith('/messages')) return trimmed.slice(0, -'/messages'.length)
-      throw new Error(
-        `model config ${row.id} ("${row.name}") is marked as a full URL but does not end with "${MESSAGES_SUFFIX}"`,
-      )
-    }
-    if (!trimmed.endsWith(CHAT_SUFFIX)) {
-      throw new Error(
-        `model config ${row.id} ("${row.name}") is marked as a full URL but does not end with "${CHAT_SUFFIX}"`,
-      )
-    }
-    return trimmed.slice(0, -CHAT_SUFFIX.length)
+    if (trimmed.endsWith(MESSAGES_SUFFIX)) return trimmed.slice(0, -MESSAGES_SUFFIX.length)
+    if (trimmed.endsWith('/messages')) return trimmed.slice(0, -'/messages'.length)
+    throw new Error(
+      `model config ${row.id} ("${row.name}") is marked as a full URL but does not end with "${MESSAGES_SUFFIX}"`,
+    )
   }
   // Messages 协议由适配器追加 `/v1/messages`，故存储里的 `/v1` 尾缀要剥掉。
-  if (protocol === 'messages' && trimmed.endsWith('/v1')) return trimmed.slice(0, -'/v1'.length)
+  if (trimmed.endsWith('/v1')) return trimmed.slice(0, -'/v1'.length)
   return trimmed
 }
 
@@ -408,14 +388,11 @@ export class RouteTable {
 
   /** 由一行派生一条路由（含该路由自己的官方适配器实例）。 */
   private derive(row: LlmConfigRow): RouteEntry {
-    const protocol = PROVIDER_PROTOCOL[row.provider] ?? 'chat-completions'
-    const baseURL = deriveBaseRoot(row, protocol)
+    const baseURL = deriveBaseRoot(row)
     const reference = credentialRefForConfig(row.id)
     const modelMaxTokens = row.max_output_tokens ?? row.max_tokens
     const connection = resolveAdapterOptions({
-      protocol,
       baseURL,
-      apiKeyEnv: reference,
       maxTokens: modelMaxTokens ?? DEFAULT_MAX_TOKENS,
       defaultContextWindow: row.max_input_tokens ?? DEFAULT_CONTEXT_WINDOW,
       models: [{
@@ -431,15 +408,15 @@ export class RouteTable {
     })
     const adapter = new DeepSeekAdapterClass({
       options: () => connection,
-      resolveApiKey: (snapshot) => Promise.resolve(this.resolveApiKey(String(snapshot.apiKeyEnv))),
+      // 密钥每次请求按本行的凭据引用现解析（不缓存明文、不进连接事实）。
+      resolveAuth: () => Promise.resolve({ headers: { 'x-api-key': this.resolveApiKey(reference) } }),
       resolveUserId: () => this.resolveUserId(),
       prepareExtensions: () => Promise.resolve({ fields: {}, accept: () => Promise.resolve() }),
     })
     return {
       route: `soloengine-${row.id}`,
       row,
-      // 连接事实里 `apiKeyEnv` 就是本行的引用：密钥永远只从该行解析。
-      connection: { ...connection, apiKeyEnv: credentialRef(reference) },
+      connection,
       adapter,
     }
   }

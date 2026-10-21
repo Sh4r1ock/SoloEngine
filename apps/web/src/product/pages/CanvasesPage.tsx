@@ -1,7 +1,7 @@
 /** 画布列表页。 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Button, IconPlayOutline16, IconPlusOutline16, IconTrashOutline16,
+  Button, IconPlayOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
   Input, Menu, Modal, Pill, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { describeError, request } from '../api.ts'
@@ -90,7 +90,7 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
         actions={(
           <>
             <Button
-              icon={<IconPlusOutline16 size={14} />}
+              icon={<IconPlusOutlineRegular size={14} />}
               variant="primary"
               onClick={() => { setCreateOpen(true) }}
             >
@@ -159,7 +159,7 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
               <Button size="sm" onClick={() => { navigate(`/canvas/${canvas.id}`) }}>{t('common', 'actionOpen')}</Button>
               <Button
                 size="sm"
-                icon={<IconPlayOutline16 size={14} />}
+                icon={<IconPlayOutlineRegular size={14} />}
                 disabled={busyId === canvas.id}
                 onClick={() => { setRunTarget(canvas) }}
               >
@@ -186,7 +186,7 @@ export function CanvasesPage({ user }: { user: UserView | null }) {
               <Button
                 size="sm"
                 variant="ghost"
-                icon={<IconTrashOutline16 size={14} />}
+                icon={<IconTrashOutlineRegular size={14} />}
                 disabled={isForeignTemplate(canvas) || busyId === canvas.id}
                 title={isForeignTemplate(canvas) ? t('canvases', 'publicTemplate') : undefined}
                 onClick={() => { setDeleteTarget(canvas) }}
@@ -388,6 +388,21 @@ function RunCanvasDialog({ canvas, projects, onClose, onRan }: {
 
   const selected = candidates.find(project => project.id === projectId) ?? null
 
+  /** 目录选择：走 dsh 原生选择器（Host 面 `ctx.directoryPicker`，经 `/soloengine/pick-directory` 桥）。 */
+  const pickFolder = async (): Promise<void> => {
+    try {
+      const response = await fetch('/soloengine/pick-directory', { method: 'POST' })
+      const body = await response.json() as { ok: boolean; path?: string | null; error?: { message?: string } }
+      if (!body.ok) {
+        setError(body.error?.message ?? t('canvases', 'errorRun'))
+        return
+      }
+      if (typeof body.path === 'string' && body.path !== '') setFolder(body.path)
+    } catch (failure) {
+      setError(describeError(failure))
+    }
+  }
+
   return (
     <Modal
       open={canvas !== null}
@@ -477,11 +492,14 @@ function RunCanvasDialog({ canvas, projects, onClose, onRan }: {
         {projectId === null && (
           <>
             <Field label={t('canvases', 'projectFolderLabel')} hint={t('canvases', 'projectFolderHint')}>
-              <Input
-                value={folder}
-                placeholder={t('canvases', 'projectFolderPlaceholder')}
-                onChange={(event) => { setFolder(event.currentTarget.value) }}
-              />
+              <div className={css.fieldControl}>
+                <Input
+                  value={folder}
+                  placeholder={t('canvases', 'projectFolderPlaceholder')}
+                  onChange={(event) => { setFolder(event.currentTarget.value) }}
+                />
+                <Button size="sm" onClick={() => { void pickFolder() }}>{t('canvases', 'projectFolderPick')}</Button>
+              </div>
             </Field>
             <Field label={t('canvases', 'projectNameLabel')}>
               <Input

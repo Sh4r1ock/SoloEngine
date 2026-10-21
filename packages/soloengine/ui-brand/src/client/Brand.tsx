@@ -23,7 +23,7 @@ export type BrandMarkProps =
  */
 function BrandGlyph({ size, className, label }: {
   size: number
-  className?: string
+  className?: string | undefined
   label: string
 }) {
   return (

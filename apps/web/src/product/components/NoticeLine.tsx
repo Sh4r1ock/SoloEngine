@@ -1,5 +1,5 @@
 /** 错误 / 成功 / 信息提示行（错误必须出现在界面上）。 */
-import { IconWarningOutline16, IconCheckOutline16, IconQuestionOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconWarningOutlineRegular, IconCheckOutlineRegular, IconQuestionOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../styles/common.module.css'
 
 /** 提示种类。 */
@@ -23,8 +23,8 @@ export function NoticeLine({ tone, text, action }: {
   if (text === null || text === '') return null
   const className = tone === 'error' ? css.errorLine : tone === 'success' ? css.successLine : css.infoLine
   const icon = tone === 'error'
-    ? <IconWarningOutline16 size={16} />
-    : tone === 'success' ? <IconCheckOutline16 size={16} /> : <IconQuestionOutline14 size={14} />
+    ? <IconWarningOutlineRegular size={16} />
+    : tone === 'success' ? <IconCheckOutlineRegular size={16} /> : <IconQuestionOutlineRegular size={14} />
   return (
     <div className={className} role={tone === 'error' ? 'alert' : 'status'}>
       {/* 语气图标是纯装饰：原生图标原语只收 {size, className}（禁改），不会自标 aria-hidden，

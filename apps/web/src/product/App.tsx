@@ -1,5 +1,6 @@
 /** 产品页面应用：路由分发 + 登录门禁 + 偏好加载。 */
 import { useCallback, useEffect, useState } from 'react'
+import { isProductPagePathname } from '@soloengine/types'
 import { ApiError, clearTokens, describeError, readAccessToken, request } from './api.ts'
 import { t, useLocale } from './i18n.ts'
 import { navigate, useRoute } from './router.ts'
@@ -20,14 +21,12 @@ import { SettingsPage } from './pages/SettingsPage.tsx'
 import type { UserView } from './types.ts'
 import css from './styles/common.module.css'
 
-/** 已知路径前缀（未知路径落到画布列表）。画布编辑器是单数 `/canvas/:id`，列表是复数。 */
-const KNOWN_PREFIXES: readonly string[] = [
-  '/login', '/canvas', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
-]
-
-/** 判定路径是否已知。 */
+/**
+ * 判定路径是否已知（唯一名单在产品 URL 契约 `@soloengine/types` 的 `isProductPagePathname`）：
+ * 产品面（含根路径 `/`）由本 SPA 渲染，面板面（`/run/*`）走 DSH 原生壳、不在此列。
+ */
 function isKnownPath(pathname: string): boolean {
-  return KNOWN_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(`${prefix}/`))
+  return isProductPagePathname(pathname)
 }
 
 /** 产品页面根组件。 */

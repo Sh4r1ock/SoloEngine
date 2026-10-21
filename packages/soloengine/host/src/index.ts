@@ -42,6 +42,7 @@ import type {} from '@deepseek-ai/dsh-cordis-host-runner'
 import type {} from '@deepseek-ai/dsh-settings'
 import { FrameworkRuntime, BUSINESS_TABLES, type RunDriver, type RunStartInput, type SessionLedger, type UsageRow } from '@soloengine/framework'
 import { mountOperationAreaBridge } from './ops-bridge.ts'
+import { mountDirectoryPickerBridge } from './directory-picker-bridge.ts'
 import { mountFileChanges } from './file-changes.ts'
 import { PreviewStream, mountPreviewStream } from './preview-stream.ts'
 import { mountLedgerRebuild } from './ledger-rebuild.ts'
@@ -49,7 +50,7 @@ import { McpMountSupervisor } from './mcp-mount.ts'
 import { applyRunModePreset } from './permission-allowlist.ts'
 import { hasTokenParameter, isLoopbackAuthority, isLoopbackRequest, requestAuthority, writeTrustBootstrap } from './trust-bootstrap.ts'
 import type { AgentSpec, FollowIntentRecord, FollowIntentView, FollowLocation, RunContextRecord, RunMode } from '@soloengine/types'
-import { TOOL_MAP } from '@soloengine/types'
+import { PRODUCT_SURFACE_PATHS, TOOL_MAP } from '@soloengine/types'
 
 /** Cordis plugin name. */
 export const name = 'soloengine-host'
@@ -106,18 +107,13 @@ function isProductSettingsNamespace(value: string): value is ProductSettingsName
   return (PRODUCT_SETTINGS_NAMESPACES as readonly string[]).includes(value)
 }
 
-/**
- * 产品页面与运行面板深链的路径根。
- *
+/*
+ * 产品页面与运行面板深链的路径根**唯一真源**在产品 URL 契约（`@soloengine/types` 的
+ * `PRODUCT_SURFACE_PATHS`，含 `/run` 面板根与全部产品前缀；根路径 `/` 另以 exact 注册）。
  * frontend-static 只服务 dist 根与显式 index 路径（深链一律 404），故这些根以**具名前缀
  * 路由**承接：渲染同一个 dist index（`renderIndex` 注入 + 根锚点），并走同一条浏览器鉴权。
  * 框架层 REST 前缀 `/api/solo` 与插件前缀 `/plugins` 不在其中，互不遮蔽。
  */
-const PRODUCT_ROUTE_ROOTS: readonly string[] = [
-  // 编辑器是单数 `/canvas/:agenticFlowId`，列表页仍是复数 `/canvases`：前缀匹配按路径段边界
-  // 判定，`/canvas` 不覆盖 `/canvases`（实测漏写会让列表页 404），故两行都在。
-  '/run', '/login', '/canvas', '/canvases', '/models', '/skills', '/mcp', '/market', '/packaging', '/settings',
-]
 
 /**
  * MCP 启停热同步周期（PRD-05 FR-MCP-005）。
@@ -1052,6 +1048,8 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => {
     const fiber = ctx.inject(['connection'], (bridgeCtx) => {
       mountOperationAreaBridge(bridgeCtx, runtime)
+      // 目录选择桥：产品页面「新建运行项目」的目录选择走 dsh 原生 directory-picker seam。
+      mountDirectoryPickerBridge(bridgeCtx)
     })
     return () => { void fiber.dispose() }
   }, 'soloengine-host.operationAreaBridge()')
@@ -1101,8 +1099,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (!routeCtx.connection.authorizeIndex(req, res)) return
         // 运行面板按 **agenticflow** 区分 URL（PRD-01 §实例隔离：`/run/:agenticFlowId`）。
         // 会话键是面板内部的数据归属，不进地址栏：这里把 flow id 解析成该 flow 最近一次运行的
-        // 会话键随外壳下发，client-bootstrap 读它做原生会话选择；解析不到即 fail loud 结构化 404
-        // （指明 flow id），不静默落到别的页面。
+        // 会话键随外壳下发，client-bootstrap 读它做原生会话选择。该画布**尚无运行会话**时
+        // 仍渲染面板（无会话首屏由面板内的原生入口承担：工作区/目录选择 + 新建会话，
+        // 见《框架设计》§四「目录选择由目录选择器填充」），只把 flow id 随外壳下发。
         const pathname = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`).pathname
         const flowSegment = pathname.startsWith('/run/')
           ? decodeURIComponent(pathname.slice('/run/'.length).split('/')[0] ?? '')
@@ -1110,21 +1109,18 @@ export function apply(ctx: Context, config: Config = {}): void {
         let runBootstrap = ''
         if (flowSegment !== '') {
           const sessionKey = runtime.runs.latestSessionKeyOfFlow(flowSegment)
-          if (sessionKey === undefined) {
-            res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
-            res.end(`${JSON.stringify({ ok: false, error: { code: 'FLOW_SESSION_MISSING', message: `agenticflow ${flowSegment} has no session yet; run it from the canvas first` } })}\n`)
-            return
-          }
-          runBootstrap = `<script>window.__SOLOENGINE_RUN_FLOW__=${JSON.stringify(flowSegment)};window.__SOLOENGINE_RUN_SESSION__=${JSON.stringify(sessionKey)};</script>`
+          runBootstrap = `<script>window.__SOLOENGINE_RUN_FLOW__=${JSON.stringify(flowSegment)};`
+            + (sessionKey === undefined ? '' : `window.__SOLOENGINE_RUN_SESSION__=${JSON.stringify(sessionKey)};`)
+            + '</script>'
         }
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
         res.end(await render(runBootstrap))
       }
       const disposers = [
-        ...PRODUCT_ROUTE_ROOTS.map(path => routeCtx.webServer.register({ kind: 'prefix', path, handler: page })),
+        ...PRODUCT_SURFACE_PATHS.map(path => routeCtx.webServer.register({ kind: 'prefix', path, handler: page })),
         routeCtx.webServer.register({ kind: 'exact', path: '/', handler: page }),
       ]
-      console.log(`soloengine: product surfaces mounted (/, ${PRODUCT_ROUTE_ROOTS.join(', ')})；运行面板按 /run/:agenticFlowId 区分 URL`)
+      console.log(`soloengine: product surfaces mounted (/, ${PRODUCT_SURFACE_PATHS.join(', ')})；运行面板按 /run/:agenticFlowId 区分 URL`)
       return () => { for (const dispose of disposers) dispose() }
     })
     return () => { void fiber.dispose() }

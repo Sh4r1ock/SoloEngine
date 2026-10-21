@@ -17,6 +17,13 @@ export type {
   FollowProjectionState, FollowProjectionView,
 } from './follow-intent.ts'
 
+// 产品页面 URL 契约（宿主注册、面板深链、前端路由三面共用的唯一名单；根路径 `/` = 产品首页）。
+export {
+  HOME_ROUTE_ROOT, isProductPagePathname, matchProductRouteRoot, productPageRoute,
+  PRODUCT_ROUTE_ROOTS, PRODUCT_SURFACE_PATHS, RUN_PANEL_PREFIX, RUN_ROUTE_ROOT,
+} from './routes.ts'
+export type { ProductPageName, ProductRouteMatch, ProductRouteRoot, ProductSurface } from './routes.ts'
+
 /** 采样与轮次参数。 */
 export interface SamplingParams {
   temperature?: number

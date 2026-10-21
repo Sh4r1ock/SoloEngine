@@ -134,9 +134,16 @@ function childEnvironment() {
   }
 }
 
-/** 运行一条命令，继承 stdio。 */
+/**
+ * 运行一条命令，继承 stdio。
+ *
+ * Windows 下 `corepack` / `pnpm` 是 `.cmd` 垫片，`shell: false` 无法直接执行
+ * （`spawnSync corepack ENOENT`，本机实测）；仅这两个命令交给平台 shell 解析，
+ * 其余命令（node 等真实可执行文件）保持直接 spawn，参数不做 shell 插值。
+ */
 function run(command, args, options = {}) {
-  const result = spawnSync(command, args, { cwd: ROOT, stdio: 'inherit', shell: false, ...options })
+  const viaShell = PLATFORM === 'win32' && (command === 'corepack' || command === 'pnpm')
+  const result = spawnSync(command, args, { cwd: ROOT, stdio: 'inherit', shell: viaShell, ...options })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) fail(`${command} ${args.join(' ')} exited with ${String(result.status ?? result.signal)}`)
 }

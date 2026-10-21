@@ -1,6 +1,6 @@
 /** 技能文件编辑器。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, IconPlusOutline16, IconTrashOutline16, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, IconTrashOutlineRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { describeError, request } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { navigate, setRouteBlocker } from '../router.ts'
@@ -246,7 +246,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
             {/* 单复数与画布/模型页同一规则（en 侧「1 files」实测缺陷 F41）。 */}
             <div className={css.fieldHint}>{files.length === 1 ? t('skillFile', 'fileCountOne') : t('skillFile', 'fileCount', { count: files.length })}</div>
             <div className={css.toolbar}>
-              <Button size="sm" icon={<IconPlusOutline16 size={12} />} onClick={() => { setNewPath(''); setDialogError(null); setCreateOpen(true) }}>
+              <Button size="sm" icon={<IconPlusOutlineRegular size={12} />} onClick={() => { setNewPath(''); setDialogError(null); setCreateOpen(true) }}>
                 {t('skillFile', 'newFile')}
               </Button>
               {/* 二进制条目禁止重命名：重命名走「用编辑区内容新建 + 删原文件」，二进制没有可搬运的
@@ -261,7 +261,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
               <Button
                 size="sm"
                 variant="ghost"
-                icon={<IconTrashOutline16 size={12} />}
+                icon={<IconTrashOutlineRegular size={12} />}
                 disabled={selected === null}
                 onClick={() => { setDialogError(null); setDeleteOpen(true) }}
               >

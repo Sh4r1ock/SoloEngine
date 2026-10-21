@@ -64,7 +64,7 @@ export function apply(ctx: ClientContext): void {
       // 平台变更流经 `$stream` 托管（重连与背压由 Remote 负责）；本迭代器负责按信号释放。
       const stream = ctx.remote.$stream<WorkspaceFileWatchFrame>({
         name: `soloengine file tree changes of ${String(sessionId)}`,
-        open: inner => ctx.remote.workspaceFiles.changes(sessionId, inner),
+        open: inner => ctx.remote.workspaceFiles.changes(sessionId, '.', inner),
         ended: () => new Error(`soloengine file tree change stream of ${String(sessionId)} ended`),
       })
       const release = (): void => { void stream.dispose() }

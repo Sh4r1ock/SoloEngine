@@ -51,7 +51,7 @@
       "path": "../../mcp/mcp-client"
     },
     {
-      "path": "../../preset/agent-presets"
+      "path": "../../preset/agent-preset-registry"
     },
     {
       "path": "../../skill/skill"

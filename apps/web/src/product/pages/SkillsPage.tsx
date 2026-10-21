@@ -1,7 +1,7 @@
 /** 技能页。 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Button, IconDownloadOutline16, IconPlusOutline16, IconTrashOutline16,
+  Button, IconDownloadOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
   Input, Modal, Pill, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ApiError, describeError, request, requestBlob } from '../api.ts'
@@ -98,7 +98,7 @@ export function SkillsPage() {
         subtitle={t('skills', 'subtitle')}
         actions={(
           <>
-            <Button variant="primary" icon={<IconPlusOutline16 size={14} />} onClick={() => { setCreateOpen(true) }}>
+            <Button variant="primary" icon={<IconPlusOutlineRegular size={14} />} onClick={() => { setCreateOpen(true) }}>
               {t('skills', 'createTemplate')}
             </Button>
             <Button onClick={() => { setImportOpen(true) }}>{t('skills', 'importWizard')}</Button>
@@ -268,7 +268,7 @@ export function SkillsPage() {
           <Button size="sm" onClick={() => { navigate(`/skills/${skill.id}`) }}>{t('skills', 'openFiles')}</Button>
           <Button
             size="sm"
-            icon={<IconDownloadOutline16 size={14} />}
+            icon={<IconDownloadOutlineRegular size={14} />}
             disabled={busyId === skill.id}
             onClick={() => {
               act(skill.id, async () => {
@@ -287,7 +287,7 @@ export function SkillsPage() {
           <Button
             size="sm"
             variant="ghost"
-            icon={<IconTrashOutline16 size={14} />}
+            icon={<IconTrashOutlineRegular size={14} />}
             disabled={busyId === skill.id}
             onClick={() => { setDeleteTarget(skill) }}
           >

@@ -45,7 +45,7 @@ export {
   type PackagingPreview, type PackagingRun, type PackagingStage, type PackagingLayer, type DeploymentGuide,
 } from './modules/packaging.ts'
 export { SessionExportService, type SessionExportManifest } from './modules/export.ts'
-export { PluginService, parsePatchDocument, evaluateDisabled, type PatchRow, type PluginRow } from './modules/plugins.ts'
+export { PluginService, parsePatchDocument, evaluateDisabled, type DisabledEvalContext, type PatchRow, type PluginRow } from './modules/plugins.ts'
 export {
   WorkspaceService,
   type WorkspaceEntry, type WorkspaceListing, type WorkspaceText, type WorkspaceStat, type WorkspaceWriteResult,

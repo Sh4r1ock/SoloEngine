@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
-  Button, DisclosureRow, IconCloseOutline16, IconPlusOutline16, IconTrashOutline16,
+  Button, DisclosureRow, IconCloseOutlineRegular, IconPlusOutlineRegular, IconTrashOutlineRegular,
   Input, Menu, Modal, Pill, RiskConfirmation, Switch, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { describeError, request } from '../api.ts'
@@ -426,7 +426,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           }}
           onClose={() => { setAddMenuOpen(false) }}
           anchor={(
-            <Button icon={<IconPlusOutline16 size={14} />} onClick={() => { setAddMenuOpen(!addMenuOpen) }}>
+            <Button icon={<IconPlusOutlineRegular size={14} />} onClick={() => { setAddMenuOpen(!addMenuOpen) }}>
               {t('editor', 'toolbarAddNode')}
             </Button>
           )}
@@ -658,7 +658,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           {selectedNode !== null && (
             <>
               <DisclosureRow
-                icon={<IconPlusOutline16 size={14} />}
+                icon={<IconPlusOutlineRegular size={14} />}
                 title={t('editor', 'groupIdentity')}
                 open={groups.identity === true}
                 expandable
@@ -715,7 +715,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      icon={<IconTrashOutline16 size={14} />}
+                      icon={<IconTrashOutlineRegular size={14} />}
                       onClick={() => { removeNode(selectedNode.node_id) }}
                     >
                       {t('editor', 'deleteNode')}
@@ -727,7 +727,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
               {selectedNode.agent_type !== 'note' && (
                 <>
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupModel')}
                     open={groups.model === true}
                     expandable
@@ -758,7 +758,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   </DisclosureRow>
 
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupPrompt')}
                     open={groups.prompt === true}
                     expandable
@@ -776,7 +776,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   </DisclosureRow>
 
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupTools')}
                     open={groups.tools === true}
                     expandable
@@ -800,7 +800,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   </DisclosureRow>
 
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupSkills')}
                     open={groups.skills === true}
                     expandable
@@ -823,7 +823,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   </DisclosureRow>
 
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupMcp')}
                     open={groups.mcp === true}
                     expandable
@@ -846,7 +846,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   </DisclosureRow>
 
                   <DisclosureRow
-                    icon={<IconPlusOutline16 size={14} />}
+                    icon={<IconPlusOutlineRegular size={14} />}
                     title={t('editor', 'groupSampling')}
                     open={groups.sampling === true}
                     expandable
@@ -984,7 +984,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
               )}
 
               <DisclosureRow
-                icon={<IconPlusOutline16 size={14} />}
+                icon={<IconPlusOutlineRegular size={14} />}
                 title={t('editor', 'groupEdges')}
                 open={groups.edges === true}
                 expandable
@@ -1001,7 +1001,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                       <Button
                         size="sm"
                         variant="ghost"
-                        icon={<IconCloseOutline16 size={12} />}
+                        icon={<IconCloseOutlineRegular size={12} />}
                         onClick={() => { removeEdge(edge.edge_id) }}
                       >
                         {t('editor', 'edgesRemove')}
@@ -1087,6 +1087,21 @@ function RunFromEditorDialog({ open, canvasId, projects, onClose, onError, onRan
 
   const selected = candidates.find(project => project.id === projectId) ?? null
 
+  /** 目录选择：走 dsh 原生选择器（Host 面 `ctx.directoryPicker`，经 `/soloengine/pick-directory` 桥）。 */
+  const pickFolder = async (): Promise<void> => {
+    try {
+      const response = await fetch('/soloengine/pick-directory', { method: 'POST' })
+      const body = await response.json() as { ok: boolean; path?: string | null; error?: { message?: string } }
+      if (!body.ok) {
+        onError(body.error?.message ?? t('editor', 'errorRun'))
+        return
+      }
+      if (typeof body.path === 'string' && body.path !== '') setFolder(body.path)
+    } catch (failure) {
+      onError(describeError(failure))
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -1166,11 +1181,14 @@ function RunFromEditorDialog({ open, canvasId, projects, onClose, onError, onRan
         {projectId === null && (
           <>
             <Field label={t('editor', 'projectFolderLabel')}>
-              <Input
-                value={folder}
-                placeholder={t('editor', 'projectFolderPlaceholder')}
-                onChange={(event) => { setFolder(event.currentTarget.value) }}
-              />
+              <div className={css.fieldControl}>
+                <Input
+                  value={folder}
+                  placeholder={t('editor', 'projectFolderPlaceholder')}
+                  onChange={(event) => { setFolder(event.currentTarget.value) }}
+                />
+                <Button size="sm" onClick={() => { void pickFolder() }}>{t('editor', 'projectFolderPick')}</Button>
+              </div>
             </Field>
             <Field label={t('editor', 'projectNameLabel')}>
               <Input

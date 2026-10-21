@@ -1,6 +1,6 @@
 /** 模型配置页。 */
 import { useCallback, useEffect, useState } from 'react'
-import { Button, IconPlusOutline16, IconTrashOutline16, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular, IconTrashOutlineRegular, Input, Modal, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ApiError, describeError, request, requestBlob } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { PageHeader } from '../components/PageHeader.tsx'
@@ -86,7 +86,7 @@ export function ModelsPage() {
         subtitle={t('models', 'subtitle')}
         actions={(
           <>
-            <Button variant="primary" icon={<IconPlusOutline16 size={14} />} onClick={() => { setCreateOpen(true) }}>{t('models', 'create')}</Button>
+            <Button variant="primary" icon={<IconPlusOutlineRegular size={14} />} onClick={() => { setCreateOpen(true) }}>{t('models', 'create')}</Button>
             <Button onClick={() => { void load() }}>{t('common', 'actionRefresh')}</Button>
           </>
         )}
@@ -260,7 +260,7 @@ export function ModelsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          icon={<IconTrashOutline16 size={14} />}
+                          icon={<IconTrashOutlineRegular size={14} />}
                           disabled={busyId === model.id}
                           onClick={() => { setDeleteTarget(model) }}
                         >

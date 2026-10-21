@@ -135,6 +135,17 @@ function normalizeLocale(value: unknown): LocaleValue | null {
   return { preference: raw.preference }
 }
 
+/**
+ * 值里是否真的带着一个 `preference` 字段（待校验的偏好）。
+ *
+ * 空命名空间（服务端 `value: {}`、`revision: 0`——从未写入）没有任何偏好字段：
+ * 它表示「未设置」，默认值回退本应静默；把它当「服务器存有非法值」报错是假阳性
+ * （实测新实例：locale 从未写入即被 `errorLocaleValueInvalid` 横幅误报）。
+ */
+function carriesPreference(value: unknown): boolean {
+  return value !== null && typeof value === 'object' && 'preference' in (value as Record<string, unknown>)
+}
+
 /** 把当前偏好落到 DOM 与 i18n。 */
 function applyAll(): void {
   applyThemePreference(state.theme.preference, state.theme.fontSize)
@@ -184,8 +195,8 @@ export async function loadPreferences(): Promise<void> {
     applyAll()
     // 非法服务端值不静默：只登记文案键，句子由界面按当前语言取（不再依赖 applyAll 的先后）。
     const invalidKeys = [
-      themeEnvelope !== null && theme === null ? 'errorThemeValueInvalid' : '',
-      localeEnvelope !== null && locale === null ? 'errorLocaleValueInvalid' : '',
+      themeEnvelope !== null && theme === null && carriesPreference(themeEnvelope.value) ? 'errorThemeValueInvalid' : '',
+      localeEnvelope !== null && locale === null && carriesPreference(localeEnvelope.value) ? 'errorLocaleValueInvalid' : '',
     ].filter(Boolean)
     if (invalidKeys.length > 0) publish({ ...state, error: { invalidKeys } })
   } catch (error) {

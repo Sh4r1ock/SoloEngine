@@ -16,6 +16,13 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
+declare module '@deepseek-ai/dsh-api-session-controller/client' {
+  interface SessionReferenceSourceMap {
+    /** 运行面板深链（`/run/:agenticFlowId`）的 URL 直达持有。 */
+    runPanel: unknown
+  }
+}
+
 /** 运行面板深链的路径前缀（与 `@soloengine/host` 的前缀路由一致）。 */
 export const RUN_PATH_PREFIX = '/run/'
 
@@ -92,6 +99,8 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     /** 只认领一次：选择会同步触发列表通知，重入必须被挡在 open 之前（否则无限递归）。 */
     let settled = false
+    /** 本面板持有的会话引用；dispose 时释放（最后一个引用释放即触发本地作用域与历史拆除）。 */
+    let retained: { release(): void } | undefined
     const select = (): boolean => {
       if (settled) return true
       const snapshot = ctx.sessions.list.getSnapshot()
@@ -105,14 +114,16 @@ export function apply(ctx: ClientContext): void {
         showSessionNotFoundError(flowId, sessionKey)
         return true
       }
-      ctx.sessions.open(opened)
-      console.log(`soloengine-client-bootstrap: selected session ${sessionKey} of canvas ${flowId} from ${location.pathname}`)
+      // URL 直达：按该画布的会话键持有一个"运行面板"来源的引用，启动它的共享初次历史加载；
+      // 0.2.1 的 sessions 面不再有 `open`——「当前会话」由视图层消费该引用完成。
+      retained = ctx.sessions.retain(opened, { source: 'runPanel' })
+      console.log(`soloengine-client-bootstrap: retained session ${sessionKey} of canvas ${flowId} from ${location.pathname}`)
       return true
     }
-    if (select()) return () => {}
+    if (select()) return () => { retained?.release() }
     const off = ctx.sessions.list.subscribe(() => {
       if (select()) off()
     })
-    return off
-  }, 'soloengine-client-bootstrap: open the session addressed by the canvas URL')
+    return () => { off(); retained?.release() }
+  }, 'soloengine-client-bootstrap: retain the session addressed by the canvas URL')
 }

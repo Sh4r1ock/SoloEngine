@@ -206,6 +206,9 @@
     },
     {
       "path": "../../packages/test-support/remote-mock"
+    },
+    {
+      "path": "../../packages/soloengine/types"
     }
   ]
 }

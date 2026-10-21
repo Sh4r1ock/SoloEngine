@@ -1,7 +1,7 @@
 /** MCP 服务器页。 */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Button, CodeBlock, IconPlusOutline16, IconTrashOutline16, Input, Menu, Modal, Switch,
+  Button, CodeBlock, IconPlusOutlineRegular, IconTrashOutlineRegular, Input, Menu, Modal, Switch,
   TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { describeError, request } from '../api.ts'
@@ -118,7 +118,7 @@ export function McpPage() {
         subtitle={t('mcp', 'subtitle')}
         actions={(
           <>
-            <Button variant="primary" icon={<IconPlusOutline16 size={14} />} onClick={() => { setCreateVariant('stdio') }}>
+            <Button variant="primary" icon={<IconPlusOutlineRegular size={14} />} onClick={() => { setCreateVariant('stdio') }}>
               {t('mcp', 'createStdio')}
             </Button>
             <Button onClick={() => { setCreateVariant('http') }}>{t('mcp', 'createHttp')}</Button>
@@ -255,7 +255,7 @@ export function McpPage() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  icon={<IconTrashOutline16 size={14} />}
+                  icon={<IconTrashOutlineRegular size={14} />}
                   disabled={busyOn(server.id)}
                   onClick={() => { setDeleteTarget(server) }}
                 >

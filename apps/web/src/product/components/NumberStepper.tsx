@@ -1,19 +1,19 @@
 /** 数值步进器（温度 / max_tokens / 轮次上限）。 */
-import { Button, IconPlusOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import css from '../styles/common.module.css'
 
 /**
  * 减号图标（16 号轮廓族）。
  *
- * `ui-primitives/icons` 里没有减号：步进器此前借用 `IconCloseOutline16`，按钮语义是「减」、
+ * `ui-primitives/icons` 里没有减号：步进器此前借用 `IconCloseOutlineRegular`，按钮语义是「减」、
  * 渲染出来却是叉号（用户实测缺陷）。DSH 原生包禁改，故在本产品层按该族写法补一个——
- * 几何直接取 `IconPlusOutline16` 的水平横条（x 1.5~14.5、y 7.34961~8.65039），
- * 两枚按钮视觉完全对称。
+ * 横条逐点取自 `IconPlusOutlineRegular` 的 `IconPlusOutlineArtwork` 水平横条
+ * （`M2 8H14`、stroke=currentColor、strokeWidth=1、16 视窗），两枚按钮视觉完全对称。
  */
 function IconMinusOutline16({ size = 16 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M1.5 7.34961H14.5V8.65039H1.5V7.34961Z" fill="currentColor" />
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1}>
+      <path d="M2 8H14" stroke="currentColor" />
     </svg>
   )
 }
@@ -66,7 +66,7 @@ export function NumberStepper({ label, value, step, min, max, placeholder, clear
         size="sm"
         variant="outline"
         aria-label={`${label} +`}
-        icon={<IconPlusOutline16 size={12} />}
+        icon={<IconPlusOutlineRegular size={12} />}
         disabled={disabled || atMax}
         onClick={() => { onChange(clamp((current ?? min) + step)) }}
       />

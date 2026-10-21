@@ -161,14 +161,14 @@ export function apply(ctx: Context): void {
         continue
       }
       if (event.type !== 'tool/result') continue
-      const block = event.data.message.content[0]
-      const call = terminalCalls.get(String(block.toolCallId))
+      const message = event.data.message
+      const call = terminalCalls.get(String(message.toolCallId))
       if (call === undefined) continue
-      const text = block.content
+      const text = message.content
         .filter(candidate => candidate.type === 'text')
         .map(candidate => (candidate as { text: string }).text)
         .join('\n')
-      out.push({ callId: String(block.toolCallId), toolName: call.toolName, seq: Number(event.seq), text })
+      out.push({ callId: String(message.toolCallId), toolName: call.toolName, seq: Number(event.seq), text })
     }
     return out
   }

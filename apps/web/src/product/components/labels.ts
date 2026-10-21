@@ -19,6 +19,7 @@ export function terminalLabels(): TerminalBlockLabels {
     copy: t('common', 'terminalCopy'),
     copied: t('common', 'terminalCopied'),
     noOutput: t('common', 'terminalNoOutput'),
+    noExitCode: t('common', 'terminalNoExitCode'),
     collapseAria: t('common', 'terminalCollapseAria'),
     collapse: t('common', 'terminalCollapse'),
     expandAria: hidden => t('common', 'terminalExpandAria', { hidden }),

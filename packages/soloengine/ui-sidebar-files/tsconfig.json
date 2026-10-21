@@ -1,4 +1,4 @@
-﻿{
+{
   "extends": "../../../tsconfig.base.client.json",
   "compilerOptions": {
     "rootDir": "src",
@@ -15,10 +15,10 @@
       "path": "../../api/workspace-files/tsconfig.client.json"
     },
     {
-      "path": "../../client/locale"
+      "path": "../../client/locale/tsconfig.client.json"
     },
     {
-      "path": "../../client/ui-conversation"
+      "path": "../../client/ui-conversation/tsconfig.client.json"
     },
     {
       "path": "../../client/ui-primitives"
