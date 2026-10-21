@@ -21,7 +21,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@deepseek-ai/schemastery": "workspace:^",
+    "@deepseek-ai/schemastery": "workspace:~",
     "@soloengine/agent-compiler": "workspace:*",
     "@soloengine/types": "workspace:*",
     "diff": "^9.0.0",

@@ -153,7 +153,11 @@ export const TOOL_MAP: Record<string, string> = {
   cordis_inspect_self: 'cordis_inspect_self',
 }
 
-/** Windows 平台把 `run_command` 映射为 pwsh（非 Windows 映射 bash）。 */
+/**
+ * Windows 平台把 `run_command` 映射为 pwsh（非 Windows 映射 bash）。
+ * @param platform - Node 报告的宿主平台。
+ * @returns 该平台使用的命令工具名。
+ */
 export function mapRunCommand(platform: NodeJS.Platform): string {
   return platform === 'win32' ? 'pwsh' : 'bash'
 }

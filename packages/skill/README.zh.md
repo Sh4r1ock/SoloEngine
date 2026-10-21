@@ -26,7 +26,6 @@ skill 家族让 agent 和用户仅在需要时发现并加载可复用的任务�
 |---|---|---|
 | [`skill/`](skill/README.zh.md) | 合并任意提供方的 skill 目录、并按名称解析出胜出 skill 的注册表 | `ctx.skills` |
 | [`skill-filesystem/`](skill-filesystem/README.zh.md) | 从项目、自定义与用户目录发现 skill，并监视其变更 | 注册到 `ctx.skills` |
-| [`skill-badge/`](skill-badge/README.zh.md) | 随包附带官方「powered by dsh」徽章 skill，默认禁用 | 注册到 `ctx.skills` |
 | [`skill-office/`](skill-office/README.zh.md) | 随包提供 Word、PowerPoint 和 Excel 工作流及文件结构检查 | 注册到 `ctx.skills` |
 | [`tool-skill/`](tool-skill/README.zh.md) | 发布会话 skill 目录与面向模型的 `skill` 加载工具 | 注册到 `ctx.tools` |
 | [`tool-workspace-dependencies/`](tool-workspace-dependencies/README.zh.md) | 为 Desktop 与 SDK 载体报告内置 Office 解释器路径和版本 | 注册到 `ctx.tools` |

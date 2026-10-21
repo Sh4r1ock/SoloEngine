@@ -33,8 +33,6 @@ export default defineConfig([
     entry: {
       'agent-continuation.worker': 'agent-continuation/agent-continuation.worker.ts',
       'child-catalog.worker': 'agent-continuation/child-catalog.worker.ts',
-      'profile-continuation.worker': 'agent-continuation/profile-continuation.worker.ts',
-      'profile-adapter': 'agent-continuation/profile-adapter.ts',
     },
     outDir: '.dsh-build/agent-continuation',
     clean: true,

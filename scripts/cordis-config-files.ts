@@ -13,6 +13,9 @@ import { globSync } from 'node:fs'
 export function cordisConfigFiles(root: string): string[] {
   return globSync(['**/*cordis*.yml', '**/*cordis*.yaml'], {
     cwd: root,
-    exclude: ['.claude/**', 'node_modules/**', 'vendor/**', '**/*.i18n.yaml'],
+    exclude: ['.claude/**', 'node_modules/**', 'vendor/**', '**/*.i18n.yaml',
+      // Read-only upstream pool, local run workspaces, and the downloaded
+      // third-party bundle cache are not part of the product tree.
+      'deepseek_harness/**', 'data/**', 'test/**', 'soloengine-vendor/**'],
   }).sort()
 }

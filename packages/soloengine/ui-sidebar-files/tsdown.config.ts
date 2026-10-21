@@ -1,3 +1,3 @@
 import { clientBundle } from '../../client/tsdown.client.ts'
 
-export default clientBundle('@soloengine/ui-sidebar-files', ['lib/types/index.js'])
+export default clientBundle(import.meta.dirname, ['lib/types/index.js'])

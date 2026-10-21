@@ -187,7 +187,10 @@ export class PreviewStream {
     return { entries, lastSeq, status: buffer.status }
   }
 
-  /** 丢弃一个会话的缓冲（会话结束或画布删除后不再占用内存）。 */
+  /**
+   * 丢弃一个会话的缓冲（会话结束或画布删除后不再占用内存）。
+   * @param sessionKey - 要丢弃缓冲的会话键。
+   */
   drop(sessionKey: string): void {
     this.buffers.delete(sessionKey)
   }

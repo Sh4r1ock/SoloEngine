@@ -390,7 +390,7 @@ export function TerminalPanel({ useTabInfo, sessionId, t }: TerminalPanelProps) 
           ? <div className={styles.state}>{t('terminal.replay.empty')}</div>
           : replay.map(entry => (
             <div key={entry.callId} className={styles.replayEntry}>
-              <div className={styles.replayMeta}>{`${entry.toolName} · seq ${String(entry.seq)}`}</div>
+              <div className={styles.replayMeta}>{t('terminal.replay.meta', { tool: entry.toolName, seq: entry.seq })}</div>
               <pre className={styles.replayBody}>{entry.text}</pre>
             </div>
           ))}

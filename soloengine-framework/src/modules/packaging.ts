@@ -198,8 +198,6 @@ const ROW_TOOLS: Record<string, readonly string[]> = {
   'tool-subagent-list-agents': ['list_agents'],
   'tool-subagent': ['subagent'],
   'tool-subagent-fork': ['subagent_fork'],
-  'tool-subagent-codex': ['subagent_codex'],
-  'tool-subagent-claude-code': ['subagent_claude_code'],
   'tool-workflow': ['workflow'],
   'tool-ralph': ['ralph'],
   'tool-ask-user': ['ask_user_question'],

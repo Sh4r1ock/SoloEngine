@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Measure long-history request processing, cold tool-heavy continuation, and repeated discovery of inactive fork children without network services or recorded user data. The SDK variant drives 100 turns and 800 real file reads through the shipped sdk-minimal profile with an explicit editor patch; other cases isolate backend service costs. No case renders a browser.
+Measure long-history request processing, cold tool-heavy continuation, and repeated discovery of inactive fork children without network services or recorded user data; the cases isolate backend service costs. No case renders a browser.
 
 ## Table of Contents
 

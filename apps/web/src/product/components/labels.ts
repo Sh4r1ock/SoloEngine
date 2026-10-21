@@ -24,5 +24,6 @@ export function terminalLabels(): TerminalBlockLabels {
     collapse: t('common', 'terminalCollapse'),
     expandAria: hidden => t('common', 'terminalExpandAria', { hidden }),
     expand: hidden => t('common', 'terminalExpand', { hidden }),
+    commandLine: line => t('common', 'terminalCommandLine', { line }),
   }
 }

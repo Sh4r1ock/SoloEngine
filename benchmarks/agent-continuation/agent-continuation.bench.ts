@@ -1,20 +1,18 @@
 /** Baseline budgets for long-history requests, tool continuation, and fork-child discovery. */
 
-import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { availableParallelism, cpus, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runBuiltBenchmarkWorker } from '../support/built-worker.ts'
 import { ciTimeBudget, PERFORMANCE_BUDGET_HEADROOM } from '../support/calibration.ts'
+import { recordTimings, type BenchmarkCase } from '../support/scaling-report.ts'
 import type { ContinuationReport } from './agent-continuation.worker.ts'
 import type { CatalogReport } from './child-catalog.worker.ts'
-import type { ProfileReport } from './profile-continuation.worker.ts'
 import { WORKLOAD } from './workload.ts'
 
 const ATTEMPTS = 5
 const WORKER_TIMEOUT_MS = 60_000
-/** M4 Pro / Node 24.19 baseline expectations, before shared CI scaling and variance headroom. */
-const EXPECTED_MS = { 'profile-continuation': 1_700 } as const
 /** Standard two-CPU hosted CI baseline request-history median is 582.304 ms. */
 const EXPECTED_BASELINE_REQUEST_CI_MS = 600
 const BASELINE_REQUEST_BUDGET_MS = Math.ceil(EXPECTED_BASELINE_REQUEST_CI_MS * PERFORMANCE_BUDGET_HEADROOM)
@@ -28,12 +26,28 @@ const CATALOG_BUDGET_MS = Math.ceil(EXPECTED_CATALOG_CI_MS * PERFORMANCE_BUDGET_
 const REQUEST_HISTORY_BUDGET_MS = 297
 const EXPECTED_RETAINED_HEAP_MB = 23
 const WORKERS = join(import.meta.dirname, '..', '.dsh-build', 'agent-continuation')
+const CASES: Readonly<Record<Scenario, BenchmarkCase>> = {
+  'request-history': {
+    id: 'agent-continuation/request-history',
+    measures: 'Building 40 model requests over an 800-turn tool-heavy history, without provider or network work.',
+    affects: 'Every new turn in a long Session; the model request leaves later.',
+  },
+  'tool-continuation': {
+    id: 'agent-continuation/tool-continuation',
+    measures: 'Cold resume of the 800-turn Session, then 20 turns with 8 synthetic tool calls each through the real tool pipeline.',
+    affects: 'Continuing a long tool-heavy Session after restarting DSH.',
+  },
+  'catalog': {
+    id: 'agent-continuation/catalog',
+    measures: 'First and repeated discovery of 16 inactive fork children with 80-turn histories.',
+    affects: 'Listing forks and subagents of a Session that has many children.',
+  },
+}
 
-type Scenario = 'request-history' | 'catalog' | 'tool-continuation' | keyof typeof EXPECTED_MS
-type Report = ContinuationReport | CatalogReport | ProfileReport
+type Scenario = 'request-history' | 'catalog' | 'tool-continuation'
+type Report = ContinuationReport | CatalogReport
 
 function workerName(scenario: Scenario): string {
-  if (scenario === 'profile-continuation') return 'profile-continuation.worker.js'
   return scenario === 'catalog' ? 'child-catalog.worker.js' : 'agent-continuation.worker.js'
 }
 
@@ -149,20 +163,19 @@ describe('continuing tool-heavy Sessions with large histories', () => {
     if (scratch !== undefined) await rm(scratch, { recursive: true, force: true })
   })
 
-  for (const scenario of ['request-history', 'tool-continuation', 'catalog', 'profile-continuation'] as const) {
+  for (const scenario of ['request-history', 'tool-continuation', 'catalog'] as const) {
     it(scenario, async () => {
       const samples: Report[] = []
       for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
         const root = join(scratch as string, scenario + '-' + String(attempt))
-        if (scenario === 'profile-continuation') await mkdir(root)
-        else await cp(sources.get(scenario) as string, root, { recursive: true })
+        await cp(sources.get(scenario) as string, root, { recursive: true })
         try { samples.push(await run<Report>(root, scenario, scenario)) }
         finally { await rm(root, { recursive: true, force: true }) }
       }
       const totalMs = samples.map(sample => sample.totalMs)
       const budgetMs = scenario === 'request-history' ? REQUEST_HISTORY_BUDGET_MS
         : scenario === 'catalog' ? CATALOG_BUDGET_MS
-          : scenario === 'tool-continuation' ? TOOL_CONTINUATION_BUDGET_MS : ciTimeBudget(EXPECTED_MS[scenario])
+          : TOOL_CONTINUATION_BUDGET_MS
       const retainedHeapBudgetMb = EXPECTED_RETAINED_HEAP_MB * PERFORMANCE_BUDGET_HEADROOM
       console.log(JSON.stringify({
         benchmark: 'agent-continuation/' + scenario, workload: WORKLOAD,
@@ -175,6 +188,9 @@ describe('continuing tool-heavy Sessions with large histories', () => {
         samples, totalMs: { min: Math.min(...totalMs), median: median(totalMs), max: Math.max(...totalMs) },
         budgetMs, ...(scenario === 'tool-continuation' ? { retainedHeapBudgetMb } : {}),
       }))
+      recordTimings(CASES[scenario], {
+        totalMs: { ms: median(totalMs), cpuMs: median((samples as (ContinuationReport | CatalogReport)[]).map(sample => sample.cpuUserMs + sample.cpuSystemMs)) },
+      }, { totalMs: budgetMs })
       if (scenario === 'request-history') assertRequestHistoryBudget(median(totalMs))
       else expectTotalWithinBudget(median(totalMs), budgetMs)
       if (scenario === 'tool-continuation') {

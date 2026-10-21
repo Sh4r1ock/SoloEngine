@@ -92,7 +92,7 @@ dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-codex
 dsh plugin --profile <name> remove @deepseek-ai/dsh-subagent-claude-code
 ```
 
-pnpm 操作成功后会改变磁盘上的 Profile manifest 与组合包列表；正在运行的 Profile 会保留本次启动时的组合包集合。添加、移除或更新组合包后须重启该 Profile。这个启动边界只适用于组合包成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑通过热重载生效。下一次启动时，每个已安装组合包只注册自己的休眠 Host 提供方；还须在复制出的 Preset 中单独启用对应工具行，新 Agent 才能看到该工具。[Codex provider README](../../../packages/subagent/subagent-codex/README.zh.md) 与 [Claude Code provider README](../../../packages/subagent/subagent-claude-code/README.zh.md) 负责可执行文件、身份验证、载荷与失败细节；[base 组合包参考](../../../packages/bundle/base/README.zh.md) 负责默认依赖闭包。
+pnpm 操作成功后会改变磁盘上的 Profile manifest 与组合包列表；正在运行的 Profile 会保留本次启动时的组合包集合。添加、移除或更新组合包后须重启该 Profile。这个启动边界只适用于组合包成员变化，Profile 或 home 中普通 `cordis.patch.yml` 的编辑通过热重载生效。下一次启动时，每个已安装组合包只注册自己的休眠 Host 提供方；还须在复制出的 Preset 中单独启用对应工具行，新 Agent 才能看到该工具。[base 组合包参考](../../../packages/bundle/base/README.zh.md) 负责默认依赖闭包。
 
 ```sh
 dsh plugin --profile tui add github:deepseek-harness/turtle-ui

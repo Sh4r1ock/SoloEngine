@@ -120,12 +120,20 @@ function rowSignature(row: FactRow): string {
 /** 路由引用前缀：官方 `credentialRef` 只接受 `[A-Za-z_][A-Za-z0-9_]*`，故 UUID 的短横线转下划线。 */
 const REF_PREFIX = 'SOLOENGINE_LLM_CONFIG_'
 
-/** 配置行 id → 凭据引用（UUID 只含短横线，转换无损）。 */
+/**
+ * 配置行 id → 凭据引用（UUID 只含短横线，转换无损）。
+ * @param id - 模型配置行 id。
+ * @returns 官方适配器可接受的凭据引用。
+ */
 export function credentialRefForConfig(id: string): string {
   return `${REF_PREFIX}${id.replace(/-/gu, '_')}`
 }
 
-/** 凭据引用 → 配置行 id。 */
+/**
+ * 凭据引用 → 配置行 id。
+ * @param ref - 凭据引用。
+ * @returns 模型配置行 id。
+ */
 export function configIdFromCredentialRef(ref: string): string {
   if (!ref.startsWith(REF_PREFIX)) {
     throw new LlmError(`credential reference "${ref}" is not a SoloEngine model-config reference`, 'MISSING_CREDENTIAL')
@@ -205,7 +213,12 @@ export function readMasterKey(path: string): Buffer {
   return Buffer.from(raw, 'hex')
 }
 
-/** 解密 `v1.<iv>.<tag>.<ciphertext>` 封包（认证失败即抛错，不回退明文）。 */
+/**
+ * 解密 `v1.<iv>.<tag>.<ciphertext>` 封包（认证失败即抛错，不回退明文）。
+ * @param key - 32 字节主密钥。
+ * @param envelope - `v1` 版本化密文封包。
+ * @returns 解密后的明文字符串。
+ */
 export function decryptSecret(key: Buffer, envelope: string): string {
   const parts = envelope.split('.')
   if (parts.length !== 4 || parts[0] !== 'v1') {
@@ -277,7 +290,11 @@ export class RouteTable {
     return [...this.routes.keys()]
   }
 
-  /** 按路由名取条目（不存在返回 undefined）。 */
+  /**
+   * 按路由名取条目（不存在返回 undefined）。
+   * @param route - 路由名。
+   * @returns 路由条目；未注册时为 undefined。
+   */
   get(route: string): RouteEntry | undefined {
     return this.routes.get(route)
   }
@@ -424,7 +441,10 @@ export class RouteTable {
   /** 匿名用户标识（官方适配器要求；由 harness 侧的匿名身份提供方解析）。 */
   private resolveUserIdImpl: (() => AnonymousUserId) | undefined
 
-  /** 注入匿名用户标识解析器（由插件在 `apply` 时提供）。 */
+  /**
+   * 注入匿名用户标识解析器（由插件在 `apply` 时提供）。
+   * @param resolve - 返回当前匿名用户标识的解析器。
+   */
   setUserIdResolver(resolve: () => AnonymousUserId): void {
     this.resolveUserIdImpl = resolve
   }

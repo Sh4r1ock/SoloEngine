@@ -101,6 +101,7 @@ export const common = defineDictionary({
   terminalCollapse: '收起',
   terminalExpandAria: '展开其余 {hidden} 行',
   terminalExpand: '展开其余 {hidden} 行',
+  terminalCommandLine: '命令行第 {line} 行',
 }, {
   actionSave: 'Save',
   actionCancel: 'Cancel',
@@ -197,4 +198,5 @@ export const common = defineDictionary({
   terminalCollapse: 'Collapse',
   terminalExpandAria: 'Show {hidden} more lines',
   terminalExpand: 'Show {hidden} more lines',
+  terminalCommandLine: 'Command line {line}',
 })

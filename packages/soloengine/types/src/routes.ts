@@ -97,6 +97,7 @@ export function matchProductRouteRoot(pathname: string): ProductRouteMatch | und
 /**
  * 该路径是否由产品应用渲染（运行面板归 DSH 原生壳，不在此列）。
  * @param pathname - 当前路径。
+ * @returns 路径是否由产品应用渲染。
  */
 export function isProductPagePathname(pathname: string): boolean {
   return matchProductRouteRoot(pathname)?.root.surface === 'product'

@@ -130,6 +130,7 @@ async function rebuildOne(
  * 全量重建（见模块注释）。逐会话隔离错误：单个会话失败不中断整体。
  * @param ctx - 注入 `sessionPersistence` 的宿主上下文。
  * @param runtime - 框架层运行时。
+ * @returns 扫描、重放与恢复的汇总报告。
  */
 export async function rebuildLedgerFromLogs(ctx: Context, runtime: FrameworkRuntime): Promise<LedgerRebuildReport> {
   const report: LedgerRebuildReport = { scanned: 0, replayed: 0, recovered: 0, skipped: [], eventRows: 0, errors: [] }

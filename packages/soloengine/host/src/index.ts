@@ -312,7 +312,8 @@ export function createRunDriver(
         throw new Error(`delegation edge ${edge.edgeId} points at node ${edge.to}, which the compiled product lacks`)
       }
       const childModel = modelOf(child.modelRoute, child.agentId)
-      const childPersona = child.persona !== undefined && child.persona.trim() !== '' ? child.persona : undefined
+      // rc.2 起本地子级组合由所选 Agent Preset 提供（persona 与工具集都在 preset 内），
+      // 委派 seam 不再接受逐次调用的 persona/toolFilter；此处只传模型路由与深度上限。
       agentCtx.tools.register(defineTool({
         name: edge.toolName,
         description:
@@ -340,36 +341,39 @@ export function createRunDriver(
         async execute(args, exec) {
           const parent = exec.agent
           if (parent === undefined) throw new Error(`${edge.toolName} requires an owning agent session`)
-          const run = await ctx.subagents.start('spawn', {
+          const activation = await ctx.subagents.startActivation({
+            provider: 'spawn',
             label: child.name,
-            prompt: [{ type: 'text', text: args.task }],
-            parent,
+            request: {
+              prompt: [{ type: 'text', text: args.task }],
+              parent,
+              agentOptions: { provider: child.modelRoute, model: childModel },
+              ...options.maxDepth === undefined ? {} : { maxDepth: options.maxDepth },
+            },
             signal: exec.signal,
-            agentOptions: { provider: child.modelRoute, model: childModel },
-            ...childPersona === undefined ? {} : { persona: childPersona },
-            toolFilter: { allow: [...child.tools] },
-            maxDepth: options.maxDepth,
+            delivery: 'parent',
           })
-          attribution.set(String(run.id), { agentId: child.agentId, parentAgentId: spec.agentId })
+          const childSessionId = String(activation.childId)
+          attribution.set(childSessionId, { agentId: child.agentId, parentAgentId: spec.agentId })
           // 子代理子会话按会话树落同一条归属链（PRD-12 FR-STO-005：全部子会话归属到对应画布节点）。
           const parentRun = runContext.get(owner.sessionKey)
           if (parentRun !== undefined) {
             runtime.runs.ledger.ensure({
-              session_key: String(run.id),
+              session_key: childSessionId,
               user_id: parentRun.userId,
               agentic_flow_id: parentRun.canvasId,
               run_project_id: parentRun.projectId,
               llm_config_id: child.modelRoute.replace(/^soloengine-/u, ''),
             })
-            runContext.set(String(run.id), { ...parentRun, llmConfigId: child.modelRoute.replace(/^soloengine-/u, '') })
+            runContext.set(childSessionId, { ...parentRun, llmConfigId: child.modelRoute.replace(/^soloengine-/u, '') })
           }
-          const result = await run.result
+          const result = await activation.result
           const text = result.output
-            .filter(block => block.type === 'text')
-            .map(block => (block as { text: string }).text)
+            .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+            .map(block => block.text)
             .join('')
           return {
-            childSessionId: String(run.id),
+            childSessionId,
             stopReason: String(result.stopReason),
             output: text,
           }
@@ -899,7 +903,13 @@ export function apply(ctx: Context, config: Config = {}): void {
   // 服务自身（监听在启动回调里落定），故就绪后 `/deployment/guide` 报出的是真实主机与端口。
   runtime.deployment = {
     get host(): string { return ctx.webServer.host },
-    get port(): number { return ctx.webServer.port },
+    get port(): number {
+      const port = ctx.webServer.port
+      if (port === undefined) {
+        throw new Error('soloengine-host: the web listener has no bound port yet; the deployment guide is served after startup')
+      }
+      return port
+    },
   }
 
   // 启动自检（fail loud）：业务库环境不满足即抛错，不带病启动。

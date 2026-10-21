@@ -27,8 +27,8 @@ const CONFIG = join(ROOT, 'tsconfig.base.json')
 const BEGIN = '      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths'
 const END = '      // END generated package aliases'
 
-/** Package-name prefix the expanded aliases cover. */
-const PREFIX = '@deepseek-ai/dsh-'
+/** Package-name prefixes the expanded aliases cover. */
+const PREFIXES = ['@deepseek-ai/dsh-', '@soloengine/']
 
 /** One workspace package the generated region maps. */
 interface PackageAlias {
@@ -75,7 +75,7 @@ function workspacePackages(): WorkspacePackage[] {
     for (const directory of readdirSync(groupDir).sort()) {
       const packageDir = join(groupDir, directory)
       const name = packageName(join(packageDir, 'package.json'))
-      if (name === undefined || !name.startsWith(PREFIX)) continue
+      if (name === undefined || !PREFIXES.some(prefix => name.startsWith(prefix))) continue
       if (existsSync(join(packageDir, 'src'))) found.push({ group, directory, name })
     }
   }
@@ -97,7 +97,7 @@ function workspacePackages(): WorkspacePackage[] {
 export function collectPackageAliases(): PackageAlias[] {
   const bySpecifier = new Map<string, PackageAlias & { directory: string }>()
   for (const { group, directory, name } of workspacePackages()) {
-    if (name !== `${PREFIX}${directory}`) continue
+    if (!PREFIXES.some(prefix => name === `${prefix}${directory}`)) continue
     const previous = bySpecifier.get(name)
     if (previous !== undefined) {
       throw new Error(
@@ -124,7 +124,7 @@ export function collectPackageAliases(): PackageAlias[] {
  * alias can — but they still have to be mapped by something, because deleting
  * the group wildcards removed the fallback that used to catch them.
  *
- * @returns Declared names of every `@deepseek-ai/dsh-` package carrying a `src` directory.
+ * @returns Declared names of every `@deepseek-ai/dsh-` or `@soloengine/` package carrying a `src` directory.
  */
 export function collectPackageNames(): string[] {
   return workspacePackages()
@@ -139,7 +139,7 @@ export function collectPackageNames(): string[] {
  */
 export function mappedSpecifiers(text: string): Set<string> {
   const keys = new Set<string>()
-  for (const match of text.matchAll(/^\s*"(@deepseek-ai\/dsh-[^"/]+)":/gm)) {
+  for (const match of text.matchAll(/^\s*"((?:@deepseek-ai\/dsh-|@soloengine\/)[^"/]+)":/gm)) {
     const key = match[1]
     if (key !== undefined) keys.add(key)
   }

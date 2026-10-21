@@ -23,11 +23,10 @@ kind: "package-group"
 | 包 | 职责 | ctx key |
 |---|---|---|
 | [`base`](base/README.zh.md) | 基于 base 的 profile 共享核心 | —（仅 patch） |
-| [`acp-app`](acp-app/README.zh.md) | 基于 base、仅用于自动化的 ACP stdio 应用 | 挂载 ACP bridge |
 | [`web-app`](web-app/README.zh.md) | 基于 base 的浏览器应用层 | 挂载多条 Web 配置行 |
 | [`headless`](headless/README.zh.md) | 基于 base 的一次性命令行任务应用 | `headless-runner` |
-| [`sdk-app`](sdk-app/README.zh.md) | 基于 base 的 SDK JSON-RPC stdio 应用 | 挂载 SDK 服务器 |
-| [`sdk-minimal`](sdk-minimal/README.zh.md) | 不使用 base 或 Web 的独立极简 SDK 应用 | —（完整 patch 树） |
+| `sdk-app` | 基于 base 的 SDK JSON-RPC stdio 应用 | 挂载 SDK 服务器 |
+| `sdk-minimal` | 不使用 base 或 Web 的独立极简 SDK 应用 | —（完整 patch 树） |
 
 内置组合包从 dsh 安装目录解析；树外（out-of-tree）组合包通过 `dsh plugin --profile <name> add <package>` 安装进 profile。
 

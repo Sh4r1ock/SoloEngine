@@ -553,7 +553,12 @@ function attributeOf(
   }
 }
 
-/** 供路由层复用的写路径钩子（人写入经产品 REST 时标记 `origin='user'`）。 */
+/**
+ * 供路由层复用的写路径钩子（人写入经产品 REST 时标记 `origin='user'`）。
+ * @param userId - 人类写入者的用户标识。
+ * @param sessionKey - 目标会话键；无会话级归属时为 null。
+ * @returns 原样携带归属信息的写标记。
+ */
 export function markUserWrite(userId: string, sessionKey: string | null): { userId: string; sessionKey: string | null } {
   return { userId, sessionKey }
 }
