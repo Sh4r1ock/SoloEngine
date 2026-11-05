@@ -5,6 +5,8 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerId, PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
 import type { ConnectionInteractions } from './connect-protocol.ts'
 import {
+  INSTANCE_HEADER,
+  INSTANCE_PARAM,
   RpcId,
   type ClientRequest,
   type RpcId as RpcIdType,
@@ -18,10 +20,13 @@ import { Peer } from './peer.ts'
 import type {
   PeerAdmission,
   ConnectionAdmission,
+  ConnectionCookieResponse,
+  ConnectionIndexBootstrap,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionFetchRoute,
   ConnectionFetchHandler,
+  ConnectionAccountScope,
   HostConnectionFetch,
   ConnectionRpcEndpointMatcher,
   ConnectionRpcFailure,
@@ -36,10 +41,86 @@ import type {
 const INVALID_REQUEST_RPC_ID = RpcId('invalid-request')
 const CHANNEL_PATTERN = /^\/[A-Za-z0-9._~-]+$/
 const ENDPOINT_SEGMENT_PATTERN = /^[A-Za-z0-9_$.-]+$/
+/**
+ * Named-argument keys that carry the top-level Session identity in native Remote
+ * wire arguments. A subagent address names both its durable parent Session and
+ * an ephemeral child transcript; only the parent is a ledger row, so the child
+ * identity is deliberately not an ownership question of its own.
+ */
+const SESSION_IDENTITY_KEYS: ReadonlySet<string> = new Set(['sessionId', 'parentSessionId'])
+/** Payload nesting bound for identity collection; native arguments nest at most argument → request → address. */
+const SESSION_IDENTITY_DEPTH = 6
+
+/**
+ * Collect every Session identity a native RPC payload names.
+ * @param payload - decoded RPC payload of the form `{ args: {...} }` or a bare arguments object.
+ * @returns distinct non-empty Session identities; empty when the call names none.
+ */
+function sessionIdentitiesOf(payload: unknown): string[] {
+  const found = new Set<string>()
+  const visit = (value: unknown, depth: number): void => {
+    if (depth > SESSION_IDENTITY_DEPTH || value === null || typeof value !== 'object') return
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1)
+      return
+    }
+    for (const [key, item] of Object.entries(value)) {
+      if (SESSION_IDENTITY_KEYS.has(key) && typeof item === 'string' && item !== '') {
+        found.add(item)
+        continue
+      }
+      visit(item, depth + 1)
+    }
+  }
+  visit(payload, 0)
+  return [...found]
+}
 
 interface PeerRecord {
   readonly peer: Peer
   ownsSocket: boolean
+}
+
+/**
+ * Read the product instance one request addresses.
+ *
+ * A page sets the header; a WebSocket upgrade cannot carry custom headers, so
+ * its URL query carries the same value. Connection never interprets the text.
+ * @param request - headers and, for upgrades, the request target.
+ * @returns the instance text, or undefined when the request names none.
+ */
+function instanceOf(request: ConnectionTrustRequest): string | undefined {
+  const headers = request.headers
+  const rawHeader = headers instanceof Headers
+    ? headers.get(INSTANCE_HEADER) ?? undefined
+    : headers[INSTANCE_HEADER]
+  const fromHeader = typeof rawHeader === 'string' ? rawHeader : rawHeader?.[0]
+  if (fromHeader !== undefined && fromHeader.trim() !== '') return fromHeader.trim()
+  if (request.url === undefined) return undefined
+  const value = new URL(request.url, 'http://dsh.invalid').searchParams.get(INSTANCE_PARAM)?.trim()
+  return value === undefined || value === '' ? undefined : value
+}
+
+/** How the registered account scope treats one admitted Peer. */
+type AccountOutcome =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'operator' }
+  | { readonly kind: 'unbound' }
+  | {
+    readonly kind: 'account'
+    readonly scope: ConnectionAccountScope
+    readonly userId: string
+    /** Product instance the request named; undefined addresses the whole account. */
+    readonly instance: string | undefined
+  }
+
+/**
+ * Exhaustiveness check for the closed account-outcome union.
+ * @param value - value proved unreachable by the union.
+ * @returns never.
+ */
+function assertNever(value: never): never {
+  throw new Error(`client-connection: unreachable account outcome ${JSON.stringify(value)}`)
 }
 
 interface ConnectionRpcInterceptor {
@@ -71,6 +152,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /** The Peer every authenticated browser connection shares. */
   readonly browserPeer: PeerScope
   private readonly peers = new Map<PeerId, PeerRecord>()
+  /** One browser Peer per account and product instance; unbound cookies share {@link browserPeer}. */
+  private readonly browserPeers = new Map<string, Peer>()
+  /** Product account of each account-bound browser Peer. */
+  private readonly userOfPeer = new Map<PeerId, string>()
+  /** Product instance of each instance-scoped browser Peer. */
+  private readonly instanceOfPeer = new Map<PeerId, string>()
+  private accountScope: ConnectionAccountScope | undefined
   private readonly owner: Context
   private disposed = false
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
@@ -94,7 +182,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
     this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
     ctx.effect(() => async () => {
       this.disposed = true
-      const peers = [this.browserPeer, ...Array.from(this.peers.values(), record => record.peer)]
+      const peers = [
+        this.browserPeer,
+        ...Array.from(this.browserPeers.values()),
+        ...Array.from(this.peers.values(), record => record.peer),
+      ]
+      this.browserPeers.clear()
+      this.userOfPeer.clear()
+      this.instanceOfPeer.clear()
       this.peers.clear()
       await Promise.all(peers.map(peer => peer.dispose()))
     }, 'client-connection: Peer scopes')
@@ -125,15 +220,143 @@ export class HostConnectionService extends Service implements HostConnectionHand
     return 'rejection' in admission ? admission.rejection : undefined
   }
 
-  /** Browser requests share an owner Peer; API HTTP does not depend on an attached socket. */
+  /** Browser requests share an owner Peer; a login-bound cookie speaks for its own account Peer. */
   admit(request: ConnectionTrustRequest): PeerAdmission {
     if (!this.isTrusted(request)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
     const secure = this.owner.get('webServer')?.protocol === 'https:'
-    if (this.browserAuth.isAuthenticated(request, secure)) return { peer: this.browserPeer }
+    if (this.browserAuth.isAuthenticated(request, secure)) {
+      const userId = this.browserAuth.browserUserId(request, secure)
+      return {
+        peer: userId === undefined
+          ? this.browserPeer
+          : this.browserPeerFor(userId, instanceOf(request)),
+      }
+    }
     const id = this.browserAuth.authenticateApi(request, secure)
     const record = id === undefined ? undefined : this.peers.get(id)
     return record === undefined ? { rejection: 401 } : { peer: record.peer }
+  }
+
+  /**
+   * Bind this browser's cookie to the product account a successful login proved.
+   * @param request - the login request; only a trusted authority may be bound.
+   * @param response - response receiving the renewed cookie.
+   * @param userId - account identity the login proved.
+   * @returns whether a cookie was written.
+   */
+  bindBrowserUser(
+    request: ConnectionTrustRequest,
+    response: ConnectionCookieResponse,
+    userId: string,
+  ): boolean {
+    if (!this.isTrusted(request) || this.disposed) return false
+    return this.browserAuth.bindUser(
+      request, response, userId, this.owner.get('webServer')?.protocol === 'https:',
+    )
+  }
+
+  /** Replace the account scope of the mounted product; native-only compositions keep none. */
+  setAccountScope(scope: ConnectionAccountScope | undefined): () => void {
+    const previous = this.accountScope
+    this.accountScope = scope
+    return () => {
+      if (this.accountScope === scope) this.accountScope = previous
+    }
+  }
+
+  /**
+   * Answer whether a Peer may access every Session identity its payload names.
+   *
+   * Without a registered scope every call proceeds (native-only deployments).
+   * With one, an account-bound browser Peer asks the scope; a browser Peer
+   * without a bound account (an older cookie generation, or a launch-token
+   * exchange never followed by a product login) is refused, while an API
+   * operator Peer created from the process token keeps the deployment
+   * operator's access.
+   */
+  async authorizeSessions(peer: PeerScope, payload: unknown): Promise<boolean> {
+    const sessionIds = sessionIdentitiesOf(payload)
+    if (sessionIds.length === 0) return true
+    return (await this.authorizeSessionIds(peer, sessionIds)) !== false
+  }
+
+  /** Answer whether the Peer may access these Session identities. */
+  async authorizeSessionIds(peer: PeerScope, sessionIds: readonly string[]): Promise<boolean | undefined> {
+    const outcome = this.accountOutcome(peer)
+    switch (outcome.kind) {
+      case 'none':
+      case 'operator':
+        return undefined
+      case 'unbound':
+        return false
+      case 'account':
+        return await outcome.scope.authorize({
+          userId: outcome.userId,
+          sessionIds,
+          ...outcome.instance === undefined ? {} : { instance: outcome.instance },
+        })
+      /* v8 ignore next -- closed union. */
+      default:
+        return assertNever(outcome)
+    }
+  }
+
+  /** List every Session identity bound to this Peer's account. */
+  async ownedSessionIdsOf(peer: PeerScope): Promise<readonly string[] | undefined> {
+    const outcome = this.accountOutcome(peer)
+    switch (outcome.kind) {
+      case 'none':
+      case 'operator':
+        return undefined
+      case 'unbound':
+        return []
+      case 'account':
+        return await outcome.scope.ownedSessions(outcome.userId, outcome.instance)
+      /* v8 ignore next -- closed union. */
+      default:
+        return assertNever(outcome)
+    }
+  }
+
+  /** List the model route names bound to this Peer's account. */
+  async ownedModelRouteNamesOf(peer: PeerScope): Promise<readonly string[] | undefined> {
+    const outcome = this.accountOutcome(peer)
+    switch (outcome.kind) {
+      case 'none':
+      case 'operator':
+        return undefined
+      case 'unbound':
+        return []
+      case 'account':
+        return await outcome.scope.ownedModelRoutes(outcome.userId)
+      /* v8 ignore next -- closed union. */
+      default:
+        return assertNever(outcome)
+    }
+  }
+
+  /** How the registered account scope treats one Peer. */
+  private accountOutcome(peer: PeerScope): AccountOutcome {
+    const scope = this.accountScope
+    if (scope === undefined) return { kind: 'none' }
+    const userId = this.userOfPeer.get(peer.id)
+    if (userId !== undefined) {
+      return { kind: 'account', scope, userId, instance: this.instanceOfPeer.get(peer.id) }
+    }
+    return peer.id === this.browserPeer.id ? { kind: 'unbound' } : { kind: 'operator' }
+  }
+
+  /** The browser Peer speaking for one product account and instance, created on first use. */
+  private browserPeerFor(userId: string, instance: string | undefined): Peer {
+    const key = instance === undefined ? userId : `${userId}\u0000${instance}`
+    const existing = this.browserPeers.get(key)
+    if (existing !== undefined) return existing
+    const peer = new Peer(this.owner, { principal: { kind: 'owner' } })
+    this.browserPeers.set(key, peer)
+    this.userOfPeer.set(peer.id, userId)
+    if (instance !== undefined) this.instanceOfPeer.set(peer.id, instance)
+    return peer
   }
 
   /** Create one in-process Peer owned by the Context that read this service. */
@@ -190,8 +413,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Authenticate an index request; native TLS listeners mint Secure cookies.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
-    return this.browserAuth.authorizeIndex(request, response, this.ctx.get('webServer')?.protocol === 'https:')
+  authorizeIndex(
+    request: ConnectionIndexRequest,
+    response: ConnectionIndexResponse,
+    bootstrap?: ConnectionIndexBootstrap,
+  ): boolean {
+    return this.browserAuth.authorizeIndex(
+      request, response, this.ctx.get('webServer')?.protocol === 'https:', bootstrap,
+    )
   }
 
   /** Add this process's launch token to the clean application URL. */
@@ -256,7 +485,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     handler: ConnectionRpcHandler,
   ): () => Promise<void> {
     assertChannel(channel)
-    const fetchHandler = rpcFetchHandler(channel, handler)
+    const fetchHandler = rpcFetchHandler(channel, handler,
+      (peer, payload) => this.authorizeSessions(peer, payload))
     const route: WebRoute = {
       kind: 'prefix',
       path: channel,
@@ -287,7 +517,8 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler),
+      fetchHandler: rpcFetchHandler(channel, handler,
+        (peer, payload) => this.authorizeSessions(peer, payload)),
     }
     return owner.effect(() => {
       if (this.interceptors.has(channel)) {
@@ -304,6 +535,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
+  authorize: (peer: PeerScope, payload: unknown) => Promise<boolean>,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -339,6 +571,9 @@ function rpcFetchHandler(
       }
 
       try {
+        if (!(await authorize(peer, message.payload))) {
+          return new Response('forbidden', { status: 403 })
+        }
         const result = await handler(endpoint, message.payload, request.signal, peer)
         return fullResponse(message.rpcId, result)
       } catch (error) {

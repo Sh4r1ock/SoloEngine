@@ -433,13 +433,16 @@ export class RunService {
   /**
    * 某 agenticflow 的最新会话键（运行面板 URL 的解析依据：`/run/:agenticFlowId`）。
    * @param flowId - 画布（agenticflow）ID。
-   * @returns 最新会话键；该 flow 还没有任何会话时 undefined。
+   * @param restrictTo - 调用方连接可见的会话键；给出时只在这些键中挑选，避免把
+   *   其他账号的会话键随外壳下发给本页面。
+   * @returns 最新会话键；该 flow 还没有可见会话时 undefined。
    */
-  async latestSessionKeyOfFlow(flowId: string): Promise<string | undefined> {
-    const row = await this.db.prepare(
-      'SELECT session_key FROM sessions WHERE agentic_flow_id = ? ORDER BY created_at DESC LIMIT 1',
-    ).get<{ session_key: string }>(flowId)
-    return row?.session_key
+  async latestSessionKeyOfFlow(flowId: string, restrictTo?: ReadonlySet<string>): Promise<string | undefined> {
+    const rows = await this.db.prepare(
+      'SELECT session_key FROM sessions WHERE agentic_flow_id = ? ORDER BY created_at DESC LIMIT 50',
+    ).all<{ session_key: string }>(flowId)
+    if (restrictTo === undefined) return rows[0]?.session_key
+    return rows.find(row => restrictTo.has(row.session_key))?.session_key
   }
 
   /** 归属行 + 活状态 → 对外视图。 */

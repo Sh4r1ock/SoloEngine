@@ -3,6 +3,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-api-remote-access'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { WorkspaceCommands } from './commands.ts'
@@ -194,6 +195,10 @@ export class WorkspaceController extends TypertRemoteService {
   /**
    * Stream a complete Workspace baseline followed by ordered increments. A
    * non-owner receives only the Workspaces and Sessions `allows()` admits.
+   * When the calling connection binds a product account, a Workspace is
+   * visible only through one of that account's Sessions (SoloEngine narrows
+   * the Session set further to one agenticflow), so two run panels never
+   * share a Workspace list even though the registry is process-wide.
    * When a delivered Workspace is no longer admitted at its next change or
    * the next order change, the stream sends a `replace` frame with the
    * complete filtered state instead of a `remove`, because a Client never
@@ -205,18 +210,28 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   async *follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {
     const access = this.ctx.remoteAccess
-    const visible = (workspaceId: WorkspaceId): boolean => access.allows({ kind: 'workspace', id: workspaceId })
+    // A connection bound to a product account (and, in SoloEngine, to one
+    // agenticflow) owns a fixed Session set. Workspaces are attributable only
+    // through their Sessions, so a Workspace with no owned Session is outside
+    // this panel's world even though the registry itself is process-wide.
+    const owned = await ownedSessionsOf(this.ctx)
     const sessions = (sessionIds: readonly SessionId[]): SessionId[] =>
-      sessionIds.filter(sessionId => access.allows({ kind: 'session', id: sessionId }))
+      sessionIds.filter(sessionId => (owned === undefined || owned.has(sessionId))
+        && access.allows({ kind: 'session', id: sessionId }))
+    const admitted = (workspaceId: WorkspaceId): boolean => access.allows({ kind: 'workspace', id: workspaceId })
+    const visible = (workspaceId: WorkspaceId, sessionIds: readonly SessionId[]): boolean =>
+      admitted(workspaceId) && (owned === undefined || sessionIds.some(sessionId => owned.has(sessionId)))
     /** Workspaces this generation has delivered and not yet removed. */
     const delivered = new Set<WorkspaceId>()
     /** The admitted part of `value`; it becomes the delivered set. */
     const filtered = (value: WorkspaceBaseline): WorkspaceBaseline => {
-      const items = value.items.filter(item => visible(item.workspaceId))
+      const items = value.items
+        .map(item => ({ ...item, sessionIds: sessions(item.sessionIds) }))
+        .filter(item => visible(item.workspaceId, item.sessionIds))
       delivered.clear()
       for (const item of items) delivered.add(item.workspaceId)
       return {
-        items: items.map(item => ({ ...item, sessionIds: sessions(item.sessionIds) })),
+        items,
         archivedSessionIds: sessions(value.archivedSessionIds),
         pinnedSessionIds: sessions(value.pinnedSessionIds),
       }
@@ -228,9 +243,10 @@ export class WorkspaceController extends TypertRemoteService {
           break
         case 'upsert': {
           const workspaceId = frame.workspace.workspaceId
-          if (visible(workspaceId)) {
+          const sessionIds = sessions(frame.workspace.sessionIds)
+          if (visible(workspaceId, sessionIds)) {
             delivered.add(workspaceId)
-            yield { type: 'upsert', workspace: { ...frame.workspace, sessionIds: sessions(frame.workspace.sessionIds) } }
+            yield { type: 'upsert', workspace: { ...frame.workspace, sessionIds } }
           } else if (delivered.has(workspaceId)) {
             yield { type: 'replace', value: filtered(this.feed.baseline()) }
           }
@@ -240,10 +256,10 @@ export class WorkspaceController extends TypertRemoteService {
           if (delivered.delete(frame.workspaceId)) yield frame
           break
         case 'order':
-          if (frame.workspaceIds.some(workspaceId => delivered.has(workspaceId) && !visible(workspaceId))) {
+          if (frame.workspaceIds.some(workspaceId => delivered.has(workspaceId) && !admitted(workspaceId))) {
             yield { type: 'replace', value: filtered(this.feed.baseline()) }
           } else {
-            yield { type: 'order', workspaceIds: frame.workspaceIds.filter(visible) }
+            yield { type: 'order', workspaceIds: frame.workspaceIds.filter(workspaceId => delivered.has(workspaceId)) }
           }
           break
         case 'archived':
@@ -263,6 +279,21 @@ export class WorkspaceController extends TypertRemoteService {
 /* v8 ignore next 3 -- closed-union backstop. */
 function assertNever(value: never): never {
   throw new Error(`unreachable Workspace follow frame: ${JSON.stringify(value)}`)
+}
+
+/**
+ * Session identities the calling connection may see, or undefined when this
+ * deployment registers no account scope (native behavior).
+ * @param ctx - Context carrying the Remote invocation and, optionally, `connection`.
+ * @returns the owned Session set, or undefined without an account scope.
+ */
+async function ownedSessionsOf(ctx: Context): Promise<ReadonlySet<string> | undefined> {
+  const peer = ctx.invocation?.peer
+  const connection: Pick<HostConnectionHandle, 'ownedSessionIdsOf'> | undefined = ctx.get('connection')
+  if (peer === undefined || connection === undefined
+    || typeof connection.ownedSessionIdsOf !== 'function') return undefined
+  const ids = await connection.ownedSessionIdsOf(peer)
+  return ids === undefined ? undefined : new Set(ids)
 }
 
 export default WorkspaceController

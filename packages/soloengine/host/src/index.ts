@@ -527,16 +527,18 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const fiber = ctx.inject(['connection'], (guardCtx) => {
       guardCtx.effect(() => {
         const dispose = guardCtx.connection.setAccountScope({
-          authorize: async ({ userId, sessionIds }) => {
+          authorize: async ({ userId, sessionIds, instance }) => {
             for (const sessionId of sessionIds) {
-              // 真源只有一份：`sessions.user_id`（经运行域的归属查询读出）。
-              const owner = await runtime.runs.ownerOf(sessionId)
-              if (owner === null || owner !== userId) return false
+              // 真源只有一份：`sessions` 台账（归属用户 + 归属画布）。
+              const row = await runtime.runs.ledger.byKey(sessionId)
+              if (row === undefined || row.user_id !== userId) return false
+              // 运行面板按 agenticflow 收窄（`/run/:flow` 的面板只认本画布的会话）。
+              if (instance !== undefined && row.agentic_flow_id !== instance) return false
             }
             return true
           },
-          // 会话列表 / 检索 / 实时投影的收窄集合（同一份台账）。
-          ownedSessions: userId => runtime.runs.ledger.sessionKeysOf(userId),
+          // 会话列表 / 检索 / 实时投影的收窄集合（同一份台账，按画布收窄）。
+          ownedSessions: (userId, instance) => runtime.runs.ledger.sessionKeysOf(userId, instance),
           // 模型目录的收窄集合：只给本人启用中的配置路由名。
           ownedModelRoutes: async userId =>
             (await runtime.models.listActive(userId)).map(row => `soloengine-${row.id}`),
@@ -928,7 +930,16 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         }
         let runInjections: IndexInjection[] = []
         if (flowSegment !== '') {
-          const sessionKey = await runtime.runs.latestSessionKeyOfFlow(flowSegment)
+          // 该 flow 的最近会话只在**调用方连接可见**的会话里挑：面板外壳从不把其他账号的
+          // 会话键写进页面（账号作用域未装载时保持原生行为）。
+          const admission = routeCtx.connection.admit(req)
+          const owned = 'peer' in admission
+            ? await routeCtx.connection.ownedSessionIdsOf(admission.peer)
+            : []
+          const sessionKey = await runtime.runs.latestSessionKeyOfFlow(
+            flowSegment,
+            owned === undefined ? undefined : new Set(owned),
+          )
           // 实例客户端组合（Plan W4）：该画布启用的客户端包 = 全局启动图 + 画布新增/替换的包。
           // 组合错误（未知行、包不可解析、依赖被关闭）一律整页报错（加载期报错，不静默降级）。
           let selection: { enabled: string[]; disabled: string[] }

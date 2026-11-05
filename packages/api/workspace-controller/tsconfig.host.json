@@ -17,6 +17,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
+    { "path": "../../client/connection/tsconfig.host.json" },
     { "path": "../../core/session" },
     { "path": "../../host/directory-picker" },
     { "path": "../../storage/storage-domain" },

@@ -94,10 +94,24 @@ export interface ServerResponse {
 /** Complete Connection RPC envelope union. */
 export type RpcMessage = ClientRequest | ServerResponse
 
+/**
+ * Request header a product page sets to address one product instance.
+ *
+ * Connection treats the value as opaque: it only partitions the browser Peer
+ * per account and instance, and forwards it to the registered account scope.
+ * A composition that registers no account scope keeps the native behavior.
+ */
+export const INSTANCE_HEADER = 'x-dsh-instance'
+
+/** Upgrade query parameter carrying the same instance when a browser cannot set headers. */
+export const INSTANCE_PARAM = 'dsh-instance'
+
 /** HTTP request facts consumed by browser trust and authentication. */
 export interface ConnectionTrustRequest {
   /** Request headers supplied by either the Fetch or node:http representation. */
   readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
+  /** Request target; a WebSocket upgrade carries {@link INSTANCE_PARAM} here. */
+  readonly url?: string | undefined
 }
 
 /** HTTP status returned before dispatch, or undefined when the request may proceed. */
@@ -107,12 +121,60 @@ export type ConnectionRequestRejection = 401 | 403 | undefined
 export interface ConnectionIndexRequest extends ConnectionTrustRequest {
   readonly method?: string | undefined
   readonly url?: string | undefined
+  readonly socket?: {
+    readonly remoteAddress?: string | undefined
+  } | undefined
 }
 
 /** Root/index response operations owned by the browser-token exchange. */
 export interface ConnectionIndexResponse {
   writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown
   end(body?: string): unknown
+}
+
+/** Loopback first-visit redirect configuration for {@link HostConnectionHandle.authorizeIndex}. */
+export interface ConnectionIndexBootstrap {
+  /** Cookie carrying the requested path back to the Web entry after the token exchange. */
+  readonly returnCookie: string
+}
+
+/** Response operation a login uses to renew the signed browser cookie. */
+export interface ConnectionCookieResponse {
+  setHeader(name: string, value: string): unknown
+}
+
+/**
+ * Product account scope registered over Connection.
+ *
+ * Session readers (list, search, live control) and the model catalog narrow to
+ * the browser account bound to the calling connection. A request that names an
+ * instance passes that value through unchanged; the mounted product decides
+ * what it means (SoloEngine maps it to one agenticflow).
+ */
+export interface ConnectionAccountScope {
+  /**
+   * Answer whether the account may access every named Session.
+   * @param request - the bound account, the opaque instance the request named, and the Session identities it names.
+   * @returns whether every Session belongs to the account (and, when given, to that instance).
+   */
+  authorize(request: {
+    readonly userId: string
+    readonly instance?: string
+    readonly sessionIds: readonly string[]
+  }): Promise<boolean>
+  /**
+   * List the Session identities the account owns.
+   * @param userId - the bound product account.
+   * @param instance - the opaque instance the request named, when it named one.
+   * @returns Session identities visible in that account (and instance).
+   */
+  ownedSessions(userId: string, instance?: string): Promise<readonly string[]>
+  /**
+   * List the model route names the account may use.
+   * @param userId - the bound product account.
+   * @returns model route names visible to that account.
+   */
+  ownedModelRoutes(userId: string): Promise<readonly string[]>
 }
 
 /** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
@@ -124,7 +186,7 @@ export type PeerAdmission =
 export type ConnectionAdmission =
   | {
     readonly peer: PeerScope
-    /** Remove and dispose an API Peer; browser releases leave the shared browser Peer intact. */
+    /** Remove and dispose an API Peer; browser releases leave the (instance-scoped) browser Peer intact. */
     readonly release: () => Promise<void>
   }
   | { readonly rejection: 401 | 403 | 409 }
@@ -261,9 +323,79 @@ export interface HostConnectionHandle {
    * which only that listener's protocol decides.
    * @param request - root or configured-index HTTP request.
    * @param response - response owned when the result is false.
+   * @param bootstrap - optional loopback first-visit redirect; omitted keeps the plain 401.
    * @returns true only when the frontend may serve index.html.
    */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean
+  authorizeIndex(
+    request: ConnectionIndexRequest,
+    response: ConnectionIndexResponse,
+    bootstrap?: ConnectionIndexBootstrap,
+  ): boolean
+
+  /**
+   * Bind this browser's signed cookie to one product account after that
+   * account's login succeeded on the same request. The minted cookie keeps the
+   * requesting authority and lifetime; an older cookie generation is replaced.
+   * Untrusted requests are refused and set no cookie.
+   * @param request - the login request whose Host/Origin and cookie are examined.
+   * @param response - response that carries the renewed cookie.
+   * @param userId - account identity the login proved.
+   * @returns whether a cookie was written.
+   */
+  bindBrowserUser(
+    request: ConnectionTrustRequest,
+    response: ConnectionCookieResponse,
+    userId: string,
+  ): boolean
+
+  /**
+   * Register the account scope of the mounted product, replacing the previous
+   * scope. Without a scope every authenticated request keeps the native
+   * behavior; with one, reads of Sessions and of model routes narrow to the
+   * browser account bound to the connection.
+   * @param scope - scope to install, or undefined to remove it.
+   * @returns disposer that removes this scope unless another replaced it.
+   */
+  setAccountScope(scope: ConnectionAccountScope | undefined): () => void
+
+  /**
+   * Answer whether the Peer may access every Session identity named by an RPC
+   * payload. Payload argument objects are searched for Session identities; a
+   * payload naming none is always allowed. Without an account scope every call
+   * is allowed.
+   * @param peer - Peer the call speaks for.
+   * @param payload - decoded RPC payload (`{ args }`) of the call or stream.
+   * @returns whether the call may proceed.
+   */
+  authorizeSessions(peer: PeerScope, payload: unknown): Promise<boolean>
+
+  /**
+   * Answer whether the Peer may access these Session identities. An API
+   * operator Peer keeps the deployment operator's access; a browser Peer with
+   * no bound account owns none; without an account scope this returns
+   * undefined so callers keep the native behavior.
+   * @param peer - Peer the call speaks for.
+   * @param sessionIds - Session identities the call names.
+   * @returns the decision, or undefined when no account scope is installed.
+   */
+  authorizeSessionIds(peer: PeerScope, sessionIds: readonly string[]): Promise<boolean | undefined>
+
+  /**
+   * List every Session identity bound to this Peer's account. Undefined means
+   * no account scope is installed (native behavior); an empty list means the
+   * browser carries no bound account.
+   * @param peer - Peer the call speaks for.
+   * @returns the account's Session identities, or undefined without a scope.
+   */
+  ownedSessionIdsOf(peer: PeerScope): Promise<readonly string[] | undefined>
+
+  /**
+   * List the model route names bound to this Peer's account. Undefined means no
+   * account scope is installed; an empty list means no bound account.
+   * @param peer - Peer the call speaks for.
+   * @returns the account's model route names, or undefined without a scope.
+   */
+  ownedModelRouteNamesOf(peer: PeerScope): Promise<readonly string[] | undefined>
 
   /**
    * Add the fresh process token to an ordinary Web application URL.
