@@ -30,15 +30,18 @@ import { materializeDependencies, measureNodeModules, rootPackageName, workspace
 // 状态词表的单一真源在 `@soloengine/types`；框架这里原样再导出，产品页从同一个包取。
 export { isTerminalStage, type PackagingRunStatus, type PackagingStageStatus } from '@soloengine/types'
 
-/** 组合层的一行（供预览与产物核对）。 */
+/** 组合层栈的一层（一个 patch 文件；组合行本身由实例净组合承载）。 */
 export interface PackagingLayer {
-  id: string
-  kind: 'insert' | 'patch'
-  summary: string
-  /** 该行来自哪一层（`bundle:<name>/<file>` / `profile` / `host` / `override:form-<form>`）。 */
+  /** 该层来自哪一层（`bundle:<name>/<file>` / `profile` / `host` / `override:form-<form>`）。 */
   source: string
-  /** 该行所在层文件的展示路径（仓库内为根相对路径，仓库外为绝对路径，分隔符统一 `/`）。 */
+  /** 该层所在文件的展示路径（仓库内为根相对路径，仓库外为绝对路径，分隔符统一 `/`）。 */
   path: string
+  /** 该层声明的组合行数（insert + patch）。 */
+  rows: number
+  /** 该层中插入行的数量。 */
+  inserts: number
+  /** 该层中覆盖行的数量。 */
+  patches: number
 }
 
 /** 打包预览。 */
@@ -617,22 +620,21 @@ export class PackagingService {
     return files
   }
 
-  /** 解析组合层为行摘要（完整层序 + 来源；insert 行区分「插入组」与「顶层追加」）。 */
+  /** 解析层栈为逐层摘要（装载顺序；同一层文件只出现一次）。 */
   private readLayers(): PackagingLayer[] {
-    return this.layerFiles().flatMap(({ path, source }) => {
+    return this.layerFiles().map(({ path, source }) => {
       if (!existsSync(path)) {
         throw new FrameworkError(500, 'PACKAGING_PROFILE_MISSING', `cordis patch layer ${path} does not exist`)
       }
-      const display = this.layerDisplayPath(path)
-      return parsePatchDocument(readFileSync(path, 'utf8'), path).map(row => ({
-        id: row.id,
-        kind: row.inserted ? 'insert' as const : 'patch' as const,
-        summary: row.inserted
-          ? `insert${row.insertInto === undefined ? '' : ` into ${row.insertInto}`}: ${row.name ?? row.id}`
-          : `override ${row.keys.join(',')}`,
+      const rows = parsePatchDocument(readFileSync(path, 'utf8'), path)
+      const inserts = rows.filter(row => row.inserted).length
+      return {
         source,
-        path: display,
-      }))
+        path: this.layerDisplayPath(path),
+        rows: rows.length,
+        inserts,
+        patches: rows.length - inserts,
+      }
     })
   }
 
@@ -841,7 +843,7 @@ export class PackagingService {
         `canvas=${canvasId} project=${projectId} hash=${compiled.canvasHash} revision=${String(compiled.revision)}`,
         `form=${form}`,
         `bundles=${bundles.join(', ')}`,
-        `layers=${String(layers.length)} (insert=${String(layers.filter(layer => layer.kind === 'insert').length)}, override=${String(layers.filter(layer => layer.kind === 'patch').length)})`,
+        `layers=${String(layers.length)} (insert=${String(layers.reduce((total, layer) => total + layer.inserts, 0))}, override=${String(layers.reduce((total, layer) => total + layer.patches, 0))})`,
         `instance-plugins=disable:${(instance.diff.disable ?? []).join(',') || 'none'}`
           + ` replace:${instance.rows.filter(row => row.origin === 'replace').map(row => row.id).join(',') || 'none'}`
           + ` add:${instance.rows.filter(row => row.origin === 'add').map(row => row.id).join(',') || 'none'}`,

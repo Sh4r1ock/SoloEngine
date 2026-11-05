@@ -524,9 +524,12 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
                     </div>
                     <ul className={pkgCss.list}>
                       {preview.layers.map(layer => (
-                        <li key={`${layer.source}:${layer.id}`} title={`${layer.summary} · ${layer.source}`}>
-                          {/* 原型 packaging.js:60-63：每行只渲染层文件路径。 */}
+                        <li key={layer.source} title={layer.source}>
+                          {/* 配置层是层栈：每个层文件一行（同一文件不重复），行尾是该层声明的组合行数。 */}
                           <PathValue value={layer.path} className={pkgCss.layerPath} />
+                          <span className={pkgCss.layerKind}>
+                            {t('packaging', 'layerRows', { count: layer.rows })}
+                          </span>
                         </li>
                       ))}
                     </ul>

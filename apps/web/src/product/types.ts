@@ -472,7 +472,8 @@ export interface MarketEntry {
 /** 打包预览（契约 3）。 */
 export interface PackagingPreview {
   bundles: string[]
-  layers: { id: string; kind: string; summary: string; source: string; path: string }[]
+  /** 层栈：按装载顺序每个层文件一条（同一文件不重复），行数由该层声明的组合行统计。 */
+  layers: { source: string; path: string; rows: number; inserts: number; patches: number }[]
   preset: { mainAgentId: string; agents: unknown[]; edges: unknown[] }
   /** 入口节点（产物默认预设）的名称；来自服务端编译产物。 */
   presetName: string
