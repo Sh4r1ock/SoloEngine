@@ -2,7 +2,7 @@
  * 产品页面样式入口。只做两件事：
  * 1) 依赖 DSH 六个 token 样式表与 SoloEngine 设计语言阶梯（由 `dsh-tokens.ts`
  *    以模块导入先行加载，原因见该文件头部说明）；阶梯数值的**唯一真源**是
- *    `@soloengine/ui-theme/src/styles/tokens.css`（运行面板注入的是同一个文件）。
+ *    `@soloengine/ui-theme/styles/tokens.css`（运行面板注入的是同一个文件）。
  *
  * 组件样式一律走 CSS Modules，颜色只用语义 token。
  */
@@ -12,8 +12,14 @@ body {
   margin: 0;
 }
 
+/* 原型 `base.css`：锚点与分区导航平滑滚动（减少动态时由下方规则降级为 auto）。 */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  font: var(--dsw-font-s-14);
+  /* 正文 14/24（规范 §2）；平台 `--dsw-font-s-14` 是 14/22。 */
+  font: var(--se-font-body);
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-primary);
   background-color: var(--dsw-alias-bg-base);
@@ -24,30 +30,160 @@ body {
 }
 
 /*
- * 键盘焦点环（WCAG 2.4.7 / R11 + R15）。
+ * 键盘焦点环（WCAG 2.4.7 / R11 + R15；设计参考 §2.3「蓝色是信号」）。
  *
- * 产品层此前只依赖 UA 的 `outline: auto`——它的颜色是固定的近黑 rgb(16,16,16)，
- * 深色主题下与背景 rgb(21,21,23) 同色，键盘焦点**完全不可见**
- * （实测：聚焦前后截图差 浅色 390px / 深色 0px）。
- * 这里用与 ui-primitives 输入框聚焦同源的语义 token 补一条产品层焦点环，
- * 该 token 随主题翻转（浅色近黑 rgb(15,17,21) / 深色近白 rgb(249,250,251)）。
- * DSH 原生包禁改，故落在产品层。
+ * 焦点轮廓走 `--se-focus-outline`：浅色是 DeepSeek Blue `#4176e6`，
+ * 深色按原型提升到 66% 蓝 + 白，避免在 raised 表面上低于 3:1。
  */
 :focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 2px;
+}
+
+/* 原型 docs/05 §9：减少动态时把动画/过渡降到 1ms，并关闭平滑滚动。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /*
- * 成功通知文字色（NoticeLine .successLine）：DSH 的 state-success-primary
- * （green-500 rgb(34,197,94)）在浅色底上实测只有 2.28:1（WCAG 1.4.3 需 4.5:1），
- * 平台没有更深的成功文字别名，DSH 原生包禁改——故在产品层定义随主题翻转的别名：
- * 浅色用平台静态 green-900（rgb(35,60,44)，白底 12:1），深色沿用 primary
- * （green-500 在深底约 7.4:1，达标）。颜色都取自平台既有 token，不发明新色值。
+ * 文本字体栈对齐原型 `--font-ui`（`assets/css/tokens.css`）：原型以 `system-ui` 起头，
+ * 平台默认栈以 `-apple-system` 起头——Windows 上后者落到 Segoe UI，`ch` 单位窄 8%
+ * （实测 62ch = 434.48px，原型 472.66px），画布副标题因此被 62ch 上限挤成两行。
+ * 覆写平台默认栈而不是 body 上的 `--dsw-font-family`：`--se-font-body` 等派生字体阶梯
+ * 在 `:root` 上就完成了 var() 替换，只在 body 改值传不到这些阶梯。
  */
-body {
-  --se-notice-success-text: var(--dsw-alias-state-success-primary);
+:root {
+  --dsh-font-family-text-default: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
+/*
+ * 浅色 subtle 表面取原型 `--bg-subtle`（#f9fafb = `--dsw-static-neutral-bluish-50`）：
+ * 平台的 `--dsw-alias-bg-module-platform` 在浅色是 neutral-bluish-60（#f5f6f7），
+ * 表头与画布字形底都比原型深一档。深色保持平台值（本次只实测了浅色）。
+ */
 body:not([data-ds-dark-theme]) {
-  --se-notice-success-text: var(--dsw-static-green-900);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-50);
 }
+
+/*
+ * 原语几何对齐原型（`packages/client/ui-primitives` 为原生包禁改，按类名子串命中）。
+ * 只命中同时带原语尺寸类（`_md_` / `_sm_`）的元素——产品里名为 `.button` 的模块类
+ * （主题循环控件）哈希后同样是 `_button_*`，不加尺寸类会误伤。
+ * 特异性保持 (0,1,0)，产品样式表后加载即生效；页面自身的
+ * `button.iconAction` / `span.searchInput`（0,1,1）覆写仍然优先。
+ */
+
+/* 原型 `.btn`：13/22 · 500、左右 16（--s-4）、8px 圆角、图标 15px。 */
+[class*='_button_']:where([class*='_md_']) {
+  gap: var(--se-space-2);
+  padding: 0 var(--se-space-4);
+  border-radius: var(--se-radius-sm);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+/* 原型 `.btn--sm`：28px、左右 12（--s-3）、12/20 · 500（原语是 12/18 + 10 + 400）。 */
+[class*='_button_']:where([class*='_sm_']) {
+  padding: 0 var(--se-space-3);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 原型 `.btn .icon`：按钮内图标 15px（原语 icon 槽为 16px）。 */
+[class*='_button_']:where([class*='_md_'], [class*='_sm_']) span[class*='_icon_'] > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 原型 `.input`：36px 高、左右 12、8px 圆角、发丝线描边、图标与文本间距 8。
+   `:has(> input)` 限定为输入原语的容器，避免命中其他同名 `.wrap` 模块类。 */
+[class*='_wrap_']:where(:has(> input)) {
+  box-sizing: border-box;
+  height: 36px;
+  gap: var(--se-space-2);
+  padding: 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+}
+
+/* 原型 `.input:focus`：蓝色描边 + 3px 焦点环（与产品搜索框既有焦点态同一取值）。 */
+[class*='_wrap_']:where(:has(> input)):focus-within {
+  border-color: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 3px var(--se-focus-ring);
+}
+
+/* 原型 `.input` 文本 13/22（`components.css` 的 --text-13 / --leading-13）；
+   原语默认 14/22。页面自身的 `.search input`（紧凑 12/20）以更高特异性保留。 */
+[class*='_wrap_']:where(:has(> input)) > input {
+  font-size: 13px;
+  line-height: 22px;
+}
+
+/* 原型 `.input:hover`：边框加深一档（line-strong = muted 42% 混 border）。 */
+[class*='_wrap_']:has(> input:not(:disabled)):hover:not(:focus-within) {
+  border-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 42%, var(--se-hairline));
+}
+
+/* 原型 `.input[aria-invalid="true"]`：边框转墨色；文本域同一规则。 */
+[class*='_wrap_']:has(> input[aria-invalid='true']),
+textarea[aria-invalid='true'] {
+  border-color: var(--dsw-alias-label-primary);
+}
+
+/*
+ * 徽标词表对齐原型（docs/03 §3「标记、标签与状态」）：中性徽标带 0.5px 发丝描边，
+ * 描边徽标透明底，停用徽标用 disabled 文字色。Tag 原语的 tone 只提供语义名，
+ * 产品层把配色收敛到原型配方（base.css 全局 border-box，20px 是含描边的总高）。
+ */
+[class*='_tag_'][data-tone='neutral'] {
+  box-sizing: border-box;
+  border: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+[class*='_tag_'][data-tone='outline'] {
+  box-sizing: border-box;
+  border: 0.5px solid var(--se-hairline);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+[class*='_tag_'][data-tone='quiet'] {
+  box-sizing: border-box;
+  border: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  /* 状态徽标是正文（不是被禁用的控件）：用次级文字色，深浅两档都 ≥ 4.5:1。
+     `label-dimmed` 是边框色（浅色 bluish-200、深色 bluish-750），当文字在深色下只有 1.97:1。 */
+  color: var(--dsw-alias-label-secondary);
+}
+
+/*
+ * 模态默认宽度对齐原型（设计参考 §5.2：默认 520，sm 400 / lg 760 / xl 920）：
+ * 平台原语的 `.dialog` 是 380px；页面需要其它档位时在自己的模块类里声明宽度
+ * （resetDialog 400、importDialog/formDialog 760 已按档位）。特异性相同，
+ * 产品样式表后加载生效；模块类与之特异性相同，随模块样式表的加载顺序覆盖。
+ */
+[class*='_dialog_'] {
+  width: min(520px, 100%);
+  /* 原型 `.modal`：16% 墨色、24px/64px 的模态阴影。 */
+  box-shadow: var(--se-shadow-modal);
+}
+
+/*
+ * Toast 的几何、反色底与动效由原语就地改造为原型值
+ * （`packages/client/ui-primitives/src/Toast.module.css`，设计参考 §5.4）；
+ * 堆叠区域（底部 32、列向间距 8）由产品 Toaster 的 region 提供
+ * （`components/Toaster.module.css`，原型 `.toast-region`）。
+ * 产品层不再覆写原语样式，避免两处真源。
+ */

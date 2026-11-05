@@ -307,7 +307,11 @@ export function StyleguidePage() {
             </Tag>
             <Tag tone="solid" className={css.badge}>{t('styleguide', 'badgeSuperuser')}</Tag>
             <Tag className={`${css.badge} ${css.badgeOutline}`}>{t('styleguide', 'badgeTemplate')}</Tag>
-            <Tag tone="quiet" className={`${css.badge} ${css.badgeDisabled}`}>{t('styleguide', 'badgeDisabled')}</Tag>
+            {/* 停用态样例：低对比是原型 `--disabled-text` 的定义，按 WCAG 1.4.3 豁免，
+                用 aria-disabled 如实标出它是「停用状态」而不是正文。 */}
+            <span aria-disabled="true">
+              <Tag tone="quiet" className={`${css.badge} ${css.badgeDisabled}`}>{t('styleguide', 'badgeDisabled')}</Tag>
+            </span>
             <span className={css.tag}>{t('styleguide', 'tagResearch')}</span>
             <span className={css.status}><span className={css.statusAccent} />{t('styleguide', 'statusRunning')}</span>
             <span className={css.status}><span className={css.statusDot} />{t('styleguide', 'statusDone')}</span>

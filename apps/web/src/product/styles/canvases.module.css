@@ -158,7 +158,9 @@ span.searchInput:focus-within {
 
 .row:hover,
 .row:focus-within {
-  background-color: var(--dsw-static-neutral-bluish-50);
+  /* 语义 hover 令牌随主题翻转（浅色 6% 墨、深色 8% 白）；静态 bluish-50 在深色下是近白底，
+     与白色文字叠成 1.05:1（用户报告的「选中后突兀、看不清」）。 */
+  background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
 .glyph {
@@ -429,7 +431,7 @@ button.iconAction:disabled {
 }
 
 .sessionRow:hover {
-  background-color: var(--dsw-static-neutral-bluish-50);
+  background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
 .sessionRow:focus-visible {
