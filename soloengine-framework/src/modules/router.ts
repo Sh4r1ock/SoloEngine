@@ -1000,10 +1000,11 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('runs-create', 'post', '/runs', '发起一次运行：现场编译画布 + 建 mainagent + 写归属行', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { canvasId?: string; projectId?: string; sessionKey?: string }
+      const body = req.body as { canvasId?: string; projectId?: string; folderPath?: string; sessionKey?: string }
       const session = await runtime.runs.createRun(user.id, {
         canvasId: String(body.canvasId ?? ''),
-        projectId: String(body.projectId ?? ''),
+        ...body.projectId === undefined ? {} : { projectId: String(body.projectId) },
+        ...body.folderPath === undefined ? {} : { folderPath: String(body.folderPath) },
         ...body.sessionKey === undefined ? {} : { sessionKey: String(body.sessionKey) },
       })
       res.status(201).json({ ok: true, session })

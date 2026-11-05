@@ -366,7 +366,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   /** 画布左上角浮动「添加节点」菜单（原型 `.canvas-float`）。 */
   const [canvasAddOpen, setCanvasAddOpen] = useState(false)
   const [edgeTarget, setEdgeTarget] = useState('')
-  const [runOpen, setRunOpen] = useState(false)
   /** 打包抽屉：打包不是独立页面，只在画布上下文里打开。 */
   const [packageOpen, setPackageOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
@@ -1643,7 +1642,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               size="sm"
               variant="primary"
               icon={<IconPlayOutlineRegular size={14} />}
-              onClick={() => { setRunOpen(true) }}
+              onClick={() => { openPage(`/run/${canvasId}`) }}
             >
               {t('editor', 'run')}
             </Button>
@@ -2823,15 +2822,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           )}
         />
 
-        <RunFromEditorDialog
-          open={runOpen}
-          canvasId={canvasId}
-          projects={projects}
-          onClose={() => { setRunOpen(false) }}
-          onError={(detail) => { setError({ key: 'errorRun', detail }) }}
-          onRan={() => { setRunOpen(false) }}
-        />
-
         <PackagingDrawer
           canvas={canvas === null ? null : { id: canvas.id, name: meta.name.trim() === '' ? canvas.name : meta.name }}
           open={packageOpen}
@@ -2857,152 +2847,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
 
       </div>
     </div>
-  )
-}
-
-/** 编辑器内的运行对话框。 */
-function RunFromEditorDialog({ open, canvasId, projects, onClose, onError, onRan }: {
-  open: boolean
-  canvasId: string
-  projects: RunProjectView[]
-  onClose: () => void
-  onError: (detail: string) => void
-  onRan: () => void
-}) {
-  const [projectId, setProjectId] = useState<string | null>(null)
-  const [folder, setFolder] = useState('')
-  const [name, setName] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-
-  const candidates = useMemo(
-    () => projects.filter(project => project.agentic_flow_id === canvasId),
-    [projects, canvasId],
-  )
-
-  useEffect(() => {
-    setProjectId(candidates[0]?.id ?? null)
-    setFolder('')
-    setName('')
-  }, [open, candidates])
-
-  const selected = candidates.find(project => project.id === projectId) ?? null
-
-  /** 目录选择：走 dsh 原生选择器（Host 面 `ctx.directoryPicker`，经 `/soloengine/pick-directory` 桥）。 */
-  const pickFolder = async (): Promise<void> => {
-    try {
-      const response = await fetch('/soloengine/pick-directory', { method: 'POST' })
-      const body = await response.json() as { ok: boolean; path?: string | null; error?: { message?: string } }
-      if (!body.ok) {
-        onError(body.error?.message ?? t('editor', 'errorRun'))
-        return
-      }
-      if (typeof body.path === 'string' && body.path !== '') setFolder(body.path)
-    } catch (failure) {
-      onError(describeError(failure))
-    }
-  }
-
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t('editor', 'runTitle')}
-      closeLabel={t('common', 'actionClose')}
-      description={t('editor', 'runDescription')}
-      className={`${css.modalDialog ?? ''} ${css.modalWide ?? ''}`}
-      footer={(
-        <>
-          <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true)
-              void (async () => {
-                try {
-                  let targetId = projectId
-                  if (targetId === null) {
-                    const created = await request<{ ok: true; project: RunProjectView }>('/projects', {
-                      method: 'POST',
-                      body: {
-                        canvasId,
-                        folderPath: folder.trim(),
-                        ...(name.trim() === '' ? {} : { name: name.trim() }),
-                      },
-                    })
-                    targetId = created.project.id
-                  }
-                  const session = await request<{ ok: true; session: RunSessionView }>('/runs', {
-                    method: 'POST',
-                    body: { canvasId, projectId: targetId },
-                  })
-                  onRan()
-                  openPage(session.session.panel_path)
-                } catch (failure) {
-                  onError(describeError(failure))
-                } finally {
-                  setBusy(false)
-                }
-              })()
-            }}
-          >
-            {busy ? t('editor', 'runStarting') : t('editor', 'runConfirm')}
-          </Button>
-        </>
-      )}
-    >
-      <div className={css.form}>
-        <div className={css.field}>
-          <span className={css.fieldLabel}>{t('canvases', 'projectLabel')}</span>
-          <div className={css.fieldControl}>
-            <Menu
-              open={menuOpen}
-              autoFocus
-              items={candidates.map(project => ({ id: project.id, label: `${project.name} — ${project.folder_path}` }))}
-              selectedId={projectId ?? undefined}
-              onSelect={(id) => { setProjectId(id); setMenuOpen(false) }}
-              onClose={() => { setMenuOpen(false) }}
-              anchor={(
-                <Button size="sm" disabled={candidates.length === 0} onClick={() => { setMenuOpen(!menuOpen) }}>
-                  {selected === null ? t('common', 'actionSelect') : selected.name}
-                </Button>
-              )}
-            />
-            {candidates.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => { setProjectId(null) }}>
-                {t('common', 'actionCreate')}
-              </Button>
-            )}
-          </div>
-          {/* 与画布列表页的运行对话框同形：没有可选项时给出下一步指引，
-              否则点「选择」只会展开一个空浮层，用户看不出为什么没有内容。 */}
-          {candidates.length === 0 && <span className={css.fieldHint}>{t('canvases', 'projectEmpty')}</span>}
-        </div>
-        {projectId === null && (
-          <>
-            <Field label={t('editor', 'projectFolderLabel')}>
-              <div className={css.fieldControl}>
-                <Input
-                  data-modal-autofocus={candidates.length === 0 ? true : undefined}
-                  value={folder}
-                  placeholder={t('editor', 'projectFolderPlaceholder')}
-                  onChange={(event) => { setFolder(event.currentTarget.value) }}
-                />
-                <Button size="sm" onClick={() => { void pickFolder() }}>{t('editor', 'projectFolderPick')}</Button>
-              </div>
-            </Field>
-            <Field label={t('editor', 'projectNameLabel')}>
-              <Input
-                value={name}
-                placeholder={t('editor', 'projectNamePlaceholder')}
-                onChange={(event) => { setName(event.currentTarget.value) }}
-              />
-            </Field>
-          </>
-        )}
-      </div>
-    </Modal>
   )
 }
 

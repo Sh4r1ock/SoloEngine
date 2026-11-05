@@ -83,7 +83,6 @@ export function CanvasesPage() {
   const [editTarget, setEditTarget] = useState<CanvasView | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CanvasView | null>(null)
-  const [runTarget, setRunTarget] = useState<CanvasView | null>(null)
   /** 打包抽屉的来源画布（null = 关闭）；打包不是页面，只在画布上下文里打开。 */
   const [packageTarget, setPackageTarget] = useState<CanvasView | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
@@ -330,7 +329,7 @@ export function CanvasesPage() {
                         aria-label={t('canvases', 'runAria', { name: canvas.name })}
                         title={t('canvases', 'run')}
                         disabled={busyId === canvas.id}
-                        onClick={() => { setRunTarget(canvas) }}
+                        onClick={() => { openPage(`/run/${canvas.id}`) }}
                       />
                       <Button
                         size="sm"
@@ -387,7 +386,7 @@ export function CanvasesPage() {
                           if (id === 'open') navigate(`/canvas/${canvas.id}`)
                           if (id === 'edit') setEditTarget(canvas)
                           if (id === 'duplicate') duplicate(canvas, false)
-                          if (id === 'run') setRunTarget(canvas)
+                          if (id === 'run') openPage(`/run/${canvas.id}`)
                           if (id === 'package') setPackageTarget(canvas)
                           if (id === 'delete') setDeleteTarget(canvas)
                         }}
@@ -546,13 +545,6 @@ export function CanvasesPage() {
         )}
       />
 
-      <RunCanvasDialog
-        canvas={runTarget}
-        projects={projects}
-        onClose={() => { setRunTarget(null) }}
-        onRan={() => { setRunTarget(null); void loadSessions() }}
-      />
-
       <PackagingDrawer
         canvas={packageTarget}
         open={packageTarget !== null}
@@ -706,173 +698,6 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
         </div>
         <NoticeLine tone="info" text={t('canvases', 'createNotice')} />
       </form>
-    </Modal>
-  )
-}
-
-/** 运行画布对话框：选择/新建运行项目后发起一次运行。 */
-function RunCanvasDialog({ canvas, projects, onClose, onRan }: {
-  canvas: CanvasView | null
-  projects: RunProjectView[]
-  onClose: () => void
-  onRan: () => void
-}) {
-  const [projectId, setProjectId] = useState<string | null>(null)
-  const [folder, setFolder] = useState('')
-  const [name, setName] = useState('')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [busy, setBusy] = useState(false)
-  // 错误就近呈现在对话框内（与 CreateCanvasDialog 同模式）：委托到页面级会被 Modal 遮挡。
-  const [error, setError] = useState<string | null>(null)
-
-  const candidates = useMemo(
-    () => (canvas === null ? [] : projects.filter(project => project.agentic_flow_id === canvas.id)),
-    [canvas, projects],
-  )
-
-  useEffect(() => {
-    setProjectId(candidates[0]?.id ?? null)
-    setFolder('')
-    setName('')
-    setError(null)
-  }, [canvas, candidates])
-
-  const selected = candidates.find(project => project.id === projectId) ?? null
-  // 运行档位来自画布设置（`runs.ts` 的 compile 读取 settings.run_mode）；
-  // `/runs` 请求体只有 canvasId/projectId/sessionKey，没有单次运行档位字段，故只读呈现。
-  const runMode = canvas?.canvas.settings?.run_mode ?? 'workspace-write'
-
-  /** 目录选择：走 dsh 原生选择器（Host 面 `ctx.directoryPicker`，经 `/soloengine/pick-directory` 桥）。 */
-  const pickFolder = async (): Promise<void> => {
-    try {
-      const response = await fetch('/soloengine/pick-directory', { method: 'POST' })
-      const body = await response.json() as { ok: boolean; path?: string | null; error?: { message?: string } }
-      if (!body.ok) {
-        setError(body.error?.message ?? t('canvases', 'errorRun'))
-        return
-      }
-      if (typeof body.path === 'string' && body.path !== '') setFolder(body.path)
-    } catch (failure) {
-      setError(describeError(failure))
-    }
-  }
-
-  return (
-    <Modal
-      open={canvas !== null}
-      onClose={onClose}
-      title={t('canvases', 'runTitle')}
-      closeLabel={t('common', 'actionClose')}
-      description={t('canvases', 'runDescription')}
-      className={common.modalDialog ?? ''}
-      footer={(
-        <>
-          <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
-          <Button
-            variant="primary"
-            disabled={busy}
-            onClick={() => {
-              if (canvas === null) return
-              // 新建项目路径前置校验：folder 是沙箱根必填（FR-CANVAS-040/041），
-              // 空值发给后端只会拿到 FOLDER_REQUIRED 机器码（NN/G：错误应在提交前就近拦截）。
-              if (projectId === null && folder.trim() === '') {
-                setError(t('canvases', 'projectFolderRequired'))
-                return
-              }
-              setBusy(true)
-              void (async () => {
-                try {
-                  let targetId = projectId
-                  if (targetId === null) {
-                    const created = await request<{ ok: true; project: RunProjectView }>('/projects', {
-                      method: 'POST',
-                      body: {
-                        canvasId: canvas.id,
-                        folderPath: folder.trim(),
-                        ...(name.trim() === '' ? {} : { name: name.trim() }),
-                      },
-                    })
-                    targetId = created.project.id
-                  }
-                  const session = await request<{ ok: true; session: RunSessionView }>('/runs', {
-                    method: 'POST',
-                    body: { canvasId: canvas.id, projectId: targetId },
-                  })
-                  onRan()
-                  openPage(session.session.panel_path)
-                } catch (failure) {
-                  setError(`${t('canvases', 'errorRun')} — ${describeError(failure)}`)
-                } finally {
-                  setBusy(false)
-                }
-              })()
-            }}
-          >
-            {busy ? t('canvases', 'runStarting') : t('canvases', 'runConfirm')}
-          </Button>
-        </>
-      )}
-    >
-      <div className={common.form}>
-        <NoticeLine tone="error" text={error} />
-        <div className={common.field}>
-          <span className={common.fieldLabel}>{t('canvases', 'projectLabel')}</span>
-          <div className={common.fieldControl}>
-            <Menu
-              open={menuOpen}
-              autoFocus
-              align="start"
-              items={candidates.map(project => ({
-                id: project.id,
-                label: `${project.name} — ${project.folder_path}`,
-              }))}
-              selectedId={projectId ?? undefined}
-              onSelect={(id) => { setProjectId(id); setMenuOpen(false) }}
-              onClose={() => { setMenuOpen(false) }}
-              anchor={(
-                <Button size="sm" disabled={candidates.length === 0} onClick={() => { setMenuOpen(!menuOpen) }}>
-                  {selected === null ? t('common', 'actionSelect') : selected.name}
-                </Button>
-              )}
-            />
-            {candidates.length > 0 && (
-              <Button size="sm" variant="ghost" onClick={() => { setProjectId(null) }}>
-                {t('common', 'actionCreate')}
-              </Button>
-            )}
-          </div>
-          {candidates.length === 0 && <span className={common.fieldHint}>{t('canvases', 'projectEmpty')}</span>}
-        </div>
-        {projectId === null && (
-          <>
-            <Field label={t('canvases', 'projectFolderLabel')} hint={t('canvases', 'projectFolderHint')}>
-              <div className={common.fieldControl}>
-                <Input
-                  data-modal-autofocus={candidates.length === 0 ? true : undefined}
-                  value={folder}
-                  placeholder={t('canvases', 'projectFolderPlaceholder')}
-                  onChange={(event) => { setFolder(event.currentTarget.value) }}
-                />
-                <Button size="sm" onClick={() => { void pickFolder() }}>{t('canvases', 'projectFolderPick')}</Button>
-              </div>
-            </Field>
-            <Field label={t('canvases', 'projectNameLabel')}>
-              <Input
-                value={name}
-                placeholder={t('canvases', 'projectNamePlaceholder')}
-                onChange={(event) => { setName(event.currentTarget.value) }}
-              />
-            </Field>
-          </>
-        )}
-        <Field label={t('canvases', 'runModeLabel')} hint={t('canvases', 'runModeHint')}>
-          <select className={css.select} value={runMode} disabled>
-            <option value="workspace-write">{t('canvases', 'runModeWorkspaceWrite')}</option>
-            <option value="approve-for-me">{t('canvases', 'runModeApproveForMe')}</option>
-            <option value="danger-full-access">{t('canvases', 'runModeFullAccess')}</option>
-          </select>
-        </Field>
-      </div>
     </Modal>
   )
 }
