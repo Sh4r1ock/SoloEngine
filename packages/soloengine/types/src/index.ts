@@ -24,6 +24,10 @@ export {
 } from './routes.ts'
 export type { ProductPageName, ProductRouteMatch, ProductRouteRoot, ProductSurface } from './routes.ts'
 
+// 画布节点种类与 agent 角色模板（节点只有 agent/note；角色只是预填模板）。
+export { BUILTIN_ROLE_PRESETS, rolePresetName } from './presets.ts'
+export type { AgentRolePreset, CanvasNodeKind } from './presets.ts'
+
 /** 采样与轮次参数。 */
 export interface SamplingParams {
   temperature?: number
@@ -62,8 +66,8 @@ export interface AgentSpec {
   agentId: string
   /** 节点名（模型可见的委派工具名来源）。 */
   name: string
-  /** 节点类型（coordinator / planner / executor）。 */
-  agentType: string
+  /** 角色模板 id（只用于呈现；入口由委派树拓扑决定）。 */
+  role: string
   /** 模型路由名 `soloengine-<llm_config_id>`。 */
   modelRoute: string
   /** 该 agent 的 persona 文本（注入子会话创建窗口）。 */

@@ -22,7 +22,8 @@ import { NumberStepper } from '../components/NumberStepper.tsx'
 import { MultiSelectList } from '../components/MultiSelectList.tsx'
 import type { MultiSelectStale } from '../components/MultiSelectList.tsx'
 import { ThemeCycleButton } from '../components/ThemeCycleButton.tsx'
-import { AGENT_TYPES, NOTE_WIDTH, NODE_WIDTH, alignToPeers, snap } from '../canvas-data.ts'
+import { NOTE_WIDTH, NODE_WIDTH, alignToPeers, snap } from '../canvas-data.ts'
+import { rolePresetName, type AgentRolePreset } from '@soloengine/types'
 import type {
   CanvasAvailability, CanvasData, CanvasEdge, CanvasNode, CanvasView, McpServerView, ModelView, NodePluginRowView, PluginRow,
   RunProjectView, RunSessionView, SkillView, UserView,
@@ -36,29 +37,46 @@ const GRID_KEY = 'soloengine.editorGrid'
 /** 自动保存进入「保存中」后至少保持的时长（原型 04-pages.md:135：720ms 后进入保存中，360ms 后写入）。 */
 const AUTO_SAVE_WRITE_MS = 360
 
-/** 节点类型文案键。 */
-function typeKey(type: CanvasNode['agent_type']): string {
-  switch (type) {
-    case 'coordinator': return 'agentTypeCoordinator'
-    case 'planner': return 'agentTypePlanner'
-    case 'executor': return 'agentTypeExecutor'
-    default: return 'agentTypeNote'
-  }
+/** 节点种类判定：只有 agent 与注释两种。 */
+function isNote(node: CanvasNode): boolean {
+  return node.kind === 'note'
 }
 
-/** 节点角色的协议代码（原型节点 role 行：类型名 · CODE）。 */
-function typeCode(type: CanvasNode['agent_type']): string {
-  switch (type) {
+/** 角色模板的显示名（内置模板按语言取，画布内新增模板用用户填写的名称）。 */
+function roleLabel(node: CanvasNode, presets: readonly AgentRolePreset[], locale: string): string {
+  if (isNote(node)) return t('editor', 'agentTypeNote')
+  const preset = presets.find(item => item.id === node.role)
+  if (preset !== undefined) return rolePresetName(preset, locale === 'en' ? 'en' : 'zh')
+  return node.role ?? t('editor', 'agentTypeCustom')
+}
+
+/** 节点角色的协议代码（原型节点 role 行：角色名 · CODE）。 */
+function roleCode(node: CanvasNode): string {
+  if (isNote(node)) return t('editor', 'roleCodeNote')
+  switch (node.role) {
     case 'coordinator': return t('editor', 'roleCodeCoordinator')
     case 'planner': return t('editor', 'roleCodePlanner')
     case 'executor': return t('editor', 'roleCodeExecutor')
-    default: return t('editor', 'roleCodeNote')
+    default: return t('editor', 'roleCodeCustom')
   }
 }
 
 /** 节点宽度（注释节点 190、Agent 节点 220，与 editor.module.css 一致）。 */
-function nodeWidth(type: CanvasNode['agent_type']): number {
-  return type === 'note' ? NOTE_WIDTH : NODE_WIDTH
+function nodeWidth(node: CanvasNode): number {
+  return isNote(node) ? NOTE_WIDTH : NODE_WIDTH
+}
+
+/** 两份工具清单是否等价（顺序无关）。 */
+function sameTools(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+  const a = [...(left ?? [])].sort()
+  const b = [...(right ?? [])].sort()
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
+/** 节点当前配置是否已偏离它所属的模板（偏离时切换模板会覆盖自定义内容）。 */
+function roleDiffers(node: CanvasNode, presets: readonly AgentRolePreset[]): boolean {
+  const current = presets.find(item => item.id === node.role)
+  return (node.system_prompt ?? '') !== (current?.systemPrompt ?? '') || !sameTools(node.tools, current?.tools)
 }
 
 /** SVG 路径数据（不是用户可见文案；单独命名以区别于 locale 文案）。 */
@@ -81,8 +99,8 @@ function nodeBox(node: CanvasNode): NodeBox {
   return {
     left: node.position.x,
     top: node.position.y,
-    width: nodeWidth(node.agent_type),
-    height: nodeHeight(node.agent_type),
+    width: nodeWidth(node),
+    height: nodeHeight(node),
   }
 }
 
@@ -206,6 +224,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
       || target instanceof HTMLSelectElement || target.isContentEditable)
 }
 
+/** Agent 节点默认渲染高度（见 {@link nodeHeight} 的说明）。 */
+const AGENT_NODE_HEIGHT = 149
+/** 注释节点默认渲染高度。 */
+const NOTE_NODE_HEIGHT = 165
+
 /**
  * 节点框高度基准（连线端点与对齐锚线的计算用）。
  *
@@ -213,13 +236,16 @@ function isEditableTarget(target: EventTarget | null): boolean {
  * 底部发丝线），注释节点 165（3 行摘要）。`.node` 无固定高度，名称换行时节点会更高；
  * 此处以默认值为基准，不冒充精确值。
  */
-function nodeHeight(type: CanvasNode['agent_type']): number {
-  return type === 'note' ? 165 : 149
+function nodeHeight(node: CanvasNode): number {
+  return isNote(node) ? NOTE_NODE_HEIGHT : AGENT_NODE_HEIGHT
 }
 
 /** 节点类型图标（原型 editor.js `TYPES[type].icon`：compass / route / terminal / edit）。 */
-function NodeGlyph({ type }: { type: CanvasNode['agent_type'] }) {
-  switch (type) {
+function NodeGlyph({ node }: { node: CanvasNode }) {
+  if (isNote(node)) {
+    return <Glyph><path d="m4 16 1-3.5L13.5 4a1.8 1.8 0 0 1 2.5 2.5L7.5 15z" /></Glyph>
+  }
+  switch (node.role) {
     case 'coordinator':
       return <Glyph><circle cx="10" cy="10" r="6.5" /><path d="m12.6 7.4-1.6 3.6-3.6 1.6L9 9z" /></Glyph>
     case 'planner':
@@ -227,7 +253,7 @@ function NodeGlyph({ type }: { type: CanvasNode['agent_type'] }) {
     case 'executor':
       return <Glyph><rect x="3" y="4.5" width="14" height="11" rx="2" /><path d="m6.5 8.5 2 2-2 2M10.5 13h3" /></Glyph>
     default:
-      return <Glyph><path d="m4 16 1-3.5L13.5 4a1.8 1.8 0 0 1 2.5 2.5L7.5 15z" /></Glyph>
+      return <Glyph><circle cx="10" cy="10" r="6.5" /><path d="M10 6.5v3.5l2.5 1.5" /></Glyph>
   }
 }
 
@@ -319,8 +345,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   /** 画布实例客户端替换草稿（`settings.plugins.replace`）：目标基线行 id + 替代包名。 */
   const [replaceDraft, setReplaceDraft] = useState({ id: '', name: '' })
   const [replaceError, setReplaceError] = useState<string | null>(null)
-  // 三类节点预设（FR-CANVAS-011 预填模板）与 harness 实时注册的工具清单（FR-CANVAS-014）。
-  const [presets, setPresets] = useState<Partial<Record<string, { summary?: string; system_prompt?: string; tools?: string[] }>>>({})
+  // 角色模板（FR-CANVAS-011 预填模板）：内置模板来自后端，画布内新增模板随画布保存。
+  const [builtinPresets, setBuiltinPresets] = useState<AgentRolePreset[]>([])
+  const presets = useMemo(
+    () => [...builtinPresets, ...(data.settings?.role_presets ?? [])],
+    [builtinPresets, data.settings?.role_presets],
+  )
   const [liveTools, setLiveTools] = useState<{ name: string; description: string }[]>([])
   const [toolsError, setToolsError] = useState<string | null>(null)
   // 选择模型（W11.3）：`selectedIds` 是多选集合，`primaryId` 是属性面板展示的主选中节点。
@@ -364,7 +394,13 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   // 错误/通知存「文案键 + 动态细节」，渲染时才翻译——存翻译字符串会在切换语言后残留旧语种。
   const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorRun' | 'errorPreview' | 'errorDuplicate'; detail: string } | null>(null)
   const [conflict, setConflict] = useState(false)
-  const [pendingType, setPendingType] = useState<{ nodeId: string; next: CanvasNode['agent_type'] } | null>(null)
+  /** 待确认的角色模板切换：模板会覆盖当前提示词与工具（与 v0.4.0 的预设切换同一保护）。 */
+  const [roleSwitch, setRoleSwitch] = useState<{ nodeId: string; presetId: string } | null>(null)
+  /** 「新建角色模板」对话框（模板写进画布 settings，可无限扩充）。 */
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateName, setTemplateName] = useState('')
+  const [templateDescription, setTemplateDescription] = useState('')
+  const [templatePrompt, setTemplatePrompt] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
@@ -399,14 +435,14 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
         request<{ ok: true; skills: SkillView[] }>('/skills'),
         request<{ ok: true; servers: McpServerView[] }>('/mcp'),
         request<{ ok: true; projects: RunProjectView[] }>('/projects'),
-        // 三类节点预设（FR-CANVAS-011）：唯一真源在后端，前端不另立第二份清单。
-        request<{ ok: true; presets: Partial<Record<string, { summary?: string; system_prompt?: string; tools?: string[] }>> }>('/canvases/meta/presets'),
+        // 角色模板（FR-CANVAS-011）：唯一真源在后端，前端不另立第二份清单。
+        request<{ ok: true; presets: AgentRolePreset[] }>('/canvases/meta/presets'),
         // profile 组合行：实例插件分节只列客户端行（宿主行由组合层管理）。
         request<{ ok: true; rows: PluginRow[] }>('/plugins'),
         // 用户级默认插件表（§0.1.4）：新建 agent 节点的初始 `plugins` 由后端投影，前端不复制规则。
         request<{ ok: true; plugins: NodePluginRowView[] }>('/plugins/defaults'),
       ])
-      setPresets(presetResult.presets)
+      setBuiltinPresets(presetResult.presets)
       setPluginRows(pluginResult.rows)
       setDefaultNodePlugins(defaultsResult.plugins)
       const document: CanvasData = {
@@ -713,32 +749,91 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     commit({ ...data, nodes }, field === null ? undefined : `${nodeId}:${field}`)
   }, [commit, data])
 
-  const addNode = (type: CanvasNode['agent_type']): void => {
+  /**
+   * 切换节点角色模板：模板即预填，按模板重写提示词与工具（v0.4.0 预设切换的同一语义）。
+   * @param nodeId - 目标节点。
+   * @param presetId - 目标模板 id。
+   */
+  const applyRole = (nodeId: string, presetId: string): void => {
+    const preset = presets.find(item => item.id === presetId)
+    if (preset === undefined) return
+    const nodes = data.nodes.map(node => node.node_id === nodeId
+      ? { ...node, role: preset.id, system_prompt: preset.systemPrompt, tools: [...preset.tools] }
+      : node)
+    commit({ ...data, nodes })
+  }
+
+  /** 新建角色模板并立即应用到选中节点：模板随画布数据保存，可继续新增。 */
+  const createTemplate = (): void => {
+    const name = templateName.trim()
+    if (name === '' || selectedNode === null) return
+    const taken = new Set(presets.map(preset => preset.id))
+    let id = ''
+    do {
+      idSequence += 1
+      id = `role-${Date.now().toString(36)}-${idSequence.toString(36)}`
+    } while (taken.has(id))
+    const preset: AgentRolePreset = {
+      id,
+      name,
+      nameEn: name,
+      description: templateDescription.trim(),
+      systemPrompt: templatePrompt,
+      tools: [],
+      builtin: false,
+    }
+    const nodes = data.nodes.map(node => node.node_id === selectedNode.node_id
+      ? {
+        ...node,
+        role: id,
+        ...(preset.description === '' ? {} : { summary: preset.description }),
+        system_prompt: preset.systemPrompt,
+        tools: [],
+      }
+      : node)
+    commit({
+      ...data,
+      nodes,
+      settings: { ...data.settings, role_presets: [...(data.settings?.role_presets ?? []), preset] },
+    })
+    setTemplateOpen(false)
+    setTemplateName('')
+    setTemplateDescription('')
+    setTemplatePrompt('')
+    toast.show(t('editor', 'roleTemplateCreated', { name }), 'success')
+  }
+
+  /**
+   * 添加节点：一个 agent 节点（按角色模板预填）或一个注释节点。
+   * @param presetId - 角色模板 id；`note` 表示注释节点。
+   */
+  const addNode = (presetId: string): void => {
+    const note = presetId === 'note'
+    const preset = presets.find(item => item.id === presetId)
     // 新节点落在当前视口中心附近（原型 editor.js:478-493）：全出血画布没有滚动容器，
     // 按节点序号排布会把节点放到视口外。
     const viewport = canvasRef.current?.getBoundingClientRect()
     const offset = (data.nodes.length % 3) * 24
     const position = {
-      x: snap(Math.max(24, (viewport?.width ?? 960) / 2 - nodeWidth(type) / 2 + offset)),
+      x: snap(Math.max(24, (viewport?.width ?? 960) / 2 - (note ? NOTE_WIDTH : NODE_WIDTH) / 2 + offset)),
       y: snap(Math.max(24, (viewport?.height ?? 560) / 2 - 60 + offset)),
     }
-    const suffix = type === 'note' ? 'Note' : `${type.slice(0, 1).toUpperCase()}${type.slice(1)}`
-    const preset = presets[type]
     const node: CanvasNode = {
       node_id: freshId('node', new Set(data.nodes.map(item => item.node_id))),
-      agent_type: type,
-      name: t('editor', `agentType${suffix}`),
-      // 预设即预填（FR-CANVAS-011）：预设携带的摘要/提示词/工具清单在创建时就写入节点。
-      ...(type !== 'note' && preset !== undefined
-        ? {
-          ...(preset.summary === undefined ? {} : { summary: preset.summary }),
-          ...(preset.system_prompt === undefined ? {} : { system_prompt: preset.system_prompt }),
-          tools: [...(preset.tools ?? [])],
-        }
-        : {}),
-      ...(type === 'note' ? {} : preset === undefined ? { tools: [] } : {}),
+      kind: note ? 'note' : 'agent',
+      ...(note ? {} : { role: presetId }),
+      name: note ? t('editor', 'agentTypeNote') : (preset === undefined ? t('editor', 'agentTypeCustom') : rolePresetName(preset, locale === 'en' ? 'en' : 'zh')),
+      // 模板即预填（FR-CANVAS-011）：模板携带的摘要/提示词/工具清单在创建时就写入节点。
+      ...(note || preset === undefined
+        ? {}
+        : {
+          ...(preset.description === '' ? {} : { summary: preset.description }),
+          ...(preset.systemPrompt === '' ? {} : { system_prompt: preset.systemPrompt }),
+          tools: [...preset.tools],
+        }),
+      ...(note ? {} : preset === undefined ? { tools: [] } : {}),
       // 用户级默认插件表（§0.1.4）：新建 agent 节点默认使用这套；默认表为空时保持空。
-      ...(type !== 'note' && defaultNodePlugins.length > 0
+      ...(!note && defaultNodePlugins.length > 0
         ? { plugins: defaultNodePlugins.map(row => ({ ...row })) }
         : {}),
       position,
@@ -765,7 +860,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     const gapX = 48
     const gapY = 34
     const padX = Math.max(16, (width - (columns * NODE_WIDTH + (columns - 1) * gapX)) / 2)
-    const rowHeight = data.nodes.reduce((tallest, node) => Math.max(tallest, nodeHeight(node.agent_type)), 0)
+    const rowHeight = data.nodes.reduce((tallest, node) => Math.max(tallest, nodeHeight(node)), 0)
     const rows = Math.ceil(data.nodes.length / columns)
     const padY = Math.max(16, (height - (rows * rowHeight + (rows - 1) * gapY)) / 2)
     const placed = data.nodes.map((node, index) => ({
@@ -773,7 +868,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       position: {
         x: snap(Math.min(
           padX + (index % columns) * (NODE_WIDTH + gapX),
-          Math.max(0, width - nodeWidth(node.agent_type)),
+          Math.max(0, width - nodeWidth(node)),
         )),
         y: snap(padY + Math.floor(index / columns) * (rowHeight + gapY)),
       },
@@ -942,7 +1037,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const addEdge = (from: string, to: string): void => {
     if (from === to) return
     // 注释节点不是 agent，不能成为委派边的端点（需求 §12.3 第 4 条、原型 editor.js:648-660）。
-    if (data.nodes.find(node => node.node_id === to)?.agent_type === 'note') return
+    const target = data.nodes.find(node => node.node_id === to)
+    if (target === undefined || isNote(target)) return
     if (data.edges.some(edge => edge.from === from && edge.to === to)) {
       // 重复委派边不静默丢弃（原型 addEdge 的 toast）：显式告知这条边已存在。
       toast.show(t('editor', 'edgeDuplicate'), 'error')
@@ -1022,7 +1118,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   ])
   const edgeTargets = selectedNode === null
     ? []
-    : data.nodes.filter(node => node.node_id !== selectedNode.node_id && node.agent_type !== 'note')
+    : data.nodes.filter(node => node.node_id !== selectedNode.node_id && !isNote(node))
 
   // 节点级失效标记：被删资产已不在可选集合里，必须作为「已勾选但失效」的行补进对应分组，
   // 否则勾选项凭空消失、用户既看不到原因也无法移除悬空引用（PRD-02 FR-CANVAS-041）。
@@ -1063,8 +1159,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           const right = Math.max(marqueeState.x0, x)
           const top = Math.min(marqueeState.y0, y)
           const bottom = Math.max(marqueeState.y0, y)
-          const hits = data.nodes.filter(node => node.position.x < right && node.position.x + nodeWidth(node.agent_type) > left
-            && node.position.y < bottom && node.position.y + nodeHeight(node.agent_type) > top)
+          const hits = data.nodes.filter(node => node.position.x < right && node.position.x + nodeWidth(node) > left
+            && node.position.y < bottom && node.position.y + nodeHeight(node) > top)
           const next = new Set(marqueeState.additive ? selectedIds : [])
           for (const hit of hits) next.add(hit.node_id)
           setSelectedIds(next)
@@ -1084,23 +1180,23 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     const aligned = dragged === undefined
       ? { x: rawX, y: rawY, vertical: [], horizontal: [] }
       : alignToPeers(
-        { id: dragged.node_id, x: rawX, y: rawY, height: nodeHeight(dragged.agent_type), width: nodeWidth(dragged.agent_type) },
+        { id: dragged.node_id, x: rawX, y: rawY, height: nodeHeight(dragged), width: nodeWidth(dragged) },
         data.nodes.map(node => ({
           id: node.node_id,
           x: node.position.x,
           y: node.position.y,
-          height: nodeHeight(node.agent_type),
-          width: nodeWidth(node.agent_type),
+          height: nodeHeight(node),
+          width: nodeWidth(node),
         })),
       )
     // 全出血画布没有滚动容器：拖拽必须落在可见画布内（原型 editor.js:608-611 同样夹取）。
     const bounds = canvasRef.current?.getBoundingClientRect()
     const maxX = bounds === undefined
       ? Number.POSITIVE_INFINITY
-      : Math.max(0, bounds.width - (dragged === undefined ? NODE_WIDTH : nodeWidth(dragged.agent_type)))
+      : Math.max(0, bounds.width - (dragged === undefined ? NODE_WIDTH : nodeWidth(dragged)))
     const maxY = bounds === undefined
       ? Number.POSITIVE_INFINITY
-      : Math.max(0, bounds.height - (dragged === undefined ? nodeHeight('coordinator') : nodeHeight(dragged.agent_type)))
+      : Math.max(0, bounds.height - (dragged === undefined ? AGENT_NODE_HEIGHT : nodeHeight(dragged)))
     const x = Math.min(aligned.vertical.length > 0 ? Math.max(0, aligned.x) : Math.max(0, snap(rawX)), maxX)
     const y = Math.min(aligned.horizontal.length > 0 ? Math.max(0, aligned.y) : Math.max(0, snap(rawY)), maxY)
     setGuides({ vertical: aligned.vertical, horizontal: aligned.horizontal })
@@ -1348,16 +1444,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     updateNode(selectedNode.node_id, { plugins: nodePlugins.filter((_row, at) => at !== index) })
   }
 
-  /** 「添加节点」菜单（原型 editor.html:100-107）：角色分组 + 注释单列一组。 */
+  /** 「添加节点」菜单（原型 editor.html:100-107）：角色模板分组 + 注释单列一组。 */
   const addNodeItems: MenuEntry[] = [
     { type: 'label', id: 'add-node-role', text: t('editor', 'addMenuRoleLabel') },
-    ...AGENT_TYPES
-      .filter(type => type !== 'note')
-      .map(type => ({ id: type, label: t('editor', typeKey(type)) })),
+    ...presets.map(preset => ({ id: preset.id, label: rolePresetName(preset, locale === 'en' ? 'en' : 'zh') })),
     { type: 'separator', id: 'add-node-separator' },
-    ...AGENT_TYPES
-      .filter(type => type === 'note')
-      .map(type => ({ id: type, label: t('editor', typeKey(type)) })),
+    { id: 'note', label: t('editor', 'agentTypeNote') },
   ]
 
   /** 顶栏「更多」菜单（原型 editor.html:67-73）：复制画布 / 切换网格 / 清空画布 / 返回画布列表。 */
@@ -1409,8 +1501,9 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           align="start"
           items={addNodeItems}
           onSelect={(id) => {
-            const type = AGENT_TYPES.find(item => item === id)
-            if (type !== undefined) addNode(type)
+            const presetId = presets.find(item => item.id === id)
+            if (presetId !== undefined) addNode(presetId.id)
+            if (id === 'note') addNode('note')
             setAddMenuOpen(false)
           }}
           onClose={() => { setAddMenuOpen(false) }}
@@ -1592,8 +1685,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   align="start"
                   items={addNodeItems}
                   onSelect={(id) => {
-                    const type = AGENT_TYPES.find(item => item === id)
-                    if (type !== undefined) addNode(type)
+                    if (presets.some(preset => preset.id === id)) addNode(id)
+                    if (id === 'note') addNode('note')
                     setCanvasAddOpen(false)
                   }}
                   onClose={() => { setCanvasAddOpen(false) }}
@@ -1727,11 +1820,11 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   <div
                     key={node.node_id}
                     tabIndex={0}
-                    aria-label={`${node.name} · ${t('editor', typeKey(node.agent_type))}`}
+                    aria-label={`${node.name} · ${roleLabel(node, presets, locale)}`}
                     data-node-id={node.node_id}
                     className={[
                       editor.node,
-                      node.agent_type === 'note' ? editor.nodeNoteNode : '',
+                      isNote(node) ? editor.nodeNoteNode : '',
                       selectedIds.has(node.node_id) ? editor.nodeSelected : '',
                       node.node_id === draggingId ? editor.nodeDragging : '',
                     ].filter(part => part !== '').join(' ')}
@@ -1765,29 +1858,29 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     }}
                   >
                     <div className={editor.nodeHead}>
-                      <span className={editor.nodeGlyph}><NodeGlyph type={node.agent_type} /></span>
+                      <span className={editor.nodeGlyph}><NodeGlyph node={node} /></span>
                       <div className={editor.nodeTitles}>
                         <div className={editor.nodeTitle}>{node.name}</div>
                         <div className={editor.nodeRole}>
-                          {`${t('editor', typeKey(node.agent_type))} · ${typeCode(node.agent_type)}`}
+                          {`${roleLabel(node, presets, locale)} · ${roleCode(node)}`}
                         </div>
                       </div>
                       <span className={editor.nodeStatus} aria-hidden="true" />
                     </div>
-                    {node.agent_type === 'note'
+                    {isNote(node)
                       ? <p className={editor.nodeNote}>{node.system_prompt ?? node.summary ?? ''}</p>
                       : <p className={editor.nodeSummary}>{node.summary ?? ''}</p>}
                     <div className={editor.nodeFoot}>
                       <span className={editor.nodeFootDot} />
                       <span className={editor.nodeFootText}>
-                        {node.agent_type === 'note'
+                        {isNote(node)
                           ? t('editor', 'agentTypeNote')
                           : `${node.model_ref === undefined || node.model_ref === ''
                             ? t('editor', 'modelNone')
                             : models.find(model => model.id === node.model_ref)?.name ?? node.model_ref} · ${t('editor', 'nodeTools', { count: (node.tools ?? []).length })}`}
                       </span>
                     </div>
-                    {node.agent_type !== 'note' && (
+                    {!isNote(node) && (
                       <span
                         className={editor.nodePort}
                         title={t('editor', 'edgesAdd')}
@@ -1846,8 +1939,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   {selectedNode === null
                     ? t('editor', 'panelNoSelection')
                     : selectedIds.size > 1
-                      ? `${t('editor', 'multiSelected', { count: selectedIds.size })} · ${t('editor', typeKey(selectedNode.agent_type))} · ${selectedNode.name}`
-                      : `${t('editor', typeKey(selectedNode.agent_type))} · ${selectedNode.name}`}
+                      ? `${t('editor', 'multiSelected', { count: selectedIds.size })} · ${roleLabel(selectedNode, presets, locale)} · ${selectedNode.name}`
+                      : `${roleLabel(selectedNode, presets, locale)} · ${selectedNode.name}`}
                 </p>
               </div>
               {(selectedNode !== null || narrow) && (
@@ -2145,37 +2238,53 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     onToggle={() => { toggleGroup('identity') }}
                   >
                     <div className={editor.groupBody}>
-                      {/* 类型徽标（原型 editor.js:376-379 身份节首行）：类型名 · 协议代码。 */}
+                      {/* 身份徽标（原型 editor.js:376-379 身份节首行）：角色模板名 · 协议代码。 */}
                       <span className={editor.panelTypeBadge}>
-                        <NodeGlyph type={selectedNode.agent_type} />
-                        {`${t('editor', typeKey(selectedNode.agent_type))} · ${typeCode(selectedNode.agent_type)}`}
+                        <NodeGlyph node={selectedNode} />
+                        {`${roleLabel(selectedNode, presets, locale)} · ${roleCode(selectedNode)}`}
                       </span>
-                      <div className={editor.field}>
-                        <span className={editor.fieldLabel}>{t('editor', 'agentType')}</span>
-                        <div className={css.chipRow}>
-                          {AGENT_TYPES.filter(type => type !== 'note').map(type => (
-                            <Pill
-                              key={type}
-                              active={selectedNode.agent_type === type}
-                              aria-pressed={selectedNode.agent_type === type}
-                              onClick={() => {
-                                if (selectedNode.agent_type === type) return
-                                setAcknowledged(false)
-                                setPendingType({ nodeId: selectedNode.node_id, next: type })
-                              }}
+                      {!isNote(selectedNode) && (
+                        <div className={editor.field}>
+                          <span className={editor.fieldLabel}>{t('editor', 'roleTemplate')}</span>
+                          <div className={css.chipRow}>
+                            {presets.map(preset => (
+                              <Pill
+                                key={preset.id}
+                                active={selectedNode.role === preset.id}
+                                aria-pressed={selectedNode.role === preset.id}
+                                onClick={() => {
+                                  if (selectedNode.role === preset.id) return
+                                  // 已偏离当前模板时，切换会用模板内容覆盖提示词与工具（v0.4.0 同一保护）。
+                                  if (roleDiffers(selectedNode, presets)) {
+                                    setAcknowledged(false)
+                                    setRoleSwitch({ nodeId: selectedNode.node_id, presetId: preset.id })
+                                    return
+                                  }
+                                  applyRole(selectedNode.node_id, preset.id)
+                                }}
+                              >
+                                {rolePresetName(preset, locale === 'en' ? 'en' : 'zh')}
+                              </Pill>
+                            ))}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<IconPlusOutlineRegular size={12} />}
+                              onClick={() => { setTemplateOpen(true) }}
                             >
-                              {t('editor', typeKey(type))}
-                            </Pill>
-                          ))}
+                              {t('editor', 'roleTemplateNew')}
+                            </Button>
+                          </div>
+                          <span className={editor.fieldHint}>{t('editor', 'roleTemplateHint')}</span>
                         </div>
-                      </div>
+                      )}
                       <Field label={t('editor', 'nodeName')}>
                         <Input
                           value={selectedNode.name}
                           onChange={(event) => { updateNode(selectedNode.node_id, { name: event.currentTarget.value }) }}
                         />
                       </Field>
-                      {selectedNode.agent_type !== 'note' && (
+                      {!isNote(selectedNode) && (
                         <Field label={t('editor', 'nodeSummary')}>
                           <Input
                             value={selectedNode.summary ?? ''}
@@ -2190,7 +2299,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   </DisclosureRow>
 
                   {/* 注释（原型 editor.js:381-386）：注释节点有独立的注释节，正文不写进身份节。 */}
-                  {selectedNode.agent_type === 'note' && (
+                  {isNote(selectedNode) && (
                     <DisclosureRow
                       className={editor.panelSection}
                       icon={<IconPlusOutlineRegular size={14} />}
@@ -2213,7 +2322,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     </DisclosureRow>
                   )}
 
-                  {selectedNode.agent_type !== 'note' && (
+                  {!isNote(selectedNode) && (
                     <>
                       <DisclosureRow
                         className={editor.panelSection}
@@ -2261,6 +2370,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                             className={`${css.textarea} ${css.textareaMono}`}
                             value={selectedNode.system_prompt ?? ''}
                             placeholder={t('editor', 'promptPlaceholder')}
+                            aria-label={t('editor', 'groupPrompt')}
                             onChange={(event) => { updateNode(selectedNode.node_id, { system_prompt: event.currentTarget.value }) }}
                           />
                         </div>
@@ -2480,7 +2590,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     </>
                   )}
 
-                  {selectedNode.agent_type !== 'note' && (
+                  {!isNote(selectedNode) && (
                     <>
                       <DisclosureRow
                         className={editor.panelSection}
@@ -2522,7 +2632,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                                   >
                                     {edgeTargets.map(node => (
                                       <option key={node.node_id} value={node.node_id}>
-                                        {`${node.name} · ${t('editor', typeKey(node.agent_type))}`}
+                                        {`${node.name} · ${roleLabel(node, presets, locale)}`}
                                       </option>
                                     ))}
                                   </select>
@@ -2633,22 +2743,60 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
         />
 
         <RiskConfirmation
-          open={pendingType !== null}
-          title={t('editor', 'agentTypeChangeTitle')}
-          description={t('editor', 'agentTypeChangeDescription')}
-          acknowledgeLabel={t('editor', 'agentTypeAcknowledge')}
-          cancelLabel={t('editor', 'agentTypeCancel')}
+          open={roleSwitch !== null}
+          title={t('editor', 'roleSwitchTitle')}
+          description={t('editor', 'roleSwitchDescription')}
+          acknowledgeLabel={t('editor', 'roleSwitchAcknowledge')}
+          cancelLabel={t('editor', 'roleSwitchCancel')}
           closeLabel={t('common', 'actionClose')}
-          confirmLabel={t('editor', 'agentTypeConfirm')}
+          confirmLabel={t('editor', 'roleSwitchConfirm')}
           acknowledged={acknowledged}
           onAcknowledgedChange={setAcknowledged}
-          onCancel={() => { setPendingType(null) }}
+          onCancel={() => { setRoleSwitch(null) }}
           onConfirm={() => {
-            if (pendingType === null) return
-            updateNode(pendingType.nodeId, { agent_type: pendingType.next })
-            setPendingType(null)
+            if (roleSwitch === null) return
+            applyRole(roleSwitch.nodeId, roleSwitch.presetId)
+            setRoleSwitch(null)
           }}
         />
+
+        {/* 新建角色模板：模板写进画布 settings，保存后对其他节点同样可选。 */}
+        <Modal
+          open={templateOpen}
+          onClose={() => { setTemplateOpen(false) }}
+          title={t('editor', 'roleTemplateNewTitle')}
+          closeLabel={t('common', 'actionClose')}
+          footer={(
+            <>
+              <Button variant="outline" onClick={() => { setTemplateOpen(false) }}>{t('common', 'actionCancel')}</Button>
+              <Button variant="primary" disabled={templateName.trim() === ''} onClick={createTemplate}>
+                {t('editor', 'roleTemplateCreate')}
+              </Button>
+            </>
+          )}
+        >
+          <div className={editor.groupBody}>
+            <Field label={t('editor', 'roleTemplateName')}>
+              <Input
+                value={templateName}
+                onChange={(event) => { setTemplateName(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('editor', 'roleTemplateDescription')}>
+              <Input
+                value={templateDescription}
+                onChange={(event) => { setTemplateDescription(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('editor', 'roleTemplatePrompt')}>
+              <textarea
+                className={css.textarea}
+                value={templatePrompt}
+                onChange={(event) => { setTemplatePrompt(event.currentTarget.value) }}
+              />
+            </Field>
+          </div>
+        </Modal>
 
         {/* 「更多 → 清空画布」的确认对话框（原型 editor.js:1142-1160：确认后一步清空，可撤销）。 */}
         <Modal

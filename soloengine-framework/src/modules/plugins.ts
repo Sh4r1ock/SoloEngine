@@ -798,12 +798,12 @@ export class PluginService {
    * @param nodes - 画布节点。
    * @returns 补过默认行的新节点数组（未命中回落时原样返回副本）。
    */
-  async applyNodeDefaults<T extends { agent_type: string; plugins?: NodePluginRow[] }>(userId: string, nodes: readonly T[]): Promise<T[]> {
-    const pending = nodes.some(node => node.agent_type !== 'note' && node.plugins === undefined)
+  async applyNodeDefaults<T extends { kind: string; plugins?: NodePluginRow[] }>(userId: string, nodes: readonly T[]): Promise<T[]> {
+    const pending = nodes.some(node => node.kind !== 'note' && node.plugins === undefined)
     if (!pending) return [...nodes]
     const defaults = await this.defaultNodePlugins(userId)
     if (defaults.length === 0) return [...nodes]
-    return nodes.map(node => node.agent_type !== 'note' && node.plugins === undefined
+    return nodes.map(node => node.kind !== 'note' && node.plugins === undefined
       ? { ...node, plugins: defaults.map(row => ({ ...row })) }
       : node)
   }

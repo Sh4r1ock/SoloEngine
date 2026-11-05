@@ -15,7 +15,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
 import { FrameworkError, toView, type UserRow } from './accounts.ts'
-import { NODE_PRESETS, type InstancePluginDiff } from './canvas.ts'
+import { BUILTIN_ROLE_PRESETS } from '@soloengine/types'
+import type { InstancePluginDiff } from './canvas.ts'
 import { CHANGES_OPS, WORKSPACE_OPS, type OpsInput, type OpsRoute } from './ops.ts'
 
 /** 一条路由的描述（供 `/api/solo/routes` 取证与文档四向映射）。 */
@@ -733,13 +734,14 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.json({ ok: true, canvases: (await runtime.canvas.list(user.id)).map(row => runtime.canvas.view(row)) })
   })
 
-  // 三类节点预设（预填模板，PRD-02 FR-CANVAS-011「预设即预填」）：唯一真源在本模块的
-  // NODE_PRESETS，编辑器新增节点时按类型取用（前端不另立第二份清单）。
-  route('canvases-presets', 'get', '/canvases/meta/presets', '三类节点预设（预填模板，FR-CANVAS-011）', [authenticate], (_req, res) => {
-    res.json({ ok: true, presets: NODE_PRESETS })
+  // 内置角色模板（预填模板，PRD-02 FR-CANVAS-011「预设即预填」）：唯一真源在
+  // `@soloengine/types`；节点种类只有 agent/note，模板不改变节点语义。画布内新增的模板
+  // 存在画布 `settings.role_presets`，与内置模板合并后使用。
+  route('canvases-presets', 'get', '/canvases/meta/presets', '内置角色模板（预填模板，FR-CANVAS-011）', [authenticate], (_req, res) => {
+    res.json({ ok: true, presets: BUILTIN_ROLE_PRESETS })
   })
 
-  route('canvases-create', 'post', '/canvases', '新建画布（三类节点预设由前端选择）', [authenticate], async (req, res) => {
+  route('canvases-create', 'post', '/canvases', '新建画布（角色模板由前端选择）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { name?: string; description?: string; icon?: string; tags?: string[]; is_template?: boolean }

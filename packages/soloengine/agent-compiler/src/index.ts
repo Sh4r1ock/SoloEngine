@@ -14,13 +14,24 @@
  */
 
 import { createHash } from 'node:crypto'
-import { mapRunCommand, type AgentSpec, type CompileFailure, type CompileResult, type DelegationEdge, type SamplingParams } from '@soloengine/types'
+import {
+  mapRunCommand,
+  type AgentSpec,
+  type CompileFailure,
+  type CompileResult,
+  type DelegationEdge,
+  type NodePluginRow,
+  type SamplingParams,
+} from '@soloengine/types'
 import { TOOL_MAP } from '@soloengine/types'
 
 /** 画布节点（编译输入，由框架层画布域提供）。 */
 export interface CanvasNodeInput {
   node_id: string
-  agent_type: 'coordinator' | 'planner' | 'executor' | 'note'
+  /** 节点种类：agent 或注释（注释不参与编译）。 */
+  kind: 'agent' | 'note'
+  /** 角色模板 id（只用于呈现与预填；不参与入口判定）。 */
+  role?: string
   name: string
   summary?: string
   model_ref?: string
@@ -28,6 +39,8 @@ export interface CanvasNodeInput {
   tools?: string[]
   skills?: string[]
   mcp_servers?: string[]
+  /** 节点级插件行：只挂进该节点对应的 agent 作用域。 */
+  plugins?: NodePluginRow[]
   sampling?: SamplingParams
   position: { x: number; y: number }
 }
@@ -43,7 +56,8 @@ export interface CanvasEdgeInput {
 export interface CanvasDataInput {
   nodes: CanvasNodeInput[]
   edges: CanvasEdgeInput[]
-  settings?: { run_mode?: 'ask' | 'allowlist' | 'auto'; live_follow?: boolean }
+  /** 运行档位 = 原生权限预设名（画布只选默认档，语义归平台预设表）。 */
+  settings?: { run_mode?: 'workspace-write' | 'approve-for-me' | 'danger-full-access'; live_follow?: boolean }
 }
 
 /** 编译参数。 */
@@ -91,7 +105,7 @@ export function compileCanvas(params: CompileParams): CompileResult {
   const platform = params.platform ?? process.platform
   const canonical = mapRunCommand(platform)
 
-  const realNodes = canvas.nodes.filter(node => node.agent_type !== 'note')
+  const realNodes = canvas.nodes.filter(node => node.kind !== 'note')
   if (realNodes.length === 0) {
     throw new CompileError({ code: 'EMPTY_CANVAS', message: 'canvas has no agent nodes to compile' })
   }
@@ -103,36 +117,33 @@ export function compileCanvas(params: CompileParams): CompileResult {
       throw new CompileError({ code: 'DUPLICATE_NODE', nodeId: node.node_id, message: `node ${node.node_id} appears more than once` })
     }
     seen.add(node.node_id)
-    if (String(node.name ?? '').trim() === '') {
+    if (node.name.trim() === '') {
       throw new CompileError({ code: 'NODE_NAME_REQUIRED', nodeId: node.node_id, message: `node ${node.node_id} has no name` })
     }
   }
 
-  // 入口判定：coordinator 节点（FR-CANVAS-022：多节点无协调者拒绝；单节点画布以唯一节点为入口）。
-  const coordinators = realNodes.filter(node => node.agent_type === 'coordinator')
+  // 入口判定：委派树的根（没有入边的 agent 节点），与角色模板无关。
+  // 多个根取最后创建并提示；没有根（每个节点都有入边，即成环）直接拒绝。
+  const incoming = new Set(canvas.edges.map(edge => edge.to))
+  const roots = realNodes.filter(node => !incoming.has(node.node_id))
   const notices: string[] = []
   let mainId: string
-  if (coordinators.length === 0) {
-    if (realNodes.length > 1) {
-      throw new CompileError({
-        code: 'NO_ENTRY',
-        message: 'canvas has multiple agent nodes but no coordinator; an entry node is required',
-      })
-    }
-    const single = realNodes[0] as CanvasNodeInput
-    mainId = single.node_id
-    notices.push(`single agent node "${single.name}" (${single.node_id}) without a coordinator; using it as the entry`)
+  if (roots.length === 0) {
+    throw new CompileError({
+      code: 'NO_ENTRY',
+      message: 'canvas has no entry: every agent node has an incoming delegation edge (delegation cycle)',
+    })
   }
-  if (coordinators.length > 1) {
-    const last = coordinators[coordinators.length - 1] as CanvasNodeInput
+  if (roots.length > 1) {
+    const last = roots[roots.length - 1] as CanvasNodeInput
     mainId = last.node_id
-    notices.push(`multiple coordinators found; using the last-created node "${last.name}" (${last.node_id}) as the entry`)
+    notices.push(`multiple entry candidates found; using the last-created node "${last.name}" (${last.node_id}) as the entry`)
   } else {
-    mainId = (coordinators[0] as CanvasNodeInput).node_id
+    mainId = (roots[0] as CanvasNodeInput).node_id
   }
 
   // 工具映射进每个节点（未映射项 fail loud）。
-  const resolved = realNodes.map(node => {
+  const resolved = realNodes.map((node) => {
     const rawTools = node.tools ?? []
     const resolvedTools: string[] = []
     const missing: string[] = []
@@ -141,7 +152,7 @@ export function compileCanvas(params: CompileParams): CompileResult {
         resolvedTools.push(canonical)
         continue
       }
-      const mapped = (TOOL_MAP as Record<string, string>)[raw]
+      const mapped = TOOL_MAP[raw]
       if (mapped === undefined) {
         missing.push(raw)
         continue
@@ -158,6 +169,51 @@ export function compileCanvas(params: CompileParams): CompileResult {
     }
     return { ...node, resolvedTools: [...new Set(resolvedTools)] }
   })
+
+  // 节点级插件：节点内行 id 与包名唯一；同一插件在所有节点只能一个版本。
+  const pluginVersions = new Map<string, string>()
+  for (const node of realNodes) {
+    const rowIds = new Set<string>()
+    const rowNames = new Set<string>()
+    for (const row of node.plugins ?? []) {
+      const id = row.id.trim()
+      const name = row.name.trim()
+      if (id === '' || name === '') {
+        throw new CompileError({
+          code: 'NODE_PLUGIN_INVALID',
+          nodeId: node.node_id,
+          message: `node "${node.name}" declares a plugin row without an id or package name`,
+        })
+      }
+      if (rowIds.has(id)) {
+        throw new CompileError({
+          code: 'NODE_PLUGIN_INVALID',
+          nodeId: node.node_id,
+          message: `node "${node.name}" declares plugin row "${id}" more than once`,
+        })
+      }
+      if (rowNames.has(name)) {
+        throw new CompileError({
+          code: 'NODE_PLUGIN_INVALID',
+          nodeId: node.node_id,
+          message: `node "${node.name}" declares plugin package "${name}" more than once`,
+        })
+      }
+      rowIds.add(id)
+      rowNames.add(name)
+      if (row.version === undefined) continue
+      const seenVersion = pluginVersions.get(name)
+      if (seenVersion !== undefined && seenVersion !== row.version) {
+        throw new CompileError({
+          code: 'CONFLICTING_PLUGIN_VERSION',
+          nodeId: node.node_id,
+          message: `plugin "${name}" is declared as ${seenVersion} and ${row.version} by different canvas nodes; `
+            + 'one harness instance can mount only one version of a plugin',
+        })
+      }
+      pluginVersions.set(name, row.version)
+    }
+  }
 
   // 委派拓扑与循环检测（DFS 三色标记）。
   const edges = canvas.edges.map<DelegationEdge>(edge => ({
@@ -189,13 +245,19 @@ export function compileCanvas(params: CompileParams): CompileResult {
     agentMap.set(node.node_id, {
       agentId: node.node_id,
       name: node.name,
-      agentType: node.agent_type,
+      role: node.role ?? 'custom',
       modelRoute: model.route,
       ...(node.system_prompt === undefined ? {} : { persona: node.system_prompt }),
       cwd: params.cwd,
       tools: [...node.resolvedTools, ...outgoing],
       skills: [...(node.skills ?? [])],
       mcpServers: [...(node.mcp_servers ?? [])],
+      plugins: (node.plugins ?? []).map(row => ({
+        id: row.id,
+        name: row.name,
+        ...(row.config === undefined ? {} : { config: row.config }),
+        ...(row.version === undefined ? {} : { version: row.version }),
+      })),
       ...(node.sampling === undefined ? {} : { sampling: node.sampling }),
     })
   }
@@ -217,11 +279,12 @@ export function compileCanvas(params: CompileParams): CompileResult {
   // 语义哈希：布局（position）不参与。
   const semantic = agents.map(agent => ({
     id: agent.agentId,
-    type: agent.agentType,
+    role: agent.role,
     model: agent.modelRoute,
     tools: agent.tools,
     skills: agent.skills,
     mcp: agent.mcpServers,
+    plugins: agent.plugins,
     persona: agent.persona,
   }))
   const canvasHash = createHash('sha256').update(JSON.stringify({ agents: semantic, mainAgentId: mainId })).digest('hex').slice(0, 16)

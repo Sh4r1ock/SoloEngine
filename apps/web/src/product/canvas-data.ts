@@ -3,11 +3,6 @@
  * 编辑器经 `GET /api/solo/tools`（host 以原生注入点挂载的 harness 实时注册集合）取得。
  */
 
-/** 三类 Agent 预设 + 注释。 */
-export const AGENT_TYPES: readonly ('coordinator' | 'planner' | 'executor' | 'note')[] = [
-  'coordinator', 'planner', 'executor', 'note',
-]
-
 /** 网格吸附步长（px）。 */
 export const GRID_SIZE = 16
 
@@ -37,6 +32,8 @@ export interface AlignBox {
   y: number
   /** 节点高度（注释节点与 Agent 节点不同）。 */
   height: number
+  /** 节点宽度（省略时取 {@link NODE_WIDTH}；注释节点更窄）。 */
+  width?: number
 }
 
 /** 一次对齐的结果。 */
@@ -57,8 +54,9 @@ export interface AlignOutcome {
  * @returns 锚线集合。
  */
 export function alignAnchors(box: AlignBox): AlignAnchors {
+  const width = box.width ?? NODE_WIDTH
   return {
-    xs: [box.x, box.x + NODE_WIDTH / 2, box.x + NODE_WIDTH],
+    xs: [box.x, box.x + width / 2, box.x + width],
     ys: [box.y, box.y + box.height / 2, box.y + box.height],
   }
 }
@@ -120,7 +118,9 @@ export function alignToPeers(
 }
 
 /** 节点外框宽度（与 editor.module.css 的 .node 宽度一致）。 */
-export const NODE_WIDTH = 184
+export const NODE_WIDTH = 220
+/** 注释节点外框宽度（与 editor.module.css 的 .nodeNoteNode 一致）。 */
+export const NOTE_WIDTH = 190
 
 /** 吸附到网格。 */
 export function snap(value: number): number {

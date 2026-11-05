@@ -1,7 +1,7 @@
 /**
  * 框架层 REST 的视图类型（以 `soloengine-framework/src/modules/*.ts` 的真实字段为准）。
  */
-import type { PackagingRunStatus, PackagingStageStatus } from '@soloengine/types'
+import type { AgentRolePreset, PackagingRunStatus, PackagingStageStatus } from '@soloengine/types'
 
 export type { PackagingRunStatus, PackagingStageStatus } from '@soloengine/types'
 
@@ -302,10 +302,12 @@ export interface McpCallResult {
   violations?: McpArgumentViolation[]
 }
 
-/** 画布节点（`canvas.ts` CanvasNode）。 */
+/** 画布节点（`canvas.ts` CanvasNode）：只有 agent 与注释两种，角色是模板引用。 */
 export interface CanvasNode {
   node_id: string
-  agent_type: 'coordinator' | 'planner' | 'executor' | 'note'
+  kind: 'agent' | 'note'
+  /** 角色模板 id（agent 节点必有；注释节点没有）。 */
+  role?: string
   name: string
   summary?: string
   model_ref?: string
@@ -357,6 +359,8 @@ export interface CanvasSettings {
   /** 运行档位 = 原生权限预设名（工作区可写 / 白名单自动 / 完全访问）。 */
   run_mode?: 'workspace-write' | 'approve-for-me' | 'danger-full-access'
   live_follow?: boolean
+  /** 画布内自定义角色模板（内置模板在 `@soloengine/types`，这里只存用户新增的）。 */
+  role_presets?: AgentRolePreset[]
   /** 实例插件差异（Plan W3/W4：运行面板只装载该画布启用的客户端插件）。 */
   plugins?: InstancePluginDiff
 }

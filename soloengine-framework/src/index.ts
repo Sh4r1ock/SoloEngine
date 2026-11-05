@@ -27,8 +27,8 @@ export {
   type McpToolInfo, type McpResourceInfo, type McpTestResult, type McpFailureKind,
 } from './modules/mcp.ts'
 export {
-  CanvasService, NODE_PRESETS,
-  type CanvasNode, type CanvasEdge, type CanvasSettings, type CanvasData, type CanvasAgentType,
+  CanvasService,
+  type CanvasNode, type CanvasEdge, type CanvasSettings, type CanvasData,
   type CanvasRow, type CanvasView, type RunProjectRow,
 } from './modules/canvas.ts'
 export {
