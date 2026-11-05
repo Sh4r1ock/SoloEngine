@@ -149,7 +149,7 @@ export const home = defineDictionary({
   pipe4Desc: '读取目标、监听地址与信任域，给出可复制的启动命令。',
   previewTitle: '开发者预览',
   previewDesc: '开发者预览阶段，接口、插件契约与产物格式可能变化。固定依赖版本，再用于生产。',
-  previewCta: '打开打包页',
+  previewCta: '在画布中打包',
 
   ctaTitle: '把第一个 Agent 团队放上画布。',
   ctaDesc: '从一张空画布开始，或者复制一个公共模板。所有节点、委派边与运行档位都在同一个编辑器里。',
@@ -322,7 +322,7 @@ export const home = defineDictionary({
   pipe4Desc: 'Reads the target, listen address, and trust domain, then produces a copyable start command.',
   previewTitle: 'Developer preview',
   previewDesc: 'Developer preview: interfaces, plugin contracts, and artifact formats may change. Pin dependency versions before production use.',
-  previewCta: 'Open packaging',
+  previewCta: 'Package from a canvas',
 
   ctaTitle: 'Put your first agent team on the canvas.',
   ctaDesc: 'Start from an empty canvas or copy a public template. Every node, delegation edge, and run mode lives in one editor.',

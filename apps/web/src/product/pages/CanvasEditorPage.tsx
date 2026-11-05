@@ -22,6 +22,7 @@ import { NumberStepper } from '../components/NumberStepper.tsx'
 import { MultiSelectList } from '../components/MultiSelectList.tsx'
 import type { MultiSelectStale } from '../components/MultiSelectList.tsx'
 import { ThemeCycleButton } from '../components/ThemeCycleButton.tsx'
+import { PackagingDrawer } from './PackagingPage.tsx'
 import { NOTE_WIDTH, NODE_WIDTH, alignToPeers, snap } from '../canvas-data.ts'
 import { rolePresetName, type AgentRolePreset } from '@soloengine/types'
 import type {
@@ -366,6 +367,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const [canvasAddOpen, setCanvasAddOpen] = useState(false)
   const [edgeTarget, setEdgeTarget] = useState('')
   const [runOpen, setRunOpen] = useState(false)
+  /** 打包抽屉：打包不是独立页面，只在画布上下文里打开。 */
+  const [packageOpen, setPackageOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   /** 「清空画布」确认对话框（原型 editor.js:1142-1160）。 */
   const [clearOpen, setClearOpen] = useState(false)
@@ -1454,6 +1457,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
 
   /** 顶栏「更多」菜单（原型 editor.html:67-73）：复制画布 / 切换网格 / 清空画布 / 返回画布列表。 */
   const moreMenuItems: MenuEntry[] = [
+    {
+      id: 'package',
+      label: t('editor', 'packaging'),
+      icon: <IconArchiveOutlineMedium size={14} />,
+      disabled: readOnly,
+    },
     { id: 'duplicate', label: t('editor', 'menuDuplicateCanvas'), icon: <IconCopyOutlineRegular size={14} /> },
     {
       id: 'grid',
@@ -1642,7 +1651,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               size="sm"
               className={editor.packageButton}
               icon={<IconArchiveOutlineMedium size={14} />}
-              onClick={() => { navigate(`/packaging?canvasId=${canvasId}`) }}
+              onClick={() => { setPackageOpen(true) }}
             >
               {t('editor', 'packaging')}
             </Button>
@@ -1655,6 +1664,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               onSelect={(id) => {
                 setMoreMenuOpen(false)
                 if (id === 'duplicate') void duplicateCanvas()
+                if (id === 'package') setPackageOpen(true)
                 if (id === 'grid') toggleGrid()
                 if (id === 'clear') setClearOpen(true)
                 if (id === 'back') navigate('/canvas')
@@ -2820,6 +2830,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           onClose={() => { setRunOpen(false) }}
           onError={(detail) => { setError({ key: 'errorRun', detail }) }}
           onRan={() => { setRunOpen(false) }}
+        />
+
+        <PackagingDrawer
+          canvas={canvas === null ? null : { id: canvas.id, name: meta.name.trim() === '' ? canvas.name : meta.name }}
+          open={packageOpen}
+          onClose={() => { setPackageOpen(false) }}
         />
 
         {/* 节点删除确认（原型 removeNode）：确认才删除节点与相连委派边，取消不改动任何数据。 */}

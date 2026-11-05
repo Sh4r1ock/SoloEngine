@@ -543,7 +543,7 @@ export function HomePage({ authenticated }: { authenticated: boolean }) {
                 <div className={css.previewTitle}><span className={css.dotAccent} />{t('home', 'previewTitle')}</div>
                 <p>{t('home', 'previewDesc')}</p>
               </div>
-              <Button variant="outline" onClick={() => { navigate('/packaging') }}>
+              <Button variant="outline" onClick={() => { navigate('/canvas') }}>
                 {t('home', 'previewCta')}
                 <ArrowRight />
               </Button>
@@ -579,7 +579,7 @@ export function HomePage({ authenticated }: { authenticated: boolean }) {
               <ul>
                 <li><a href="/canvas" onClick={(event) => { event.preventDefault(); navigate('/canvas') }}>{t('home', 'footerCanvas')}</a></li>
                 <li><a href="/market" onClick={(event) => { event.preventDefault(); navigate('/market') }}>{t('home', 'footerMarket')}</a></li>
-                <li><a href="/packaging" onClick={(event) => { event.preventDefault(); navigate('/packaging') }}>{t('home', 'footerPackaging')}</a></li>
+                <li><a href="/canvas" onClick={(event) => { event.preventDefault(); navigate('/canvas') }}>{t('home', 'footerPackaging')}</a></li>
                 <li><a href="/styleguide" onClick={(event) => { event.preventDefault(); navigate('/styleguide') }}>{t('home', 'footerStyleguide')}</a></li>
               </ul>
             </div>

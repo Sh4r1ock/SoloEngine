@@ -26,7 +26,7 @@
 /** 产品应用内的页面路由名（`router.ts` 的 `RouteName` 即本联合）。 */
 export type ProductPageName =
   | 'home' | 'login' | 'styleguide' | 'canvases' | 'canvas' | 'models' | 'skills' | 'skill'
-  | 'mcp' | 'market' | 'packaging' | 'settings' | 'users'
+  | 'mcp' | 'market' | 'settings' | 'users'
 
 /** 一条 URL 根归属的界面。 */
 export type ProductSurface =
@@ -71,7 +71,6 @@ export const PRODUCT_ROUTE_ROOTS: readonly ProductRouteRoot[] = [
   { segment: 'skill', surface: 'product', listName: 'skills', detailName: 'skill' },
   { segment: 'mcp', surface: 'product', listName: 'mcp' },
   { segment: 'market', surface: 'product', listName: 'market' },
-  { segment: 'packaging', surface: 'product', listName: 'packaging' },
   { segment: 'settings', surface: 'product', listName: 'settings' },
   // 用户管理（W11.1）：仅超管可达；页面本身对非超管返回 403，侧栏项也只对超管渲染。
   { segment: 'user', surface: 'product', listName: 'users' },

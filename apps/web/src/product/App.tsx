@@ -18,7 +18,6 @@ import { SkillsPage } from './pages/SkillsPage.tsx'
 import { SkillFilePage } from './pages/SkillFilePage.tsx'
 import { McpPage } from './pages/McpPage.tsx'
 import { MarketPage } from './pages/MarketPage.tsx'
-import { PackagingPage } from './pages/PackagingPage.tsx'
 import { SettingsPage } from './pages/SettingsPage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import type { UserView } from './types.ts'
@@ -48,7 +47,6 @@ function documentTitle(name: string): string {
     case 'mcp': return t('shell', 'docTitleMcp')
     case 'models': return t('shell', 'docTitleModels')
     case 'market': return t('shell', 'docTitleMarket')
-    case 'packaging': return t('shell', 'docTitlePackaging')
     case 'settings': return t('shell', 'docTitleSettings')
     case 'users': return t('shell', 'docTitleUsers')
     case 'styleguide': return t('shell', 'docTitleStyleguide')
@@ -192,7 +190,6 @@ export function ProductApp() {
       case 'skill': return <SkillFilePage skillId={route.params.id ?? ''} />
       case 'mcp': return <McpPage />
       case 'market': return <MarketPage />
-      case 'packaging': return <PackagingPage canvasId={route.query.get('canvasId')} />
       case 'settings': return <SettingsPage />
       case 'users': return <UsersPage user={user} />
       default: return <CanvasesPage />
@@ -210,7 +207,7 @@ export function ProductApp() {
     <AppShell
       active={route.name}
       user={user}
-      wide={route.name === 'packaging' || route.name === 'skill' || route.name === 'styleguide' || route.name === 'mcp'}
+      wide={route.name === 'skill' || route.name === 'styleguide' || route.name === 'mcp'}
       onLogout={logout}
     >
       {/* resetKey 让路由身份变化时重置边界：否则一次渲染失败会把后续页面永久钉在降级态，

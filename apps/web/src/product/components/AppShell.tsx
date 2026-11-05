@@ -2,7 +2,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   Button,
-  IconArchiveOutlineMedium,
   IconBranchOutlineRegular,
   IconBrowseOutlineRegular,
   IconDataOutlineRegular,
@@ -72,12 +71,6 @@ const NAV_GROUPS: NavGroup[] = [
       { routes: ['models'], path: '/model', labelKey: 'navModels', icon: <IconDataOutlineRegular size={16} /> },
       { routes: ['skills', 'skill'], path: '/skill', labelKey: 'navSkills', icon: <IconSkillOutlineRegular size={16} /> },
       { routes: ['mcp'], path: '/mcp', labelKey: 'navMcp', icon: <IconDatabaseOutlineRegular size={16} /> },
-    ],
-  },
-  {
-    labelKey: 'groupDelivery',
-    entries: [
-      { routes: ['packaging'], path: '/packaging', labelKey: 'navPackaging', icon: <IconArchiveOutlineMedium size={16} /> },
     ],
   },
   {

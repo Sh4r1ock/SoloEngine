@@ -1,0 +1,1010 @@
+/* 打包：三步条 + 主列 + 右侧 sticky 摘要（需求文档 §12.3 第 10 条）。 */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--se-space-5);
+  align-items: start;
+  min-width: 0;
+}
+
+.main {
+  min-width: 0;
+}
+
+/*
+ * 同级分节节奏（原型 `.package-section`）：24px 留白 + 0.5px 发丝线 + 24px 内边距，
+ * 首个分节三级全为 0。分节间距因此不再由父级 flex gap 承担。
+ */
+.section {
+  min-width: 0;
+  margin-top: var(--se-space-5);
+  padding-top: var(--se-space-5);
+  border-top: 0.5px solid var(--se-hairline);
+  /* 步骤条锚点跳转时给粘性头部留出高度（三段同页）。 */
+  scroll-margin-top: var(--se-space-5);
+}
+
+.section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* 原型 `.section-head`：标题行与正文之间 16px，间距由本行自身承担。 */
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--se-space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--se-space-4);
+}
+
+.sectionHeadText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 章节标题 14/24（设计参考 §4.2 的 --leading-14），字距与原型一致。 */
+.sectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.sectionMeta {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.count {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* 原型 `.status`：点与文字之间 8px。 */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 原型 `.dot`：6px；空闲灰（原型 text-tertiary）、完成墨色、进行中蓝色（蓝只用于运行中/激活）。 */
+.statusDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-label-tertiary);
+}
+
+.statusDotInk {
+  background-color: var(--dsw-alias-label-primary);
+}
+
+/* 原型 `.badge--accent::before`：5px 蓝点，前置在徽标文字之前。 */
+.badgeDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.statusDotAccent {
+  background-color: var(--dsw-static-deepseek-500);
+  animation: pkgDotPulse 1.4s var(--se-ease-standard) infinite;
+}
+
+/* 原型 docs/03 §3：运行中的点脉冲；减少动效时保持静止蓝点。 */
+@keyframes pkgDotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ── 对象工具条 ─────────────────────────────────────────── */
+
+.toolbarPanel {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--se-space-4);
+  flex-wrap: wrap;
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.toolbarField {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+  min-width: 240px;
+}
+
+/* 取对象选择器按原型 `.select`：100% 宽、36px 高、8px 圆角、取值左对齐 + 右侧下拉箭头。 */
+.toolbarField .toolbarSelect {
+  justify-content: space-between;
+  width: 100%;
+  padding: 0 var(--se-space-3);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.toolbarSelectLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* R1：提示行常驻占位，数据就绪后只清文本，不抽走一行。 */
+.toolbarHint {
+  min-height: 20px;
+}
+
+.toolbarMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  margin-left: auto;
+  padding-bottom: var(--se-space-2);
+}
+
+/* ── 三步条 ───────────────────────────────────────────── */
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.step:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 特异性抬到 `.step.stepActive`：否则 `.step:hover`（同为两类）在悬停当前步时覆盖激活底色。 */
+.step.stepActive {
+  border-color: var(--dsw-static-deepseek-400);
+  background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.stepNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--se-radius-full);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.stepActive .stepNum {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--se-accent-text);
+}
+
+/* 原型 `.package-step__state`：单倍行高。 */
+.stepState {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.stepLine {
+  flex: 1 1 auto;
+  height: 0.5px;
+  margin: 0 var(--se-space-2);
+  background-color: var(--se-hairline);
+}
+
+/* ── 卡片与列表 ───────────────────────────────────────── */
+
+.previewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--se-space-3);
+  align-items: start;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+  min-width: 0;
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.cardWide {
+  margin-top: var(--se-space-3);
+}
+
+/* 卡片内的行间距由 `.card` 的 gap 提供（原型为 head 后 12px、hint 前 12px）。 */
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-2);
+}
+
+.cardHead h3 {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.list li {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  box-sizing: border-box;
+  min-height: 30px;
+  padding: var(--se-space-1) 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.list li:first-child {
+  border-top: 0;
+}
+
+.list li .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.monoMuted {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* 配置层的层文件路径（原型每行一条路径）：可折行、不挤掉 id 与层类型。
+   选择器带 `.list li` 前缀：路径由公共 PathValue 渲染（`.mono` 的字体简写），
+   同权重下谁后加载不确定，这里用更高权重固定为 11px 三级色。 */
+.list li .layerPath {
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* 配置层行尾的层类型（insert / patch）。 */
+.layerKind {
+  flex: none;
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.rowTag {
+  margin-left: auto;
+  flex: none;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.netGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--se-space-2);
+}
+
+.netCell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.netValue {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family-brand);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.netLabel {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* 原型 `.meta-list`：行间 12px；标签列 120px、列间 12px。 */
+.metaList {
+  display: grid;
+  gap: var(--se-space-3);
+  margin: 0;
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--se-space-3);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.metaRow dt {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.metaRow dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.depList {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.depList li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px auto;
+  gap: var(--se-space-3);
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: var(--se-space-1) 0;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.depList li:first-child {
+  border-top: 0;
+}
+
+.depList .rowTag {
+  justify-self: end;
+}
+
+/* ── 打包运行 ─────────────────────────────────────────── */
+
+.runForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+}
+
+.artifactForms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--se-space-2);
+  margin-top: var(--se-space-2);
+}
+
+/* 桌面形态字段（原型 `#desktop-fields .form-grid`）：与形态单选卡之间 12px。 */
+.desktopFields {
+  margin-top: var(--se-space-3);
+}
+
+/* 原型 `.field--full`：收尾命令独占一整行。 */
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+/* 产物形态单选卡（原型 `.radio-card`）：18px 单选列 + 文案列，选中墨线 + 浅底。 */
+.radioCard {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: var(--se-space-2);
+  align-items: start;
+  min-width: 0;
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+  transition:
+    border-color var(--se-duration-fast) var(--se-ease-standard),
+    background-color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.radioCard:hover {
+  border-color: var(--dsw-alias-border-l4);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 与原型 `.radio-card:has(input:checked)` 同级覆盖悬停：选中卡保持墨线与浅底。 */
+.radioCard.radioCardActive {
+  border-color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.radioCard:has(.radioInput:focus-visible) {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 2px;
+}
+
+.radioInput {
+  width: 16px;
+  height: 16px;
+  margin: var(--se-space-1) 0 0;
+  flex: none;
+  align-self: flex-start;
+  accent-color: var(--dsw-alias-label-primary);
+}
+
+.radioText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.radioTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+.radioDesc {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.runActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  flex-wrap: wrap;
+}
+
+/* 原型 `.package-stages`：与表单之间 24px。 */
+.stageList {
+  margin-top: var(--se-space-5);
+  overflow: hidden;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+/* 原型 `.stage-progress`：进度条容器（12px 16px 内边距 + 底部分隔线 + 浅底）。 */
+.stageProgress {
+  padding: var(--se-space-3) var(--se-space-4);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+/* 原型 `.progress`：3px 轨道，填充为墨色（蓝只用于运行中/激活）。 */
+.progress {
+  height: 3px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-border-l3);
+  overflow: hidden;
+}
+
+.progressBar {
+  display: block;
+  height: 100%;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-label-primary);
+  transition: width var(--se-duration-slow) var(--se-ease-standard);
+}
+
+.stageRow {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: var(--se-space-2);
+  align-items: center;
+  box-sizing: border-box;
+  /* 原型 `.stage-item`（pages.css:2319-2327）恒有两行内容：名称 20 + 间距 4 + 详情 20，
+     加 8px 上下内边距 = 60。产品在未运行时省略空详情行，行高会掉到 48；按原型行高托底。 */
+  min-height: 60px;
+  padding: var(--se-space-2) var(--se-space-4);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+
+.stageProgress + .stageRow {
+  border-top: 0;
+}
+
+.stageRowRunning {
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.stageIndex {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.stageMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.stageName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.stageDetail {
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 原型 `.stage-state`：行内文字单倍行高，点 5px（完成墨色、进行中蓝色）。 */
+.stageState {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* 原型 `.stage-state .dot`：5px；空闲用 line-strong（此处取 caption 灰阶）、完成墨色、进行中蓝色。 */
+.stageDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-label-caption);
+}
+
+.stageDotInk {
+  background-color: var(--dsw-alias-label-primary);
+}
+
+.stageDotAccent {
+  background-color: var(--dsw-static-deepseek-500);
+  animation: pkgDotPulse 1.4s var(--se-ease-standard) infinite;
+}
+
+.terminal {
+  min-width: 0;
+  /* 原型 `.package-terminal .terminal__body`：输出区最高 220px。 */
+  --dsl-terminal-output-max-height: 220px;
+}
+
+/* 原型 `.package-terminal { margin-top: var(--s-4) }`：压过原语的上下 16px 外边距。 */
+.section > .terminal {
+  margin: var(--se-space-4) 0 0;
+}
+
+.artifactRow {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  flex-wrap: wrap;
+  margin-top: var(--se-space-3);
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.artifactRow .mono {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* ── 部署引导 ─────────────────────────────────────────── */
+
+.deployGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--se-space-4);
+  align-items: start;
+}
+
+.deployMeta {
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+}
+
+.deployNote {
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+/* 原型 `#deploy-notice { margin-top: var(--s-4) }`。 */
+.deployNotice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+  margin-top: var(--se-space-4);
+}
+
+.deployNoteTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.checkList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+  list-style: none;
+  margin: var(--se-space-3) 0 var(--se-space-4);
+  padding: 0;
+}
+
+/* 原型 `.deploy-note li`：12px 标记列 + 文本列，标记为 8×1 的发丝线。 */
+.checkList li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.checkList li::before {
+  content: '';
+  width: 8px;
+  height: 1px;
+  margin-top: var(--se-space-2);
+  background-color: var(--dsw-alias-border-l4);
+}
+
+.checkText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.checkCommand {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.blockButton {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ── 右侧摘要 ─────────────────────────────────────────── */
+
+.summary {
+  position: sticky;
+  top: var(--se-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+  min-width: 0;
+}
+
+/* 摘要面板按原型 `.panel`：外框 + 标题行（12px 16px + 底部分隔线）+ 16px 内容区。 */
+.summaryPanel {
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.summaryHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-3);
+  padding: var(--se-space-3) var(--se-space-4);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.summaryBody {
+  padding: var(--se-space-4);
+}
+
+.summaryTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.summaryList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+  margin: 0;
+}
+
+.summaryRow {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: var(--se-space-3);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.summaryRow dt {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.summaryRow dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.divider {
+  height: 0.5px;
+  margin: var(--se-space-4) 0;
+  background-color: var(--se-hairline);
+}
+
+.summaryActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+}
+
+.railNote {
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.railNoteTitle {
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.railNoteBody {
+  margin: var(--se-space-2) 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (max-width: 1100px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .summary {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+@media (max-width: 820px) {
+  .previewGrid,
+  .artifactForms,
+  .deployGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .toolbarField {
+    min-width: 0;
+    flex: 1 1 200px;
+  }
+
+  .toolbarMeta {
+    width: 100%;
+    margin-left: 0;
+    padding-bottom: 0;
+  }
+
+  .step {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0 var(--se-space-2);
+  }
+
+  .stepState {
+    display: none;
+  }
+
+  .stepLine {
+    margin: 0 var(--se-space-1);
+  }
+
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .stepper {
+    flex-wrap: wrap;
+    gap: var(--se-space-2);
+  }
+
+  .step {
+    flex: 1 1 auto;
+  }
+
+  .stepLine {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .step,
+  .radioCard,
+  .progressBar {
+    transition: none;
+  }
+
+  .statusDotAccent,
+  .stageDotAccent {
+    animation: none;
+  }
+}
+
+/* 原型 packaging.html:47/51：对象选择是原生 select（36px / 8px 圆角 / 发丝线 / 自绘箭头）。 */
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--se-space-6) 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dsw-alias-label-secondary) 50%),
+    linear-gradient(135deg, var(--dsw-alias-label-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) calc(50% + 1px),
+    calc(100% - 11px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+/* 打包抽屉：宽版（需求 §12.3.10：min(1240px, 100vw - 48px)）。 */
+.drawerPanel {
+  width: min(1240px, calc(100vw - 48px));
+}
+
+/* 抽屉正文：不再套用页面级的 max-width/padding（抽屉头部已提供留白）。 */
+.drawerPage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-5);
+}
+
+/* 画布固定为打开来源：只读名称，不再给第二个画布选择器。 */
+.canvasName {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}

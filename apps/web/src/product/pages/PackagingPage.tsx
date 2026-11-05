@@ -7,14 +7,13 @@ import {
 import { isTerminalStage, type PackagingRunStatus, type PackagingStageStatus } from '@soloengine/types'
 import { ApiError, describeError, request } from '../api.ts'
 import { t } from '../i18n.ts'
-import { navigate } from '../router.ts'
-import { PageHeader } from '../components/PageHeader.tsx'
+import { Drawer } from '../components/Drawer.tsx'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { useToastHost } from '../components/Toaster.tsx'
 import { Field } from '../components/Field.tsx'
 import { PathValue } from '../components/PathValue.tsx'
 import { terminalLabels } from '../components/labels.ts'
-import type { CanvasView, DeploymentGuide, PackagingPreview, PackagingRun, RunProjectView } from '../types.ts'
+import type { DeploymentGuide, PackagingPreview, PackagingRun, RunProjectView } from '../types.ts'
 import css from '../styles/common.module.css'
 import pkgCss from '../styles/packaging.module.css'
 
@@ -165,14 +164,14 @@ function desktopProblem(value: string): DesktopProblem | null {
 }
 
 /**
- * 渲染打包向导。
- * @param props.canvasId - 查询串带来的画布 ID（可为 null）。
+ * 渲染打包向导（画布内抽屉的正文）。
+ * @param props.canvasId - 打开抽屉的画布 ID。
+ * @param props.canvasName - 画布名称（抽屉顶部只读展示）。
  */
-export function PackagingPage({ canvasId }: { canvasId: string | null }) {
+export function PackagingPage({ canvasId, canvasName }: { canvasId: string | null; canvasName: string }) {
   const [section, setSection] = useState<Section>('preview')
-  const [canvases, setCanvases] = useState<CanvasView[]>([])
   const [projects, setProjects] = useState<RunProjectView[]>([])
-  const [selectedCanvas, setSelectedCanvas] = useState<string | null>(canvasId)
+  const [selectedCanvas] = useState<string | null>(canvasId)
   const [selectedProject, setSelectedProject] = useState<string | null>(null)
   const [preview, setPreview] = useState<PackagingPreview | null>(null)
   const [run, setRun] = useState<PackagingRun | null>(null)
@@ -193,12 +192,12 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
-  // 三份数据各自独立成败：此前用 Promise.all + 单一文案，实测阻断 /projects 后界面报
-  // 「画布列表加载失败」（而 /canvases 与 /deployment/guide 都返回 200），既归错责任方
-  // 又把已取到的两份数据一起丢掉（R8 具体 / R17 可操作出路 / R24 部分失败隔离）。
+  // 两份数据各自独立成败：此前用 Promise.all + 单一文案，实测阻断 /projects 后界面报
+  // 「画布列表加载失败」（而 /deployment/guide 仍返回 200），既归错责任方又把已取到的
+  // 数据一起丢掉（R8 具体 / R17 可操作出路 / R24 部分失败隔离）。画布来自抽屉上下文，
+  // 不再由打包自己拉取。
   const loadLists = useCallback(async (): Promise<void> => {
-    const [canvasResult, projectResult, guideResult] = await Promise.allSettled([
-      request<{ ok: true; canvases: CanvasView[] }>('/canvases'),
+    const [projectResult, guideResult] = await Promise.allSettled([
       request<{ ok: true; projects: RunProjectView[] }>('/projects'),
       request<{ ok: true; guide: DeploymentGuide }>('/deployment/guide'),
     ])
@@ -211,7 +210,6 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
         reason ??= result.reason
       }
     }
-    settle(canvasResult, t('packaging', 'errorCanvases'), (value) => { setCanvases(value.canvases) })
     settle(projectResult, t('packaging', 'errorProjects'), (value) => { setProjects(value.projects) })
     settle(guideResult, t('packaging', 'errorDeployment'), (value) => { setGuide(value.guide) })
     if (failed.length === 0) {
@@ -238,12 +236,6 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
       return canvasProjects[0]?.id ?? null
     })
   }, [canvasProjects])
-
-  // 原型 packaging.js:232-238：查询串没有画布时预选第一张，进入页面即有可读预览。
-  useEffect(() => {
-    if (selectedCanvas !== null || canvases.length === 0) return
-    setSelectedCanvas(canvases[0]?.id ?? null)
-  }, [selectedCanvas, canvases])
 
   // 预览请求的在途控制：换画布/项目、重试或卸载时中止上一轮，避免旧响应覆盖新选择。
   // 复制就绪地址的成败走 Toast（原型 packaging.js:288 的 App.toast）。
@@ -325,7 +317,6 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
     return () => { window.clearInterval(timer) }
   }, [runId, runStatus, desktopBuildRunning])
 
-  const canvasName = canvases.find(canvas => canvas.id === selectedCanvas)?.name ?? t('packaging', 'canvasNone')
   // 原型 packaging.js:18-23/53：运行项目以路径式标识呈现（不是项目名）。
   const projectName = canvasProjects.find(project => project.id === selectedProject)?.folder_path ?? t('packaging', 'projectNone')
   const formLabel = form === 'desktop' ? t('packaging', 'formDesktop') : t('packaging', 'formProfile')
@@ -395,38 +386,11 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
   }
 
   return (
-    <div className={css.page}>
-      <PageHeader
-        title={t('packaging', 'title')}
-        subtitle={t('packaging', 'subtitle')}
-        actions={(
-          <>
-            <Button variant="outline" onClick={() => { navigate('/canvas') }}>{t('packaging', 'backToCanvases')}</Button>
-            <Button
-              variant="primary"
-              icon={busy ? <span className={css.spinner} aria-hidden="true" /> : <IconArchiveOutlineRegular size={16} />}
-              disabled={busy || selectedCanvas === null || selectedProject === null}
-              aria-busy={busy}
-              onClick={openConfirm}
-            >
-              {busy ? t('packaging', 'running') : t('packaging', 'run')}
-            </Button>
-          </>
-        )}
-      />
-
+    <div className={pkgCss.drawerPage}>
       <div className={pkgCss.toolbarPanel}>
         <div className={pkgCss.toolbarField}>
           <span className={css.fieldLabel}>{t('packaging', 'canvasLabel')}</span>
-          <select
-            className={pkgCss.select}
-            value={selectedCanvas ?? ''}
-            aria-label={t('packaging', 'canvasLabel')}
-            onChange={(event) => { setSelectedCanvas(event.currentTarget.value === '' ? null : event.currentTarget.value) }}
-          >
-            <option value="">{t('packaging', 'canvasNone')}</option>
-            {canvases.map(canvas => <option key={canvas.id} value={canvas.id}>{canvas.name}</option>)}
-          </select>
+          <span className={pkgCss.canvasName}>{canvasName}</span>
         </div>
         <div className={pkgCss.toolbarField}>
           <span className={css.fieldLabel}>{t('packaging', 'projectLabel')}</span>
@@ -453,6 +417,15 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
           onClick={() => { void loadPreview(false) }}
         >
           {loading ? t('packaging', 'previewing') : t('packaging', 'preview')}
+        </Button>
+        <Button
+          variant="primary"
+          icon={busy ? <span className={css.spinner} aria-hidden="true" /> : <IconArchiveOutlineRegular size={16} />}
+          disabled={busy || selectedCanvas === null || selectedProject === null}
+          aria-busy={busy}
+          onClick={openConfirm}
+        >
+          {busy ? t('packaging', 'running') : t('packaging', 'run')}
         </Button>
         <div className={pkgCss.toolbarMeta}>
           <span className={pkgCss.status}>
@@ -1183,5 +1156,30 @@ export function PackagingPage({ canvasId }: { canvasId: string | null }) {
         </div>
       </Modal>
     </div>
+  )
+}
+
+/**
+ * 打包抽屉：画布列表与画布编辑器共用同一个入口，画布由打开来源固定。
+ * @param props.canvas - 打开的画布（id + 名称）；null 表示不打开。
+ * @param props.open - 是否打开。
+ * @param props.onClose - 关闭回调。
+ */
+export function PackagingDrawer({ canvas, open, onClose }: {
+  canvas: { id: string; name: string } | null
+  open: boolean
+  onClose: () => void
+}) {
+  return (
+    <Drawer
+      open={open && canvas !== null}
+      onClose={onClose}
+      title={t('packaging', 'title')}
+      description={t('packaging', 'subtitle')}
+      closeLabel={t('common', 'actionClose')}
+      className={pkgCss.drawerPanel}
+    >
+      {canvas === null ? null : <PackagingPage canvasId={canvas.id} canvasName={canvas.name} />}
+    </Drawer>
   )
 }

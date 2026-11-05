@@ -17,6 +17,7 @@ import { Field } from '../components/Field.tsx'
 import { IconPicker } from '../components/IconPicker.tsx'
 import { useSearchShortcut } from '../components/useSearchShortcut.ts'
 import { useToastHost } from '../components/Toaster.tsx'
+import { PackagingDrawer } from './PackagingPage.tsx'
 import type { CanvasView, RunProjectView, RunSessionView } from '../types.ts'
 import common from '../styles/common.module.css'
 import css from '../styles/canvases.module.css'
@@ -83,6 +84,8 @@ export function CanvasesPage() {
   const [templateOpen, setTemplateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CanvasView | null>(null)
   const [runTarget, setRunTarget] = useState<CanvasView | null>(null)
+  /** 打包抽屉的来源画布（null = 关闭）；打包不是页面，只在画布上下文里打开。 */
+  const [packageTarget, setPackageTarget] = useState<CanvasView | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
 
@@ -337,7 +340,7 @@ export function CanvasesPage() {
                         aria-label={t('canvases', 'packageAria', { name: canvas.name })}
                         title={t('canvases', 'packagingAction')}
                         disabled={busyId === canvas.id}
-                        onClick={() => { navigate(`/packaging?canvasId=${canvas.id}`) }}
+                        onClick={() => { setPackageTarget(canvas) }}
                       />
                       <Menu
                         open={menuId === canvas.id}
@@ -385,7 +388,7 @@ export function CanvasesPage() {
                           if (id === 'edit') setEditTarget(canvas)
                           if (id === 'duplicate') duplicate(canvas, false)
                           if (id === 'run') setRunTarget(canvas)
-                          if (id === 'package') navigate(`/packaging?canvasId=${canvas.id}`)
+                          if (id === 'package') setPackageTarget(canvas)
                           if (id === 'delete') setDeleteTarget(canvas)
                         }}
                         onClose={() => { setMenuId(null) }}
@@ -548,6 +551,12 @@ export function CanvasesPage() {
         projects={projects}
         onClose={() => { setRunTarget(null) }}
         onRan={() => { setRunTarget(null); void loadSessions() }}
+      />
+
+      <PackagingDrawer
+        canvas={packageTarget}
+        open={packageTarget !== null}
+        onClose={() => { setPackageTarget(null) }}
       />
 
     </div>
