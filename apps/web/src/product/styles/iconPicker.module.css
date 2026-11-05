@@ -1,0 +1,113 @@
+/* 图标选择器：44px 触发块 + 320px 浮层网格（对照 v0.4.0 IconSelector 的几何）。 */
+
+.root {
+  position: relative;
+  display: inline-block;
+}
+
+.trigger {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-module-platform);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.trigger:hover {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-500);
+  outline-offset: 2px;
+}
+
+.trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: var(--se-z-dropdown);
+  width: 320px;
+  padding: var(--se-space-3);
+  background-color: var(--dsw-alias-bg-layer-1);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md);
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+.head {
+  margin-bottom: var(--se-space-2);
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.search {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--se-space-2);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.search:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-500);
+  outline-offset: 1px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  max-height: 280px;
+  margin-top: var(--se-space-2);
+  overflow-y: auto;
+}
+
+.cell {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--dsw-radius-sm);
+}
+
+.cell:hover {
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.cell:focus-visible {
+  outline: 2px solid var(--dsw-static-deepseek-500);
+  outline-offset: 1px;
+}
+
+.cellActive {
+  background-color: var(--dsw-alias-bg-module-platform);
+  border-color: var(--dsw-static-deepseek-500);
+}
+
+.empty {
+  margin: var(--se-space-2) 0 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}

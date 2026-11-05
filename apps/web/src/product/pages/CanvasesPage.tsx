@@ -14,6 +14,7 @@ import { formatEpochTimestamp, relativeTime, type RelativeTime } from '../utils/
 import { submitFormOnEnter } from '../utils/submitOnEnter.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { Field } from '../components/Field.tsx'
+import { IconPicker } from '../components/IconPicker.tsx'
 import { useSearchShortcut } from '../components/useSearchShortcut.ts'
 import { useToastHost } from '../components/Toaster.tsx'
 import type { CanvasView, RunProjectView, RunSessionView } from '../types.ts'
@@ -684,11 +685,7 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
         </Field>
         <div className={common.formGrid}>
           <Field label={t('canvases', 'iconLabel')}>
-            <Input
-              value={icon}
-              placeholder={t('canvases', 'iconPlaceholder')}
-              onChange={(event) => { setIcon(event.currentTarget.value) }}
-            />
+            <IconPicker value={icon} onChange={setIcon} />
           </Field>
           <Field label={t('common', 'labelTags')} meta={t('canvases', 'metaCommaSeparated')}>
             <Input

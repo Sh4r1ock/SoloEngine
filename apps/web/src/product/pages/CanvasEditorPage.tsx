@@ -16,6 +16,7 @@ import { navigate, openPage, setRouteBlocker } from '../router.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { Glyph } from '../components/Glyph.tsx'
 import { Field } from '../components/Field.tsx'
+import { IconPicker } from '../components/IconPicker.tsx'
 import { useToastHost } from '../components/Toaster.tsx'
 import { NumberStepper } from '../components/NumberStepper.tsx'
 import { MultiSelectList } from '../components/MultiSelectList.tsx'
@@ -1905,11 +1906,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     {/* 图标与标签和列表卡片同源（`canvases.iconLabel`/`common.labelTags`），
                   保存走同一次 PATCH；卡片首字回落基于 `icon` 为空。 */}
                     <Field label={t('canvases', 'iconLabel')}>
-                      <Input
-                        value={meta.icon}
-                        placeholder={t('canvases', 'iconPlaceholder')}
-                        onChange={(event) => { setMeta({ ...meta, icon: event.currentTarget.value }) }}
-                      />
+                      <IconPicker value={meta.icon} onChange={(next) => { setMeta({ ...meta, icon: next }) }} />
                     </Field>
                     <Field label={t('common', 'labelTags')}>
                       <Input
