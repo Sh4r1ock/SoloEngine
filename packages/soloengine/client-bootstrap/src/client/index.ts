@@ -17,9 +17,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 
-/** 运行面板深链的路径前缀（与 `@soloengine/host` 的前缀路由一致）。 */
-export const RUN_PATH_PREFIX = '/run/'
-
 declare global {
   interface Window {
     /** 宿主为 `/run/:agenticFlowId` 解析出的会话键（地址栏不含它）。 */
@@ -34,14 +31,17 @@ export const inject = ['sessions']
 
 /**
  * 取本次运行面板要打开的会话键与其归属画布。
- * @param pathname - `location.pathname`。
- * @returns `{ sessionKey, flowId }`，非运行面板深链时为 undefined。
+ *
+ * 「这是不是运行面板」以宿主是否注入 flow 为准：注入只发生在 `/run/:agenticFlowId` 外壳，
+ * 客户端不再复写一份路径前缀（路由真源在 `@soloengine/types` 的 `RUN_PANEL_PREFIX`）。
+ * @returns `{ sessionKey, flowId }`；非运行面板或该 flow 尚无会话时为 undefined。
  */
-export function runPanelTarget(pathname: string): { sessionKey: string; flowId: string } | undefined {
-  if (!pathname.startsWith(RUN_PATH_PREFIX)) return undefined
+export function runPanelTarget(): { sessionKey: string; flowId: string } | undefined {
+  const flowId = window.__SOLOENGINE_RUN_FLOW__
   const sessionKey = window.__SOLOENGINE_RUN_SESSION__
-  if (sessionKey === undefined || sessionKey === '') return undefined
-  return { sessionKey, flowId: window.__SOLOENGINE_RUN_FLOW__ ?? '' }
+  if (typeof flowId !== 'string' || flowId === '') return undefined
+  if (typeof sessionKey !== 'string' || sessionKey === '') return undefined
+  return { sessionKey, flowId }
 }
 
 /**
@@ -190,13 +190,14 @@ async function startRun(flowId: string, button: HTMLButtonElement, error: HTMLPa
  * @param ctx - 客户端根上下文。
  */
 export function apply(ctx: ClientContext): void {
-  if (!location.pathname.startsWith(RUN_PATH_PREFIX)) return
-  const target = runPanelTarget(location.pathname)
+  const flowId = window.__SOLOENGINE_RUN_FLOW__
+  if (typeof flowId !== 'string' || flowId === '') return
+  const target = runPanelTarget()
   if (target === undefined) {
-    mountStartPanel(window.__SOLOENGINE_RUN_FLOW__ ?? '')
+    mountStartPanel(flowId)
     return
   }
-  const { sessionKey, flowId } = target
+  const { sessionKey } = target
   const opened = sessionKey as SessionId
   ctx.effect(() => {
     /** 只认领一次：选择会同步触发列表通知，重入必须被挡在 open 之前（否则无限递归）。 */
