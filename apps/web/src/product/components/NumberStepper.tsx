@@ -26,26 +26,21 @@ function IconMinusOutline16({ size = 16 }: { size?: number }) {
  * @param props.min - 下限。
  * @param props.max - 上限。
  * @param props.placeholder - 未设置时的占位文案。
- * @param props.clearableAtMin - 到达下限时再点减号是否清空为「未设置」（模型配置的
- *   温度/max_tokens 有此语义）；为 false 时下方按钮直接禁用——否则减号看着可点、
- *   点下去却既不发请求也不改值（实测字号步进器在下限处是零反馈死点击）。
  * @param props.disabled - 整组禁用（写请求在途时锁控件，避免并发写自撞版本）。
  * @param props.onChange - 新值回调；传 null 表示清空。
  */
-export function NumberStepper({ label, value, step, min, max, placeholder, clearableAtMin = true, disabled = false, onChange }: {
+export function NumberStepper({ label, value, step, min, max, placeholder, disabled = false, onChange }: {
   label: string
   value: number | null
   step: number
   min: number
   max: number
   placeholder: string
-  clearableAtMin?: boolean
   disabled?: boolean
   onChange: (next: number | null) => void
 }) {
   const current = value ?? null
   const clamp = (next: number): number => Math.min(max, Math.max(min, next))
-  const atMin = current !== null && current <= min
   const atMax = current !== null && current >= max
   return (
     <span className={css.stepper} role="group" aria-label={label}>
@@ -54,10 +49,11 @@ export function NumberStepper({ label, value, step, min, max, placeholder, clear
         variant="outline"
         aria-label={`${label} -`}
         icon={<IconMinusOutline16 size={12} />}
-        disabled={disabled || (atMin && !clearableAtMin)}
+        disabled={disabled}
         onClick={() => {
           if (current === null) return
           const next = clamp(current - step)
+          // 到达下限再减一次即清空为「未设置」：调用方用 null 删键，否则值永远清不掉。
           onChange(next === min && current === min ? null : next)
         }}
       />
