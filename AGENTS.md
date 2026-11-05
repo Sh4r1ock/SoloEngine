@@ -1,6 +1,6 @@
 # AGENTS.md
 
-DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
+SoloEngine is a harness development system and cloud agent platform built on the Cordis plugin harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`, [docs/soloengine/00-总览.md](docs/soloengine/00-总览.md) for the product map, and [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
 ## Pre-stable APIs and released Session data
 
@@ -10,13 +10,17 @@ Acknowledge [declared persistence-type changes](docs/cookbook/reviewing-persiste
 
 Record each externally perceptible breaking change immediately in an [upgrade guide](.agents/skills/dsh-create-upgrade-guide/SKILL.md).
 
-**Application launch.** Only `dsh` profiles launch supported Node apps; package bins, demos, and public SDK argv escapes are forbidden ([rule](docs/architecture.md#application-launch)).
+**Application launch.** `soloengine-launch/bin.mjs` is the supported SoloEngine entry; inside `packages/`, only `dsh` profiles launch supported Node apps, and package bins, demos, and public SDK argv escapes are forbidden ([rule](docs/architecture.md#application-launch)).
 
 ## Repository layout
 
 ```
 vendor/      Vendored Cordis (vendor/README.md)
+soloengine-framework/  SoloEngine REST, database, and product modules
+soloengine-launch/     SoloEngine build/start/stop/doctor entry (bin.mjs)
+soloengine-vendor/     SoloEngine vendored plugin copies
 packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
+  soloengine/           @soloengine/* product packages
   core/                 agent/session API
   api/                  remote BFF
   typert/               type graphs
@@ -67,16 +71,17 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   experimental/         evaluated capabilities without a product-support commitment
   test-support/         test infrastructure
   util/                 zero-dependency utilities
-python/      Python SDK/runtime (python/README.md)
+apps/        web product frontend and desktop shell
+profiles-templates/  product profile bundles
+deploy/      cloud deployment assets
 native/      @deepseek-ai/node-addon-system source (native/README.md)
-benchmarks/  performance gates
 .agents/     Agent workflows/notes
 docs/        Documentation (docs/AGENTS.md)
 scripts/     gates and generators
-website/     VitePress documentation projection
+test/soloengine/  product probes and evidence records
 ```
 
-Package groups: [packages/README.md](packages/README.md). [Experimental status](packages/experimental/README.md#status) is independent of optional delivery; nonexperimental packages need product use or an explicit [classification](scripts/product-package-policy.ts).
+Package groups: [packages/README.md](packages/README.md). [Experimental status](bat/removed-20261031/packages/experimental/README.md#status) is independent of optional delivery; nonexperimental packages need product use or an explicit [classification](scripts/product-package-policy.ts).
 
 ## Commands
 
@@ -99,11 +104,11 @@ pnpm run hygiene        # publint + workspace/package/dependency checks + NodeNe
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
 pnpm run doc-sync       # documentation gates (scripts/run-gates.ts)
 pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
-pnpm run website:build  # VitePress build (doubles as dead-link check)
+pnpm run test:gui       # client and host suites
+node soloengine-launch/bin.mjs build|start|stop|status  # SoloEngine build and single-port 8991 runtime
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)
 pnpm run demo:ptc -- "task"  # headless PTC mode run (needs key)
 pnpm run dev:web | dev:desktop  # build:artifacts, then launch; Web also rebuilds client bundles on edits. start:web | start:desktop skip the build
-make web|dev-web|desktop|dev-desktop|build  # the same commands; ARGS='--no-open' forwards options
 ```
 
 ### Host sandbox failures
