@@ -12,7 +12,11 @@
  * 两个消费面不同是事实，因此显式建模为 `surface`：`panel` 根由 DSH 原生壳渲染（进入某 id
  * 面板时装载该实例的客户端插件树，切出即卸载），不在产品 SPA 的路由表里。
  *
- * 根路径 `/` 即产品首页（画布列表）：由产品 SPA 渲染，不是面板。
+ * 根路径 `/` 即产品首页（营销页）：由产品 SPA 渲染，不是面板；控制台画布列表在 `/canvas`。
+ *
+ * 命名规范：**产品页面 URL 用单数名词**（`/canvas`、`/model`、`/skill`、`/user`），
+ * 列表与详情共用同一根（详情取第二段）；REST 接口路径仍用资源复数（`/api/solo/canvases`），
+ * 两者是不同层次，不互相推断。
  *
  * 本模块**零依赖**：宿主与浏览器两侧都直接 import 同一份常量与纯函数。
  *
@@ -21,8 +25,8 @@
 
 /** 产品应用内的页面路由名（`router.ts` 的 `RouteName` 即本联合）。 */
 export type ProductPageName =
-  | 'login' | 'canvases' | 'canvas' | 'models' | 'skills' | 'skill'
-  | 'mcp' | 'market' | 'packaging' | 'settings'
+  | 'home' | 'login' | 'styleguide' | 'canvases' | 'canvas' | 'models' | 'skills' | 'skill'
+  | 'mcp' | 'market' | 'packaging' | 'settings' | 'users'
 
 /** 一条 URL 根归属的界面。 */
 export type ProductSurface =
@@ -46,22 +50,38 @@ export interface ProductRouteRoot {
 /** 运行面板的 URL 根（`/run/:agenticFlowId`）。 */
 export const RUN_ROUTE_ROOT: ProductRouteRoot = { segment: 'run', surface: 'panel' }
 
-/** 产品首页的 URL 根（根路径 `/` → 画布列表）。 */
-export const HOME_ROUTE_ROOT: ProductRouteRoot = { segment: '', surface: 'product', listName: 'canvases' }
+/**
+ * 实例插件管理器的 URL 根（`/plugin-manager`）。
+ *
+ * profile 级而非画布级：安装/启停/移除影响所有会话，故不挂在某张画布下面。
+ * 由 DSH 原生壳渲染——插件管理器是 DSH 官方客户端插件（`dsh-client-ui-plugin-manager`），
+ * 产品页只提供入口，不另做一套安装/移除界面。
+ *
+ * 段名不能取 `/plugins`：那是 DSH 客户端模块加载器的资源路由（`packages/client/modules`
+ * 的 `PLUGIN_ROUTE`），宿主注册会与之冲突。
+ */
+export const PLUGINS_PANEL_ROOT: ProductRouteRoot = { segment: 'plugin-manager', surface: 'panel' }
+
+/** 产品首页的 URL 根（根路径 `/` → 营销首页）。 */
+export const HOME_ROUTE_ROOT: ProductRouteRoot = { segment: '', surface: 'product', listName: 'home' }
 
 /** 产品 URL 的全部根（宿主注册它们，SPA 只渲染 `surface === 'product'` 的那些）。 */
 export const PRODUCT_ROUTE_ROOTS: readonly ProductRouteRoot[] = [
   HOME_ROUTE_ROOT,
   RUN_ROUTE_ROOT,
+  PLUGINS_PANEL_ROOT,
   { segment: 'login', surface: 'product', listName: 'login' },
-  { segment: 'canvases', surface: 'product', listName: 'canvases' },
-  { segment: 'canvas', surface: 'product', detailName: 'canvas' },
-  { segment: 'models', surface: 'product', listName: 'models' },
-  { segment: 'skills', surface: 'product', listName: 'skills', detailName: 'skill' },
+  // 设计系统对照页（W17.1）：应用壳层内的开发参考页，不是导航项。
+  { segment: 'styleguide', surface: 'product', listName: 'styleguide' },
+  { segment: 'canvas', surface: 'product', listName: 'canvases', detailName: 'canvas' },
+  { segment: 'model', surface: 'product', listName: 'models' },
+  { segment: 'skill', surface: 'product', listName: 'skills', detailName: 'skill' },
   { segment: 'mcp', surface: 'product', listName: 'mcp' },
   { segment: 'market', surface: 'product', listName: 'market' },
   { segment: 'packaging', surface: 'product', listName: 'packaging' },
   { segment: 'settings', surface: 'product', listName: 'settings' },
+  // 用户管理（W11.1）：仅超管可达；页面本身对非超管返回 403，侧栏项也只对超管渲染。
+  { segment: 'user', surface: 'product', listName: 'users' },
 ]
 
 /** 宿主向 `ctx.webServer` 注册的全部前缀路径（含运行面板；根路径以 exact 另行注册）。 */

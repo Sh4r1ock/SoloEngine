@@ -1,7 +1,7 @@
 /** 产品页面应用：路由分发 + 登录门禁 + 偏好加载。 */
 import { useCallback, useEffect, useState } from 'react'
 import { isProductPagePathname } from '@soloengine/types'
-import { ApiError, clearTokens, describeError, readAccessToken, request } from './api.ts'
+import { ApiError, SESSION_EXPIRED_EVENT, clearTokens, describeError, readAccessToken, request } from './api.ts'
 import { t, useLocale } from './i18n.ts'
 import { navigate, useRoute } from './router.ts'
 import { loadPreferences, resetPreferences } from './preferences.ts'
@@ -9,6 +9,8 @@ import { AppShell } from './components/AppShell.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 import { NoticeLine } from './components/NoticeLine.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
+import { HomePage } from './pages/HomePage.tsx'
+import { StyleguidePage } from './pages/StyleguidePage.tsx'
 import { CanvasesPage } from './pages/CanvasesPage.tsx'
 import { CanvasEditorPage } from './pages/CanvasEditorPage.tsx'
 import { ModelsPage } from './pages/ModelsPage.tsx'
@@ -18,6 +20,7 @@ import { McpPage } from './pages/McpPage.tsx'
 import { MarketPage } from './pages/MarketPage.tsx'
 import { PackagingPage } from './pages/PackagingPage.tsx'
 import { SettingsPage } from './pages/SettingsPage.tsx'
+import { UsersPage } from './pages/UsersPage.tsx'
 import type { UserView } from './types.ts'
 import css from './styles/common.module.css'
 
@@ -29,9 +32,33 @@ function isKnownPath(pathname: string): boolean {
   return isProductPagePathname(pathname)
 }
 
+/**
+ * 页面标题：原型逐页给 `<页面名> · SoloEngine`（`index.html:6` 等 13 页）。
+ * 运行面板（`/run/*`）不在产品 SPA 内，标题由原生壳维护。
+ * @param name - 当前路由名。
+ * @returns 文档标题文案。
+ */
+function documentTitle(name: string): string {
+  switch (name) {
+    case 'home': return t('shell', 'docTitleHome')
+    case 'login': return t('shell', 'docTitleLogin')
+    case 'canvas': return t('shell', 'docTitleCanvas')
+    case 'skills': return t('shell', 'docTitleSkills')
+    case 'skill': return t('shell', 'docTitleSkill')
+    case 'mcp': return t('shell', 'docTitleMcp')
+    case 'models': return t('shell', 'docTitleModels')
+    case 'market': return t('shell', 'docTitleMarket')
+    case 'packaging': return t('shell', 'docTitlePackaging')
+    case 'settings': return t('shell', 'docTitleSettings')
+    case 'users': return t('shell', 'docTitleUsers')
+    case 'styleguide': return t('shell', 'docTitleStyleguide')
+    default: return t('shell', 'docTitleCanvases')
+  }
+}
+
 /** 产品页面根组件。 */
 export function ProductApp() {
-  useLocale()
+  const locale = useLocale()
   const route = useRoute()
   const [user, setUser] = useState<UserView | null>(null)
   const [checked, setChecked] = useState(false)
@@ -51,19 +78,29 @@ export function ProductApp() {
       return
     }
     try {
-      const result = await request<{ ok: true; user: UserView }>('/auth/me')
+      // 探测请求必须有超时：服务端黑洞时不能把用户永久卡在「加载中」（R005/R006）。
+      const result = await request<{ ok: true; user: UserView }>('/auth/me', {
+        signal: AbortSignal.timeout(10000),
+      })
       setUser(result.user)
       setError(null)
-      await loadPreferences()
+      loadPreferences()
     } catch (failure) {
       // 令牌失效（401 / UNAUTHENTICATED）是正常生命周期事件，不是产品故障：
       // 直接抛出机器码 `UNAUTHENTICATED: a valid access token is required` 会让用户
       // 在登录页看到一行原始接口错误（用户实测缺陷），故改用产品文案 + info 语气。
       const expired = failure instanceof ApiError && (failure.status === 401 || failure.code === 'UNAUTHENTICATED')
-      if (expired) clearTokens()
+      // 账号被停用是终态：继续持有令牌只会反复失败，清令牌回登录页并给出明确原因。
+      const disabled = failure instanceof ApiError && failure.status === 403 && failure.code === 'USER_DISABLED'
+      if (expired || disabled) clearTokens()
       setUser(null)
-      setError(expired ? t('shell', 'sessionExpired') : `${t('shell', 'panelError')} — ${describeError(failure)}`)
-      setErrorTone(expired ? 'info' : 'error')
+      if (disabled) {
+        setError(t('login', 'errorUserDisabled'))
+        setErrorTone('error')
+      } else {
+        setError(expired ? t('shell', 'sessionExpired') : `${t('shell', 'panelError')} — ${describeError(failure)}`)
+        setErrorTone(expired ? 'info' : 'error')
+      }
     } finally {
       setChecked(true)
     }
@@ -71,42 +108,57 @@ export function ProductApp() {
 
   useEffect(() => { void probe() }, [probe])
 
+  // 标题随路由与语言变化（原型逐页不同；语言切换后同页标题跟着换）。
+  useEffect(() => { document.title = documentTitle(route.name) }, [route.name, locale])
+
   // 未知路径 → 画布列表（replace：规范化修正不应新增历史条目，否则后退会回到非法路径并被再次规范化，形成弹跳循环）。
   useEffect(() => {
-    if (!isKnownPath(route.pathname)) navigate('/canvases', { replace: true })
+    if (!isKnownPath(route.pathname)) navigate('/canvas', { replace: true })
   }, [route.pathname])
 
-  // 未登录且不在登录页 → 重定向登录。令牌还在（只是这一轮没问到服务器）时不重定向，
+  // 未登录且不在登录页/首页 → 重定向登录。令牌还在（只是这一轮没问到服务器）时不重定向，
   // 否则「服务瞬断 → 被赶到登录页」依旧会把用户当成已退出。
   useEffect(() => {
-    if (checked && user === null && readAccessToken() === null && route.name !== 'login') navigate('/login')
+    if (checked && user === null && readAccessToken() === null && route.name !== 'login' && route.name !== 'home') navigate('/login')
   }, [checked, user, route.name])
 
   // 已登录却在登录页 → 回到画布列表。
   useEffect(() => {
-    if (user !== null && route.name === 'login') navigate('/canvases')
+    if (user !== null && route.name === 'login') navigate('/canvas')
   }, [user, route.name])
 
   const onAuthenticated = useCallback((next: UserView) => {
     setUser(next)
     setError(null)
-    void loadPreferences()
+    loadPreferences()
   }, [])
 
   const logout = useCallback(() => {
-    void (async () => {
-      try {
-        await request('/auth/logout', { method: 'POST' })
-      } catch (failure) {
-        setError(`${t('shell', 'panelError')} — ${describeError(failure)}`)
-      } finally {
-        clearTokens()
-        resetPreferences()
-        setUser(null)
-        navigate('/login')
-      }
-    })()
+    // 本地先清理并离开页面：服务端黑洞不能让用户卡在页面上（R009）。
+    clearTokens()
+    resetPreferences()
+    setUser(null)
+    navigate('/login')
+    // 服务端登出是 best-effort（令牌自包含、无服务端会话表）；2s 超时后放弃。
+    void request('/auth/logout', { method: 'POST', signal: AbortSignal.timeout(2000) }).catch(() => undefined)
   }, [])
+
+  // 刷新失败（401 且刷新令牌不可用）：api 层清令牌并广播，这里回登录页并给出会话过期提示。
+  useEffect(() => {
+    const onExpired = (): void => {
+      setUser(null)
+      setError(t('shell', 'sessionExpired'))
+      setErrorTone('info')
+      navigate('/login')
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired)
+    return () =>{  window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired) }
+  }, [])
+
+  // 产品首页是公开营销页：不等待身份探测，也不进管理面壳层。
+  if (route.name === 'home') {
+    return <HomePage authenticated={user !== null} />
+  }
 
   if (!checked) {
     return <div className={css.empty}>{t('common', 'stateLoading')}</div>
@@ -132,24 +184,33 @@ export function ProductApp() {
 
   const page = (() => {
     switch (route.name) {
-      case 'canvases': return <CanvasesPage user={user} />
-      case 'canvas': return <CanvasEditorPage canvasId={route.params.id ?? ''} />
+      case 'styleguide': return <StyleguidePage />
+      case 'canvases': return <CanvasesPage />
+      case 'canvas': return <CanvasEditorPage canvasId={route.params.id ?? ''} user={user} />
       case 'models': return <ModelsPage />
-      case 'skills': return <SkillsPage />
+      case 'skills': return <SkillsPage user={user} />
       case 'skill': return <SkillFilePage skillId={route.params.id ?? ''} />
       case 'mcp': return <McpPage />
       case 'market': return <MarketPage />
       case 'packaging': return <PackagingPage canvasId={route.query.get('canvasId')} />
       case 'settings': return <SettingsPage />
-      default: return <CanvasesPage user={user} />
+      case 'users': return <UsersPage user={user} />
+      default: return <CanvasesPage />
     }
   })()
+
+  // 编辑器是独立全屏工作面（原型 editor.html 没有应用壳层）：自带 56px 图标轨与 48px 顶栏。
+  if (route.name === 'canvas') {
+    return (
+      <ErrorBoundary resetKey={`${route.pathname}?${route.query.toString()}`}>{page}</ErrorBoundary>
+    )
+  }
 
   return (
     <AppShell
       active={route.name}
       user={user}
-      bleed={route.name === 'canvas'}
+      wide={route.name === 'packaging' || route.name === 'skill' || route.name === 'styleguide' || route.name === 'mcp'}
       onLogout={logout}
     >
       {/* resetKey 让路由身份变化时重置边界：否则一次渲染失败会把后续页面永久钉在降级态，
