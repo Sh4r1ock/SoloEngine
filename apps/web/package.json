@@ -17,16 +17,12 @@
   },
   "files": [
     "dist",
-    "!dist/**/*.map",
-    "!dist/preview.html",
-    "!dist/preview"
+    "!dist/**/*.map"
   ],
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "watch": "vite build --watch --no-emptyOutDir",
-    "build:preview": "pnpm --filter @deepseek-ai/dsh-experimental-webworker-runtime exec tsdown && pnpm --filter @deepseek-ai/dsh-experimental-webworker-packer exec tsdown && vite build && dsh-pack-vfs-image --out dist/preview/vfs-image.tar.gz",
-    "serve:preview": "http-server dist -a 0.0.0.0 -p 4173 -c-1"
+    "watch": "vite build --watch --no-emptyOutDir"
   },
   "license": "MIT",
   "devDependencies": {
@@ -42,10 +38,8 @@
     "@deepseek-ai/dsh-client-web": "workspace:*",
     "@deepseek-ai/dsh-cmdline": "workspace:*",
     "@deepseek-ai/dsh-pwsh-local": "workspace:*",
-    "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
-    "@deepseek-ai/dsh-experimental-webworker-packer": "workspace:*",
-    "@deepseek-ai/dsh-experimental-webworker-runtime": "workspace:*",
     "@deepseek-ai/dsh-remote-mock": "workspace:*",
+    "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "8.18.1",
@@ -59,14 +53,13 @@
     "vite": "^6.0.0",
     "vitest": "^4.1.8",
     "ws": "8.21.0",
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
     "@deepseek-ai/dsh-client-ui-theme": "workspace:*",
     "@deepseek-ai/dsh-launch-environment": "workspace:*",
     "@deepseek-ai/dsh-workspace-changes": "workspace:*",
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
-    "@deepseek-ai/dsh-experimental-auto-review": "workspace:*",
-    "@deepseek-ai/dsh-experimental-speech-to-text": "workspace:*",
-    "@deepseek-ai/dsh-experimental-voice-input-bundle": "workspace:*",
     "@soloengine/types": "workspace:*",
-    "@soloengine/ui-theme": "workspace:*"
+    "@soloengine/ui-theme": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-brand-official": "workspace:*"
   }
 }

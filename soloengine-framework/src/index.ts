@@ -9,6 +9,7 @@ export { hashPassword, verifyPassword, TokenService, newId, newUserId, type Toke
 export { FrameworkRuntime, type FrameworkOptions } from './runtime.ts'
 export { AccountService, FrameworkError, toView, type UserRow, type UserView } from './modules/accounts.ts'
 export { createRouter, type RouteDescriptor, type RouterBundle } from './modules/router.ts'
+export { CHANGES_OPS, WORKSPACE_OPS, type OpsInput, type OpsOutcome, type OpsRoute } from './modules/ops.ts'
 export {
   LlmConfigService, classifyHttpFailure,
   type LlmConfigRow, type LlmConfigView, type LlmConfigInput,
@@ -18,7 +19,7 @@ export { UserDirectoryService, safeDirectoryName } from './tenancy.ts'
 export {
   SkillService,
   type SkillPackageRow, type SkillPackageView, type SkillMetadata,
-  type SkillImportPreview, type SkillFileEntry,
+  type SkillImportPreview, type SkillFileEntry, type SkillPreviewFile,
 } from './modules/skills.ts'
 export {
   McpService, MCP_NAME_PATTERN,
@@ -43,16 +44,28 @@ export {
 export {
   PackagingService,
   type PackagingPreview, type PackagingRun, type PackagingStage, type PackagingLayer, type DeploymentGuide,
+  type PackagingDesktop, type PackagingDesktopOptions,
 } from './modules/packaging.ts'
-export { SessionExportService, type SessionExportManifest } from './modules/export.ts'
-export { PluginService, parsePatchDocument, evaluateDisabled, type DisabledEvalContext, type PatchRow, type PluginRow } from './modules/plugins.ts'
+export {
+  SessionExportService, type SessionExportManifest, type SessionLogReadHandle, type SessionLogSource,
+} from './modules/export.ts'
+export {
+  PluginService, type PluginRow, type LivePluginRow, type PluginInventorySource,
+  type UnresolvedPluginRow, type PluginBundleCount,
+  type ManagedBundleRow, type ManagedChangeResult, type ManagedInspection, type PluginManagerSource,
+} from './modules/plugins.ts'
+export { parsePatchDocument, isJsExpression, type PatchRow, type JsExpression } from './cordis-patch.ts'
+export {
+  buildClosureManifest, closureCredentialHits, materializeDependencies, measureNodeModules, packageResolver,
+  rootPackageName, verifyClosureManifest, writeClosureManifest,
+  type ClosureManifest, type ClosurePackage, type MaterializedDependencies, type MaterializedPackage, type PackageResolver,
+} from './modules/packaging-assets.ts'
 export {
   WorkspaceService,
   type WorkspaceEntry, type WorkspaceListing, type WorkspaceText, type WorkspaceStat, type WorkspaceWriteResult,
 } from './modules/workspace.ts'
 export {
   ChangeLedgerService,
-  changeDiffHelpers,
   type ChangeHunk, type ChangeOperation, type ChangeOrigin, type ChangeStatus, type ChangeQuery,
   type ChangeRecordInput, type FileChangeView, type ReviewInput, type RevertPlan, type RevertRestore, type RevertSkip,
   type RevertExecutionInput, type RevertExecutionResult, type TurnViewEntry,

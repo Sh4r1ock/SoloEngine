@@ -36,10 +36,16 @@
       "path": "../../client/connection/tsconfig.host.json"
     },
     {
+      "path": "../../client/modules"
+    },
+    {
       "path": "../../session/session-projection"
     },
     {
       "path": "../../settings/settings"
+    },
+    {
+      "path": "../../boot/plugin-manager"
     },
     {
       "path": "../../host/webserver"
@@ -60,7 +66,34 @@
       "path": "../../subagent/subagent"
     },
     {
+      "path": "../../shell/shell-env"
+    },
+    {
+      "path": "../../subprocess/subprocess"
+    },
+    {
       "path": "../types"
+    },
+    {
+      "path": "../instance-runtime"
+    },
+    {
+      "path": "../cloud-control"
+    },
+    {
+      "path": "../executor-container"
+    },
+    {
+      "path": "../executor-vm"
+    },
+    {
+      "path": "../image-distribution"
+    },
+    {
+      "path": "../subprocess-container"
+    },
+    {
+      "path": "../../../vendor/loader"
     },
     {
       "path": "../../../soloengine-framework"

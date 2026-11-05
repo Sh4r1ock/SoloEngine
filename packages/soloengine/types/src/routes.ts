@@ -47,20 +47,14 @@ export interface ProductRouteRoot {
   readonly detailName?: ProductPageName
 }
 
-/** 运行面板的 URL 根（`/run/:agenticFlowId`）。 */
-export const RUN_ROUTE_ROOT: ProductRouteRoot = { segment: 'run', surface: 'panel' }
-
 /**
- * 实例插件管理器的 URL 根（`/plugin-manager`）。
+ * 运行面板的 URL 根（`/run/:agenticFlowId`）。
  *
- * profile 级而非画布级：安装/启停/移除影响所有会话，故不挂在某张画布下面。
- * 由 DSH 原生壳渲染——插件管理器是 DSH 官方客户端插件（`dsh-client-ui-plugin-manager`），
- * 产品页只提供入口，不另做一套安装/移除界面。
- *
- * 段名不能取 `/plugins`：那是 DSH 客户端模块加载器的资源路由（`packages/client/modules`
- * 的 `PLUGIN_ROUTE`），宿主注册会与之冲突。
+ * 这是产品里**唯一**的 Harness 面：缺 id（`/run`、`/run/`）或带多余段时宿主 404，
+ * 不渲染面板；其余页面全部由产品应用（管理层）渲染。进入面板只允许来自画布动作，
+ * 不存在第二个 Harness 入口（例如 `/plugin-manager`）。
  */
-export const PLUGINS_PANEL_ROOT: ProductRouteRoot = { segment: 'plugin-manager', surface: 'panel' }
+export const RUN_ROUTE_ROOT: ProductRouteRoot = { segment: 'run', surface: 'panel' }
 
 /** 产品首页的 URL 根（根路径 `/` → 营销首页）。 */
 export const HOME_ROUTE_ROOT: ProductRouteRoot = { segment: '', surface: 'product', listName: 'home' }
@@ -69,7 +63,6 @@ export const HOME_ROUTE_ROOT: ProductRouteRoot = { segment: '', surface: 'produc
 export const PRODUCT_ROUTE_ROOTS: readonly ProductRouteRoot[] = [
   HOME_ROUTE_ROOT,
   RUN_ROUTE_ROOT,
-  PLUGINS_PANEL_ROOT,
   { segment: 'login', surface: 'product', listName: 'login' },
   // 设计系统对照页（W17.1）：应用壳层内的开发参考页，不是导航项。
   { segment: 'styleguide', surface: 'product', listName: 'styleguide' },

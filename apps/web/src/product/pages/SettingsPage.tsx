@@ -1,19 +1,54 @@
 /** 设置页：通用 / 外观 / 语言 / 插件。 */
-import { useCallback, useEffect, useState } from 'react'
-import { Pill, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  Button,
+  IconArchiveOutlineRegular,
+  IconCordisPluginOutlineRegular,
+  IconPlusOutlineRegular,
+  IconTrashOutlineRegular,
+  IconWarningTriangleOutlineRegular,
+  Input,
+  Modal,
+  Switch,
+  Tag,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import { describeError, request } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { PageHeader } from '../components/PageHeader.tsx'
-import { formatTimestamp } from '../utils/time.ts'
+import { formatDateOnly } from '../utils/time.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
-import { NumberStepper } from '../components/NumberStepper.tsx'
-import { loadPreferences, preferenceFailureText, updateLocalePreference, updateTheme, usePreferences, type PreferencesError } from '../preferences.ts'
+import { preferenceFailureText, updateLocalePreference, updateTheme, usePreferences } from '../preferences.ts'
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../theme.ts'
-import type { PluginsView, UserView } from '../types.ts'
+import type {
+  ManagedBundleView, PluginChangeView, PluginInspectionView, PluginsView, UserView,
+} from '../types.ts'
 import css from '../styles/common.module.css'
+import settingsCss from '../styles/settings.module.css'
 
 /** 分节。 */
 type Section = 'general' | 'appearance' | 'locale' | 'plugins'
+
+/** 横向分区导航的四个锚点（顺序即页面顺序）。 */
+const SECTIONS: readonly { id: Section; labelKey: string }[] = [
+  { id: 'general', labelKey: 'navGeneral' },
+  { id: 'appearance', labelKey: 'navAppearance' },
+  { id: 'locale', labelKey: 'navLocale' },
+  { id: 'plugins', labelKey: 'navPlugins' },
+]
+
+/**
+ * 地址 hash → 分区：接受 `#settings-plugins` 与 `#plugins` 两种写法。
+ * @param hash - `window.location.hash` 原文。
+ * @returns 分区 id；不是已知分区时为 null。
+ */
+function sectionFromHash(hash: string): Section | null {
+  const id = hash.replace(/^#/u, '').replace(/^settings-/u, '')
+  return SECTIONS.find(item => item.id === id)?.id ?? null
+}
+
+/** 键盘调整滑块后需要落盘的按键（拖动途中的 `onChange` 只更新预览）。 */
+const RANGE_COMMIT_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
 
 /**
  * 提示条目：只存文案键与异常本身，句子在渲染时按当前语言取。
@@ -28,12 +63,66 @@ interface NoticeItem {
   failure: unknown
 }
 
-/** 偏好存储错误 → 当前语言句子（值非法走文案键，读写异常走 describeError）。 */
-function preferencesErrorText(error: PreferencesError): string {
-  const reason = error.failure === undefined
-    ? error.invalidKeys.map(key => t('common', key)).join(' ')
-    : describeError(error.failure)
-  return `${t('settings', 'errorSettings')} — ${reason}`
+/**
+ * 最近登录的相对时间（原型 settings.html:70 显示「刚刚」）。
+ * @param value - 后端返回的 ISO 时间。
+ * @returns 相对时间文案；null/不可解析时为 null，由调用方兜底。
+ */
+function lastLoginText(value: string | null): string | null {
+  if (value === null || value === '') return null
+  const time = new Date(value).getTime()
+  if (!Number.isFinite(time)) return null
+  const minutes = Math.floor((Date.now() - time) / 60_000)
+  if (minutes < 1) return t('settings', 'relativeJustNow')
+  if (minutes < 60) return t('settings', 'relativeMinutes', { count: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('settings', 'relativeHours', { count: hours })
+  return t('settings', 'relativeDays', { count: Math.floor(hours / 24) })
+}
+
+/**
+ * 插件操作失败码 → 文案键。
+ * @param code - 原生 `ManagementError.code`；成功或未提供时为 undefined。
+ * @returns `settings` 字典里的句子键。
+ */
+function pluginErrorKey(code: string | undefined): string {
+  switch (code) {
+    case 'invalid-spec': return 'pluginErrorInvalidSpec'
+    case 'already-installed': return 'pluginErrorInstalled'
+    case 'not-found': return 'pluginErrorNotFound'
+    case 'not-a-package':
+    case 'not-a-bundle': return 'pluginErrorNotBundle'
+    case 'not-removable': return 'pluginErrorNotRemovable'
+    case 'bundle-in-use': return 'pluginErrorInUse'
+    case 'stop-profile': return 'pluginErrorStopped'
+    case 'incompatible-version': return 'pluginErrorIncompatible'
+    case 'management-required':
+    case 'unaddressable': return 'pluginErrorReadOnly'
+    default: return 'pluginErrorGeneric'
+  }
+}
+
+/** 一条插件管理结果提示（句子在渲染时按当前语言取）。 */
+interface ManageNotice {
+  /** `settings` 字典里的句子键。 */
+  key: string
+  /** 语气：成功 / 信息 / 失败。 */
+  tone: 'success' | 'info' | 'error'
+  /** 原生诊断原文（pnpm 或 Loader 的输出，不改写）。 */
+  detail?: string | undefined
+}
+
+/**
+ * 原生变更结果 → 界面提示（落地状态与失败码分开成句）。
+ * @param result - `POST /plugins/*` 返回的结果。
+ * @returns 语气与句子键。
+ */
+function changeNotice(result: PluginChangeView): ManageNotice {
+  if (result.application === 'applied') return { key: 'pluginApplied', tone: 'success' }
+  if (result.application === 'restart-required') return { key: 'pluginRestartRequired', tone: 'info' }
+  if (result.application === 'overridden') return { key: 'pluginOverridden', tone: 'error' }
+  if (result.application === 'cancelled') return { key: 'pluginCancelled', tone: 'error' }
+  return { key: pluginErrorKey(result.error?.code), tone: 'error', detail: result.error?.diagnostic ?? undefined }
 }
 
 /**
@@ -43,6 +132,7 @@ export function SettingsPage() {
   const locale = useLocale()
   const preferences = usePreferences()
   const [section, setSection] = useState<Section>('general')
+  const pageRef = useRef<HTMLDivElement | null>(null)
   const [profile, setProfile] = useState<UserView | null>(null)
   const [plugins, setPlugins] = useState<PluginsView | null>(null)
   const [error, setError] = useState<NoticeItem | null>(null)
@@ -50,10 +140,34 @@ export function SettingsPage() {
   // `setError(null)` 抹掉（实测阻断 /auth/me 后界面只剩「加载中…」，一行错误都没有）。
   const [profileError, setProfileError] = useState<NoticeItem | null>(null)
   const [pluginsError, setPluginsError] = useState<NoticeItem | null>(null)
+  // profile 级插件管理：组合包来自原生 pluginManager（仅超管可见/可改）。
+  const [bundles, setBundles] = useState<ManagedBundleView[] | null>(null)
+  const [bundlesError, setBundlesError] = useState<NoticeItem | null>(null)
+  const [bundleBusy, setBundleBusy] = useState<string | null>(null)
+  const [manageNotice, setManageNotice] = useState<ManageNotice | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<ManagedBundleView | null>(null)
+  const [installOpen, setInstallOpen] = useState(false)
+  const [installSpec, setInstallSpec] = useState('')
+  const [installBusy, setInstallBusy] = useState(false)
+  const [installRequestId, setInstallRequestId] = useState<string | null>(null)
+  const [installInspection, setInstallInspection] = useState<PluginInspectionView | null>(null)
+  const [installResult, setInstallResult] = useState<PluginChangeView | null>(null)
+  const [installError, setInstallError] = useState<string | null>(null)
   // 成功提示必须带出处：`已保存` 不带主语，跨分节留存会让人以为「当前分节已保存」，
   // 且会与随后一次失败写入同屏并存（实测 `偏好读写失败 …` 与 `已保存` 同时出现）。
+  // 出处放进页头状态并 1.6s 后回到「偏好已同步」（原型同款），不再单独占一行提示。
   const [notice, setNotice] = useState<{ section: Section; key: string } | null>(null)
+  const noticeTimer = useRef<number | null>(null)
+  // 字号滑块的拖动草稿：拖动中只更新数值提示与预览，松手才落盘（原型 input 预览 / change 保存）。
+  // null 表示跟随已保存值，服务端偏好变化（首次加载、其它窗口保存）会直接反映到滑块上。
+  const [fontDraft, setFontDraft] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  // 深链目标在数据加载完成后要再落一次位：资料卡与插件清单是异步渲染的，首次滚动后
+  // 上方内容增高会把目标分区顶下去；这段时间内也让滚动监听暂缓改写高亮。
+  const hashTarget = useRef<Section | null>(null)
+  const spyLockUntil = useRef(0)
+  /** 锁期内收到滚动时安排的补判定（同一时刻只排一个）。 */
+  const spyTimer = useRef<number | null>(null)
 
   const loadProfile = useCallback(async (): Promise<void> => {
     try {
@@ -75,56 +189,332 @@ export function SettingsPage() {
     }
   }, [])
 
+  const loadBundles = useCallback(async (): Promise<void> => {
+    try {
+      const result = await request<{ ok: true; bundles: ManagedBundleView[] }>('/plugins/bundles')
+      setBundles(result.bundles)
+      setBundlesError(null)
+    } catch (failure) {
+      setBundlesError({ key: 'errorPlugins', failure })
+    }
+  }, [])
+
   useEffect(() => { void loadProfile() }, [loadProfile])
   useEffect(() => { void loadPlugins() }, [loadPlugins])
+  // 只有超管读组合包管理面：普通用户的管理接口本身就是 403，界面也不展示开关与安装入口。
+  const canManagePlugins = profile?.is_superuser === true
+  useEffect(() => {
+    if (canManagePlugins) void loadBundles()
+  }, [canManagePlugins, loadBundles])
+  useEffect(() => () => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    if (spyTimer.current !== null) window.clearTimeout(spyTimer.current)
+  }, [])
+  // 深链：`/settings#settings-plugins` 直接激活并滚到该分区。分节由 React 渲染，
+  // 浏览器在原生的 hash 定位时机还找不到它们，所以必须在挂载后自己落一次位。
+  useEffect(() => {
+    const target = sectionFromHash(window.location.hash)
+    if (target === null) return
+    hashTarget.current = target
+    setSection(target)
+    // 挂载期就加锁：资料卡插入引发的滚动事件不能把深链目标改回上一分区。
+    spyLockUntil.current = Date.now() + 1200
+    const scroll = (): void => {
+      document.getElementById(`settings-${target}`)?.scrollIntoView({ block: 'start' })
+    }
+    scroll()
+    const frame = window.requestAnimationFrame(scroll)
+    return () => { window.cancelAnimationFrame(frame) }
+  }, [])
+  // 数据就绪后再落位一次，并短暂锁住滚动监听：异步资料卡会改变上方高度，
+  // 只靠挂载时的一次滚动会把目标留在判定线下方、让监听把高亮改回上一分区。
+  const dataReady = profile !== null && plugins !== null && preferences.loaded
+  useEffect(() => {
+    const target = hashTarget.current
+    if (!dataReady || target === null) return
+    hashTarget.current = null
+    spyLockUntil.current = Date.now() + 1200
+    // 落位的同时重新激活目标：挂载期的滚动事件可能已把高亮改回上一分区。
+    setSection(target)
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(`settings-${target}`)?.scrollIntoView({ block: 'start' })
+    })
+    return () => { window.cancelAnimationFrame(frame) }
+  }, [dataReady])
 
-  const saveAppearance = (patch: { preference?: 'light' | 'dark' | 'system'; fontSize?: number }): void => {
+  /** 在页头状态里闪现一条保存结果，1.6s 后回到「偏好已同步」（原型同款）。 */
+  const flashSaved = (section: Section): void => {
+    setNotice({ section, key: 'stateSaved' })
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    noticeTimer.current = window.setTimeout(() => { setNotice(null) }, 1600)
+  }
+
+  const saveAppearance = (
+    patch: { preference?: 'light' | 'dark' | 'system'; fontSize?: number },
+    onSettled?: () => void,
+  ): void => {
     setBusy(true)
-    void (async () => {
-      try {
-        await updateTheme(patch)
-        setNotice({ section: 'appearance', key: 'stateSaved' })
-        setError(null)
-      } catch (failure) {
-        setNotice(null)
-        setError({ key: 'errorSettings', failure })
-      } finally {
-        setBusy(false)
-      }
-    })()
+    try {
+      updateTheme(patch)
+      flashSaved('appearance')
+      setError(null)
+    } catch (failure) {
+      setNotice(null)
+      setError({ key: 'errorSettings', failure })
+    } finally {
+      setBusy(false)
+      onSettled?.()
+    }
+  }
+
+  /** 落盘字号；值未变时只丢弃草稿，避免一次无意义的写入。 */
+  const commitFontSize = (next: number): void => {
+    if (next === preferences.theme.fontSize) {
+      setFontDraft(null)
+      return
+    }
+    // 落盘期间继续拖动时保留更新的草稿，避免滑块被旧一次写入的返回值拽回去。
+    saveAppearance({ fontSize: next }, () => { setFontDraft(current => current === next ? null : current) })
   }
 
   const saveLocale = (next: 'zh' | 'en'): void => {
     setBusy(true)
+    try {
+      updateLocalePreference(next)
+      flashSaved('locale')
+      setError(null)
+    } catch (failure) {
+      setNotice(null)
+      setError({ key: 'errorSettings', failure })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 组合包开关：成功后刷新组合与清单（行数据随组合变化）。 */
+  const toggleBundle = (bundle: ManagedBundleView, enabled: boolean): void => {
+    setBundleBusy(bundle.name)
+    setManageNotice(null)
     void (async () => {
       try {
-        await updateLocalePreference(next)
-        setNotice({ section: 'locale', key: 'stateSaved' })
-        setError(null)
+        const result = await request<{ ok: true; result: PluginChangeView }>('/plugins/bundles/enabled', {
+          method: 'POST',
+          body: { name: bundle.name, enabled },
+        })
+        setManageNotice(changeNotice(result.result))
+        await Promise.all([loadBundles(), loadPlugins()])
       } catch (failure) {
-        setNotice(null)
-        setError({ key: 'errorSettings', failure })
+        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
       } finally {
-        setBusy(false)
+        setBundleBusy(null)
+      }
+    })()
+  }
+
+  /** 移除确认对话框里的组合包（原生移除检查与回滚由服务端完成）。 */
+  const confirmRemoveBundle = (): void => {
+    const target = removeTarget
+    if (target === null) return
+    setBundleBusy(target.name)
+    setManageNotice(null)
+    void (async () => {
+      try {
+        const result = await request<{ ok: true; result: PluginChangeView }>('/plugins/bundles/remove', {
+          method: 'POST',
+          body: { name: target.name },
+        })
+        setManageNotice(changeNotice(result.result))
+        setRemoveTarget(null)
+        await Promise.all([loadBundles(), loadPlugins()])
+      } catch (failure) {
+        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+      } finally {
+        setBundleBusy(null)
+      }
+    })()
+  }
+
+  /** 打开安装对话框并清空上一轮状态。 */
+  const openInstallDialog = (): void => {
+    setInstallOpen(true)
+    setInstallSpec('')
+    setInstallInspection(null)
+    setInstallResult(null)
+    setInstallError(null)
+    setInstallRequestId(null)
+  }
+
+  /**
+   * 安装：先读取规格，再安装；响应丢失时保留 requestId 供「检查安装状态」恢复。
+   * @param approvedBuilds - 用户已批准的依赖脚本包名（「允许并重试」传上一轮的 pendingBuilds）。
+   */
+  const runInstall = (approvedBuilds: string[]): void => {
+    const spec = installSpec.trim()
+    if (spec === '') {
+      setInstallError('pluginSpecRequired')
+      return
+    }
+    const requestId = installRequestId ?? randomUUID()
+    setInstallRequestId(requestId)
+    setInstallBusy(true)
+    setInstallError(null)
+    setInstallResult(null)
+    void (async () => {
+      try {
+        const inspected = await request<{ ok: true; inspection: PluginInspectionView }>('/plugins/inspect', {
+          method: 'POST',
+          body: { spec },
+        })
+        setInstallInspection(inspected.inspection)
+        if (inspected.inspection.status === 'refused') {
+          setInstallError(pluginErrorKey(inspected.inspection.problem))
+          return
+        }
+        const installed = await request<{ ok: true; result: PluginChangeView }>('/plugins/install', {
+          method: 'POST',
+          body: { spec, requestId, enabled: true, ...(approvedBuilds.length === 0 ? {} : { approvedBuilds }) },
+        })
+        setInstallResult(installed.result)
+        setManageNotice(changeNotice(installed.result))
+        await Promise.all([loadBundles(), loadPlugins()])
+      } catch (failure) {
+        // 响应丢失（网络中断、页面代理超时）不等于安装失败：保留 requestId，
+        // 由「检查安装状态」向服务端要同一请求的最终结果。
+        setInstallError('pluginInstallUnknown')
+        setManageNotice({ key: 'pluginInstallUnknown', tone: 'error', detail: describeError(failure) })
+      } finally {
+        setInstallBusy(false)
+      }
+    })()
+  }
+
+  /** 停止正在进行的安装（文件回滚完成后服务端才返回）。 */
+  const cancelInstall = (): void => {
+    const requestId = installRequestId
+    if (requestId === null) return
+    void (async () => {
+      try {
+        const result = await request<{ ok: true; cancellation: 'cancelled' | 'too-late' | 'not-running' }>(
+          `/plugins/install/${encodeURIComponent(requestId)}/cancel`,
+          { method: 'POST' },
+        )
+        setInstallError(result.cancellation === 'cancelled'
+          ? 'pluginCancelled'
+          : result.cancellation === 'too-late' ? 'pluginCancelTooLate' : 'pluginCancelNotRunning')
+      } catch (failure) {
+        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+      }
+    })()
+  }
+
+  /** 恢复一次丢失响应的安装结果。 */
+  const recoverInstall = (): void => {
+    const requestId = installRequestId
+    if (requestId === null) return
+    setInstallBusy(true)
+    void (async () => {
+      try {
+        const result = await request<{ ok: true; result: PluginChangeView | null }>(
+          `/plugins/install/${encodeURIComponent(requestId)}`,
+        )
+        if (result.result === null) {
+          setInstallError('pluginCancelNotRunning')
+          return
+        }
+        setInstallResult(result.result)
+        setManageNotice(changeNotice(result.result))
+        await Promise.all([loadBundles(), loadPlugins()])
+      } catch (failure) {
+        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+      } finally {
+        setInstallBusy(false)
       }
     })()
   }
 
   const hostRows = plugins?.rows.filter(row => row.kind === 'host') ?? []
   const clientRows = plugins?.rows.filter(row => row.kind === 'client') ?? []
+  const recordCount = hostRows.length + clientRows.length
+  // 组合包总数以管理面（含安装自带的可选包）为准；未加载或非超管时回落到 profile 声明。
+  const bundleTotal = bundles?.length ?? plugins?.profile.bundles.length ?? 0
+  const fontSize = fontDraft ?? preferences.theme.fontSize
+
+  /** 跳到某个分区（锚点滚动 + 高亮 + 地址 hash，便于复制成深链）。 */
+  const jump = (id: Section): void => {
+    setSection(id)
+    // replaceState：分区切换不新增历史条目，后退仍是离开设置页而不是逐段回退。
+    window.history.replaceState(null, '', `#settings-${id}`)
+    // 原型 docs/05 §9：减少动态时不平滑滚动。
+    document.getElementById(`settings-${id}`)?.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    })
+  }
+
+  /** 页面滚动时把高亮跟到最近越过分区标题线的分区（锚点高亮）。 */
+  const onScroll = (): void => {
+    // 深链落位后的短暂窗口内不改写高亮：此时分区还在为异步内容让位。
+    // 但滚动本身不能丢：锁结束时按当时的滚动位置补一次判定，否则用户先滚到底、
+    // 锁过期后没有新滚动事件，高亮会停在深链目标上。
+    const remaining = spyLockUntil.current - Date.now()
+    if (remaining > 0) {
+      if (spyTimer.current === null) {
+        spyTimer.current = window.setTimeout(() => {
+          spyTimer.current = null
+          onScroll()
+        }, remaining + 16)
+      }
+      return
+    }
+    const root = pageRef.current
+    if (root === null) return
+    // 顶部：首节标题仍在判定线下方（标题与留白占位），按「最近越线」会一个都不命中，
+    // 高亮就停在上一次的分区（深链第 3 区 → 滚到顶部仍显示第 3 区）。
+    if (root.scrollTop <= 0) {
+      setSection(SECTIONS[0]?.id ?? 'general')
+      return
+    }
+    // 与 `.section` 的 scroll-margin-top（顶栏 48 + 导航 56）保持一致。
+    const line = root.getBoundingClientRect().top + 104
+    let current: Section = 'general'
+    for (const item of SECTIONS) {
+      const element = document.getElementById(`settings-${item.id}`)
+      if (element !== null && element.getBoundingClientRect().top <= line) current = item.id
+    }
+    setSection(current)
+  }
 
   return (
-    <div className={css.page}>
-      <PageHeader title={t('settings', 'title')} subtitle={t('settings', 'subtitle')} />
+    <div className={`${css.page} ${settingsCss.settingsPage}`} ref={pageRef} onScroll={onScroll}>
+      <PageHeader
+        title={t('settings', 'title')}
+        subtitle={t('settings', 'subtitle')}
+        actions={preferences.loaded && error === null
+          ? (
+            <span className={settingsCss.savedStatus} role="status" aria-live="polite">
+              <span className={settingsCss.savedDot} aria-hidden="true" />
+              {notice === null
+                ? t('settings', 'savedStatus')
+                : `${t('settings', SECTIONS.find(item => item.id === notice.section)?.labelKey ?? 'title')} · ${t('common', notice.key)}`}
+            </span>
+          )
+          : undefined}
+      />
 
-      <div className={css.toolbar}>
-        {/* 原生 Pill 只把选中态写成 class，辅助技术读不到（WCAG 4.1.2）；与语言/市场/打包
-            各页同一惯例，产品层透传 aria-pressed。 */}
-        <Pill active={section === 'general'} aria-pressed={section === 'general'} onClick={() => { setSection('general') }}>{t('settings', 'navGeneral')}</Pill>
-        <Pill active={section === 'appearance'} aria-pressed={section === 'appearance'} onClick={() => { setSection('appearance') }}>{t('settings', 'navAppearance')}</Pill>
-        <Pill active={section === 'locale'} aria-pressed={section === 'locale'} onClick={() => { setSection('locale') }}>{t('settings', 'navLocale')}</Pill>
-        <Pill active={section === 'plugins'} aria-pressed={section === 'plugins'} onClick={() => { setSection('plugins') }}>{t('settings', 'navPlugins')}</Pill>
-      </div>
+      {/* 横向 sticky 分区导航：不占左侧竖栏（需求文档 §12.3 第 11 条）。 */}
+      <nav className={settingsCss.nav} aria-label={t('settings', 'navAria')}>
+        {SECTIONS.map(item => (
+          <button
+            key={item.id}
+            type="button"
+            className={section === item.id ? `${settingsCss.navItem} ${settingsCss.navItemActive}` : settingsCss.navItem}
+            aria-current={section === item.id ? 'true' : undefined}
+            onClick={() => { jump(item.id) }}
+          >
+            {t('settings', item.labelKey)}
+          </button>
+        ))}
+      </nav>
 
       <NoticeLine
         tone="error"
@@ -141,181 +531,522 @@ export function SettingsPage() {
         text={pluginsError === null ? null : `${t('settings', pluginsError.key)} — ${describeError(pluginsError.failure)}`}
         action={{ label: t('common', 'actionRetry'), onClick: () => { void loadPlugins() } }}
       />
-      <NoticeLine
-        tone="error"
-        text={preferences.error === null ? null : preferencesErrorText(preferences.error)}
-        action={{ label: t('common', 'actionRetry'), onClick: () => { void loadPreferences() } }}
-      />
-      <NoticeLine tone="success" text={notice !== null && notice.section === section ? t('common', notice.key) : null} />
 
-      {section === 'general' && (
-        <div className={css.section}>
-          <div className={css.sectionTitle}>{t('settings', 'generalProfile')}</div>
-          {profile === null && profileError === null && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
-          {profile !== null && (
-            <div className={css.definition}>
-              <span className={css.definitionLabel}>{t('settings', 'usernameLabel')}</span>
-              <span className={css.definitionValue}>{profile.username}</span>
-              <span className={css.definitionLabel}>{t('settings', 'emailLabel')}</span>
-              <span className={css.definitionValue}>{profile.email ?? t('common', 'labelNone')}</span>
-              <span className={css.definitionLabel}>{t('settings', 'superuserLabel')}</span>
-              <span className={css.definitionValue}>{profile.is_superuser ? t('common', 'stateYes') : t('common', 'stateNo')}</span>
-              <span className={css.definitionLabel}>{t('settings', 'createdAtLabel')}</span>
-              <span className={css.definitionValue}>
-                {formatTimestamp(profile.created_at) === '' ? t('common', 'labelNone') : formatTimestamp(profile.created_at)}
-              </span>
-              <span className={css.definitionLabel}>{t('settings', 'lastLoginLabel')}</span>
-              <span className={css.definitionValue}>
-                {formatTimestamp(profile.last_login) === '' ? t('common', 'labelNone') : formatTimestamp(profile.last_login)}
-              </span>
+      <section className={settingsCss.section} id="settings-general">
+        <div className={settingsCss.sectionHead}>
+          <div className={settingsCss.sectionHeadText}>
+            <h2 className={settingsCss.sectionTitle}>{t('settings', 'generalTitle')}</h2>
+            <p className={settingsCss.sectionDesc}>{t('settings', 'generalDesc')}</p>
+          </div>
+          <span className={settingsCss.sectionMeta}>{t('settings', 'metaFramework')}</span>
+        </div>
+        {profile === null && profileError === null && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
+        {profile !== null && (
+          <>
+            <div className={settingsCss.profileCard}>
+              <span className={`${settingsCss.avatar} ${settingsCss.avatarInk}`}>{profile.username.slice(0, 1).toUpperCase()}</span>
+              <div className={settingsCss.profileText}>
+                <span className={settingsCss.profileName}>
+                  {profile.username}
+                  {profile.is_superuser && (
+                    <Tag tone="info" className={`${settingsCss.badge} ${css.accentTag} ${css.statusTag}`}>
+                      <span className={settingsCss.badgeDot} aria-hidden="true" />
+                      {t('settings', 'superuserLabel')}
+                    </Tag>
+                  )}
+                </span>
+                <span className={settingsCss.profileEmail}>{profile.email ?? t('common', 'labelNone')}</span>
+              </div>
+              <Tag tone="neutral" className={settingsCss.badge}>{t('settings', 'currentUser')}</Tag>
             </div>
-          )}
-        </div>
-      )}
-
-      {section === 'appearance' && (
-        <div className={css.section}>
-          <div className={css.sectionTitle}>{t('settings', 'appearanceTheme')}</div>
-          <div className={css.fieldHint}>{t('settings', 'appearanceThemeHint')}</div>
-          <div className={css.toolbar}>
-            <Pill
-              active={preferences.theme.preference === 'light'}
-              aria-pressed={preferences.theme.preference === 'light'}
-              disabled={busy}
-              onClick={() => { saveAppearance({ preference: 'light' }) }}
-            >
-              {t('common', 'themeLight')}
-            </Pill>
-            <Pill
-              active={preferences.theme.preference === 'dark'}
-              aria-pressed={preferences.theme.preference === 'dark'}
-              disabled={busy}
-              onClick={() => { saveAppearance({ preference: 'dark' }) }}
-            >
-              {t('common', 'themeDark')}
-            </Pill>
-            <Pill
-              active={preferences.theme.preference === 'system'}
-              aria-pressed={preferences.theme.preference === 'system'}
-              disabled={busy}
-              onClick={() => { saveAppearance({ preference: 'system' }) }}
-            >
-              {t('common', 'themeSystem')}
-            </Pill>
-          </div>
-          <div className={css.sectionTitle}>{t('settings', 'appearanceFontSize')}</div>
-          <div className={css.fieldHint}>{t('settings', 'appearanceFontSizeHint')}</div>
-          <div className={css.toolbar}>
-            {/* 值只显示一次：步进器内已有当前值，右侧再放一枚 `14px` 是同一事实的两种写法
-                （实测同行文本 `14` + `14px`）；单位由标签「内容字号」与提示「12 ~ 17」承担，
-                与画布编辑器节点面板的采样步进器（温度/max_tokens 只显示裸值）同形。 */}
-            <NumberStepper
-              label={t('settings', 'appearanceFontSize')}
-              value={preferences.theme.fontSize}
-              step={1}
-              min={FONT_SIZE_MIN}
-              max={FONT_SIZE_MAX}
-              placeholder={String(FONT_SIZE_MIN)}
-              clearableAtMin={false}
-              disabled={busy}
-              onChange={(next) => { if (next !== null) saveAppearance({ fontSize: next }) }}
-            />
-          </div>
-        </div>
-      )}
-
-      {section === 'locale' && (
-        <div className={css.section}>
-          <div className={css.sectionTitle}>{t('settings', 'localeLanguage')}</div>
-          <div className={css.fieldHint}>{t('settings', 'localeLanguageHint')}</div>
-          <div className={css.toolbar}>
-            <Pill active={locale === 'zh'} aria-pressed={locale === 'zh'} disabled={busy} onClick={() => { saveLocale('zh') }}>{t('common', 'languageZh')}</Pill>
-            <Pill active={locale === 'en'} aria-pressed={locale === 'en'} disabled={busy} onClick={() => { saveLocale('en') }}>{t('common', 'languageEn')}</Pill>
-          </div>
-        </div>
-      )}
-
-      {section === 'plugins' && (
-        <div className={css.section}>
-          <div className={css.sectionTitle}>{t('settings', 'pluginsTitle')}</div>
-          {plugins === null && pluginsError === null && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
-          {plugins !== null && (
-            <>
-              <div className={css.definition}>
-                <span className={css.definitionLabel}>{t('settings', 'pluginsBundles')}</span>
-                <span className={css.definitionValue}>{plugins.profile.name}</span>
-                <span className={css.definitionLabel}>{t('settings', 'pluginsBundlesList')}</span>
-                <span className={css.definitionValue}>{plugins.profile.bundles.join(' / ')}</span>
+            <dl className={settingsCss.definition}>
+              <div className={settingsCss.definitionRow}>
+                <dt>{t('settings', 'usernameLabel')}</dt>
+                <dd className={settingsCss.monoValue}>{profile.username}</dd>
               </div>
-              {/* 声明了却解析不出条目的插件必须露出来：`unresolved` 此前被读取、被存进 state，
-                  但界面上没有任何呈现——解析失败在页面上完全不可见。放在两张清单之前，
-                  因为它是「这份清单不完整」的说明。语气色 Tag 沿用 statusTag 的文字补偿。 */}
-              {plugins.unresolved.length > 0 && (
-                <>
-                  <div className={css.sectionTitle}>{t('settings', 'pluginsUnresolved')}</div>
-                  <div className={css.chipRow}>
-                    {plugins.unresolved.map(name => (
-                      <Tag key={name} tone="warning" className={`${css.mono} ${css.statusTag}`}>{name}</Tag>
-                    ))}
-                  </div>
-                </>
-              )}
-              <div className={css.sectionTitle}>{t('settings', 'pluginsHost')}</div>
-              <PluginTable rows={hostRows} label={t('settings', 'pluginsHost')} />
-              <div className={css.sectionTitle}>{t('settings', 'pluginsClient')}</div>
-              <PluginTable rows={clientRows} label={t('settings', 'pluginsClient')} />
-              <div className={css.sectionTitle}>{t('settings', 'pluginsClientEntries')}</div>
-              <div className={css.chipRow}>
-                {plugins.clientEntries.length === 0
-                  ? <span className={css.fieldHint}>{t('common', 'labelNone')}</span>
-                  /* chipRow 的同类元素全站一律 Tag（技能/MCP/市场/打包）；此前是裸 mono span
-                     串成一行，实测 6 项无分隔视觉粘连（R3 / §二c）。入口名保持等宽。 */
-                  : plugins.clientEntries.map(entry => <Tag key={entry} tone="neutral" className={css.mono}>{entry}</Tag>)}
+              <div className={settingsCss.definitionRow}>
+                <dt>{t('settings', 'emailLabel')}</dt>
+                <dd className={settingsCss.monoValue}>{profile.email ?? t('common', 'labelNone')}</dd>
               </div>
-            </>
-          )}
+              <div className={settingsCss.definitionRow}>
+                <dt>{t('settings', 'superuserLabel')}</dt>
+                <dd>{profile.is_superuser ? t('common', 'stateYes') : t('common', 'stateNo')}</dd>
+              </div>
+              <div className={settingsCss.definitionRow}>
+                <dt>{t('settings', 'createdAtLabel')}</dt>
+                <dd className={settingsCss.monoValue}>
+                  {formatDateOnly(profile.created_at) === '' ? t('common', 'labelNone') : formatDateOnly(profile.created_at)}
+                </dd>
+              </div>
+              <div className={settingsCss.definitionRow}>
+                <dt>{t('settings', 'lastLoginLabel')}</dt>
+                <dd>{lastLoginText(profile.last_login) ?? t('common', 'labelNone')}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+      </section>
+
+      <section className={settingsCss.section} id="settings-appearance">
+        <div className={settingsCss.sectionHead}>
+          <div className={settingsCss.sectionHeadText}>
+            <h2 className={settingsCss.sectionTitle}>{t('settings', 'appearanceTitle')}</h2>
+            <p className={settingsCss.sectionDesc}>{t('settings', 'appearanceDesc')}</p>
+          </div>
+          <span className={settingsCss.sectionMeta}>{t('settings', 'metaLocal')}</span>
         </div>
-      )}
+
+        <div className={settingsCss.field}>
+          <div className={settingsCss.fieldLabel}>
+            <span>{t('settings', 'themeLabel')}</span>
+            <span className={settingsCss.fieldHint}>{t('settings', 'themeImmediate')}</span>
+          </div>
+          <div className={settingsCss.themeCards} role="radiogroup" aria-label={t('settings', 'themeLabel')}>
+            {([
+              { value: 'light', labelKey: 'themeLight', preview: settingsCss.previewLight },
+              { value: 'dark', labelKey: 'themeDark', preview: settingsCss.previewDark },
+              { value: 'system', labelKey: 'themeSystem', preview: settingsCss.previewSystem },
+            ] as const).map(item => (
+              <label
+                key={item.value}
+                className={preferences.theme.preference === item.value
+                  ? `${settingsCss.themeCard} ${settingsCss.themeCardActive}`
+                  : settingsCss.themeCard}
+              >
+                <input
+                  type="radio"
+                  className={css.srOnly}
+                  name="settings-theme"
+                  value={item.value}
+                  checked={preferences.theme.preference === item.value}
+                  disabled={busy}
+                  onChange={() => { saveAppearance({ preference: item.value }) }}
+                />
+                <span className={`${settingsCss.themePreview} ${item.preview}`} aria-hidden="true">
+                  <span className={settingsCss.themePreviewSide} />
+                  <span className={settingsCss.themePreviewBody}>
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </span>
+                <span className={settingsCss.themeChoiceLabel}>{t('common', item.labelKey)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className={settingsCss.field}>
+          <div className={settingsCss.fieldLabel}>
+            <span>{t('settings', 'appearanceFontSize')}</span>
+            <span className={settingsCss.fieldHint}>
+              {t('settings', 'fontSizeValue', { size: fontSize })}
+            </span>
+          </div>
+          <input
+            type="range"
+            className={settingsCss.range}
+            min={FONT_SIZE_MIN}
+            max={FONT_SIZE_MAX}
+            step={1}
+            value={fontSize}
+            aria-label={t('settings', 'appearanceFontSize')}
+            aria-valuetext={t('settings', 'fontSizeValue', { size: fontSize })}
+            onChange={(event) => { setFontDraft(Number(event.currentTarget.value)) }}
+            onPointerUp={(event) => { commitFontSize(Number(event.currentTarget.value)) }}
+            onKeyUp={(event) => {
+              if (RANGE_COMMIT_KEYS.has(event.key)) commitFontSize(Number(event.currentTarget.value))
+            }}
+          />
+          <div
+            className={settingsCss.fontPreview}
+            style={{ fontSize: `${String(fontSize)}px` }}
+          >
+            <div className={settingsCss.fontPreviewTitle}>{t('settings', 'fontPreviewTitle')}</div>
+            <p className={settingsCss.fontPreviewBody}>{t('settings', 'fontPreview')}</p>
+          </div>
+          <p className={`${settingsCss.fieldHint} ${settingsCss.fieldHintBlock}`}>{t('settings', 'fontPreviewHint')}</p>
+        </div>
+      </section>
+
+      <section className={settingsCss.section} id="settings-locale">
+        <div className={settingsCss.sectionHead}>
+          <div className={settingsCss.sectionHeadText}>
+            <h2 className={settingsCss.sectionTitle}>{t('settings', 'localeTitle')}</h2>
+            <p className={settingsCss.sectionDesc}>{t('settings', 'localeDesc')}</p>
+          </div>
+          <span className={settingsCss.sectionMeta}>{document.documentElement.lang || locale}</span>
+        </div>
+        <div className={settingsCss.localeChoices}>
+          {([
+            { value: 'zh', titleKey: 'localeZhTitle', descKey: 'localeZhDesc' },
+            { value: 'en', titleKey: 'localeEnTitle', descKey: 'localeEnDesc' },
+          ] as const).map((item) => {
+            const selected = locale === item.value
+            return (
+              <label
+                key={item.value}
+                className={selected ? `${settingsCss.radioCard} ${settingsCss.radioCardActive}` : settingsCss.radioCard}
+              >
+                <input
+                  type="radio"
+                  name="settings-locale"
+                  value={item.value}
+                  checked={selected}
+                  disabled={busy}
+                  onChange={() => { saveLocale(item.value) }}
+                />
+                <span className={settingsCss.radioText}>
+                  <span className={settingsCss.radioTitle}>{t('settings', item.titleKey)}</span>
+                  <span className={settingsCss.radioDesc}>{t('settings', item.descKey)}</span>
+                </span>
+              </label>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className={settingsCss.section} id="settings-plugins">
+        <div className={settingsCss.sectionHead}>
+          <div className={settingsCss.sectionHeadText}>
+            <h2 className={settingsCss.sectionTitle}>{t('settings', 'pluginsTitle')}</h2>
+            <p className={settingsCss.sectionDesc}>{t('settings', 'pluginsDesc')}</p>
+          </div>
+          <span className={settingsCss.sectionMeta}>
+            {t('settings', 'metaBundles', { count: bundleTotal })}
+          </span>
+        </div>
+        {plugins === null && pluginsError === null && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
+        {plugins !== null && (
+          <>
+            <div className={settingsCss.pluginSummary}>
+              <div className={settingsCss.pluginStat}>
+                <span className={settingsCss.pluginStatValue}>{bundleTotal}</span>
+                <span className={settingsCss.pluginStatLabel}>{t('settings', 'pluginsSummaryBundles')}</span>
+              </div>
+              <div className={settingsCss.pluginStat}>
+                <span className={settingsCss.pluginStatValue}>{recordCount}</span>
+                <span className={settingsCss.pluginStatLabel}>{t('settings', 'pluginsSummaryRecords')}</span>
+              </div>
+              <div className={settingsCss.pluginStat}>
+                <span className={settingsCss.pluginStatValue}>{plugins.unresolved.length}</span>
+                <span className={settingsCss.pluginStatLabel}>{t('settings', 'pluginsSummaryUnresolved')}</span>
+              </div>
+            </div>
+
+            {canManagePlugins && (
+              <div className={settingsCss.pluginManageBar}>
+                <span className={settingsCss.pluginManageHint}>{t('settings', 'pluginsManageHint')}</span>
+                <Button
+                  icon={<IconPlusOutlineRegular size={14} />}
+                  variant="outline"
+                  onClick={openInstallDialog}
+                >
+                  {t('settings', 'pluginsInstall')}
+                </Button>
+              </div>
+            )}
+            {bundlesError !== null && (
+              <NoticeLine
+                tone="error"
+                text={`${t('settings', bundlesError.key)} — ${describeError(bundlesError.failure)}`}
+                action={{ label: t('common', 'actionRetry'), onClick: () => { void loadBundles() } }}
+              />
+            )}
+            {manageNotice !== null && (
+              <NoticeLine
+                tone={manageNotice.tone}
+                text={manageNotice.detail === undefined
+                  ? t('settings', manageNotice.key)
+                  : `${t('settings', manageNotice.key)} — ${manageNotice.detail}`}
+              />
+            )}
+
+            <div className={settingsCss.pluginGroups}>
+              <PluginGroup title={t('settings', 'pluginsBundles')} count={bundleTotal} full>
+                {/* 组合包行：超管拿到管理面（开关 + 移除），普通用户与未加载时沿用只读行。 */}
+                {bundles !== null
+                  ? bundles.map(bundle => (
+                    <BundleRow
+                      key={bundle.name}
+                      bundle={bundle}
+                      busy={bundleBusy === bundle.name}
+                      editable={canManagePlugins}
+                      onToggle={(enabled) => { toggleBundle(bundle, enabled) }}
+                      onRemove={() => { setRemoveTarget(bundle) }}
+                    />
+                  ))
+                  : plugins.profile.bundleCounts.map(bundle => (
+                    <PluginRow
+                      key={bundle.name}
+                      glyph={<IconArchiveOutlineRegular size={14} />}
+                      name={bundle.name}
+                      description={bundle.description ?? t('common', 'labelNone')}
+                      meta={(
+                        <span className={settingsCss.pluginCount}>
+                          {t('settings', 'bundleCounts', { host: bundle.hostCount, client: bundle.clientCount })}
+                        </span>
+                      )}
+                    />
+                  ))}
+                {bundleTotal === 0 && <PluginEmpty />}
+              </PluginGroup>
+
+              <PluginGroup title={t('settings', 'pluginsHost')} count={hostRows.length}>
+                {hostRows.map(row => (
+                  <PluginRow
+                    key={row.id}
+                    glyph={<IconCordisPluginOutlineRegular size={14} />}
+                    name={row.name}
+                    description={row.version === null ? t('common', 'labelNone') : t('settings', 'pluginsVersion', { version: row.version })}
+                    status={row.disabled}
+                  />
+                ))}
+                {hostRows.length === 0 && <PluginEmpty />}
+              </PluginGroup>
+
+              <PluginGroup title={t('settings', 'pluginsClient')} count={clientRows.length}>
+                {clientRows.map(row => (
+                  <PluginRow
+                    key={row.id}
+                    glyph={<IconCordisPluginOutlineRegular size={14} />}
+                    name={row.name}
+                    description={row.version === null ? t('common', 'labelNone') : t('settings', 'pluginsVersion', { version: row.version })}
+                    status={row.disabled}
+                  />
+                ))}
+                {clientRows.length === 0 && <PluginEmpty />}
+              </PluginGroup>
+
+              <PluginGroup
+                title={t('settings', 'pluginsUnresolved')}
+                count={plugins.unresolved.length}
+                full
+              >
+                {plugins.unresolved.map(entry => (
+                  <PluginRow
+                    key={entry.name}
+                    glyph={<IconWarningTriangleOutlineRegular size={14} />}
+                    name={entry.name}
+                    description={entry.reason}
+                    warning
+                    meta={(
+                      <Tag tone="outline" className={`${settingsCss.badge} ${css.statusTag}`}>
+                        {t('settings', 'pluginsUnresolvedTag')}
+                      </Tag>
+                    )}
+                  />
+                ))}
+                {plugins.unresolved.length === 0 && <PluginEmpty />}
+              </PluginGroup>
+            </div>
+          </>
+        )}
+        <div className={settingsCss.pluginNotice} role="note">
+          <span className={settingsCss.pluginNoticeIcon} aria-hidden="true">
+            <IconWarningTriangleOutlineRegular size={16} />
+          </span>
+          <span>{t('settings', 'pluginsHmr')}</span>
+        </div>
+      </section>
+
+      <Modal
+        open={installOpen}
+        onClose={() => { setInstallOpen(false) }}
+        title={t('settings', 'pluginsInstallTitle')}
+        closeLabel={t('common', 'actionClose')}
+        description={t('settings', 'pluginsInstallDesc')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setInstallOpen(false) }}>{t('common', 'actionClose')}</Button>
+            {installBusy && (
+              <Button variant="outline" onClick={cancelInstall}>{t('settings', 'pluginCancelInstall')}</Button>
+            )}
+            <Button variant="primary" disabled={installBusy} onClick={() => { runInstall([]) }}>
+              {installBusy ? t('settings', 'pluginInstalling') : t('common', 'actionInstall')}
+            </Button>
+          </>
+        )}
+      >
+        <label className={settingsCss.installField}>
+          <span className={settingsCss.installLabel}>{t('settings', 'pluginsInstallSpec')}</span>
+          <Input
+            value={installSpec}
+            placeholder={t('settings', 'pluginsInstallPlaceholder')}
+            disabled={installBusy}
+            onChange={(event) => { setInstallSpec(event.currentTarget.value) }}
+          />
+        </label>
+        {installError !== null && (
+          <NoticeLine
+            tone="error"
+            text={t('settings', installError)}
+            {...(installError === 'pluginInstallUnknown' && installRequestId !== null
+              ? { action: { label: t('settings', 'pluginCheckInstall'), onClick: recoverInstall } }
+              : {})}
+          />
+        )}
+        {installInspection?.status === 'accepted' && installResult === null && (
+          <p className={settingsCss.installInfo}>
+            {installInspection.name ?? t('common', 'labelNone')}
+            {installInspection.version === null ? '' : ` · ${t('settings', 'pluginsVersion', { version: installInspection.version })}`}
+            {installInspection.description === null ? '' : ` — ${installInspection.description}`}
+          </p>
+        )}
+        {installResult !== null && (
+          <div className={settingsCss.installResult}>
+            <NoticeLine tone={changeNotice(installResult).tone} text={t('settings', changeNotice(installResult).key)} />
+            {installResult.pendingBuilds.length > 0 && (
+              <>
+                <p className={settingsCss.installInfo}>
+                  {t('settings', 'pluginPendingBuilds', { names: installResult.pendingBuilds.join(', ') })}
+                </p>
+                <Button variant="outline" onClick={() => { runInstall(installResult.pendingBuilds) }}>
+                  {t('settings', 'pluginApproveBuilds')}
+                </Button>
+              </>
+            )}
+            {installResult.error?.diagnostic != null && (
+              <pre className={settingsCss.installDiagnostic}>{installResult.error.diagnostic}</pre>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={removeTarget !== null}
+        onClose={() => { setRemoveTarget(null) }}
+        title={t('settings', 'pluginsRemoveTitle', { name: removeTarget?.name ?? '' })}
+        closeLabel={t('common', 'actionClose')}
+        description={t('settings', 'pluginsRemoveDesc')}
+        footer={(
+          <>
+            <Button variant="outline" onClick={() => { setRemoveTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button
+              variant="ghost"
+              className={css.dangerButton}
+              disabled={bundleBusy !== null}
+              onClick={confirmRemoveBundle}
+            >
+              {t('common', 'actionRemove')}
+            </Button>
+          </>
+        )}
+      >
+        <p className={css.cardBody}>{removeTarget?.name ?? ''}</p>
+      </Modal>
     </div>
   )
 }
 
-/** 插件只读清单表。 */
-function PluginTable({ rows, label }: { rows: PluginsView['rows']; label: string }) {
-  if (rows.length === 0) return <div className={css.empty}>{t('settings', 'pluginsEmpty')}</div>
+/**
+ * 一个组合包的管理行：启用开关 + 版本/描述 + 坏包原因 + 移除。
+ * @param props.bundle - 管理面组合包行。
+ * @param props.busy - 该行是否有操作在进行。
+ * @param props.editable - 当前账号是否可改写（非超管只读）。
+ * @param props.onToggle - 切换启用态。
+ * @param props.onRemove - 请求移除（由调用方开确认框）。
+ */
+function BundleRow({ bundle, busy, editable, onToggle, onRemove }: {
+  bundle: ManagedBundleView
+  busy: boolean
+  editable: boolean
+  onToggle: (enabled: boolean) => void
+  onRemove: () => void
+}) {
+  // 坏包不能启用（原生语义）；只读包（管理包/不可寻址）不给开关。
+  const locked = bundle.error !== null || bundle.readOnlyReason !== null
+  const toggleable = editable && !locked
   return (
-    // 横向滚动容器必须同时是「有名字的 region」（与模型页 tableWrap 同一惯例）：
-    // 实测 880 下 scrollWidth 820 > clientWidth 598，键盘方向键可滚（scrollLeft 0→80），
-    // 但区域此前 `role`/`aria-label` 全空，读屏器进入滚动区时听不出这是哪张表。
-    //
-    // 列只有 名称/标识/状态：`kind` 不占列——两张表各只装一种 kind，实测 180 行的该列
-    // 值与其所属分节标题（Host 侧 / Client 侧）逐字相同，删掉它既去掉零信息列，
-    // 也去掉一列未译的服务端枚举。
-    <div className={css.tableWrap} tabIndex={0} role="region" aria-label={label}>
-      <table className={`${css.table} ${css.tableFit}`}>
-        <thead>
-          <tr>
-            <th>{t('common', 'labelName')}</th>
-            <th>{t('common', 'labelId')}</th>
-            <th>{t('common', 'labelStatus')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(row => (
-            <tr key={row.id}>
-              <td>{row.name}</td>
-              <td className={css.mono}>{row.id}</td>
-              <td>
-                {/* 语气色 Tag 的文字对比度补偿（F22 同规则）：原生 tone 下实测
-                    「启用」2.09、「已停用」1.96（需 4.5），本页 180 个文本节点不达标。 */}
-                <Tag tone={row.disabled ? 'warning' : 'success'} className={css.statusTag}>
-                  {row.disabled ? t('settings', 'pluginsDisabled') : t('common', 'stateActive')}
-                </Tag>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={settingsCss.bundleRow}>
+      <span className={settingsCss.pluginGlyph} aria-hidden="true">
+        <IconArchiveOutlineRegular size={14} />
+      </span>
+      <div className={settingsCss.pluginMain}>
+        <span className={settingsCss.pluginName}>{bundle.name}</span>
+        <span className={settingsCss.pluginDesc}>
+          {bundle.version === null ? t('common', 'labelNone') : t('settings', 'pluginsVersion', { version: bundle.version })}
+          {bundle.description === null ? '' : ` · ${bundle.description}`}
+        </span>
+        {bundle.error !== null && (
+          <span className={settingsCss.bundleError}>{t('settings', pluginErrorKey(bundle.error.code))}</span>
+        )}
+      </div>
+      {editable && bundle.removable && (
+        <button
+          type="button"
+          className={settingsCss.bundleRemove}
+          aria-label={t('settings', 'pluginsRemove', { name: bundle.name })}
+          disabled={busy}
+          onClick={onRemove}
+        >
+          <IconTrashOutlineRegular size={14} />
+        </button>
+      )}
+      {toggleable
+        ? (
+          <Switch
+            checked={bundle.enabled}
+            disabled={busy}
+            label={t('settings', 'pluginsBundleSwitch', { name: bundle.name })}
+            onChange={onToggle}
+          />
+        )
+        : (
+          <Tag tone="quiet" className={settingsCss.badge}>
+            {bundle.error === null ? t('settings', 'pluginsReadOnly') : t('settings', 'pluginsBroken')}
+          </Tag>
+        )}
     </div>
   )
+}
+
+/** 插件分组的统一头与行容器。 */
+function PluginGroup({ title, count, full = false, children }: {
+  title: string
+  count: number
+  full?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className={full ? `${settingsCss.pluginGroup} ${settingsCss.pluginGroupFull}` : settingsCss.pluginGroup}>
+      <div className={settingsCss.pluginGroupHead}>
+        <h3>{title}</h3>
+        <span className={settingsCss.sectionMeta}>{count}</span>
+      </div>
+      <div className={settingsCss.pluginRows}>{children}</div>
+    </div>
+  )
+}
+
+/** 一行插件（字形 + 名称 + 标识 + 状态/行尾附加内容）。 */
+function PluginRow({ glyph, name, description, status, meta, warning = false }: {
+  glyph: ReactNode
+  name: string
+  description: string
+  status?: boolean
+  /** 行尾附加内容（组合包计数、未解析标记）；与 `status` 不并用。 */
+  meta?: ReactNode
+  warning?: boolean
+}) {
+  return (
+    <div className={warning ? `${settingsCss.pluginRow} ${settingsCss.pluginRowWarning}` : settingsCss.pluginRow}>
+      <span className={settingsCss.pluginGlyph} aria-hidden="true">{glyph}</span>
+      <div className={settingsCss.pluginMain}>
+        <span className={settingsCss.pluginName}>{name}</span>
+        <span className={settingsCss.pluginDesc}>{description}</span>
+      </div>
+      {status !== undefined && (
+        <Tag tone={status ? 'quiet' : 'neutral'} className={settingsCss.badge}>
+          {status ? t('settings', 'pluginsDisabled') : t('settings', 'pluginsEnabled')}
+        </Tag>
+      )}
+      {meta}
+    </div>
+  )
+}
+
+/** 空分组。 */
+function PluginEmpty() {
+  return <div className={settingsCss.pluginEmpty}>{t('settings', 'pluginsEmpty')}</div>
 }

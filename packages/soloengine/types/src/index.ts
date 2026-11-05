@@ -35,6 +35,27 @@ export interface SamplingParams {
   max_tool_calls?: number
 }
 
+/**
+ * 一个 agent 作用域的插件行（画布节点级插件）。
+ *
+ * 节点级插件只作用于该节点对应的 agent 作用域：工具、技能、MCP、提示词之外的
+ * 行为（例如自定义工具包、上下文注入、钩子）都经这一行声明。流程级插件
+ * （Web 服务、存储、会话日志、检索）不在这里，它们全流程一份。
+ */
+export interface NodePluginRow {
+  /** 节点内唯一行 id。 */
+  id: string
+  /** 插件包名（可带子路径）。 */
+  name: string
+  /** 插件配置。 */
+  config?: unknown
+  /**
+   * 插件版本；用于「同一插件只能一个版本」的编译期校验。
+   * 省略时不参与版本冲突判定（由装载器按包清单解析）。
+   */
+  version?: string
+}
+
 /** 单个 agent 的编译配置（每画布节点一个）。 */
 export interface AgentSpec {
   /** 画布 node_id。 */
@@ -55,6 +76,8 @@ export interface AgentSpec {
   skills: string[]
   /** 编译期挂进该 agent scope 的 MCP 服务器名。 */
   mcpServers: string[]
+  /** 编译期挂进该 agent scope 的插件行（节点级插件；流程级插件不在这里）。 */
+  plugins: NodePluginRow[]
   /** 采样与轮次参数。 */
   sampling?: SamplingParams
 }
@@ -90,7 +113,7 @@ export interface CompileResult {
 export type CompileFailureCode =
   | 'NO_ENTRY' | 'MULTIPLE_ENTRY_AMBIGUOUS' | 'MISSING_MODEL' | 'MISSING_REQUIRED'
   | 'UNKNOWN_TOOL' | 'CYCLIC_DELEGATION' | 'DUPLICATE_NODE' | 'EMPTY_CANVAS'
-  | 'NODE_NAME_REQUIRED'
+  | 'NODE_NAME_REQUIRED' | 'NODE_PLUGIN_INVALID' | 'CONFLICTING_PLUGIN_VERSION'
 
 /** 编译失败的结构化错误。 */
 export interface CompileFailure {
@@ -100,6 +123,23 @@ export interface CompileFailure {
   message: string
   /** 缺失项清单。 */
   missing?: string[]
+}
+
+/** 打包阶段的状态词表（框架、REST 与产品页共用同一份枚举）。 */
+export type PackagingStageStatus = 'ok' | 'failed' | 'pending' | 'running'
+
+/** 打包运行的状态词表（同上）。 */
+export type PackagingRunStatus = 'completed' | 'failed' | 'pending' | 'running'
+
+/**
+ * 阶段/运行是否已到终态（只有 `pending` / `running` 还在途中）。
+ *
+ * 产品页的轮询停止条件与状态点渲染都经这一个判定，新增中间态时两端同时生效。
+ * @param status - 阶段或运行状态。
+ * @returns 是否终态。
+ */
+export function isTerminalStage(status: PackagingStageStatus | PackagingRunStatus): boolean {
+  return status !== 'pending' && status !== 'running'
 }
 
 /** 工具名映射（画布工具名 → dsh 真实工具名）。 */
@@ -127,7 +167,6 @@ export const TOOL_MAP: Record<string, string> = {
   create_goal: 'create_goal',
   update_goal: 'update_goal',
   workflow: 'workflow',
-  lsp: 'lsp',
   read_image: 'read_image',
   // SoloEngine 特有工具（自研，Host 面）：画布工具名与真实工具名同值。
   get_diagnostics: 'get_diagnostics',
@@ -143,14 +182,10 @@ export const TOOL_MAP: Record<string, string> = {
   send_message: 'send_message',
   interrupt_agent: 'interrupt_agent',
   list_agents: 'list_agents',
-  // 插件创造（dsh 原生，创造模式）：定义/运行/停止/撤销插件 + 活树内省。
-  cordis_define: 'cordis_define',
-  cordis_run: 'cordis_run',
-  cordis_stop: 'cordis_stop',
-  cordis_undefine: 'cordis_undefine',
+  // 创造模式（官方 dsh-tool-cordis）：**只读**运行时内省。定义/运行/撤销插件没有模型工具，
+  // 由客户端创造面板经 `dynamicCordisRunner` 承担（插件持久化归插件管理器）。
   cordis_inspect_list: 'cordis_inspect_list',
   cordis_inspect_query: 'cordis_inspect_query',
-  cordis_inspect_self: 'cordis_inspect_self',
 }
 
 /**

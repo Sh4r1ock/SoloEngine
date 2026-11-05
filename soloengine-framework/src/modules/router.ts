@@ -5,6 +5,9 @@
  * 路由统一挂 `/api/solo/*`，由 `@soloengine/host` 以前缀路由方式挂进 dsh `ctx.webServer`，
  * 与 harness 共用同一条 HTTP 服务（唯一端口）。
  *
+ * 业务库经异步端口访问（`BusinessDatabase`）：处理器与鉴权中间件全部异步，错误经
+ * `next` 收敛到统一失败面。
+ *
  * @module @soloengine/framework/modules/router
  */
 
@@ -12,7 +15,8 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
 import { FrameworkError, toView, type UserRow } from './accounts.ts'
-import { NODE_PRESETS } from './canvas.ts'
+import { NODE_PRESETS, type InstancePluginDiff } from './canvas.ts'
+import { CHANGES_OPS, WORKSPACE_OPS, type OpsInput, type OpsRoute } from './ops.ts'
 
 /** 一条路由的描述（供 `/api/solo/routes` 取证与文档四向映射）。 */
 export interface RouteDescriptor {
@@ -61,7 +65,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   /** 业务级处理器（链尾，拥有响应）。 */
   type Handler = (req: AuthedRequest, res: Response) => void | Promise<void>
   /** 中间件（链中，调用 next 放行）。 */
-  type Middleware = (req: AuthedRequest, res: Response, next: NextFunction) => void
+  type Middleware = (req: AuthedRequest, res: Response, next: NextFunction) => void | Promise<void>
 
   /** 声明一条路由（前置中间件数组 + 链尾处理器），同时登记描述。 */
   const route = (
@@ -75,7 +79,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     routes.push({ id, method: method.toUpperCase(), path, summary })
     const wrapped = [
       ...middlewares.map(step => (req: Request, res: Response, next: NextFunction): void => {
-        step(req as AuthedRequest, res, next)
+        void Promise.resolve(step(req as AuthedRequest, res, next)).catch(next)
       }),
       (req: Request, res: Response, next: NextFunction): void => {
         void Promise.resolve(handler(req as AuthedRequest, res)).catch(next)
@@ -96,7 +100,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   }
 
   /** 鉴权：Bearer 访问令牌 → 请求级身份。 */
-  const authenticate = (req: AuthedRequest, res: Response, next: NextFunction): void => {
+  const authenticate = async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
     const header = req.header('authorization') ?? ''
     const token = header.startsWith('Bearer ') ? header.slice(7) : ''
     const payload = runtime.tokens.verify(token, 'access')
@@ -104,9 +108,14 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
       res.status(401).json({ ok: false, error: { code: 'UNAUTHENTICATED', message: 'a valid access token is required' } })
       return
     }
-    const row = accounts.byId(payload.sub)
+    const row = await accounts.byId(payload.sub)
     if (row === undefined || row.is_active !== 1) {
       res.status(403).json({ ok: false, error: { code: 'USER_DISABLED', message: 'user is missing or disabled' } })
+      return
+    }
+    // 超管重置口令后令牌版本自增：旧访问令牌立即失效（R007），客户端按 401 走刷新/重新登录。
+    if ((payload.tv ?? 0) !== (row.token_version ?? 0)) {
+      res.status(401).json({ ok: false, error: { code: 'TOKEN_REVOKED', message: 'the access token was revoked; sign in again' } })
       return
     }
     req.soloUser = row
@@ -158,14 +167,14 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 健康与自检 ─────────────────────────────────────────────────────────────
 
-  route('health', 'get', '/health', '框架层健康检查（含真实数据库环境参数）', [], (_req, res) => {
-    const environment = runtime.db.environment()
+  route('health', 'get', '/health', '框架层健康检查（含真实数据库环境参数）', [], async (_req, res) => {
+    const environment = await runtime.db.environment()
     res.json({
       ok: environment.missingTables.length === 0,
       service: 'soloengine-framework',
       version: '0.1.0',
       database: {
-        path: environment.path,
+        engine: environment.engine,
         journalMode: environment.journalMode,
         synchronous: environment.synchronous,
         busyTimeout: environment.busyTimeout,
@@ -175,7 +184,8 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
         businessTables: environment.businessTables,
         missingTables: environment.missingTables,
       },
-      masterKey: { path: runtime.masterKey.path, createdThisBoot: runtime.masterKey.created },
+      // 部署探活只需要「主密钥是否本次启动新建」；绝对路径不属公开面（PRD-03 §安全）。
+      masterKey: { createdThisBoot: runtime.masterKey.created },
     })
   })
 
@@ -183,22 +193,21 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.json({ ok: true, routes })
   })
 
-  route('db-tables', 'get', '/db/tables', '业务库表清单与行数', [], (_req, res) => {
-    const rows = runtime.db.raw.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]
-    const counts: Record<string, number> = {}
-    for (const { name } of rows) {
-      if (name.startsWith('sqlite_')) continue
-      counts[name] = Number((runtime.db.raw.prepare(`SELECT COUNT(*) AS c FROM "${name}"`).get() as { c: number }).c)
-    }
-    res.json({ ok: true, tables: rows.map(row => row.name), counts })
+  route('db-tables', 'get', '/db/tables', '业务库表清单与行数', [], async (_req, res) => {
+    const tables = await runtime.db.tables()
+    res.json({
+      ok: true,
+      tables: tables.map(row => row.name),
+      counts: Object.fromEntries(tables.map(row => [row.name, row.count])),
+    })
   })
 
   // ── 账号域（PRD-03 承载）────────────────────────────────────────────────────
 
-  route('auth-register', 'post', '/auth/register', '注册新用户', [], (req, res) => {
+  route('auth-register', 'post', '/auth/register', '注册新用户', [], async (req, res) => {
     try {
       const body = req.body as { username?: string; password?: string; email?: string }
-      const user = accounts.register({
+      const user = await accounts.register({
         username: String(body.username ?? ''),
         password: String(body.password ?? ''),
         ...(body.email === undefined ? {} : { email: String(body.email) }),
@@ -209,26 +218,29 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('auth-login', 'post', '/auth/login', '登录并签发访问/刷新令牌', [], (req, res) => {
+  route('auth-login', 'post', '/auth/login', '登录并签发访问/刷新令牌', [], async (req, res) => {
     try {
       const body = req.body as { username?: string; password?: string }
-      const result = accounts.login(String(body.username ?? ''), String(body.password ?? ''))
+      const result = await accounts.login(String(body.username ?? ''), String(body.password ?? ''))
+      // 原生 RPC 的会话归属判定读的是浏览器 cookie：登录成功即把本账号写进同一 authority 的
+      // 签名 cookie（与 `dsh web` 的进程令牌换 cookie 是同一条形态，不新造第二套认证）。
+      runtime.bindBrowserUser?.(req, res, result.user.id)
       res.json({ ok: true, ...result })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('auth-refresh', 'post', '/auth/refresh', '以刷新令牌换新令牌', [], (req, res) => {
+  route('auth-refresh', 'post', '/auth/refresh', '以刷新令牌换新令牌', [], async (req, res) => {
     try {
       const body = req.body as { refreshToken?: string }
-      res.json({ ok: true, ...accounts.refresh(String(body.refreshToken ?? '')) })
+      res.json({ ok: true, ...await accounts.refresh(String(body.refreshToken ?? '')) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('auth-logout', 'post', '/auth/logout', '登出（幂等：令牌已失效同样成功；带有效令牌时回显用户）', [], (req, res) => {
+  route('auth-logout', 'post', '/auth/logout', '登出（幂等：令牌已失效同样成功；带有效令牌时回显用户）', [], async (req, res) => {
     // 无服务端会话表：令牌自包含且短期有效；登出是客户端丢弃 + 结构化确认。
     // 故**刻意不挂 authenticate**——令牌已过期的客户端也要能登出（否则用户卡在「退不出去」）。
     // 但 `user` 必须是真信息：这里按需校验请求里带的令牌，而不是读一个永不存在的 `req.soloUser`
@@ -236,7 +248,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     const header = req.header('authorization') ?? ''
     const presented = header.startsWith('Bearer ') ? header.slice(7) : ''
     const payload = presented === '' ? undefined : runtime.tokens.verify(presented, 'access')
-    const row = payload === undefined ? undefined : accounts.byId(payload.sub)
+    const row = payload === undefined ? undefined : await accounts.byId(payload.sub)
     res.json({ ok: true, loggedOut: true, user: row === undefined ? null : toView(row) })
   })
 
@@ -244,32 +256,44 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.json({ ok: true, user: toView(req.soloUser as UserRow) })
   })
 
-  route('auth-profile', 'patch', '/auth/me', '更新当前用户资料/口令', [authenticate], (req, res) => {
+  route('auth-profile', 'patch', '/auth/me', '更新当前用户资料/口令', [authenticate], async (req, res) => {
     try {
-      const body = req.body as { email?: string; password?: string }
-      res.json({ ok: true, user: accounts.updateProfile((req.soloUser as UserRow).id, body) })
+      const body = req.body as { email?: string; password?: string; currentPassword?: string }
+      res.json({ ok: true, user: await accounts.updateProfile((req.soloUser as UserRow).id, body) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('users-list', 'get', '/users', '列全部用户（超管）', [authenticate, requireSuperuser], (_req, res) => {
-    res.json({ ok: true, users: accounts.list().map(toView) })
+  route('users-list', 'get', '/users', '列全部用户与归属资产计数（超管）', [authenticate, requireSuperuser], async (_req, res) => {
+    res.json({ ok: true, users: await accounts.listWithAssets() })
   })
 
-  route('users-active', 'post', '/users/:id/active', '启用/禁用用户（超管）', [authenticate, requireSuperuser], (req, res) => {
+  route('users-active', 'post', '/users/:id/active', '启用/禁用用户（超管；system/自己/最后超管受保护）', [authenticate, requireSuperuser], async (req, res) => {
     try {
+      const actor = req.soloUser as UserRow
       const body = req.body as { active?: boolean }
-      res.json({ ok: true, user: accounts.setActive(String(req.params.id), body.active !== false) })
+      res.json({ ok: true, user: await accounts.setActive(actor.id, String(req.params.id), body.active !== false) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('users-superuser', 'post', '/users/:id/superuser', '设置/取消超管（超管）', [authenticate, requireSuperuser], (req, res) => {
+  route('users-password', 'post', '/users/:id/password', '重置用户口令（超管；撤销该用户全部令牌）', [authenticate, requireSuperuser], async (req, res) => {
     try {
+      const actor = req.soloUser as UserRow
+      const body = req.body as { password?: string }
+      res.json({ ok: true, user: await accounts.resetPassword(actor.id, String(req.params.id), String(body.password ?? '')) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('users-superuser', 'post', '/users/:id/superuser', '设置/取消超管（system/自己/最后超管受保护）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      const actor = req.soloUser as UserRow
       const body = req.body as { superuser?: boolean }
-      res.json({ ok: true, user: accounts.setSuperuser(String(req.params.id), body.superuser !== false) })
+      res.json({ ok: true, user: await accounts.setSuperuser(actor.id, String(req.params.id), body.superuser !== false) })
     } catch (error) {
       failure(res, error)
     }
@@ -277,24 +301,54 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 模型配置（PRD-03 FR-LLM-001~008）────────────────────────────────────────
 
-  route('models-list', 'get', '/models', '列当前用户的模型配置（密钥掩码）', [authenticate], (req, res) => {
+  route('models-list', 'get', '/models', '列当前用户的模型配置（密钥掩码）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, models: runtime.models.list(user.id).map(row => runtime.models.view(row)) })
+    res.json({ ok: true, models: (await runtime.models.list(user.id)).map(row => runtime.models.view(row)) })
   })
 
-  route('models-create', 'post', '/models', '新建模型配置', [authenticate], (req, res) => {
+  // 模型配置导出：列与用量口径同模型页（`/usage` 的 byModel 聚合），不落第二份统计。
+  // 必须先于 `/:id` 登记，否则 `export` 会被当作配置 ID 吞掉。
+  route('models-export', 'get', '/models/export', '模型配置导出（CSV：含用量聚合）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.status(201).json({ ok: true, model: runtime.models.create(user.id, req.body as never) })
+      const models = (await runtime.models.list(user.id)).map(row => runtime.models.view(row))
+      const { byModel } = await runtime.runs.usage(user.id)
+      const usage = new Map(byModel.map(row => [row.llm_config_id, row]))
+      const lines = ['name,provider,model,base_url,default,active,requests,tokens']
+      for (const model of models) {
+        const used = usage.get(model.id)
+        lines.push([
+          model.name,
+          model.provider,
+          model.model_name,
+          model.base_url ?? '',
+          model.is_default ? 'true' : 'false',
+          model.is_active ? 'true' : 'false',
+          String(used?.requests ?? 0),
+          String(used?.totalTokens ?? 0),
+        ].map(csvField).join(','))
+      }
+      res.setHeader('content-type', 'text/csv; charset=utf-8')
+      res.setHeader('content-disposition', 'attachment; filename="soloengine-models.csv"')
+      res.send(`${lines.join('\n')}\n`)
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('models-get', 'get', '/models/:id', '读取单条模型配置', [authenticate], (req, res) => {
+  route('models-create', 'post', '/models', '新建模型配置', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const row = runtime.models.byId(user.id, String(req.params.id))
+      res.status(201).json({ ok: true, model: await runtime.models.create(user.id, req.body as never) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('models-get', 'get', '/models/:id', '读取单条模型配置', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const row = await runtime.models.byId(user.id, String(req.params.id))
       if (row === undefined) throw new FrameworkError(404, 'CONFIG_NOT_FOUND', `model config ${String(req.params.id)} not found`)
       res.json({ ok: true, model: runtime.models.view(row) })
     } catch (error) {
@@ -302,39 +356,40 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('models-update', 'patch', '/models/:id', '更新模型配置（乐观锁）', [authenticate], (req, res) => {
+  route('models-update', 'patch', '/models/:id', '更新模型配置（乐观锁）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, model: runtime.models.update(user.id, String(req.params.id), req.body as never) })
+      res.json({ ok: true, model: await runtime.models.update(user.id, String(req.params.id), req.body as never) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('models-delete', 'delete', '/models/:id', '删除模型配置（路由即时注销）', [authenticate], (req, res) => {
+  route('models-delete', 'delete', '/models/:id', '删除模型配置（路由即时注销）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      runtime.models.remove(user.id, String(req.params.id))
+      await runtime.models.remove(user.id, String(req.params.id))
       res.json({ ok: true, deleted: String(req.params.id) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('models-active', 'post', '/models/:id/active', '启用/停用模型配置', [authenticate], (req, res) => {
+  route('models-active', 'post', '/models/:id/active', '启用/停用模型配置', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { active?: boolean }
-      res.json({ ok: true, model: runtime.models.setActive(user.id, String(req.params.id), body.active !== false) })
+      const body = req.body as { active?: unknown }
+      if (typeof body.active !== 'boolean') throw new FrameworkError(400, 'INVALID_ACTIVE', 'active must be a boolean')
+      res.json({ ok: true, model: await runtime.models.setActive(user.id, String(req.params.id), body.active) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('models-default', 'post', '/models/:id/default', '设为默认（全用户唯一）', [authenticate], (req, res) => {
+  route('models-default', 'post', '/models/:id/default', '设为默认（全用户唯一）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, model: runtime.models.setDefault(user.id, String(req.params.id)) })
+      res.json({ ok: true, model: await runtime.models.setDefault(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
@@ -351,35 +406,45 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 技能（PRD-04 FR-SKILL-001~009）─────────────────────────────────────────
 
-  route('skills-list', 'get', '/skills', '列当前用户技能（含公共）', [authenticate], (req, res) => {
+  route('skills-list', 'get', '/skills', '列当前用户技能（含公共）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, skills: runtime.skills.list(user.id).map(row => runtime.skills.view(row)) })
+    res.json({ ok: true, skills: (await runtime.skills.list(user.id)).map(row => runtime.skills.view(row)) })
   })
 
-  route('skills-create', 'post', '/skills', '创建技能包骨架（SKILL.md + 标准目录）', [authenticate], (req, res) => {
+  route('skills-create', 'post', '/skills', '创建技能包骨架（SKILL.md + 标准目录）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { name?: string; version?: string }
-      res.status(201).json({ ok: true, skill: runtime.skills.create(user.id, user.username, String(body.name ?? ''), body.version) })
+      const body = req.body as { name?: string; version?: string; description?: string; tags?: string }
+      res.status(201).json({
+        ok: true,
+        skill: await runtime.skills.create(user.id, user.username, String(body.name ?? ''), {
+          version: body.version,
+          description: body.description,
+          tags: body.tags,
+        }),
+      })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-notes-get', 'get', '/skills/:id/notes', '文件备注读取（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], (req, res) => {
+  route('skills-notes-get', 'get', '/skills/:id/notes', '文件备注读取（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, notes: runtime.skills.getNotes(user.id, String(req.params.id)) })
+      res.json({ ok: true, notes: await runtime.skills.getNotes(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-notes-put', 'put', '/skills/:id/notes', '文件备注保存（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], (req, res) => {
+  route('skills-notes-put', 'put', '/skills/:id/notes', '文件备注保存（版本栅栏 + 存台账不改包）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { notes?: Record<string, string> }
-      res.json({ ok: true, notes: runtime.skills.setNotes(user.id, String(req.params.id), body.notes ?? {}) })
+      const body = req.body as { notes?: Record<string, string>; version?: number }
+      const updated = await runtime.skills.setNotes(user.id, String(req.params.id), body.notes ?? {}, {
+        isSuperuser: user.is_superuser === 1,
+      }, body.version)
+      res.json({ ok: true, ...updated })
     } catch (error) {
       failure(res, error)
     }
@@ -396,21 +461,24 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('skills-import-confirm', 'post', '/skills/import/confirm', '导入第二阶段：确认后落盘并登记', [authenticate], (req, res) => {
+  route('skills-import-confirm', 'post', '/skills/import/confirm', '导入第二阶段：确认后落盘并登记', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { archiveBase64?: string; sourcePath?: string }
+      const body = req.body as { archiveBase64?: string; sourcePath?: string; fingerprint?: string }
       const archive = body.archiveBase64 === undefined ? null : new Uint8Array(Buffer.from(body.archiveBase64, 'base64'))
-      res.status(201).json({ ok: true, skill: runtime.skills.importConfirmed(user.id, user.username, archive, body.sourcePath) })
+      res.status(201).json({
+        ok: true,
+        skill: await runtime.skills.importConfirmed(user.id, user.username, archive, body.sourcePath, body.fingerprint),
+      })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-export', 'get', '/skills/:id/export', '导出技能包（zip，保持目录结构）', [authenticate], (req, res) => {
+  route('skills-export', 'get', '/skills/:id/export', '导出技能包（zip，保持目录结构）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const bytes = runtime.skills.exportArchive(user.id, String(req.params.id))
+      const bytes = await runtime.skills.exportArchive(user.id, String(req.params.id))
       res.setHeader('content-type', 'application/zip')
       res.setHeader('content-disposition', `attachment; filename="${String(req.params.id)}.zip"`)
       res.end(Buffer.from(bytes))
@@ -419,71 +487,110 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('skills-active', 'post', '/skills/:id/active', '启用/停用技能（热生效）', [authenticate], (req, res) => {
+  route('skills-active', 'post', '/skills/:id/active', '启用/停用技能（热生效；系统技能仅超管）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { active?: boolean }
-      res.json({ ok: true, skill: runtime.skills.setActive(user.id, String(req.params.id), body.active !== false) })
+      const body = req.body as { active?: unknown }
+      if (typeof body.active !== 'boolean') throw new FrameworkError(400, 'INVALID_ACTIVE', 'active must be a boolean')
+      res.json({
+        ok: true,
+        skill: await runtime.skills.setActive(user.id, String(req.params.id), body.active, {
+          isSuperuser: user.is_superuser === 1,
+        }),
+      })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-delete', 'delete', '/skills/:id', '删除技能（含目录）', [authenticate], (req, res) => {
+  route('skills-public', 'post', '/skills/:id/public', '发布/取消发布技能（公共技能对其他用户只读可见）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      runtime.skills.remove(user.id, String(req.params.id))
+      const body = req.body as { public?: boolean }
+      res.json({ ok: true, skill: await runtime.skills.setPublic(user.id, String(req.params.id), body.public === true) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('skills-delete', 'delete', '/skills/:id', '删除技能（含目录；系统技能仅超管）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      await runtime.skills.remove(user.id, String(req.params.id), { isSuperuser: user.is_superuser === 1 })
       res.json({ ok: true, deleted: String(req.params.id) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-files', 'get', '/skills/:id/files', '列出技能包内文件树', [authenticate], (req, res) => {
+  route('skills-files', 'get', '/skills/:id/files', '列出技能包内文件树', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, files: runtime.skills.listFiles(user.id, String(req.params.id)) })
+      res.json({ ok: true, files: await runtime.skills.listFiles(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-file-read', 'get', '/skills/:id/file', '读取技能包内单个文件', [authenticate], (req, res) => {
+  route('skills-file-read', 'get', '/skills/:id/file', '读取技能包内单个文件', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, path: String(req.query.path ?? ''), text: runtime.skills.readFile(user.id, String(req.params.id), String(req.query.path ?? '')) })
+      res.json({ ok: true, path: String(req.query.path ?? ''), text: await runtime.skills.readFile(user.id, String(req.params.id), String(req.query.path ?? '')) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-file-write', 'put', '/skills/:id/file', '写入技能包内单个文件（热生效）', [authenticate], (req, res) => {
+  route('skills-file-write', 'put', '/skills/:id/file', '写入技能包内单个文件（热生效）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { path?: string; text?: string }
-      runtime.skills.writeFile(user.id, String(req.params.id), String(body.path ?? ''), String(body.text ?? ''))
+      await runtime.skills.writeFile(user.id, String(req.params.id), String(body.path ?? ''), String(body.text ?? ''), {
+        isSuperuser: user.is_superuser === 1,
+      })
       res.json({ ok: true })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-file-create', 'post', '/skills/:id/file', '新建技能包内文件', [authenticate], (req, res) => {
+  route('skills-file-create', 'post', '/skills/:id/file', '新建技能包内文件', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { path?: string; text?: string }
-      runtime.skills.createFile(user.id, String(req.params.id), String(body.path ?? ''), String(body.text ?? ''))
+      await runtime.skills.createFile(user.id, String(req.params.id), String(body.path ?? ''), String(body.text ?? ''), {
+        isSuperuser: user.is_superuser === 1,
+      })
       res.status(201).json({ ok: true })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('skills-file-delete', 'delete', '/skills/:id/file', '删除技能包内文件/目录', [authenticate], (req, res) => {
+  route('skills-file-delete', 'delete', '/skills/:id/file', '删除技能包内文件/目录', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { path?: string }
-      runtime.skills.removeFile(user.id, String(req.params.id), String(body.path ?? ''))
+      await runtime.skills.removeFile(user.id, String(req.params.id), String(body.path ?? ''), {
+        isSuperuser: user.is_superuser === 1,
+      })
+      res.json({ ok: true })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('skills-file-rename', 'post', '/skills/:id/file/rename', '重命名/移动技能包内文件（单次 rename 原子完成）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { from?: string; to?: string }
+      await runtime.skills.renameFile(
+        user.id,
+        String(req.params.id),
+        String(body.from ?? ''),
+        String(body.to ?? ''),
+        { isSuperuser: user.is_superuser === 1 },
+      )
       res.json({ ok: true })
     } catch (error) {
       failure(res, error)
@@ -492,43 +599,44 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── MCP 服务器（PRD-05 FR-MCP-001~010）────────────────────────────────────
 
-  route('mcp-list', 'get', '/mcp', '列当前用户 MCP 服务器（含公共）', [authenticate], (req, res) => {
+  route('mcp-list', 'get', '/mcp', '列当前用户 MCP 服务器（含公共）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, servers: runtime.mcp.list(user.id).map(row => runtime.mcp.view(row)) })
+    res.json({ ok: true, servers: await Promise.all((await runtime.mcp.list(user.id)).map(row => runtime.mcp.view(row))) })
   })
 
-  route('mcp-create', 'post', '/mcp', '注册 MCP 服务器（stdio/http 两类传输）', [authenticate], (req, res) => {
+  route('mcp-create', 'post', '/mcp', '注册 MCP 服务器（stdio/http 两类传输）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.status(201).json({ ok: true, server: runtime.mcp.view(runtime.mcp.create(user.id, req.body as never)) })
+      res.status(201).json({ ok: true, server: await runtime.mcp.view(await runtime.mcp.create(user.id, req.body as never)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-update', 'patch', '/mcp/:id', '更新 MCP 服务器（乐观锁）', [authenticate], (req, res) => {
+  route('mcp-update', 'patch', '/mcp/:id', '更新 MCP 服务器（乐观锁）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, server: runtime.mcp.view(runtime.mcp.update(user.id, String(req.params.id), req.body as never)) })
+      res.json({ ok: true, server: await runtime.mcp.view(await runtime.mcp.update(user.id, String(req.params.id), req.body as never, { isSuperuser: user.is_superuser === 1 })) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-active', 'post', '/mcp/:id/active', '启用/停用 MCP 服务器（热挂载/世代回滚）', [authenticate], (req, res) => {
+  route('mcp-active', 'post', '/mcp/:id/active', '启用/停用 MCP 服务器（热挂载/世代回滚）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { active?: boolean }
-      res.json({ ok: true, server: runtime.mcp.view(runtime.mcp.setActive(user.id, String(req.params.id), body.active !== false)) })
+      const body = req.body as { active?: unknown }
+      if (typeof body.active !== 'boolean') throw new FrameworkError(400, 'INVALID_ACTIVE', 'active must be a boolean')
+      res.json({ ok: true, server: await runtime.mcp.view(await runtime.mcp.setActive(user.id, String(req.params.id), body.active, { isSuperuser: user.is_superuser === 1 })) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-delete', 'delete', '/mcp/:id', '删除 MCP 服务器（级联传输子表）', [authenticate], (req, res) => {
+  route('mcp-delete', 'delete', '/mcp/:id', '删除 MCP 服务器（级联传输子表）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      runtime.mcp.remove(user.id, String(req.params.id))
+      await runtime.mcp.remove(user.id, user.username, String(req.params.id), { isSuperuser: user.is_superuser === 1 })
       res.json({ ok: true, deleted: String(req.params.id) })
     } catch (error) {
       failure(res, error)
@@ -553,54 +661,56 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('mcp-tool-active', 'post', '/mcp/:id/tools/:tool/active', '单工具启停（PRD-05 FR-MCP-008：停用的工具在挂载时从可见集合收紧）', [authenticate], (req, res) => {
+  route('mcp-tool-active', 'post', '/mcp/:id/tools/:tool/active', '单工具启停（PRD-05 FR-MCP-008：停用的工具在挂载时从可见集合收紧）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { active?: boolean }
-      const row = runtime.mcp.setToolActive(user.id, String(req.params.id), String(req.params.tool), body.active !== false)
-      res.json({ ok: true, server: runtime.mcp.view(row) })
+      const body = req.body as { active?: unknown }
+      if (typeof body.active !== 'boolean') throw new FrameworkError(400, 'INVALID_ACTIVE', 'active must be a boolean')
+      const row = await runtime.mcp.setToolActive(user.id, String(req.params.id), String(req.params.tool), body.active, { isSuperuser: user.is_superuser === 1 })
+      res.json({ ok: true, server: await runtime.mcp.view(row) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-upload', 'post', '/mcp/upload', '上传建服务（PRD-05 FR-MCP-007：代码/包落用户隔离目录并物化为可运行 stdio 服务器）', [authenticate], (req, res) => {
+  route('mcp-upload', 'post', '/mcp/upload', '上传建服务（PRD-05 FR-MCP-007：代码/包落用户隔离目录并物化为可运行 stdio 服务器）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { name?: string; kind?: string; code?: string; archiveBase64?: string; description?: string }
-      const row = runtime.mcp.createUploaded(user.id, user.username, {
+      const body = req.body as { name?: string; kind?: string; code?: string; archiveBase64?: string; description?: string; runtime?: string }
+      const row = await runtime.mcp.createUploaded(user.id, user.username, {
         name: body.name, kind: body.kind, code: body.code, archiveBase64: body.archiveBase64, description: body.description,
+        runtime: body.runtime,
       })
-      res.status(201).json({ ok: true, server: runtime.mcp.view(row) })
+      res.status(201).json({ ok: true, server: await runtime.mcp.view(row) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-files-list', 'get', '/mcp/:id/files', '列上传服务器的文件（在线查看）', [authenticate], (req, res) => {
+  route('mcp-files-list', 'get', '/mcp/:id/files', '列服务器文件（上传目录可编辑 / 本机工作目录只读 / HTTP 无本地文件）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, files: runtime.mcp.listServerFiles(user.id, user.username, String(req.params.id)) })
+      res.json({ ok: true, listing: await runtime.mcp.serverFiles(user.id, user.username, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-file-read', 'get', '/mcp/:id/file', '读上传服务器的单个文件（在线编辑的读取侧）', [authenticate], (req, res) => {
+  route('mcp-file-read', 'get', '/mcp/:id/file', '读上传服务器的单个文件（在线编辑的读取侧）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const path = typeof req.query.path === 'string' ? req.query.path : ''
-      res.json({ ok: true, file: runtime.mcp.readServerFile(user.id, user.username, String(req.params.id), path) })
+      res.json({ ok: true, file: await runtime.mcp.readServerFile(user.id, user.username, String(req.params.id), path) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('mcp-file-write', 'put', '/mcp/:id/file', '写上传服务器的单个文件（在线编辑落盘）', [authenticate], (req, res) => {
+  route('mcp-file-write', 'put', '/mcp/:id/file', '写上传服务器的单个文件（在线编辑落盘）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { path?: string; content?: string }
-      res.json({ ok: true, file: runtime.mcp.writeServerFile(user.id, user.username, String(req.params.id), String(body.path ?? ''), String(body.content ?? '')) })
+      res.json({ ok: true, file: await runtime.mcp.writeServerFile(user.id, user.username, String(req.params.id), String(body.path ?? ''), String(body.content ?? ''), { isSuperuser: user.is_superuser === 1 }) })
     } catch (error) {
       failure(res, error)
     }
@@ -618,9 +728,9 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 画布（agenticflow）与运行项目（PRD-02 FR-CANVAS-001~004/040~041）────────
 
-  route('canvases-list', 'get', '/canvases', '列当前用户画布（含公共模板）', [authenticate], (req, res) => {
+  route('canvases-list', 'get', '/canvases', '列当前用户画布（含公共模板）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, canvases: runtime.canvas.list(user.id).map(row => runtime.canvas.view(row)) })
+    res.json({ ok: true, canvases: (await runtime.canvas.list(user.id)).map(row => runtime.canvas.view(row)) })
   })
 
   // 三类节点预设（预填模板，PRD-02 FR-CANVAS-011「预设即预填」）：唯一真源在本模块的
@@ -629,11 +739,11 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.json({ ok: true, presets: NODE_PRESETS })
   })
 
-  route('canvases-create', 'post', '/canvases', '新建画布（三类节点预设由前端选择）', [authenticate], (req, res) => {
+  route('canvases-create', 'post', '/canvases', '新建画布（三类节点预设由前端选择）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { name?: string; description?: string; icon?: string; tags?: string[]; is_template?: boolean }
-      res.status(201).json({ ok: true, canvas: runtime.canvas.create(user.id, {
+      res.status(201).json({ ok: true, canvas: await runtime.canvas.create(user.id, {
         ...(body.name === undefined ? {} : { name: body.name }),
         ...(body.description === undefined ? {} : { description: body.description }),
         ...(body.icon === undefined ? {} : { icon: body.icon }),
@@ -645,10 +755,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('canvases-get', 'get', '/canvases/:id', '读取单张画布', [authenticate], (req, res) => {
+  route('canvases-get', 'get', '/canvases/:id', '读取单张画布', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const row = runtime.canvas.byId(user.id, String(req.params.id))
+      const row = await runtime.canvas.byId(user.id, String(req.params.id))
       if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${String(req.params.id)} not found`)
       res.json({ ok: true, canvas: runtime.canvas.view(row) })
     } catch (error) {
@@ -656,28 +766,71 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('canvases-duplicate', 'post', '/canvases/:id/duplicate', '复制画布（副本 ID 重建）', [authenticate], (req, res) => {
+  route('canvases-availability', 'get', '/canvases/:id/availability', '画布引用的技能/MCP 可用性（被删或停用的引用标记）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.status(201).json({ ok: true, canvas: runtime.canvas.duplicate(user.id, String(req.params.id)) })
+      res.json({ ok: true, ...(await runtime.canvas.availability(user.id, String(req.params.id))) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('canvases-update', 'patch', '/canvases/:id', '更新画布（乐观锁 + 画布 JSON）', [authenticate], (req, res) => {
+  route('canvases-duplicate', 'post', '/canvases/:id/duplicate', '复制画布（副本 ID 重建）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, canvas: runtime.canvas.update(user.id, String(req.params.id), req.body as never) })
+      res.status(201).json({ ok: true, canvas: await runtime.canvas.duplicate(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('canvases-delete', 'delete', '/canvases/:id', '删除画布（级联运行项目、其会话与事件归属行）', [authenticate], (req, res) => {
+  route('canvases-update', 'patch', '/canvases/:id', '更新画布（乐观锁 + 画布 JSON；实例插件差异先校验净组合）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, ...runtime.canvas.remove(user.id, String(req.params.id)) })
+      const body = req.body as { canvas?: { settings?: { plugins?: unknown } } }
+      const plugins = body.canvas?.settings?.plugins
+      if (plugins !== undefined) {
+        if (plugins === null || typeof plugins !== 'object' || Array.isArray(plugins)) {
+          throw new FrameworkError(422, 'PLUGIN_DIFF_INVALID', 'canvas settings.plugins must be an object')
+        }
+        // 画布保存是实例差异的加载期：组合错误在这里拒绝，不等到运行面板装载。
+        runtime.plugins.validateInstanceDiff(String(req.params.id), plugins as InstancePluginDiff)
+      }
+      res.json({ ok: true, canvas: await runtime.canvas.update(user.id, String(req.params.id), req.body as never) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('canvases-plugins-get', 'get', '/canvases/:id/plugins', '实例组合（profile 基线 + 画布插件差异的净结果）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, ...await runtime.plugins.instanceComposition(user.id, String(req.params.id)) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('canvases-plugins-put', 'put', '/canvases/:id/plugins', '保存画布实例插件差异（先校验净组合，乐观锁）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { diff?: unknown; version?: unknown }
+      if (typeof body.version !== 'number' || !Number.isSafeInteger(body.version)) {
+        throw new FrameworkError(400, 'VERSION_REQUIRED', 'version is required to save the instance plugin diff')
+      }
+      if (body.diff === null || typeof body.diff !== 'object' || Array.isArray(body.diff)) {
+        throw new FrameworkError(422, 'PLUGIN_DIFF_INVALID', 'diff must be an object with disable/replace/add/configure arrays')
+      }
+      res.json({ ok: true, ...await runtime.plugins.saveInstanceDiff(user.id, String(req.params.id), body.diff, body.version) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('canvases-delete', 'delete', '/canvases/:id', '删除画布（级联运行项目、其会话与事件归属行）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, ...await runtime.canvas.remove(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
@@ -693,25 +846,25 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('projects-list', 'get', '/projects', '列当前用户运行项目', [authenticate], (req, res) => {
+  route('projects-list', 'get', '/projects', '列当前用户运行项目', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, projects: runtime.canvas.listProjects(user.id) })
+    res.json({ ok: true, projects: await runtime.canvas.listProjects(user.id) })
   })
 
-  route('projects-ensure', 'post', '/projects', '取得或创建运行项目（用户×画布×目录去重）', [authenticate], (req, res) => {
+  route('projects-ensure', 'post', '/projects', '取得或创建运行项目（用户×画布×目录去重）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { canvasId?: string; folderPath?: string; name?: string }
-      res.status(201).json({ ok: true, project: runtime.canvas.ensureProject(user.id, String(body.canvasId ?? ''), String(body.folderPath ?? ''), body.name) })
+      res.status(201).json({ ok: true, project: await runtime.canvas.ensureProject(user.id, String(body.canvasId ?? ''), String(body.folderPath ?? ''), body.name) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('projects-touch', 'post', '/projects/:id/touch', '切换当前项目（更新最后访问）', [authenticate], (req, res) => {
+  route('projects-touch', 'post', '/projects/:id/touch', '切换当前项目（更新最后访问）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, project: runtime.canvas.touchProject(user.id, String(req.params.id)) })
+      res.json({ ok: true, project: await runtime.canvas.touchProject(user.id, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
@@ -719,10 +872,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 项目沙箱根文件门禁（FR-CANVAS-041 越界拒绝）─────────────────────────────
 
-  route('projects-file-guard', 'post', '/projects/:id/file-guard', '项目内文件路径沙箱根校验（realpath+前缀+loopback）', [authenticate], (req, res) => {
+  route('projects-file-guard', 'post', '/projects/:id/file-guard', '项目内文件路径沙箱根校验（realpath+前缀+loopback）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const project = runtime.canvas.projectById(user.id, String(req.params.id))
+      const project = await runtime.canvas.projectById(user.id, String(req.params.id))
       if (project === undefined) throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${String(req.params.id)} not found`)
       const body = req.body as { path?: string; expectedMtimeMs?: number; mustExist?: boolean }
       const result = gateWorkspacePath({
@@ -742,260 +895,71 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  // ── 工作区文件域（PRD-08 FR-OPS-010 / FR-OPS-012：读写分治 + 沙箱根约束）──────
-  // 读（列举/行窗口/stat/搜索）与**人写入**（写入/新建/重命名/删除）全部经
-  // gateWorkspacePath 四判据；沙箱根 = 该用户名下的运行项目目录（folder_path）。
+  // ── 工作区文件域与变更台账（PRD-08 FR-OPS-010/012；PRD-09 FR-FC-004~011）──────────
+  // 同一组操作与运行面板桥（host 侧 ops-bridge.ts）共用一份处理器表（modules/ops.ts）；
+  // 这里只做令牌鉴权与请求归一，操作本体不在本文件重复实现。
 
-  /** 取单个字符串 query（重复/对象形态一律拒绝，不静默取首个）。 */
-  const queryString = (req: AuthedRequest, name: string): string => {
-    const value = req.query[name]
-    if (value === undefined) return ''
-    if (typeof value !== 'string') {
-      throw new FrameworkError(400, 'QUERY_INVALID', `query parameter ${name} must be a single string`)
+  /** 把请求归一成共享操作入参（body 优先、query 次之）。 */
+  const opsInput = (req: AuthedRequest, sessionKey: string | null): OpsInput => {
+    const body: Record<string, unknown> =
+      req.body !== null && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body as Record<string, unknown>
+        : {}
+    const field = (name: string): unknown => {
+      if (body[name] !== undefined) return body[name]
+      const value = req.query[name]
+      if (value !== undefined && typeof value !== 'string') {
+        throw new FrameworkError(400, 'QUERY_INVALID', `query parameter ${name} must be a single string`)
+      }
+      return value
     }
-    return value
+    const projectId = field('projectId')
+    return {
+      userId: (req.soloUser as UserRow).id,
+      projectId: projectId === undefined ? '' : String(projectId),
+      sessionKey,
+      remoteAddress: req.socket.remoteAddress ?? undefined,
+      field,
+    }
   }
 
-  /** 请求来源（loopback 判定用）。 */
-  const remoteOf = (req: AuthedRequest): string | undefined => req.socket.remoteAddress ?? undefined
-
-  route('workspace-list', 'get', '/workspace/list', '列举沙箱根内一层目录（懒加载）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      res.json({
-        ok: true,
-        listing: runtime.workspace.list(user.id, queryString(req, 'projectId'), queryString(req, 'path'), remoteOf(req)),
+  /** 装配一组共享操作：路由描述与处理器同源，不再手写第二份。 */
+  const mountOps = (
+    prefix: string,
+    ops: readonly OpsRoute[],
+    sessionKeyOf: (req: AuthedRequest) => string | null,
+  ): void => {
+    for (const op of ops) {
+      route(op.id, op.method, `${prefix}${op.path === '' ? '' : `/${op.path}`}`, op.summary, [authenticate], async (req, res) => {
+        try {
+          const outcome = await op.handle(runtime, opsInput(req, sessionKeyOf(req)))
+          res.status(outcome.status).json(outcome.body)
+        } catch (error) {
+          failure(res, error)
+        }
       })
-    } catch (error) {
-      failure(res, error)
     }
+  }
+
+  // 工作区人写入无会话上下文（归属只到用户与运行项目）；台账接口按请求字段取会话键。
+  mountOps('/workspace', WORKSPACE_OPS, () => null)
+  mountOps('/changes', CHANGES_OPS, (req) => {
+    const body: Record<string, unknown> =
+      req.body !== null && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body as Record<string, unknown>
+        : {}
+    const value = body.sessionKey === undefined ? req.query.sessionKey : body.sessionKey
+    return value === undefined || value === null ? null : String(value)
   })
 
-  route('workspace-stat', 'get', '/workspace/stat', '沙箱根内单条路径 stat（版本 = mtimeMs）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      res.json({
-        ok: true,
-        stat: runtime.workspace.stat(user.id, queryString(req, 'projectId'), queryString(req, 'path'), remoteOf(req)),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
+  // ── 变更台账：撤回记录链（框架层专有；其余台账操作见共享操作表）──────────────
 
-  route('workspace-read', 'get', '/workspace/read', '沙箱根内文件行窗口读取（分页）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const offset = queryString(req, 'offset')
-      const limit = queryString(req, 'limit')
-      res.json({
-        ok: true,
-        file: runtime.workspace.read(user.id, queryString(req, 'projectId'), queryString(req, 'path'), {
-          ...offset === '' ? {} : { offset: Number(offset) },
-          ...limit === '' ? {} : { limit: Number(limit) },
-          ...remoteOf(req) === undefined ? {} : { remoteAddress: remoteOf(req) },
-        }),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('workspace-search', 'get', '/workspace/search', '沙箱根内按名称递归搜索（跳过 .git/node_modules）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      res.json({
-        ok: true,
-        ...runtime.workspace.search(user.id, queryString(req, 'projectId'), queryString(req, 'q'), remoteOf(req)),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('workspace-write', 'put', '/workspace/file', '写入沙箱根内文件（mtime 冲突检测；编辑器保存）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { projectId?: string; path?: string; text?: string; expectedMtimeMs?: number }
-      res.json({
-        ok: true,
-        result: runtime.workspace.write(
-          user.id,
-          String(body.projectId ?? ''),
-          String(body.path ?? ''),
-          String(body.text ?? ''),
-          {
-            ...body.expectedMtimeMs === undefined ? {} : { expectedMtimeMs: Number(body.expectedMtimeMs) },
-            ...remoteOf(req) === undefined ? {} : { remoteAddress: remoteOf(req) },
-          },
-        ),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('workspace-mkdir', 'post', '/workspace/directory', '新建沙箱根内目录（双确认）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { projectId?: string; path?: string; confirm?: boolean }
-      res.status(201).json({
-        ok: true,
-        ...runtime.workspace.mkdir(user.id, String(body.projectId ?? ''), String(body.path ?? ''), body.confirm === true, remoteOf(req)),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('workspace-rename', 'post', '/workspace/rename', '重命名/移动沙箱根内条目（双确认 + mtime 冲突）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { projectId?: string; from?: string; to?: string; confirm?: boolean; expectedMtimeMs?: number }
-      res.json({
-        ok: true,
-        ...runtime.workspace.rename(
-          user.id,
-          String(body.projectId ?? ''),
-          String(body.from ?? ''),
-          String(body.to ?? ''),
-          body.confirm === true,
-          {
-            ...body.expectedMtimeMs === undefined ? {} : { expectedMtimeMs: Number(body.expectedMtimeMs) },
-            ...remoteOf(req) === undefined ? {} : { remoteAddress: remoteOf(req) },
-          },
-        ),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('workspace-delete', 'delete', '/workspace/entry', '删除沙箱根内文件或目录（双确认）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { projectId?: string; path?: string; confirm?: boolean }
-      res.json({
-        ok: true,
-        ...runtime.workspace.remove(user.id, String(body.projectId ?? ''), String(body.path ?? ''), body.confirm === true, remoteOf(req)),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  // ── 文件变更台账（PRD-09 FR-FC-011：按会话/回合/文件过滤 + 统计）──────────────
-
-  route('changes-list', 'get', '/changes', '变更台账查询（按会话/回合/文件过滤；含 hunks）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const sessionKey = queryString(req, 'sessionKey')
-      const turn = queryString(req, 'turn')
-      const filePath = queryString(req, 'filePath')
-      const limit = queryString(req, 'limit')
-      const query = {
-        ...sessionKey === '' ? {} : { sessionKey },
-        ...turn === '' ? {} : { turn: Number(turn) },
-        ...filePath === '' ? {} : { filePath },
-        ...limit === '' ? {} : { limit: Number(limit) },
-      }
-      res.json({ ok: true, changes: runtime.changes.list(user.id, query), summary: runtime.changes.summary(user.id, query) })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  // ── 变更台账：审阅、回合视图与撤回（PRD-09 FR-FC-004~011）───────────────────
-
-  route('changes-turn-view', 'get', '/changes/turn', '回合视图（同文件多次写入聚合为净变更，过程视图可展开）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const turn = queryString(req, 'turn')
-      if (turn === '') throw new FrameworkError(400, 'TURN_REQUIRED', 'turn is required for the turn view')
-      res.json({
-        ok: true,
-        sessionKey: queryString(req, 'sessionKey'),
-        turn: Number(turn),
-        entries: runtime.changes.turnView(user.id, queryString(req, 'sessionKey'), Number(turn)),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('changes-review', 'post', '/changes/review', '审阅：整轮/逐文件/逐 hunk 保留或丢弃（只标记，不动磁盘）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as {
-        sessionKey?: string; turn?: number; filePath?: string; changeId?: string
-        status?: string; hunkIds?: string[]
-      }
-      if (body.status !== 'accepted' && body.status !== 'rejected') {
-        throw new FrameworkError(400, 'REVIEW_STATUS_INVALID', 'status must be accepted or rejected')
-      }
-      res.json({
-        ok: true,
-        ...runtime.changes.review({
-          userId: user.id,
-          sessionKey: String(body.sessionKey ?? ''),
-          ...body.turn === undefined ? {} : { turn: Number(body.turn) },
-          ...body.filePath === undefined ? {} : { filePath: String(body.filePath) },
-          ...body.changeId === undefined ? {} : { changeId: String(body.changeId) },
-          status: body.status,
-          ...body.hunkIds === undefined ? {} : { hunkIds: body.hunkIds },
-        }),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('changes-revert-plan', 'get', '/changes/revert/plan', '撤回计划（还原项 + 漂移跳过项；执行前确认用）', [authenticate], (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const turn = queryString(req, 'turn')
-      const changeId = queryString(req, 'changeId')
-      const plan = runtime.changes.revertPlan(
-        user.id,
-        queryString(req, 'sessionKey'),
-        turn === '' ? null : Number(turn),
-        changeId === '' ? undefined : [changeId],
-      )
-      res.json({ ok: true, plan })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('changes-revert', 'post', '/changes/revert', '执行按轮次撤回（最小还原 + 漂移检测；经守卫写回并补发观测）', [authenticate], async (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { sessionKey?: string; turn?: number; changeIds?: string[]; confirm?: boolean }
-      if (body.confirm !== true) {
-        throw new FrameworkError(400, 'CONFIRMATION_REQUIRED',
-          'a revert requires an explicit confirmation (confirm: true) after reviewing the restore list')
-      }
-      res.json({
-        ok: true,
-        ...await runtime.changes.revert({
-          userId: user.id,
-          sessionKey: String(body.sessionKey ?? ''),
-          turn: body.turn === undefined ? null : Number(body.turn),
-          ...body.changeIds === undefined ? {} : { changeIds: body.changeIds },
-          actor: { kind: 'soloengine-revert', userId: user.id, sessionKey: String(body.sessionKey ?? '') },
-        }),
-      })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
-
-  route('changes-mark-reverted', 'post', '/changes/mark-reverted', '把已还原的记录标记为 reverted（撤回记录链的一环）', [authenticate], (req, res) => {
+  route('changes-mark-reverted', 'post', '/changes/mark-reverted', '把已还原的记录标记为 reverted（撤回记录链的一环）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const body = req.body as { changeIds?: string[] }
       const ids = Array.isArray(body.changeIds) ? body.changeIds.map(String) : []
-      res.json({ ok: true, updated: runtime.changes.markReverted(user.id, ids) })
+      res.json({ ok: true, updated: await runtime.changes.markReverted(user.id, ids) })
     } catch (error) {
       failure(res, error)
     }
@@ -1046,28 +1010,28 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('sessions-list', 'get', '/sessions', '列当前用户的运行会话（归属行 + 活状态）', [authenticate], (req, res) => {
+  route('sessions-list', 'get', '/sessions', '列当前用户的运行会话（归属行 + 活状态）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
     const limit = Number(req.query.limit ?? 50)
-    res.json({ ok: true, sessions: runtime.runs.listSessions(user.id, Number.isFinite(limit) ? limit : 50) })
+    res.json({ ok: true, sessions: await runtime.runs.listSessions(user.id, Number.isFinite(limit) ? limit : 50) })
   })
 
-  route('sessions-get', 'get', '/sessions/:key', '读取单个会话（归属校验）', [authenticate], (req, res) => {
+  route('sessions-get', 'get', '/sessions/:key', '读取单个会话（归属校验）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, session: runtime.runs.session(user.id, String(req.params.key)) })
+      res.json({ ok: true, session: await runtime.runs.session(user.id, String(req.params.key)) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('sessions-events', 'get', '/sessions/:key/events', '读取会话的事件归属行（分页走 (session_id, seq) 主键顺序）', [authenticate], (req, res) => {
+  route('sessions-events', 'get', '/sessions/:key/events', '读取会话的事件归属行（分页走 (session_id, seq) 主键顺序）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const limit = Number(req.query.limit ?? 200)
       res.json({
         ok: true,
-        events: runtime.runs.events(user.id, String(req.params.key), Number.isFinite(limit) ? limit : 200),
+        events: await runtime.runs.events(user.id, String(req.params.key), Number.isFinite(limit) ? limit : 200),
       })
     } catch (error) {
       failure(res, error)
@@ -1107,17 +1071,30 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   })
 
   // 用量导出（NFR-OBS-002：聚合输出导出可用）。CSV 两节：按模型聚合 + 按会话明细；
-  // 数据与 /usage 同一派生（事件流折叠），不落第二副本。
+  // 数据与 /usage 同一派生（事件流折叠），不落第二副本。首行注释如实标注统计窗口与口径。
   route('usage-export', 'get', '/usage/export', '用量导出（CSV：按模型聚合 + 按会话明细）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const { sessions, byModel } = await runtime.runs.usage(user.id)
-      const lines: string[] = ['section,llm_config_id,agentic_flow_id,session_key,requests,input_tokens,output_tokens,total_tokens']
+      const { sessions, byModel, window } = await runtime.runs.usage(user.id)
+      const lines: string[] = [
+        `# usage window: newest ${String(window.limit)} of ${String(window.total)} sessions; `
+        + 'requests = assistant/message with provider usage (failed attempts excluded); '
+        + 'duration = step/start -> assistant/message (ms)',
+        'section,llm_config_id,agentic_flow_id,session_key,requests,input_tokens,output_tokens,total_tokens,duration_ms,avg_ms,p50_ms,p95_ms',
+      ]
       for (const row of byModel) {
-        lines.push(['byModel', row.llm_config_id, '', '', String(row.requests), String(row.inputTokens), String(row.outputTokens), String(row.totalTokens)].join(','))
+        lines.push([
+          'byModel', row.llm_config_id, '', '', String(row.requests), String(row.inputTokens),
+          String(row.outputTokens), String(row.totalTokens), String(row.durationMs),
+          String(row.avgMs), String(row.p50Ms), String(row.p95Ms),
+        ].join(','))
       }
       for (const row of sessions) {
-        lines.push(['bySession', row.llm_config_id ?? '', row.agentic_flow_id, row.sessionKey, String(row.requests), String(row.inputTokens), String(row.outputTokens), String(row.totalTokens)].join(','))
+        lines.push([
+          'bySession', row.llm_config_id ?? '', row.agentic_flow_id, row.sessionKey, String(row.requests),
+          String(row.inputTokens), String(row.outputTokens), String(row.totalTokens), String(row.durationMs),
+          String(row.requests === 0 ? 0 : Math.round(row.durationMs / row.requests)), '', '',
+        ].join(','))
       }
       res.setHeader('content-type', 'text/csv; charset=utf-8')
       res.setHeader('content-disposition', 'attachment; filename="soloengine-usage.csv"')
@@ -1129,16 +1106,16 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 创造模式审计（PRD-06 FR-ENG-030 / PRD-10 FR-SEC-014）────────────────────
 
-  route('audit-creator-list', 'get', '/audit/creator', '创造模式审计清单（按用户过滤）', [authenticate], (req, res) => {
+  route('audit-creator-list', 'get', '/audit/creator', '创造模式审计清单（按用户过滤）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
     const limit = Number(req.query.limit ?? 100)
-    res.json({ ok: true, audit: runtime.runs.listCreatorAudit(user.id, Number.isFinite(limit) ? limit : 100) })
+    res.json({ ok: true, audit: await runtime.runs.listCreatorAudit(user.id, Number.isFinite(limit) ? limit : 100) })
   })
 
-  route('audit-creator-record', 'post', '/audit/creator', '记录一条创造模式审计（动作即落库，含失败）', [authenticate], (req, res) => {
+  route('audit-creator-record', 'post', '/audit/creator', '记录一条创造模式审计（动作即落库，含失败）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
     const body = req.body as { kind?: string; ok?: boolean; detail?: string }
-    const id = runtime.runs.recordCreatorAudit({
+    const id = await runtime.runs.recordCreatorAudit({
       kind: String(body.kind ?? 'unknown'),
       userId: user.id,
       ok: body.ok === true,
@@ -1149,7 +1126,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   // ── 市场（技能/MCP 目录与安装）────────────────────────────────────────────
 
-  route('market-list', 'get', '/market', '市场目录（kind/q/category/sort/featured 过滤与排序）', [authenticate], (req, res) => {
+  route('market-list', 'get', '/market', '市场目录（kind/q/category/sort/featured 过滤与排序）', [authenticate], async (req, res) => {
     try {
       const query = {
         kind: marketQueryString(req, 'kind'),
@@ -1158,16 +1135,16 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
         sort: marketQueryString(req, 'sort'),
         featured: marketQueryString(req, 'featured'),
       }
-      res.json({ ok: true, ...runtime.market.list(query) })
+      res.json({ ok: true, ...await runtime.market.list(query, (req.soloUser as UserRow).id) })
     } catch (error) {
       failure(res, error)
     }
   })
 
-  route('market-install', 'post', '/market/:id/install', '安装一条市场条目（复用技能/MCP 既有管线）', [authenticate], (req, res) => {
+  route('market-install', 'post', '/market/:id/install', '安装一条市场条目（复用技能/MCP 既有管线）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.status(201).json({ ok: true, installed: runtime.market.install(user, String(req.params.id)) })
+      res.status(201).json({ ok: true, installed: await runtime.market.install(user, String(req.params.id)) })
     } catch (error) {
       failure(res, error)
     }
@@ -1189,15 +1166,24 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('packaging-run', 'post', '/packaging/run', '真实执行一次打包（编译 → 落盘产物 → 读回校验）', [authenticate], async (req, res) => {
+  route('packaging-run', 'post', '/packaging/run', '真实执行一次打包（编译 → 落盘产物 → 读回校验；可选桌面发行暂存）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { canvasId?: string; projectId?: string; confirm?: unknown }
+      const body = req.body as {
+        canvasId?: string
+        projectId?: string
+        confirm?: unknown
+        form?: unknown
+        desktopProfile?: unknown
+        appId?: unknown
+      }
       const run = await runtime.packaging.run(
         user.id,
         String(body.canvasId ?? ''),
         String(body.projectId ?? ''),
         body.confirm,
+        body.form,
+        { profile: body.desktopProfile, appId: body.appId },
       )
       res.status(201).json({ ok: true, run })
     } catch (error) {
@@ -1207,7 +1193,17 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   route('packaging-run-get', 'get', '/packaging/runs/:id', '读回一次打包产物（重算文件数与字节数）', [authenticate], (req, res) => {
     try {
-      res.json({ ok: true, run: runtime.packaging.readRun(String(req.params.id)) })
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, run: runtime.packaging.readRun(String(req.params.id), { userId: user.id, isSuperuser: user.is_superuser === 1 }) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('packaging-desktop-build', 'post', '/packaging/runs/:id/desktop-build', '触发桌面发行封装（安装包 + 免安装目录）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.status(202).json({ ok: true, run: await runtime.packaging.startDesktopBuild(String(req.params.id), { userId: user.id, isSuperuser: user.is_superuser === 1 }) })
     } catch (error) {
       failure(res, error)
     }
@@ -1220,11 +1216,11 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   // ── 会话导出（真实日志文件 + 归属行；ZIP 真实打包）──────────────────────────
 
   // `.zip` 路由必须先于 `:key` 登记（否则被 `:key` 吞掉）。
-  route('export-session-zip', 'get', '/export/sessions/:key.zip', '导出会话 ZIP（日志原始字节 + sessions.json + events.json）', [authenticate], (req, res) => {
+  route('export-session-zip', 'get', '/export/sessions/:key.zip', '导出会话 ZIP（日志原始字节 + sessions.json + events.json）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
       const key = String(req.params.key)
-      const bytes = runtime.sessionExport.archive(user.id, key)
+      const bytes = await runtime.sessionExport.archive(user.id, key)
       res.setHeader('content-type', 'application/zip')
       res.setHeader('content-disposition', `attachment; filename="${key}.zip"`)
       res.end(Buffer.from(bytes))
@@ -1233,10 +1229,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('export-session-manifest', 'get', '/export/sessions/:key', '会话导出清单（真实日志文件与归属行行数）', [authenticate], (req, res) => {
+  route('export-session-manifest', 'get', '/export/sessions/:key', '会话导出清单（真实日志文件与归属行行数）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, ...runtime.sessionExport.describe(user.id, String(req.params.key)) })
+      res.json({ ok: true, ...await runtime.sessionExport.describe(user.id, String(req.params.key)) })
     } catch (error) {
       failure(res, error)
     }
@@ -1247,6 +1243,121 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('plugins-list', 'get', '/plugins', '组合与插件清单（profile + 三层 patch 合并后的行）', [authenticate], (_req, res) => {
     try {
       res.json({ ok: true, ...runtime.plugins.list() })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  // 用户级默认插件表（需求 §0.1.4）：新建 agent 节点按它初始化节点插件行；节点未声明插件时
+  // 编译/打包回落到它。数据是管理层业务行（`user_default_plugins`），不进入 profile 组合树。
+  route('plugins-defaults-get', 'get', '/plugins/defaults', '用户级默认插件表（差异、乐观锁版本与新建节点的插件行）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      res.json({ ok: true, ...await runtime.plugins.userDefaults(user.id) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-defaults-put', 'put', '/plugins/defaults', '保存用户级默认插件表（先校验净组合，乐观锁）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      const body = req.body as { diff?: unknown; version?: unknown }
+      if (typeof body.version !== 'number' || !Number.isSafeInteger(body.version)) {
+        throw new FrameworkError(400, 'VERSION_REQUIRED', 'version is required to save the default plugin table')
+      }
+      if (body.diff === null || typeof body.diff !== 'object' || Array.isArray(body.diff)) {
+        throw new FrameworkError(422, 'PLUGIN_DIFF_INVALID', 'diff must be an object with an add array of plugin rows')
+      }
+      res.json({ ok: true, ...await runtime.plugins.saveUserDefaults(user.id, body.diff as InstancePluginDiff, body.version) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  // ── profile 级插件管理（复用原生 pluginManager；实例运维，仅超管）──────────────
+  // 组合包启停/安装/移除都经 host 绑定的原生服务；框架层不写第二套安装器、不碰 profile 文件。
+
+  route('plugins-bundles-get', 'get', '/plugins/bundles', 'profile 组合包清单（启用态、可移除性、坏包原因）', [authenticate, requireSuperuser], async (_req, res) => {
+    try {
+      res.json({ ok: true, ...await runtime.plugins.managedBundles() })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-bundles-enabled', 'post', '/plugins/bundles/enabled', '启用/停用一个 profile 组合包（热重组语义由原生决定）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      const body = req.body as { name?: unknown; enabled?: unknown }
+      if (typeof body.name !== 'string' || body.name.trim() === '') {
+        throw new FrameworkError(422, 'PLUGIN_TARGET_REQUIRED', 'name must be a non-empty bundle package name')
+      }
+      if (typeof body.enabled !== 'boolean') {
+        throw new FrameworkError(422, 'ENABLED_REQUIRED', 'enabled must be a boolean')
+      }
+      res.json({ ok: true, result: await runtime.plugins.setBundleEnabled(body.name, body.enabled) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-bundles-remove', 'post', '/plugins/bundles/remove', '移除一个 profile 组合包（原生移除检查与回滚）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      const body = req.body as { name?: unknown }
+      if (typeof body.name !== 'string' || body.name.trim() === '') {
+        throw new FrameworkError(422, 'PLUGIN_TARGET_REQUIRED', 'name must be a non-empty bundle package name')
+      }
+      res.json({ ok: true, result: await runtime.plugins.removeBundle(body.name) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-inspect', 'post', '/plugins/inspect', '安装前读取规格（包名、路径、Git、tarball）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      const body = req.body as { spec?: unknown }
+      if (typeof body.spec !== 'string') {
+        throw new FrameworkError(422, 'PLUGIN_SPEC_REQUIRED', 'spec must be a string')
+      }
+      res.json({ ok: true, inspection: await runtime.plugins.inspectSpec(body.spec) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-install', 'post', '/plugins/install', '安装并选中一个组合包（原生 pnpm + 组合层写入）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      const body = req.body as { spec?: unknown; requestId?: unknown; enabled?: unknown; approvedBuilds?: unknown }
+      if (typeof body.spec !== 'string' || typeof body.requestId !== 'string') {
+        throw new FrameworkError(422, 'PLUGIN_SPEC_REQUIRED', 'spec and requestId must be strings')
+      }
+      if (body.enabled !== undefined && typeof body.enabled !== 'boolean') {
+        throw new FrameworkError(422, 'ENABLED_REQUIRED', 'enabled must be a boolean when present')
+      }
+      const approvedBuilds: string[] = []
+      if (body.approvedBuilds !== undefined) {
+        if (!Array.isArray(body.approvedBuilds) || body.approvedBuilds.some(item => typeof item !== 'string' || item.trim() === '')) {
+          throw new FrameworkError(422, 'APPROVED_BUILDS_INVALID', 'approvedBuilds must be an array of package names')
+        }
+        approvedBuilds.push(...body.approvedBuilds as string[])
+      }
+      res.json({ ok: true, result: await runtime.plugins.installBundle(body.spec, body.requestId, body.enabled ?? true, approvedBuilds) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-install-wait', 'get', '/plugins/install/:requestId', '恢复一次丢失响应的安装结果', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      res.json({ ok: true, result: await runtime.plugins.waitInstall(String(req.params.requestId)) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('plugins-install-cancel', 'post', '/plugins/install/:requestId/cancel', '停止一次安装（文件回滚完成后才返回）', [authenticate, requireSuperuser], async (req, res) => {
+    try {
+      res.json({ ok: true, cancellation: await runtime.plugins.cancelInstall(String(req.params.requestId)) })
     } catch (error) {
       failure(res, error)
     }
@@ -1279,4 +1390,13 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   })
 
   return { app, routes, mountAuthenticated }
+}
+
+/**
+ * CSV 字段编码：含逗号、引号或换行的值加双引号（引号自身成对转义）。
+ * @param value - 原始字段值。
+ * @returns 可直接参与 `join(',')` 的字段文本。
+ */
+function csvField(value: string): string {
+  return /[",\r\n]/u.test(value) ? `"${value.replace(/"/gu, '""')}"` : value
 }
