@@ -16,6 +16,7 @@
  */
 
 import type { WebBootGraph } from '@deepseek-ai/dsh-client-modules'
+import { INSTANCE_HEADER, INSTANCE_PARAM } from '@deepseek-ai/dsh-client-connection'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 
 /** 引导注入的输入。 */
@@ -57,6 +58,45 @@ export function clientTreeProblems(graph: WebBootGraph, disabled: readonly strin
 }
 
 /**
+ * 运行面板的实例声明脚本：该面板发出的每个请求都带本 flow。
+ *
+ * HTTP 带请求头，WebSocket 升级不能带自定义头，故同一个值走查询参数。连接层只把它
+ * 当**不透明实例值**转给账号作用域；面板之间的会话/工作区因此互不可见。两个线上名字
+ * 从连接层的常量插值进来，不在这里维护第二份。
+ */
+const DECLARE_INSTANCE_SCRIPT = `(function(){
+var flow=globalThis.__SOLOENGINE_RUN_FLOW__;
+if(typeof flow!=="string"||flow==="")return;
+var header=${JSON.stringify(INSTANCE_HEADER)},param=${JSON.stringify(INSTANCE_PARAM)};
+var rawFetch=globalThis.fetch;
+if(typeof rawFetch==="function"){
+globalThis.fetch=function(input,init){
+var next=init?Object.assign({},init):{};
+var source=next.headers!==undefined?next.headers:(input&&typeof input==="object"&&"headers"in input?input.headers:undefined);
+var headers=new Headers(source||undefined);
+if(!headers.has(header))headers.set(header,flow);
+next.headers=headers;
+return rawFetch.call(this,input,next);
+};
+}
+var RawSocket=globalThis.WebSocket;
+if(typeof RawSocket==="function"){
+var ScopedSocket=function(url,protocols){
+var target=String(url);
+try{
+var parsed=new URL(target,location.href);
+if(!parsed.searchParams.has(param))parsed.searchParams.set(param,flow);
+target=parsed.href;
+}catch(ignored){/* a malformed socket URL is left untouched and fails at the socket layer */}
+return protocols===undefined?new RawSocket(target):new RawSocket(target,protocols);
+};
+ScopedSocket.prototype=RawSocket.prototype;
+["CONNECTING","OPEN","CLOSING","CLOSED"].forEach(function(key){ScopedSocket[key]=RawSocket[key];});
+globalThis.WebSocket=ScopedSocket;
+}
+})();`
+
+/**
  * 生成 `/run/:agenticFlowId` 的结构化注入行。
  *
  * 三条事实（flow、session、本画布关闭的客户端包）以 `global` 行进入 `<head>`，裁剪逻辑以
@@ -90,42 +130,9 @@ export function runBootstrapRows(input: RunBootstrapInput): IndexInjection[] {
     { kind: 'global', name: '__SOLOENGINE_CLIENT_OFF__', value: input.disabled },
     ...instanceRows,
     {
-      // 运行面板的每个请求都声明「本面板属于哪个 agenticflow」：HTTP 走请求头，
-      // WebSocket 升级带不了自定义头，故同一个值走查询参数。连接层只把它当不透明实例
-      // 标识转给账号作用域；面板之间的会话/工作区因此互不可见（需求 §9.5 ⑥）。
       kind: 'script',
       placement: 'body',
-      text: '(function(){'
-        + 'var flow=globalThis.__SOLOENGINE_RUN_FLOW__;'
-        + 'if(typeof flow!=="string"||flow==="")return;'
-        + 'var header="x-dsh-instance",param="dsh-instance";'
-        + 'var rawFetch=globalThis.fetch;'
-        + 'if(typeof rawFetch==="function"){'
-        + 'globalThis.fetch=function(input,init){'
-        + 'var next=init?Object.assign({},init):{};'
-        + 'var source=next.headers!==undefined?next.headers:(input&&typeof input==="object"&&"headers"in input?input.headers:undefined);'
-        + 'var headers=new Headers(source||undefined);'
-        + 'if(!headers.has(header))headers.set(header,flow);'
-        + 'next.headers=headers;'
-        + 'return rawFetch.call(this,input,next);'
-        + '};'
-        + '}'
-        + 'var RawSocket=globalThis.WebSocket;'
-        + 'if(typeof RawSocket==="function"){'
-        + 'var ScopedSocket=function(url,protocols){'
-        + 'var target=String(url);'
-        + 'try{'
-        + 'var parsed=new URL(target,location.href);'
-        + 'if(!parsed.searchParams.has(param))parsed.searchParams.set(param,flow);'
-        + 'target=parsed.href;'
-        + '}catch(ignored){/* a malformed socket URL is left untouched and fails at the socket layer */}'
-        + 'return protocols===undefined?new RawSocket(target):new RawSocket(target,protocols);'
-        + '};'
-        + 'ScopedSocket.prototype=RawSocket.prototype;'
-        + '["CONNECTING","OPEN","CLOSING","CLOSED"].forEach(function(key){ScopedSocket[key]=RawSocket[key];});'
-        + 'globalThis.WebSocket=ScopedSocket;'
-        + '}'
-        + '})();',
+      text: DECLARE_INSTANCE_SCRIPT,
     },
     {
       kind: 'script',

@@ -42,7 +42,7 @@ export type {
   ServerResponse,
 } from './rpc.ts'
 export type { PeerId, PeerScope, Principal, RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
-export { RpcId, transportError } from './rpc.ts'
+export { INSTANCE_HEADER, INSTANCE_PARAM, RpcId, transportError } from './rpc.ts'
 export { Peer } from './peer.ts'
 export type { PeerOptions } from './peer.ts'
 export { CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'

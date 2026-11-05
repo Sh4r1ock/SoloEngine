@@ -438,6 +438,8 @@ export class RunService {
    * @returns 最新会话键；该 flow 还没有可见会话时 undefined。
    */
   async latestSessionKeyOfFlow(flowId: string, restrictTo?: ReadonlySet<string>): Promise<string | undefined> {
+    // 一个 flow 的会话通常同属一个账号；50 条足够覆盖「最新一条可见会话」，
+    // 同时不把整张台账读进内存（限制是为了有界查询，不是业务阈值）。
     const rows = await this.db.prepare(
       'SELECT session_key FROM sessions WHERE agentic_flow_id = ? ORDER BY created_at DESC LIMIT 50',
     ).all<{ session_key: string }>(flowId)
