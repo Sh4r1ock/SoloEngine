@@ -25,6 +25,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
 // 引入模块声明，使 `ctx.webServer` / `ctx.agents` / `ctx.agentPresets` / `ctx.tools` /
 // `ctx.subagents` / `ctx.sessionProjections` / `ctx.connection` / `ctx.loader`
@@ -447,6 +448,32 @@ function resolveVms(config: Config): SessionVms | undefined {
     display: (process.env.SOLOENGINE_VM_DISPLAY ?? '1') !== '0',
     log: (message) => { console.log(message) },
   })
+}
+
+/**
+ * 取一棵会话树的根：运行面板的深链只指向「一次运行」。
+ *
+ * 台账也登记子代理子会话（FR-STO-005 要求子会话的消息按会话树归属到画布节点），
+ * 而父指向按 FR-STO-004 的字段纪律留在 dsh 会话头（`header.parentSession`）里、不落业务表，
+ * 所以这里沿会话头上溯到无父的一层。读不到会话头（日志缺失）时停在原键：面板照常打开该会话。
+ * @param ctx - 能读 `sessionPersistence` 的上下文。
+ * @param sessionKey - 台账里该 flow 的最新会话键。
+ * @returns 同一棵会话树的根会话键。
+ */
+async function rootSessionKeyOf(ctx: Context, sessionKey: string): Promise<string> {
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) return sessionKey
+  let current = sessionKey
+  const seen = new Set<string>([current])
+  for (;;) {
+    const header = (await persistence.stat(SessionId(current)))?.header
+    if (header?.parentSession === undefined) return current
+    const parent = String(header.parentSession)
+    // 环只可能来自损坏的会话头；停在上一个节点，不让页面陷入死循环。
+    if (seen.has(parent)) return current
+    seen.add(parent)
+    current = parent
+  }
 }
 
 /**
@@ -936,10 +963,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const owned = 'peer' in admission
             ? await routeCtx.connection.ownedSessionIdsOf(admission.peer)
             : []
-          const sessionKey = await runtime.runs.latestSessionKeyOfFlow(
+          const latest = await runtime.runs.latestSessionKeyOfFlow(
             flowSegment,
             owned === undefined ? undefined : new Set(owned),
           )
+          // 一次运行 = 一棵会话树：台账也会登记子代理子会话，深链必须落在树根上，
+          // 否则打开的是「父会话当前不在线」的只读子会话（子会话经派卡进入，见 PRD-06）。
+          const sessionKey = latest === undefined ? undefined : await rootSessionKeyOf(routeCtx, latest)
           // 实例客户端组合（Plan W4）：该画布启用的客户端包 = 全局启动图 + 画布新增/替换的包。
           // 组合错误（未知行、包不可解析、依赖被关闭）一律整页报错（加载期报错，不静默降级）。
           let selection: { enabled: string[]; disabled: string[] }
