@@ -683,6 +683,9 @@ importers:
       '@deepseek-ai/dsh-skill-office':
         specifier: workspace:*
         version: link:../../packages/skill/skill-office
+      '@deepseek-ai/dsh-tool-terminal':
+        specifier: workspace:*
+        version: link:../../packages/experimental/tool-terminal
       '@deepseek-ai/dsh-tool-workspace-dependencies':
         specifier: workspace:*
         version: link:../../packages/skill/tool-workspace-dependencies
@@ -10735,6 +10738,12 @@ importers:
 
   packages/soloengine/host:
     dependencies:
+      '@deepseek-ai/dsh-client-ui-directory-picker-browse':
+        specifier: workspace:*
+        version: link:../../client/ui-directory-picker-browse
+      '@deepseek-ai/dsh-host-directory-picker-browse':
+        specifier: workspace:*
+        version: link:../../host/directory-picker-browse
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../../mcp/mcp-client
