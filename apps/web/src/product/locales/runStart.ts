@@ -1,0 +1,38 @@
+/** 运行起始页文案（`/run/:agenticFlowId` 还没有运行会话时）。 */
+import { defineDictionary } from './define.ts'
+
+export const runStart = defineDictionary({
+  pageTitle: '运行画布',
+  subtitle: '为本次运行选择工作目录。',
+  directoryTitle: '工作目录',
+  directoryHint: '目录是本次运行的工作根。同一画布可以使用多个目录，每次运行都会记录当次目录与所属画布。',
+  pickAndStart: '选择目录并开始',
+  start: '开始运行',
+  starting: '正在启动…',
+  openEditor: '打开编辑器',
+  nodeCount: '当前画布共 {count} 个节点。',
+  emptyCanvas: '该画布还没有节点，无法启动运行。请先在编辑器中添加 Agent 节点并指定模型。',
+  errorLoadCanvas: '读取画布失败',
+  errorStart: '启动运行失败',
+  errorMissingModel: '画布中有节点未指定可用模型。请在编辑器中为这些节点选择模型后重试。',
+  errorEmptyCanvas: '画布中没有可运行的节点。',
+  errorPluginConflict: '画布节点声明的插件存在冲突，请在编辑器中修正后再运行。',
+  errorCycle: '画布的委派关系存在环，请在编辑器中修正后再运行。',
+}, {
+  pageTitle: 'Run canvas',
+  subtitle: 'Choose a working directory for this run.',
+  directoryTitle: 'Working directory',
+  directoryHint: 'The directory is the working root of this run. A canvas can use any number of directories; every run records the directory it used.',
+  pickAndStart: 'Choose a directory and start',
+  start: 'Start run',
+  starting: 'Starting…',
+  openEditor: 'Open editor',
+  nodeCount: 'This canvas has {count} nodes.',
+  emptyCanvas: 'This canvas has no nodes yet, so a run cannot start. Add agent nodes and assign their models in the editor first.',
+  errorLoadCanvas: 'Loading the canvas failed',
+  errorStart: 'Starting the run failed',
+  errorMissingModel: 'Some nodes have no usable model. Choose their models in the editor and retry.',
+  errorEmptyCanvas: 'The canvas has no runnable node.',
+  errorPluginConflict: 'The plugins declared by the canvas nodes conflict; fix them in the editor before running.',
+  errorCycle: 'The canvas delegation edges contain a cycle; fix them in the editor before running.',
+})

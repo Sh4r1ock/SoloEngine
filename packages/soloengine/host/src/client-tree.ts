@@ -125,7 +125,7 @@ export function runBootstrapRows(input: RunBootstrapInput): IndexInjection[] {
   return [
     { kind: 'global', name: '__SOLOENGINE_RUN_FLOW__', value: input.flowId },
     ...input.sessionKey === undefined
-      ? []
+      ? [{ kind: 'global' as const, name: '__SOLOENGINE_RUN_EMPTY__', value: true }]
       : [{ kind: 'global' as const, name: '__SOLOENGINE_RUN_SESSION__', value: input.sessionKey }],
     { kind: 'global', name: '__SOLOENGINE_CLIENT_OFF__', value: input.disabled },
     ...instanceRows,

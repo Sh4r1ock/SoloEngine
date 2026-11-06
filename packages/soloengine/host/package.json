@@ -35,6 +35,8 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/dsh-client-ui-directory-picker-browse": "workspace:*",
+    "@deepseek-ai/dsh-host-directory-picker-browse": "workspace:*",
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-plugin-manager": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",

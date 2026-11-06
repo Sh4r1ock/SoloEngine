@@ -57,6 +57,13 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   const app = express()
   app.disable('x-powered-by')
   app.use(express.json({ limit: '32mb' }))
+  // 空请求体（`POST /canvases/:id/compile` 这类无参数动作）在 `express.json` 之后是 undefined；
+  // 路由处理器一律按「字段可选的对象」读取请求体，因此在这里统一补成空对象，避免无体请求
+  // 走到 `body.xxx` 时抛 TypeError 被判成 500 INTERNAL（真实缺陷：编译动作全部 500）。
+  app.use((req, _res, next) => {
+    if (req.body === undefined || req.body === null) req.body = {}
+    next()
+  })
   // 业务路由挂在 `/api/solo` 前缀下：host 侧以同前缀的 webServer 前缀路由转发完整 URL，
   // Express 在此剥离前缀后按短路径匹配。
   const api = express.Router()

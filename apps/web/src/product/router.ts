@@ -1,14 +1,32 @@
 /**
  * 极简 history 路由：pushState + popstate，无第三方 router。
- * 路由表：/login、/canvases、/canvas/:id、/models、/skills、/skills/:id、
- * /mcp、/market、/packaging、/settings；未知路径落到 /canvases。
+ * 路由表来自 `@soloengine/types` 的 `productPageRoute`（唯一真源，本文件不再手写段表）；
+ * 未知路径落到 /canvases。
  */
 import { useSyncExternalStore } from 'react'
+import { matchProductRouteRoot, productPageRoute, RUN_ROUTE_ROOT, type ProductPageName } from '@soloengine/types'
 
-/** 路由名。 */
-export type RouteName =
-  | 'login' | 'canvases' | 'canvas' | 'models' | 'skills' | 'skill'
-  | 'mcp' | 'market' | 'packaging' | 'settings'
+/**
+ * 路由名：产品页面名 + 运行起始页。
+ *
+ * 运行起始页不是产品 URL 契约里的产品页面（`/run/:flow` 的归属是 Harness 面）；它只在宿主
+ * 判定「该画布还没有运行会话」时进入（`__SOLOENGINE_RUN_EMPTY__`），此时不装载 Harness 客户端树，
+ * 由管理层渲染「选目录并开始」。有会话的同一条 URL 仍由原生面板渲染。
+ */
+export type RouteName = ProductPageName | 'runStart'
+
+/**
+ * 该路径是否是运行起始页：宿主注入空态标记，且路径落在运行面板根下。
+ * @param pathname - 当前路径。
+ * @returns 画布 id；不是起始页时为 null。
+ */
+export function runStartFlow(pathname: string): string | null {
+  const empty = (globalThis as { __SOLOENGINE_RUN_EMPTY__?: boolean }).__SOLOENGINE_RUN_EMPTY__
+  if (empty !== true) return null
+  const matched = matchProductRouteRoot(pathname)
+  if (matched === undefined || matched.root.segment !== RUN_ROUTE_ROOT.segment) return null
+  return matched.param ?? null
+}
 
 /** 一次匹配结果。 */
 export interface RouteMatch {
@@ -47,23 +65,16 @@ function normalize(pathname: string): string {
 export function matchRoute(pathname: string, search = ''): RouteMatch {
   const path = normalize(pathname)
   const query = new URLSearchParams(search)
-  const segments = path.split('/').filter(segment => segment !== '')
-  const first = segments[0]
-  const second = segments[1]
-  if (first === 'login') return { name: 'login', params: {}, query, pathname: path }
-  // 画布编辑器是单数 `/canvas/:agenticFlowId`；复数 `/canvases` 是列表页。
-  if (first === 'canvas' && second !== undefined) return { name: 'canvas', params: { id: second }, query, pathname: path }
-  if (first === 'canvases') return { name: 'canvases', params: {}, query, pathname: path }
-  if (first === 'models') return { name: 'models', params: {}, query, pathname: path }
-  if (first === 'skills') {
-    if (second === undefined) return { name: 'skills', params: {}, query, pathname: path }
-    return { name: 'skill', params: { id: second }, query, pathname: path }
+  const startFlow = runStartFlow(path)
+  if (startFlow !== null) return { name: 'runStart', params: { id: startFlow }, query, pathname: path }
+  const matched = productPageRoute(path)
+  if (matched === undefined) return { name: 'canvases', params: {}, query, pathname: path }
+  return {
+    name: matched.name,
+    params: matched.param === undefined ? {} : { id: matched.param },
+    query,
+    pathname: path,
   }
-  if (first === 'mcp') return { name: 'mcp', params: {}, query, pathname: path }
-  if (first === 'market') return { name: 'market', params: {}, query, pathname: path }
-  if (first === 'packaging') return { name: 'packaging', params: {}, query, pathname: path }
-  if (first === 'settings') return { name: 'settings', params: {}, query, pathname: path }
-  return { name: 'canvases', params: {}, query, pathname: path }
 }
 
 /** 刷新快照并通知订阅者。 */
@@ -87,6 +98,8 @@ export function routeSnapshot(): RouteMatch {
 /** 导航阻塞器：有未保存态的页面（编辑器等）注册；返回提示文案，null=放行。 */
 type RouteBlocker = () => string | null
 let routeBlocker: RouteBlocker | null = null
+/** 多实例页面的阻塞器集合（例如同一页的多张上传服务器卡片）。 */
+const routeBlockers = new Set<RouteBlocker>()
 
 /**
  * 注册/清除导航阻塞器（SPA 内 navigate 统一经过；整页跳转由 beforeunload 原生承担）。
@@ -94,6 +107,27 @@ let routeBlocker: RouteBlocker | null = null
  */
 export function setRouteBlocker(blocker: RouteBlocker | null): void {
   routeBlocker = blocker
+}
+
+/**
+ * 追加一个导航阻塞器（多实例页面用：每张卡片注册一个，互不覆盖）。
+ * @param blocker - 阻塞器函数。
+ * @returns 注销函数。
+ */
+export function addRouteBlocker(blocker: RouteBlocker): () => void {
+  routeBlockers.add(blocker)
+  return () => { routeBlockers.delete(blocker) }
+}
+
+/** 任一阻塞器给出文案即拦下（先问单实例，再问多实例集合）。 */
+function blockerMessage(): string | null {
+  const single = routeBlocker === null ? null : routeBlocker()
+  if (single !== null) return single
+  for (const blocker of routeBlockers) {
+    const message = blocker()
+    if (message !== null) return message
+  }
+  return null
 }
 
 /**
@@ -106,10 +140,8 @@ export function navigate(to: string, options?: { replace?: boolean }): void {
     refresh()
     return
   }
-  if (routeBlocker !== null) {
-    const message = routeBlocker()
-    if (message !== null && !window.confirm(message)) return
-  }
+  const blocked = blockerMessage()
+  if (blocked !== null && !window.confirm(blocked)) return
   if (options?.replace === true) window.history.replaceState(null, '', to)
   else window.history.pushState(null, '', to)
   refresh()
@@ -125,14 +157,12 @@ export function openPage(to: string): void {
 
 /** popstate 监听（模块加载时挂一次）。 */
 window.addEventListener('popstate', () => {
-  if (routeBlocker !== null) {
-    const message = routeBlocker()
-    // 与 navigate() 同一判据（R33/R39）：未保存态下浏览器后退/前进不得静默丢弃改动。
-    if (message !== null && !window.confirm(message)) {
-      window.history.pushState(null, '', landedHref)
-      refresh()
-      return
-    }
+  const message = blockerMessage()
+  // 与 navigate() 同一判据（R33/R39）：未保存态下浏览器后退/前进不得静默丢弃改动。
+  if (message !== null && !window.confirm(message)) {
+    window.history.pushState(null, '', landedHref)
+    refresh()
+    return
   }
   refresh()
 })

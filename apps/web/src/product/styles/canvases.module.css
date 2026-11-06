@@ -45,8 +45,8 @@ span.searchInput {
 }
 
 span.searchInput:focus-within {
-  border-color: var(--dsw-static-deepseek-500);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-alias-bg-base));
+  border-color: var(--se-focus-outline);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--se-focus-outline) 36%, var(--dsw-alias-bg-base));
 }
 
 .searchWrap input {
@@ -94,8 +94,8 @@ span.searchInput:focus-within {
 
 .select:focus {
   outline: none;
-  border-color: var(--dsw-static-deepseek-500);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-alias-bg-base));
+  border-color: var(--se-focus-outline);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--se-focus-outline) 36%, var(--dsw-alias-bg-base));
 }
 
 .select:disabled {
@@ -457,7 +457,7 @@ button.iconAction:disabled {
 }
 
 .sessionDotActive {
-  background-color: var(--dsw-static-deepseek-500);
+  background-color: var(--se-accent-text);
   animation: dotPulse 1.4s var(--se-ease-standard) infinite;
 }
 

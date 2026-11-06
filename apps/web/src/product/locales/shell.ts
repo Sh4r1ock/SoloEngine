@@ -47,6 +47,7 @@ export const shell = defineDictionary({
   docTitleSettings: '设置 · SoloEngine',
   docTitleUsers: '用户管理 · SoloEngine',
   docTitleStyleguide: '设计系统 · SoloEngine',
+  docTitleRun: '运行 · SoloEngine',
 }, {
   brand: 'SoloEngine',
   brandHome: 'SoloEngine home',
@@ -93,4 +94,5 @@ export const shell = defineDictionary({
   docTitleSettings: 'Settings · SoloEngine',
   docTitleUsers: 'Users · SoloEngine',
   docTitleStyleguide: 'Design system · SoloEngine',
+  docTitleRun: 'Run · SoloEngine',
 })

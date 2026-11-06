@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, IconArchiveOutlineMedium, IconBrowseOutlineRegular,
-  IconCopyOutlineRegular, IconEllipsisOutlineRegular, IconPlayOutlineRegular, IconPlusOutlineRegular,
+  IconCopyOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconPlayOutlineRegular, IconPlusOutlineRegular,
   IconSearchOutlineRegular, IconTrashOutlineRegular,
   Input, Menu, Modal, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -353,6 +353,7 @@ export function CanvasesPage() {
                           {
                             id: 'edit',
                             label: t('canvases', 'menuEdit'),
+                            icon: <IconEditOutlineRegular size={14} />,
                             disabled: busyId === canvas.id,
                           },
                           {
@@ -696,7 +697,6 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
             />
           </Field>
         </div>
-        <NoticeLine tone="info" text={t('canvases', 'createNotice')} />
       </form>
     </Modal>
   )

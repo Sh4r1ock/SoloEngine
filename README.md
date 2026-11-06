@@ -15,7 +15,7 @@
 
 <div align="center">
 
-[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine) [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/) [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/) [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE) [![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
+[![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine) [![Node](https://img.shields.io/badge/Node-22.19%2B%20%7C%20%3E%3D24-339933?style=flat-square\&logo=node.js\&logoColor=white)](https://nodejs.org/) [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat-square\&logo=pnpm\&logoColor=white)](https://pnpm.io/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/) [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/) [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](./LICENSE) [![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
 
 </div>
 
@@ -47,16 +47,16 @@ The alternatives don't help: workflow platforms (Dify, n8n, etc.) run pre-script
 
 </div>
 
-- **Kill WorkFlow** — SoloEngine is fully ReAct-architecture-based. No preset workflows — just Think → Act → Observe → Repeat loops. Every decision is made dynamically at runtime. When an Agent hits an unexpected roadblock, it auto-adjusts its plan — no hardcoded fallback paths.
+- **Kill WorkFlow** — SoloEngine is fully ReAct-architecture-based. No preset workflows — just Think → Act → Observe → Repeat loops. Every decision is made dynamically at runtime. When an Agent hits an unexpected roadblock, it re-plans.
 - **Domain experts build directly** — A lawyer drags a Contract Review Agent onto the canvas, wires it to a Research Agent, hits run. No programmer in the loop.
-- **Tools, Skills, MCP — hot-pluggable design, progressive disclosure** — Each Agent loads only the tools and Skills it needs at runtime. Thanks to progressive disclosure, token consumption drops by over 85%.
-- **One adapter, any model** — OpenAI, Anthropic, Ollama, DeepSeek, Qwen, Zhipu — same interface, seamless switching.
+- **Tools, Skills, MCP — hot-pluggable design, progressive disclosure** — Each Agent loads only the tools and Skills it declared. Thanks to progressive disclosure, token consumption drops by over 85%.
+- **Model-agnostic** — Model access is a row of configuration (name, model, base URL, key) that becomes a runtime route. The adapter speaks the OpenAI and Anthropic protocols through pi-ai, so DeepSeek, OpenAI, Anthropic, Ollama, and OpenAI-compatible gateways share one interface.
 
 ### How It Works
 
-All Agents share the same underlying architecture — just configured differently. The canvas compiles directly into executable Agentic AI.
+All Agents share the same underlying architecture — just configured differently. The canvas is compiled into executable Agentic AI.
 
-1. **Compilation** — Visual layout → Agent DAG via topological sort. One compiler, infinite teams.
+1. **Compilation** — Compiling is a phase inside a run, not a separate build step: the canvas is topologically sorted into an Agent DAG when a run starts. One compiler, infinite teams.
 2. **One ReAct engine** — Every Agent runs the same Think → Act → Observe → Repeat loop.
 3. **Progressive disclosure** — Agents only load what they use at runtime, making low-code agentic AI practical.
 
@@ -71,18 +71,17 @@ All Agents share the same underlying architecture — just configured differentl
 git clone https://github.com/Sh4r1ock/SoloEngine.git
 cd SoloEngine
 
-# Backend (Python 3.11+)
-cd backend
-pip install -r requirements.txt
-python main.py
+# Dependencies (Node 22.19+ or >=24, pnpm)
+pnpm install
 
-# Frontend (Node.js 18+) — open another terminal
-cd ../frontend 
-npm install
-npm run dev
+# Self-check, then start the single-port runtime on 8991
+node soloengine-launch/bin.mjs doctor
+node soloengine-launch/bin.mjs start
 ```
 
-Open **<http://localhost:8991>** and build your first Agent team.
+The launcher prints the ready address, including the one-time process token that a fresh browser exchanges for the signed session cookie. The console and the run panel share that single port.
+
+Sign in with the seeded superuser (`system` / `system`), configure a model under **Model**, then build your first Agent team.
 
 ## Use Cases
 

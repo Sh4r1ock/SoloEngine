@@ -16,10 +16,10 @@
 <div align="center">
 
 [![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square\&logo=python\&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square\&logo=fastapi\&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Node](https://img.shields.io/badge/Node-22.19%2B%20%7C%20%3E%3D24-339933?style=flat-square\&logo=node.js\&logoColor=white)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat-square\&logo=pnpm\&logoColor=white)](https://pnpm.io/)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
 [![License](https://img.shields.io/badge/License-Apache--2.0-yellow?style=flat-square)](../../LICENSE)
 [![Ask Zread](https://img.shields.io/badge/Zread-Ask_Zread-00b0aa?style=flat-square)](https://zread.ai/Sh4r1ock/SoloEngine)
 
@@ -62,7 +62,7 @@ Agentic AI 与 Harness Engineering 正在重塑软件开发的格局——一名
 
 所有 Agent 共享同一套底层架构，区别仅在于配置方式的不同。画布上的可视化设计经过编译，直接转化为可执行的 Agentic AI。
 
-1. **编译** —— 可视化布局经拓扑排序转化为 Agent 有向无环图（DAG）。同一套编译器，可生成无数种团队组合。
+1. **编译** —— 编译是运行内部的一个阶段：发起运行时把画布按委派边拓扑排序，编译成可执行的 Agent DAG，没有独立的构建步骤。同一套编译器，可生成无数种团队组合。
 2. **统一的 ReAct 引擎** —— 每个 Agent 均运行相同的「思考 → 行动 → 观察 → 重复」循环。
 3. **按需加载** —— 得益于编译机制，Agent 在运行时仅加载指定模型、配置的内容与工具，这让低代码环境下的 Agentic AI 变得切实可行。
 
@@ -77,15 +77,12 @@ Agentic AI 与 Harness Engineering 正在重塑软件开发的格局——一名
 git clone https://github.com/Sh4r1ock/SoloEngine.git
 cd SoloEngine
 
-# 后端 (Python 3.11+)
-cd backend
-pip install -r requirements.txt
-python main.py
+# 依赖（Node 22.19+ 或 >=24，pnpm 工作区）
+pnpm install
 
-# 前端 (Node.js 18+) —— 在另一个终端中执行
-cd frontend 
-npm install
-npm run dev
+# 自检后启动单端口运行时（8991）
+node soloengine-launch/bin.mjs doctor
+node soloengine-launch/bin.mjs start
 ```
 
 在浏览器中打开 **<http://localhost:8991>**，即可构建你的第一个 Harness。

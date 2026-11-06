@@ -3,6 +3,8 @@
  */
 import { common } from './common.ts'
 import { shell } from './shell.ts'
+import { home } from './home.ts'
+import { styleguide } from './styleguide.ts'
 import { login } from './login.ts'
 import { canvases } from './canvases.ts'
 import { editor } from './editor.ts'
@@ -13,10 +15,15 @@ import { mcp } from './mcp.ts'
 import { market } from './market.ts'
 import { packaging } from './packaging.ts'
 import { settings } from './settings.ts'
+import { users } from './users.ts'
+import { runStart } from './runStart.ts'
+import { directoryDialog } from './directoryDialog.ts'
 
 export const dictionaries = {
   common,
   shell,
+  home,
+  styleguide,
   login,
   canvases,
   editor,
@@ -27,6 +34,9 @@ export const dictionaries = {
   market,
   packaging,
   settings,
+  users,
+  runStart,
+  directoryDialog,
 }
 
 /** 命名空间名。 */

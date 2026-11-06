@@ -1,33 +1,38 @@
 # SoloEngine 组合层（profile 的最后一个 bundle 层）。
 #
 # 本层在 dsh-base 与 dsh-web-app 之上叠加 SoloEngine 的差异，全部为「原生形态注入」
-# （PRD-01 FR-ARCH-050）：存储后端指向业务库、技能发现自定义根、运行面板不设模型分节、
-# 以及框架层挂载行。不做数据转换层、不做双写。
+# （PRD-01 FR-ARCH-050）：技能发现自定义根、运行面板不设模型分节、以及框架层挂载行。
+# 不做数据转换层、不做双写。
+#
+# **数据库形态不写在本层**：单机（SQLite）与云（PostgreSQL）各自是一份形态覆盖文件
+# `cordis.form-single.patch.yml` / `cordis.form-cloud.patch.yml`，由启动器按
+# `SOLOENGINE_DB_FORM` 以 `--patch` 叠加。两套插件（键值后端、会话日志、会话检索）
+# 都随包安装，启动时只激活对应那套；打包产物恒取单机形态，把三个 PG 流程级插件
+# 整组替换为三个 SQLite 插件（本层因此保持形态中立，不需要在产物里改条件）。
 #
 # 环境变量（由 soloengine-launch 设置，未设置即加载期报错——无回退默认值）：
 #   SOLOENGINE_ROOT  实例根目录（data/ 的父级）
 #   SOLOENGINE_DB    业务库绝对路径（data/database/soloengine.db）
+#   SOLOENGINE_DB_FORM  数据库形态（single | cloud）
+#   SOLOENGINE_DATABASE_URL  云形态 PostgreSQL 连接串
 #   SOLOENGINE_KEYS_DIR   主密钥目录（data/home/keys，DB 密钥模型适配器解密用）
 #   SOLOENGINE_SKILLS_DIR  框架层技能目录（技能发现的自定义根）
 
 - insert:
-    # 业务库后端：dsh storage 机制（单元表/元数据表）与业务表同库共存，以表分割。
-    - id: storage-sqlite
-      name: '@deepseek-ai/dsh-storage-sqlite'
-      config:
-        path: !!js process.env.SOLOENGINE_DB
-        journalMode: wal
-
     # 框架层挂载：Express REST 挂进 host-webserver 的同一条 HTTP 服务（唯一端口）。
     - id: soloengine-host
       name: '@soloengine/host'
       config:
         root: !!js process.env.SOLOENGINE_ROOT
+        databasePath: !!js process.env.SOLOENGINE_DB
+        databaseForm: !!js process.env.SOLOENGINE_DB_FORM
+        databaseUrl: !!js process.env.SOLOENGINE_DATABASE_URL
         prefix: /api/solo
 
     # ── 阶段 5 引擎接入：DB 密钥模型路由 + 特有工具 + 预览记录（完全自研，Host 面）────
 
-    # DB 密钥模型适配器：llm_configs 每行 → 一条 soloengine-<id> 路由，秒级轮询热同步。
+    # 模型路由适配器：管理层每条启用配置 → 一条 soloengine-<id> 路由，秒级轮询热同步。
+    # 适配器只注入 soloengineModelRoutes 服务（路由事实 + 已解密密钥），不读业务库、不持有主密钥。
     #
     # pollMs 必须**显著小于** NFR-PER-008 的 3 秒上界：轮询方案的最坏时延 =「一个周期 + 重算」，
     # 周期取得与上界相同（此处曾配 3000）必然越界——本机实测 3059ms > 3000ms 判定失败。
@@ -36,8 +41,6 @@
     - id: soloengine-llm-db-adapter
       name: '@soloengine/llm-db-adapter'
       config:
-        dbPath: !!js process.env.SOLOENGINE_DB
-        keysDir: !!js process.env.SOLOENGINE_KEYS_DIR
         pollMs: 1000
 
     # 特有工具：get_diagnostics（运行诊断）。
@@ -49,16 +52,13 @@
       name: '@soloengine/open-preview'
 
     # ── 阶段 6 运行面板叠加：SoloEngine 自研浏览器面（dsh.client 行）────────────
-    # 产品呈现叠加，会话数据不动：品牌座位、会话头座位、对话节点、URL 直达，全部经
-    # 原生槽位与投影注册进入；阶梯 token 由 @soloengine/ui-theme 提供（一份定义两处消费）。
+    # 产品呈现叠加，会话数据不动：会话头工具座位、对话节点、URL 直达，全部经
+    # 原生槽位与投影注册进入；品牌内容随 R194 改造官方 `ui-brand-official` 本体；
+    # 阶梯 token 由 @soloengine/ui-theme 提供（一份定义两处消费）。
 
-    # 设计语言阶梯（--se-space/radius/z）：运行面板侧注入插件自有样式。
+    # 设计语言阶梯（--se-space/z）：运行面板侧注入插件自有样式。
     - id: soloengine-ui-theme
       name: '@soloengine/ui-theme'
-
-    # 品牌与产品呈现：侧栏品牌行 + 无会话首屏品牌标记。
-    - id: soloengine-ui-brand
-      name: '@soloengine/ui-brand'
 
     # 会话头座位与对话节点与预览卡片：conversation.session.header.* + 键控 conversation.chat.node。
     - id: soloengine-ui-conversation
@@ -77,13 +77,13 @@
 
     - id: terminal-bash
       name: '@deepseek-ai/dsh-terminal-bash'
-      disabled: !!js process.platform === 'win32'
+      disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) === 'win32'"
       config:
         timeoutMs: 300000
 
     - id: terminal-pwsh
       name: '@deepseek-ai/dsh-terminal-bash'
-      disabled: !!js process.platform !== 'win32'
+      disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) !== 'win32'"
       config:
         shellDialect: pwsh
         timeoutMs: 300000
@@ -92,25 +92,14 @@
     - id: tool-terminal
       name: '@deepseek-ai/dsh-tool-terminal'
 
-    # 终端面板：以同名 kind `terminal` 的 extension 档接管（owner 归属唯一为 ctx.terminals）。
-    - id: soloengine-ui-terminal-owner
-      name: '@soloengine/ui-terminal-owner'
-
-    # 编辑型文件树：以同名 kind `files` 的 extension 档接管（只读 → 可编辑）。
-    - id: soloengine-ui-sidebar-files
-      name: '@soloengine/ui-sidebar-files'
-
-    # 编辑器/文档面板：在官方 documentpreviews 注册表上补编辑能力与 Office 浏览器内渲染。
+    # 编辑器（R190）：查看归官方文档预览；编辑是新增的独立 tab 类型（kind `soloengine-editor`），
+    # 只经官方文档动作座位显式打开，正文与保存走原生 workspaceFiles 读取/写回。
     - id: soloengine-ui-document-editor
       name: '@soloengine/ui-document-editor'
 
-    # 操作区联动层 + 浏览器面板 + 变更面板（呈现意图驱动 openResource/openTab）。
+    # 操作区联动层 + 变更面板（呈现意图驱动 openResource/openTab；浏览器页签由官方本体承担）。
     - id: soloengine-ui-operation-area
       name: '@soloengine/ui-operation-area'
-
-    # 终端桥（Host 面）：ctx.terminals 的 owner 归属会话经同一条 HTTP 服务暴露给浏览器。
-    - id: soloengine-terminal-bridge
-      name: '@soloengine/terminal-bridge'
 
     # 浏览器同源代理（Host 面）：catch-all 持续代理 + SSRF 五条防线 + 链接重写 + WS 转发。
     - id: soloengine-browser-proxy
@@ -129,35 +118,31 @@
 
 # ── 覆盖（patch 整体替换该行 config，故每行重述它拥有的全部键）──────────────
 
-# 溢写（PRD-06 FR-ENG-023）：基线 dsh-base 已装载 spill-local + spill-policy（阈值 50000 字节）。
-# 本层覆写为 PRD 规定的 5MB（5 * 1024 * 1024 = 5242880 字节）：模型可见结果超过 5MB 才溢写外存，
+# 执行世界的命令方言（R201）：容器形态的执行世界是 Linux 镜像，本机形态跟宿主平台。
+# `ctx.shell` 的提供方（bash/pwsh 执行器）在这里按同一事实选一次；agent 预设里的命令工具
+# 与上面的终端行读同一个事实。容器覆盖只替换 subprocess/sandbox 提供方，不再重复启停这些行。
+- id: bash-sandbox
+  disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) === 'win32'"
+
+- id: pwsh-sandbox
+  disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) !== 'win32'"
+
+# 溢写（PRD-06 FR-ENG-023）：基线 dsh-base 已装载 spill-local + spill-policy（原生键 maxInlineTokens=12500）。
+# 本层覆写为 PRD 规定的 5MB 目标：按约 4 字节/token 换算为 1,310,720 token，模型可见结果超过该阈值才溢写外存，
 # 模型侧只见头尾预览 + 定位符。外存根固定到实例数据目录（v8 目录结构 data/spill/），不落系统临时目录。
 # patch 整体替换 config，故两行各自重述它们拥有的全部键（基线 spill-local 无显式 config、
-# spill-policy 仅 maxInlineBytes 一键）。
+# spill-policy 仅 maxInlineTokens 一键；不得写原生 schema 不认的 maxInlineBytes）。
 - id: spill-local
   config:
     root: !!js process.env.SOLOENGINE_ROOT + '/data/spill'
 
 - id: spill-policy
   config:
-    maxInlineBytes: 5242880
+    maxInlineTokens: 1310720
 
-# dsh 的非会话 KV（workspace 注册、投影缓存）改走 SQLite 后端，与业务表同库。
-- id: storage-domain
-  config:
-    backend: sqlite
-
-# 会话全文检索：opt-in 打开，**指向专用派生索引文件**（可丢弃、可重建，见《持久化存储完整设计》
-# §2.1 表：全文搜索索引 = 可丢弃的派生只读索引）。
-#
-# 纪律：该插件的 `path` 必须是空文件或它自己签名的索引库——它按 PRAGMA application_id / user_version
-# 校验，遇到任何别的库（例如业务库）会**拒绝打开**（"is not an empty or recognized derived index"）；
-# 一旦拒绝，冷会话的 `observeSession` 就查不到（面板表现为「历史加载失败：session … not found」）。
-# 故索引独立成文件，放 harness home 的 index/ 下，与业务库（soloengine.db）分开。
-- id: session-query-sqlite
-  config:
-    path: !!js dshHomePath('index/session-search.db')
-    openAt: first-search
+# dsh 的非会话 KV（workspace 注册、投影缓存）后端与全文检索索引都属于数据库形态：
+# 单机走 SQLite（storage-sqlite + 独立派生索引文件），云走 PostgreSQL（storage-postgres
+# + search schema），见形态覆盖文件。
 
 # 技能发现的自定义根：框架层启用中的技能目录（PRD-04 接线）。
 - id: skill-filesystem
@@ -168,6 +153,20 @@
 # 运行面板不设「模型/凭据」入口：模型配置与密钥属框架层（PRD-03 FR-LLM-008）。
 - id: ui-settings-models
   disabled: true
+
+# 目录选择钉在**页内浏览**形态（替换基线 `directory-picker-auto` 的自适应选择）。
+# 产品是 Web 控制台：运行起始页的「选目录」必须在页面内完成——远程/局域网访问时宿主桌面上的
+# OS 选择器无法驱动，原生对话框在部分 Windows 会话里还会被系统直接确认（实测返回进程工作目录），
+# 结果既不可控也不可复现。门面仍是同一个 `ctx.directoryPicker` seam，只换后端与前端两行；
+# 运行面板里的「添加工作区」也随这一行换成同一套页内对话框。
+- id: directory-picker
+  disabled: true
+
+- insert:
+    - id: directory-picker-browse
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+    - id: ui-directory-picker-browse
+      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'
 
 # ── 阶段 7：文件变更记录与撤回（PRD-09）───────────────────────────────────────
 # 主干 @anionex/dsh-turn-rewind 的自动回合检查点基线关闭，由 SoloEngine 侧按工作区边界开启
@@ -180,48 +179,23 @@
   config:
     turnCheckpointMode: off
 
-# ── 阶段 7：权限三档（PRD-10 FR-SEC-003/006）─────────────────────────────────
-# 「沙箱档位 + 审批策略」打包的预设表整行重述：四档齐全（只读 / 工作区可写 / 白名单 / 全权），
-# 默认档 = 工作区可写（每次询问）。第三档 `approve-for-me` 的放行判定由主干
-# `dsh-approve-for-me` 在 `approval/request` 上承担（其 patch 层同样声明本行；本层重述以固定
-# SoloEngine 出厂取值与默认档——预设选择本身是仅入日志的用户意图）。会话档位由画布运行模式在
-# 会话创建时经 `permissionPresets.set` 写入（packages/soloengine/host/src/permission-allowlist.ts）。
-- id: permission
-  config:
-    presets:
-      read-only:
-        sandbox: read-only
-        approval: ask
-      workspace-write:
-        sandbox: workspace-write
-        approval: ask
-      approve-for-me:
-        sandbox: workspace-write
-        approval: ask
-        name: 白名单（Approve for me）
-        description: 沙箱提权先经确定性规则判定，未命中即回到原生审批；无应答者时 fail-closed
-      danger-full-access:
-        sandbox: danger-full-access
-        approval: never
-    defaultPreset: workspace-write
+# ── 阶段 7：权限档位（PRD-10 FR-SEC-003/006）─────────────────────────────────
+# 预设表**不重述**：原生 base 层已声明只读 / 工作区可写 / 白名单自动 / 完全访问四档；
+# 第四档 `approve-for-me` 的规则判定在原生 `permission` 实现体内（原三档不动、2 种策略不变）。
+# 本层只做一件事：运行时把画布选定的档位（原生预设名）经 `permissionPresets.set` 写入会话
+# （packages/soloengine/host/src/permission-allowlist.ts）；缺失服务或未知预设名在创建运行前 fail loud。
 
 # ── 阶段 6b：同一功能只装载一个插件（PRD-08 §1）──────────────────────────────
-# 官方只读文件树与官方终端面板分别由 @soloengine/ui-sidebar-files 与
-# @soloengine/ui-terminal-owner 以同名 kind 的 extension 档接管（kind `files` / `terminal`）。
-# 接管语义保证正文不渲染，但官方插件自带的引导页条目与终端恢复贡献仍会注册——
-# 故显式禁用这两行，使「同一功能只装载一个插件」成立（卸载本插件后按原样装回即可恢复原生）。
-- id: ui-sidebar-files
-  disabled: true
-
-- id: ui-sidebar-terminal
-  disabled: true
-
-# 品牌行：平台的官方品牌填充与 @soloengine/ui-brand 注册的是**同一对 single 座位**
-# （`sidebar.brand.mark` / `sidebar.brand.name`，声明者是 ui-sidebar）。single 座位在同优先级
-# 上二次注册会 fail loud 抛出（`single slot "…" already has a registration`），该 entry 的 fiber
-# 随即 FAILED，boot 审计把整页判为启动失败（运行面板显示 `Failed to load plugins
-# @deepseek-ai/dsh-client-ui-brand-official`）。@soloengine/ui-brand 的注册点即产品品牌的
-# 「替换点」，故按「同一功能只装载一个插件」禁用平台行——与上面两行同法（卸载本插件后
-# 按原样装回即可恢复官方品牌）。
-- id: ui-brand-official
-  disabled: true
+# 文件树（R187）、终端（R188）、品牌（R194）与浏览器页签（R189）都已改造原包本体：
+# 官方行保持启用，仓库无同名替代包。终端面板接的是本会话的 agent 终端（`ctx.terminals`），
+# 其 HTTP 面就是官方 `api/terminal-controller` 新增的 owner 作用域方法。
+#
+# 浏览器：官方 `ui-sidebar-browser` 在 web-app 层只在 `desktop` profile 开启；本产品要求
+# 所有形态都有浏览器页签，故在此对所有形态开启，并把 iframe 指向同源代理
+# `@soloengine/browser-proxy`（SSRF 五条防线、链接重写、父页隔离都在该代理后端）。
+# `proxyPrefix` 是官方包新增的 Host 配置（空即直连，保持上游行为）：目标被拒时页签呈现
+# 代理返回的 code/message，而不是超时假死。
+- id: ui-sidebar-browser
+  disabled: false
+  config:
+    proxyPrefix: /soloengine/proxy

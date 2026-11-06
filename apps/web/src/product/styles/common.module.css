@@ -13,10 +13,13 @@
 
 .header {
   display: flex;
-  align-items: flex-start;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--se-space-4);
+  /* 原型 `.page-header`：标题区与操作区间距 24（--s-5）。 */
+  gap: var(--se-space-5);
   flex-wrap: wrap;
+  /* 页头到内容 32px：页面 section 间距 24 + 这 8（需求文档 §12.4）。 */
+  margin-bottom: var(--se-space-2);
 }
 
 .headerText {
@@ -25,17 +28,44 @@
   gap: var(--se-space-1);
 }
 
+/* 眉标（设计系统页）：等宽 12/20 + 6px 蓝点（设计参考 docs/01 §2.3）。 */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  margin-bottom: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.06em;
+}
+
+.eyebrow::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--se-accent-text);
+}
+
 .title {
   margin: 0;
-  font: var(--dsw-font-l-20);
+  /* 页面标题 28/36（需求文档 §12.4）。 */
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--dsw-alias-label-primary);
 }
 
 .subtitle {
   margin: 0;
-  font: var(--dsw-font-s-14);
-  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
-  font-size: var(--dsh-content-font-size, 14px);
+  /* 副标题 13/22，最大 62ch（需求文档 §12.2）。 */
+  font-size: 13px;
+  line-height: 22px;
+  max-width: 62ch;
   /* tertiary 浅色 3.71:1（WCAG 1.4.3 需 4.5:1）→ secondary（S14 统一升级，F31）。 */
   color: var(--dsw-alias-label-secondary);
 }
@@ -45,6 +75,8 @@
   align-items: center;
   gap: var(--se-space-2);
   flex-wrap: wrap;
+  /* 原型 `.page-header__actions`：操作区始终右对齐（换行后也不左飘）。 */
+  justify-content: flex-end;
 }
 
 .toolbar {
@@ -54,46 +86,39 @@
   flex-wrap: wrap;
 }
 
-/* 工具栏搜索框：原生 Input 的 wrap 按内容收缩（实测 163px），英文占位文案放不进去
-   （canvases 140/235、skills 182/290 中英宽度，可用宽仅 159）→ 占位被静默裁切且无省略号
-   （R14 长文本容错 / R20 截断线索）。搜索框是工具栏主控件：随剩余宽度增长，上限 360px
-   避免在宽屏上拉成一条无意义的长槽；窄行由 `.toolbar` 的 flex-wrap 换行兜底。 */
+/* 工具栏搜索框按原型 `.search` 定宽：min-width 220px，实测渲染 226px（输入框固有宽度）；
+   原先 360px 上限会把工具栏搜索槽拉得比原型长一截。窄行仍可收缩，由 `.toolbar` 的
+   flex-wrap 兜底。 */
 .toolbarSearch {
-  flex: 1 1 240px;
-  max-width: 360px;
+  flex: 0 1 226px;
+  min-width: 0;
 }
 
 .toolbarSpacer {
   flex: 1 1 auto;
 }
 
+/* 原型 `.notice`（docs/03 §6）：surface 底 + 发丝描边 + 图标，12/20；成功路径用
+   `.notice--accent`（accent-weak 底 + accent-line 描边 + 墨色文字），都不引入红/绿。 */
 .errorLine,
 .successLine,
 .infoLine {
   display: flex;
   align-items: flex-start;
   gap: var(--se-space-2);
-  padding: var(--se-space-2) var(--se-space-3);
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
   border-radius: var(--se-radius-sm);
-  font: var(--dsw-font-s-14);
-  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
-  font-size: var(--dsh-content-font-size, 14px);
-  border: 0.5px solid var(--dsw-alias-border-l3);
-}
-
-.errorLine {
-  color: var(--dsw-alias-state-error-primary);
-  /* 通知边框随语气走（手册 §三.7）：错误行用状态色描边，不再用中性 l3——
-     否则红字落在灰框里形似「禁用输入框」，与输入框在视觉上无法区分。 */
-  border-color: var(--dsw-alias-state-error-primary);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .successLine {
-  /* 文字用产品层随主题翻转的成功文字别名（product.css 定义）：
-     浅色下 primary green-500 在白底只有 2.28:1，不满足 WCAG 1.4.3。 */
-  color: var(--se-notice-success-text);
-  /* 描边保持语气色（手册 §三.7），描边是装饰性的，不承担文字对比度义务。 */
-  border-color: var(--dsw-alias-state-success-primary);
+  border-color: var(--se-accent-line);
+  background-color: var(--se-accent-weak);
+  color: var(--dsw-alias-label-primary);
 }
 
 .infoLine {
@@ -114,6 +139,13 @@
    图标被压到 1px 宽（svg 16→1，装饰图形消失）；此处显式锁定为固有尺寸。 */
 .noticeIcon {
   flex: none;
+  margin-top: var(--se-space-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 原型 `.notice--accent .icon`：成功路径的图标用品牌蓝（走主题感知的 accent 阶梯）。 */
+.successLine .noticeIcon {
+  color: var(--se-accent-text);
 }
 
 /* 通知行的行内操作（重试/重新加载）：链接式按钮（规范红线 6——link token + 字重 500 +
@@ -124,12 +156,13 @@
   margin-left: auto;
   flex: 0 0 auto;
   background-color: transparent;
-  color: var(--dsw-alias-link);
-  font: var(--dsw-font-s-14);
+  /* 链接用墨色 + 下划线，蓝色只留给焦点/激活/品牌强调（需求 §12.1、§12.5 反模式）。 */
+  color: var(--dsw-alias-label-primary);
+  font: var(--se-font-body);
   font-size: var(--dsh-content-font-size, 14px);
   font-weight: 500;
   cursor: pointer;
-  text-decoration: none;
+  text-decoration: underline;
   /* 命中区必须 ≥24×24（WCAG 2.5.8 / R11）：`padding:0` 的纯文字链接实测只有 28×22，
      竖向差 2px。用阶梯撑到 24（与 login `.linkButton` 同一做法，红线 3 不造散值），
      链接式外观（红线 6）保持不变。 */
@@ -144,29 +177,84 @@
   text-decoration: underline dotted;
 }
 
-/* 破坏性确认键（手册 D47：危险动作必须可辨识）。Button 原语无 danger variant 且
-   DSH 原生包禁改，故产品层以 state-error 语义色组合 outline 风格；选择器带元素名
-   （button.dangerButton）以特异性压过原语 ghost 的 color/border，不用 !important。
-   深浅色各自取 red-600 / red-400，红底白字写死的方式禁用。 */
+/* 破坏性确认键（手册 D47：危险动作必须可辨识）。原型 `.btn--danger` 仍用墨色：
+   raised 底 + 加深描边 + 墨色文字，hover 换 surface 并加深到墨色，不引入红色
+   （docs/03 §1.1「危险 … 仍使用墨色」）。选择器带元素名
+   （button.dangerButton）以特异性压过原语 ghost 的 color/border，不用 !important。 */
 button.dangerButton {
-  border: 0.5px solid var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-state-error-primary);
-  background-color: transparent;
+  border: 0.5px solid color-mix(in srgb, var(--dsw-alias-label-secondary) 42%, var(--se-hairline));
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-layer-1);
 }
 
 button.dangerButton:hover:not(:disabled) {
+  border-color: var(--dsw-alias-label-primary);
   background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* 原型 `.badge--accent`（docs/03 §3）：accent-weak 底 + accent-line 描边 + 墨色文字；
+   5px 蓝点由调用点的 `<span aria-hidden>` 提供。Tag 的 info tone 只有 10% 蓝底，
+   缺描边，故产品层按原型配方补齐（与模型页 `.badgeAccent`、样式指南 `.badgeAccent`
+   同一写法：强调描边 + 浅蓝底，深浅色由 `--se-accent-line/--se-accent-weak` 承担）。 */
+span.accentTag[data-tone] {
+  /* 原型 base.css 全局 border-box：20px 是含 0.5px 描边的总高（缺省实测 22）。 */
+  box-sizing: border-box;
+  gap: var(--se-space-1);
+  border: 0.5px solid var(--se-accent-line);
+  background-color: var(--se-accent-weak);
+  color: var(--dsw-alias-label-primary);
 }
 
 .empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--se-space-8);
+  padding: var(--se-space-7);
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
+}
+
+/* 空态：图标 + 标题 + 一句解释 + 一个恢复动作（需求文档 §12.4「空态」）。 */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-7) var(--se-space-5);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  /* 正文 14/24（规范 §2）：14px 文本一律 24 行高，不用 22。 */
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.emptyDesc {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .cardGrid {
@@ -181,7 +269,7 @@ button.dangerButton:hover:not(:disabled) {
   gap: var(--se-space-3);
   padding: var(--se-space-4);
   border-radius: var(--se-radius-md);
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--se-hairline);
   background-color: var(--dsw-alias-bg-layer-1);
   transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
@@ -241,6 +329,26 @@ button.dangerButton:hover:not(:disabled) {
   border-radius: var(--se-radius-full);
   /* 信息蓝填充（真源 token；原 --dsw-alias-accent-primary 不存在，静默失效成透明条）。 */
   background-color: var(--dsw-alias-button-info-fill);
+}
+
+/* 请求数维度与 tokens 同一行上下两条（同一归一化轨道，跨行可比）。 */
+.chartBars {
+  display: flex;
+  flex-direction: column;
+  /* 两条维度条必须留缝：0 会把 tokens / 请求数并成一根 16px 条（语义丢失），
+     故取阶梯最小非零值 4（此前的 2px 是阶梯外的散值）。 */
+  gap: var(--se-space-1);
+}
+
+.chartBarFillRequests {
+  background-color: var(--dsw-alias-state-success-primary);
+}
+
+/* 统计窗口说明（最近 N 个会话 / 共 M 个）：与图表同卡，读数前先给范围。 */
+.chartNote {
+  margin-top: var(--se-space-2);
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .chartValue {
@@ -303,7 +411,7 @@ button.dangerButton:hover:not(:disabled) {
 }
 
 .cardBody {
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
@@ -375,7 +483,7 @@ span.statusTag[data-tone] {
 
 .tableWrap {
   border-radius: var(--se-radius-md);
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--se-hairline);
   overflow-x: auto;
 }
 
@@ -398,8 +506,8 @@ span.statusTag[data-tone] {
 .table td {
   text-align: left;
   padding: var(--se-space-3);
-  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
-  font: var(--dsw-font-s-14);
+  border-bottom: 0.5px solid var(--se-hairline);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
@@ -407,9 +515,13 @@ span.statusTag[data-tone] {
 }
 
 .table th {
-  font: var(--dsw-font-s-strong-14);
-  font-size: var(--dsh-content-font-size, 14px);
-  color: var(--dsw-alias-label-primary);
+  /* 原型 `.table th`：36px、12/20 · 500、次级色、subtle 底（浅色 #f9fafb）。 */
+  box-sizing: border-box;
+  height: 36px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
   background-color: var(--dsw-alias-bg-module-platform);
   /* 表头单词不折行：列宽被挤压时「默认」会折成 默/认 两行（实测 23px 列宽），
      表头应整词呈现——由 min-width/列宽治理（§三.5）保证空间，而不是折字。 */
@@ -482,8 +594,10 @@ span.statusTag[data-tone] {
   max-height: calc(100dvh - 48px);
 }
 
-.modalWide {
-  width: min(640px, 100%);
+/* 原型 §5.2 的宽档只有 760（lg）与 920（xl）；原 640 不在档位内。
+   双类提高特异性，压过产品默认宽度（520px）。 */
+.modalWide.modalWide {
+  width: min(760px, 100%);
 }
 
 .modalScroll {
@@ -512,17 +626,43 @@ span.statusTag[data-tone] {
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1);
+  /* 原型 `.field`：标签与控件间距 8px（docs/03 §2.1、§13）。 */
+  gap: var(--se-space-2);
   min-width: 0;
 }
 
+/* 原型 `.field-label`：12/20 · 500 · 主文字色（不是次级色）。 */
 .fieldLabel {
-  font: var(--dsw-font-xs-strong-13);
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* 原型 `.field-label__meta`：标签后的弱化小字（常规字重、三级色）。 */
+.fieldMeta {
+  margin-left: var(--se-space-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 400;
+}
+
+/* 仅供屏幕阅读器的标题（原型 base.css `.sr-only`）。 */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .fieldHint {
-  font: var(--dsw-font-xxs-12);
+  /* 原型 `.field-hint`：12/20 次级色。 */
+  font-size: 12px;
+  line-height: 20px;
   /* caption 浅色 2.13:1（WCAG 1.4.3 需 4.5:1）→ secondary（S14 统一升级，F31）。 */
   color: var(--dsw-alias-label-secondary);
 }
@@ -540,10 +680,10 @@ span.statusTag[data-tone] {
   resize: vertical;
   padding: var(--se-space-2) var(--se-space-3);
   border-radius: var(--se-radius-sm);
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--se-hairline);
   background-color: var(--dsw-specific-input-major);
   color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   transition: border-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
@@ -558,11 +698,15 @@ input[class*="_input_"] {
   font-size: var(--dsh-content-font-size, 14px);
 }
 
+.textarea:hover:not(:disabled):not(:focus) {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+/* 原型 `.textarea:focus`：蓝色描边 + 3px 焦点环，与产品输入框同一焦点态。 */
 .textarea:focus {
   outline: none;
-  /* 与 ui-primitives Input 的 focus 同色（.wrap:focus-within 用 brand-primary）：
-     同为输入控件，聚焦态必须一致，否则 textarea 聚焦变灰、input 聚焦变蓝。 */
-  border-color: var(--dsw-alias-brand-primary);
+  border-color: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-alias-bg-base));
 }
 
 .textareaMono {
@@ -615,7 +759,7 @@ input[class*="_input_"] {
 }
 
 .definitionValue {
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
@@ -672,7 +816,7 @@ input[class*="_input_"] {
 .stepperValue {
   min-width: 48px;
   text-align: center;
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-primary);
@@ -686,7 +830,7 @@ input[class*="_input_"] {
   overflow-y: auto;
   padding: var(--se-space-2);
   border-radius: var(--se-radius-sm);
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--se-hairline);
 }
 
 .checkRow {
@@ -695,7 +839,7 @@ input[class*="_input_"] {
   gap: var(--se-space-2);
   padding: var(--se-space-1) var(--se-space-2);
   border-radius: var(--se-radius-xs);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
@@ -736,7 +880,7 @@ input[class*="_input_"] {
   gap: var(--se-space-1);
   padding: var(--se-space-2);
   border-radius: var(--se-radius-sm);
-  border: 0.5px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--se-hairline);
   max-height: 320px;
   overflow-y: auto;
 }
@@ -750,7 +894,7 @@ input[class*="_input_"] {
   border-radius: var(--se-radius-xs);
   background-color: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   text-align: left;
@@ -770,7 +914,7 @@ input[class*="_input_"] {
   gap: var(--se-space-2);
   padding: var(--se-space-1) var(--se-space-2);
   border-radius: var(--se-radius-xs);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
 }
@@ -778,6 +922,44 @@ input[class*="_input_"] {
 /* 静态行的失败语义变体（导入被拒文件等）：error 前景色，不用「激活高亮」表达拒绝。 */
 .listRowError {
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* 原型 `.terminal`（docs/03 §7）：正文等宽 11/18，头行 34px（8 + 18 + 8）。原语把字体与
+   行高暴露为可重绑的 CSS 变量，产品层按原型收紧；不改正原语默认，运行面板不受影响。 */
+.terminal {
+  --dsl-terminal-font: 11px/18px var(--dsh-font-family-code-default);
+  --dsl-terminal-line-height: 18px;
+}
+
+.terminal [class*='_header_'] {
+  padding-top: var(--se-space-2);
+  padding-bottom: var(--se-space-2);
+}
+
+/* 原型 `.field-error`：墨色文字 + 14px 圆形 `!` 标记，不使用红色（docs/03 §2.1）。 */
+.fieldError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.fieldError::before {
+  content: '!';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: var(--se-space-1);
+  border: 1px solid var(--dsw-alias-label-primary);
+  border-radius: var(--se-radius-full);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* 三列静态行（打包页「配置层」清单等）：`.listRow` 是 flex，首列按内容取宽，
@@ -790,7 +972,7 @@ input[class*="_input_"] {
      （实测 insert 29px / patch 30px → 摘要列起点 510 与 511 两值）。
      48px 取自间距阶梯，且后端 `kind` 是 'insert' | 'patch' 闭合联合（真源
      `packaging.ts` L27），30px 为最宽取值，故定宽不会裁字。 */
-  grid-template-columns: minmax(0, 200px) var(--se-space-8) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 200px) var(--se-space-7) minmax(0, 1fr);
   align-items: baseline;
 }
 
@@ -811,7 +993,7 @@ input[class*="_input_"] {
   display: flex;
   align-items: center;
   gap: var(--se-space-2);
-  font: var(--dsw-font-s-14);
+  font: var(--se-font-body);
   /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
   font-size: var(--dsh-content-font-size, 14px);
   color: var(--dsw-alias-label-secondary);
@@ -825,11 +1007,51 @@ input[class*="_input_"] {
   min-height: 0;
 }
 
+/* 原型 `.btn-spinner`：13px 圆环，随触发控件的 currentColor 走。 */
+.spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--se-radius-full);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 900px) {
+  /* 页面头部纵向排列（设计参考 docs/02 §3）。 */
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headerActions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  /* 移动端左右安全边距 16（设计参考 docs/02 §8）。 */
+  .page {
+    padding: var(--se-space-4);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .card,
   .checkRow,
   .treeItem,
   .textarea {
     transition: none;
+  }
+
+  .spinner {
+    animation: none;
   }
 }

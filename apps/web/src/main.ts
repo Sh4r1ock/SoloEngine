@@ -11,7 +11,6 @@
  * the `soloengine-return` cookie. This entry consumes that cookie once, before mounting, and
  * restores the address bar — so `http://127.0.0.1:8991/run/<flow>` lands on the panel directly.
  */
-import '@deepseek-ai/dsh-client-ui-theme/brand-font.css'
 import { AppWebEntry, applyIndexInjections } from '@deepseek-ai/dsh-client-web'
 import { isProductPagePathname } from '@soloengine/types'
 
@@ -63,7 +62,10 @@ const reportFailure = (reason: unknown): void => {
 try {
   const el = document.getElementById('root')
   if (el === null) throw new Error('web app: missing #root')
-  if (isProductPagePathname(window.location.pathname)) {
+  // `/run/:flow` 还没有运行会话时宿主注入空态标记：这一屏属于管理层（选目录并发起运行），
+  // 由产品应用渲染起始页；有会话时同一条 URL 不带该标记，仍装载原生面板。
+  const emptyRunPanel = (globalThis as { __SOLOENGINE_RUN_EMPTY__?: boolean }).__SOLOENGINE_RUN_EMPTY__ === true
+  if (isProductPagePathname(window.location.pathname) || emptyRunPanel) {
     void import('./product/main.tsx').then(
       ({ mountProductApp }) => { mountProductApp(el) },
       (reason: unknown) => { console.error('web app: product page module failed to load', reason) },
