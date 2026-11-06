@@ -807,21 +807,6 @@ input[class*="_input_"] {
   min-width: 0;
 }
 
-.stepper {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--se-space-2);
-}
-
-.stepperValue {
-  min-width: 48px;
-  text-align: center;
-  font: var(--se-font-body);
-  /* 正文走内容字号轴（NFR-L10N-002 全局生效）：阶梯只留字重/字族/行高，字号由用户档位派生。 */
-  font-size: var(--dsh-content-font-size, 14px);
-  color: var(--dsw-alias-label-primary);
-}
-
 .checkList {
   display: flex;
   flex-direction: column;

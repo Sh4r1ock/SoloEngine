@@ -18,7 +18,6 @@ import { Glyph } from '../components/Glyph.tsx'
 import { Field } from '../components/Field.tsx'
 import { IconPicker } from '../components/IconPicker.tsx'
 import { useToastHost } from '../components/Toaster.tsx'
-import { NumberStepper } from '../components/NumberStepper.tsx'
 import { MultiSelectList } from '../components/MultiSelectList.tsx'
 import type { MultiSelectStale } from '../components/MultiSelectList.tsx'
 import { ThemeCycleButton } from '../components/ThemeCycleButton.tsx'
@@ -359,7 +358,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const [primaryId, setPrimaryId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [groups, setGroups] = useState<Record<string, boolean>>({
-    identity: true, model: true, prompt: true, tools: false, skills: false, mcp: false, sampling: false, edges: true,
+    identity: true, model: true, prompt: true, tools: false, skills: false, mcp: false, edges: true,
     plugins: false, nodePlugins: false, note: true,
   })
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -2460,142 +2459,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                         </div>
                       </DisclosureRow>
 
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupSampling')}
-                        open={groups.sampling === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('sampling') }}
-                      >
-                        <div className={editor.groupBody}>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingTemperature')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingTemperature')}
-                              value={selectedNode.sampling?.temperature ?? null}
-                              step={0.1}
-                              min={0}
-                              max={2}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                // null = 清空：必须把键从 sampling 里删掉，只摊旧对象会把
-                                // 已设的值原样带回（用户永远清不掉）。
-                                const sampling = { ...selectedNode.sampling }
-                                const rounded = next === null ? undefined : Math.round(next * 10) / 10
-                                if (rounded === undefined) delete sampling.temperature
-                                else sampling.temperature = rounded
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingMaxTokens')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingMaxTokens')}
-                              value={selectedNode.sampling?.max_tokens ?? null}
-                              step={256}
-                              min={1}
-                              max={128000}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                if (next === null) delete sampling.max_tokens
-                                else sampling.max_tokens = next
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingMaxToolCalls')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingMaxToolCalls')}
-                              value={selectedNode.sampling?.max_tool_calls ?? null}
-                              step={1}
-                              min={1}
-                              max={100}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                if (next === null) delete sampling.max_tool_calls
-                                else sampling.max_tool_calls = next
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingMaxInputTokens')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingMaxInputTokens')}
-                              value={selectedNode.sampling?.max_input_tokens ?? null}
-                              step={1024}
-                              min={1}
-                              max={1000000}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                if (next === null) delete sampling.max_input_tokens
-                                else sampling.max_input_tokens = next
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingMaxOutputTokens')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingMaxOutputTokens')}
-                              value={selectedNode.sampling?.max_output_tokens ?? null}
-                              step={1024}
-                              min={1}
-                              max={1000000}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                if (next === null) delete sampling.max_output_tokens
-                                else sampling.max_output_tokens = next
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingFrequencyPenalty')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingFrequencyPenalty')}
-                              value={selectedNode.sampling?.frequency_penalty ?? null}
-                              step={0.1}
-                              min={-2}
-                              max={2}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                const rounded = next === null ? undefined : Math.round(next * 10) / 10
-                                if (rounded === undefined) delete sampling.frequency_penalty
-                                else sampling.frequency_penalty = rounded
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'samplingPresencePenalty')}</span>
-                            <NumberStepper
-                              label={t('editor', 'samplingPresencePenalty')}
-                              value={selectedNode.sampling?.presence_penalty ?? null}
-                              step={0.1}
-                              min={-2}
-                              max={2}
-                              placeholder={t('common', 'labelNone')}
-                              onChange={(next) => {
-                                const sampling = { ...selectedNode.sampling }
-                                const rounded = next === null ? undefined : Math.round(next * 10) / 10
-                                if (rounded === undefined) delete sampling.presence_penalty
-                                else sampling.presence_penalty = rounded
-                                updateNode(selectedNode.node_id, { sampling })
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </DisclosureRow>
                     </>
                   )}
 

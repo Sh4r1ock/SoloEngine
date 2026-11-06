@@ -21,7 +21,6 @@ import {
   type CompileResult,
   type DelegationEdge,
   type NodePluginRow,
-  type SamplingParams,
 } from '@soloengine/types'
 import { TOOL_MAP } from '@soloengine/types'
 
@@ -41,7 +40,6 @@ export interface CanvasNodeInput {
   mcp_servers?: string[]
   /** 节点级插件行：只挂进该节点对应的 agent 作用域。 */
   plugins?: NodePluginRow[]
-  sampling?: SamplingParams
   position: { x: number; y: number }
 }
 
@@ -258,7 +256,6 @@ export function compileCanvas(params: CompileParams): CompileResult {
         ...(row.config === undefined ? {} : { config: row.config }),
         ...(row.version === undefined ? {} : { version: row.version }),
       })),
-      ...(node.sampling === undefined ? {} : { sampling: node.sampling }),
     })
   }
   // FR-CANVAS-023 自下而上物化（《框架设计》§3.13）：委派子树按后序 DFS 自叶子向根排序——

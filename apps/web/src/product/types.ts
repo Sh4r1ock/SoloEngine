@@ -315,15 +315,6 @@ export interface CanvasNode {
   tools?: string[]
   skills?: string[]
   mcp_servers?: string[]
-  sampling?: {
-    temperature?: number
-    max_tokens?: number
-    max_input_tokens?: number
-    max_output_tokens?: number
-    frequency_penalty?: number
-    presence_penalty?: number
-    max_tool_calls?: number
-  }
   /** 节点级插件行：只挂进该 agent 作用域（流程级插件不在这里）。 */
   plugins?: NodePluginRowView[]
   position: { x: number; y: number }

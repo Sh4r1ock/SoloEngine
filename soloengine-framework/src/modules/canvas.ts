@@ -35,15 +35,6 @@ export interface CanvasNode {
   mcp_servers?: string[]
   /** 节点级插件：只挂进该节点对应的 agent 作用域（流程级插件不在这里）。 */
   plugins?: NodePluginRow[]
-  sampling?: {
-    temperature?: number
-    max_tokens?: number
-    max_input_tokens?: number
-    max_output_tokens?: number
-    frequency_penalty?: number
-    presence_penalty?: number
-    max_tool_calls?: number
-  }
   position: { x: number; y: number }
 }
 

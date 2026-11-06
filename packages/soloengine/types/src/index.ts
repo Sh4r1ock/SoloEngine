@@ -28,17 +28,6 @@ export type { ProductPageName, ProductRouteMatch, ProductRouteRoot, ProductSurfa
 export { BUILTIN_ROLE_PRESETS, rolePresetName } from './presets.ts'
 export type { AgentRolePreset, CanvasNodeKind } from './presets.ts'
 
-/** 采样与轮次参数。 */
-export interface SamplingParams {
-  temperature?: number
-  max_tokens?: number
-  max_input_tokens?: number
-  max_output_tokens?: number
-  frequency_penalty?: number
-  presence_penalty?: number
-  max_tool_calls?: number
-}
-
 /**
  * 一个 agent 作用域的插件行（画布节点级插件）。
  *
@@ -82,8 +71,6 @@ export interface AgentSpec {
   mcpServers: string[]
   /** 编译期挂进该 agent scope 的插件行（节点级插件；流程级插件不在这里）。 */
   plugins: NodePluginRow[]
-  /** 采样与轮次参数。 */
-  sampling?: SamplingParams
 }
 
 /** 委派边（每条边 = 父节点工具表里的一个 Task 委派工具）。 */
