@@ -1,12 +1,12 @@
 /** 画布编辑器：工具栏 + 画布区（网格/节点/连线）+ 右侧属性面板。 */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   Button, DisclosureRow, IconArchiveOutlineMedium, IconChevronDownOutlineRegular,
-  IconChevronLeftOutlineRegular, IconChevronUpOutlineRegular, IconCloseOutlineRegular, IconCodeOutlineRegular,
+  IconChevronLeftOutlineRegular, IconCloseOutlineRegular,
   IconCopyOutlineRegular, IconEllipsisOutlineRegular, IconPanelLeftOutlineRegular, IconPlayOutlineRegular,
-  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconStopFillRegular, IconTrashOutlineRegular,
-  Input, Menu, Modal, Pill, RiskConfirmation, Switch, Tag,
+  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
+  Input, Menu, Modal, Pill, RiskConfirmation,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BrandGlyph } from '@deepseek-ai/dsh-client-ui-brand-official/src/static.ts'
@@ -16,7 +16,6 @@ import { navigate, openPage, setRouteBlocker } from '../router.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { Glyph } from '../components/Glyph.tsx'
 import { Field } from '../components/Field.tsx'
-import { IconPicker } from '../components/IconPicker.tsx'
 import { useToastHost } from '../components/Toaster.tsx'
 import { MultiSelectList } from '../components/MultiSelectList.tsx'
 import type { MultiSelectStale } from '../components/MultiSelectList.tsx'
@@ -25,14 +24,28 @@ import { PackagingDrawer } from './PackagingPage.tsx'
 import { NOTE_WIDTH, NODE_WIDTH, alignToPeers, snap } from '../canvas-data.ts'
 import { rolePresetName, type AgentRolePreset } from '@soloengine/types'
 import type {
-  CanvasAvailability, CanvasData, CanvasEdge, CanvasNode, CanvasView, McpServerView, ModelView, NodePluginRowView, PluginRow,
-  RunProjectView, RunSessionView, SkillView, UserView,
+  CanvasAvailability, CanvasData, CanvasEdge, CanvasNode, CanvasView, InstancePluginDiff, McpServerView, ModelView,
+  NodePluginRowView, NodeSampling, PluginRow, SkillView, UserView,
 } from '../types.ts'
 import css from '../styles/common.module.css'
 import editor from '../styles/editor.module.css'
 
-/** 网格显示偏好（视图偏好只存本机，与原型把 grid 写进本地状态一致）。 */
+/** 网格显示偏好（视图偏好只存本机，与原型把 grid 写进本地状态一致；按画布区分）。 */
 const GRID_KEY = 'soloengine.editorGrid'
+
+/**
+ * 读取一张画布的网格偏好。
+ * @param canvasId - 画布 id。
+ * @returns 是否显示网格（缺省显示）。
+ */
+function readGridPreference(canvasId: string): boolean {
+  try {
+    return window.localStorage.getItem(`${GRID_KEY}.${canvasId}`) !== '0'
+  } catch {
+    // 本机存储不可用：网格按默认显示，只丢失偏好记忆。
+    return true
+  }
+}
 
 /** 自动保存进入「保存中」后至少保持的时长（原型 04-pages.md:135：720ms 后进入保存中，360ms 后写入）。 */
 const AUTO_SAVE_WRITE_MS = 360
@@ -93,14 +106,15 @@ interface NodeBox {
 /**
  * 取一个节点的布局框。
  * @param node - 画布节点。
+ * @param heightOf - 高度取值（默认按内容基准；组件内传入实测高度）。
  * @returns 左上角、宽、高。
  */
-function nodeBox(node: CanvasNode): NodeBox {
+function nodeBox(node: CanvasNode, heightOf: (node: CanvasNode) => number = nodeHeight): NodeBox {
   return {
     left: node.position.x,
     top: node.position.y,
     width: nodeWidth(node),
-    height: nodeHeight(node),
+    height: heightOf(node),
   }
 }
 
@@ -111,9 +125,9 @@ function nodeBox(node: CanvasNode): NodeBox {
  * @param to - 终点节点。
  * @returns SVG 三次贝塞尔路径。
  */
-function edgePath(from: CanvasNode, to: CanvasNode): SvgPath {
-  const source = nodeBox(from)
-  const target = nodeBox(to)
+function edgePath(from: CanvasNode, to: CanvasNode, heightOf: (node: CanvasNode) => number = nodeHeight): SvgPath {
+  const source = nodeBox(from, heightOf)
+  const target = nodeBox(to, heightOf)
   const sourceCenter = { x: source.left + source.width / 2, y: source.top + source.height / 2 }
   const targetCenter = { x: target.left + target.width / 2, y: target.top + target.height / 2 }
   if (targetCenter.x > sourceCenter.x + 40) {
@@ -147,8 +161,8 @@ function edgePath(from: CanvasNode, to: CanvasNode): SvgPath {
  * @param y - 指针的画布 y。
  * @returns SVG 三次贝塞尔路径。
  */
-function tempEdgePath(from: CanvasNode, x: number, y: number): SvgPath {
-  const source = nodeBox(from)
+function tempEdgePath(from: CanvasNode, x: number, y: number, heightOf: (node: CanvasNode) => number = nodeHeight): SvgPath {
+  const source = nodeBox(from, heightOf)
   const x1 = source.left + source.width
   const y1 = source.top + source.height / 2
   const dx = Math.max(40, Math.abs(x - x1) / 2)
@@ -173,6 +187,8 @@ interface DragState {
   startClientY: number
   startX: number
   startY: number
+  /** 指针是否真的移动过：单击节点不应产生一条空撤销步。 */
+  moved: boolean
 }
 
 /** 框选状态（画布坐标；`active` 表示位移已超过 3px 阈值，避免点击被误判成框选）。 */
@@ -331,11 +347,14 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const [servers, setServers] = useState<McpServerView[]>([])
   // 逐节点引用可用性（技能被删/停用、MCP 被删/停用时在顶上标出，FR-CANVAS-023/FR-SKILL-007）。
   const [availability, setAvailability] = useState<CanvasAvailability | null>(null)
-  const [projects, setProjects] = useState<RunProjectView[]>([])
   /** profile 组合行（实例插件分节的数据源；只编辑客户端行）。 */
   const [pluginRows, setPluginRows] = useState<PluginRow[]>([])
   /** 用户级默认插件表投影出的节点插件行（§0.1.4：新建 agent 节点按它初始化 `plugins`）。 */
   const [defaultNodePlugins, setDefaultNodePlugins] = useState<NodePluginRowView[]>([])
+  /** 默认插件表的原始差异与乐观锁版本（编辑后 PUT 回写；只改 `add` 行）。 */
+  const [defaultsDiff, setDefaultsDiff] = useState<InstancePluginDiff>({})
+  const [defaultsVersion, setDefaultsVersion] = useState(0)
+  const [defaultsOpen, setDefaultsOpen] = useState(false)
   /** 节点级插件行草稿（只挂该 agent 作用域）。 */
   const [nodePluginDraft, setNodePluginDraft] = useState({ name: '', id: '', config: '' })
   const [nodePluginError, setNodePluginError] = useState<string | null>(null)
@@ -353,13 +372,15 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   )
   const [liveTools, setLiveTools] = useState<{ name: string; description: string }[]>([])
   const [toolsError, setToolsError] = useState<string | null>(null)
+  /** 辅助数据加载失败（key 是受影响分组的文案键）：只在检查器内提示，画布仍可编辑与保存。 */
+  const [auxiliaryErrors, setAuxiliaryErrors] = useState<{ key: string; detail: string }[]>([])
   // 选择模型（W11.3）：`selectedIds` 是多选集合，`primaryId` 是属性面板展示的主选中节点。
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set<string>())
   const [primaryId, setPrimaryId] = useState<string | null>(null)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const [groups, setGroups] = useState<Record<string, boolean>>({
-    identity: true, model: true, prompt: true, tools: false, skills: false, mcp: false, edges: true,
-    plugins: false, nodePlugins: false, note: true,
+    identity: true, model: true, sampling: false, prompt: true, tools: false, skills: false, mcp: false,
+    edges: true, plugins: false, nodePlugins: false, note: true,
   })
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   /** 画布左上角浮动「添加节点」菜单（原型 `.canvas-float`）。 */
@@ -376,22 +397,13 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 960)
   /** 检查器是否展开（窄屏时它是右侧抽屉；窄屏默认收起，选中节点再打开）。 */
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 960)
-  /** 底部运行面板是否折叠到 40px。 */
-  const [panelCollapsed, setPanelCollapsed] = useState(false)
-  /** 顶栏「实时预览」请求：展开面板并切到预览标签（原型 editor.js:1070-1074）。 */
-  const [previewSignal, setPreviewSignal] = useState(0)
-  const [showGrid, setShowGrid] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem(GRID_KEY) !== '0'
-    } catch {
-      // 本机存储不可用：网格按默认显示，只丢失偏好记忆。
-      return true
-    }
-  })
+  const [showGrid, setShowGrid] = useState<boolean>(() => readGridPreference(canvasId))
   /** 端口拖线：起点节点 + 当前指针的画布坐标（松手落到目标节点即建委派边）。 */
   const [portDrag, setPortDrag] = useState<{ from: string; x: number; y: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  /** 自动保存失败后暂停重试：下一次用户编辑或手动保存成功再恢复（防止请求风暴）。 */
+  const [autoSaveHalted, setAutoSaveHalted] = useState(false)
   // 错误/通知存「文案键 + 动态细节」，渲染时才翻译——存翻译字符串会在切换语言后残留旧语种。
   const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorRun' | 'errorPreview' | 'errorDuplicate'; detail: string } | null>(null)
   const [conflict, setConflict] = useState(false)
@@ -408,6 +420,31 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const dragRef = useRef<DragState | null>(null)
   /** 画布层（框选坐标换算与 pointer capture 的锚点）。 */
   const canvasRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * 节点实测高度：标题换行会让节点高于默认基准，连线端点与对齐锚线必须用实测值，
+   * 否则边线会停在节点内部或悬空。测量结果变化时才触发一次重渲染。
+   */
+  const nodeHeightsRef = useRef<Record<string, number>>({})
+  const [, setMeasureTick] = useState(0)
+  const heightOf = useCallback(
+    (node: CanvasNode): number => nodeHeightsRef.current[node.node_id] ?? nodeHeight(node),
+    [],
+  )
+  useLayoutEffect(() => {
+    const pane = canvasRef.current
+    if (pane === null) return
+    const next: Record<string, number> = {}
+    for (const element of pane.querySelectorAll<HTMLElement>('[data-node-id]')) {
+      const id = element.dataset.nodeId
+      if (id !== undefined) next[id] = element.getBoundingClientRect().height
+    }
+    const previous = nodeHeightsRef.current
+    const changed = Object.keys(next).length !== Object.keys(previous).length
+      || Object.entries(next).some(([id, height]) => Math.abs((previous[id] ?? 0) - height) > 0.5)
+    if (!changed) return
+    nodeHeightsRef.current = next
+    setMeasureTick(tick => tick + 1)
+  })
   /**
    * 连续输入合并键：原型在字段获得焦点时取一次快照、失焦或 `change` 时才入栈
    * （editor.js:705-765），同一字段的逐键输入只占一步撤销；这里用「同键 1s 内替换栈顶」
@@ -426,26 +463,42 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
+    let canvasResult: { ok: true; canvas: CanvasView }
     try {
-      const [
-        canvasResult, modelResult, skillResult, mcpResult,
-        projectResult, presetResult, pluginResult, defaultsResult,
-      ] = await Promise.all([
-        request<{ ok: true; canvas: CanvasView }>(`/canvases/${canvasId}`),
-        request<{ ok: true; models: ModelView[] }>('/models'),
-        request<{ ok: true; skills: SkillView[] }>('/skills'),
-        request<{ ok: true; servers: McpServerView[] }>('/mcp'),
-        request<{ ok: true; projects: RunProjectView[] }>('/projects'),
-        // 角色模板（FR-CANVAS-011）：唯一真源在后端，前端不另立第二份清单。
-        request<{ ok: true; presets: AgentRolePreset[] }>('/canvases/meta/presets'),
-        // profile 组合行：实例插件分节只列客户端行（宿主行由组合层管理）。
-        request<{ ok: true; rows: PluginRow[] }>('/plugins'),
-        // 用户级默认插件表（§0.1.4）：新建 agent 节点的初始 `plugins` 由后端投影，前端不复制规则。
-        request<{ ok: true; plugins: NodePluginRowView[] }>('/plugins/defaults'),
-      ])
-      setBuiltinPresets(presetResult.presets)
-      setPluginRows(pluginResult.rows)
-      setDefaultNodePlugins(defaultsResult.plugins)
+      // 画布本体是编辑前提：只有它失败才算整页加载失败。
+      canvasResult = await request<{ ok: true; canvas: CanvasView }>(`/canvases/${canvasId}`)
+    } catch (failure) {
+      setError({ key: 'errorLoad', detail: describeError(failure) })
+      setLoading(false)
+      return
+    }
+    try {
+      // 辅助数据（模型/技能/MCP/项目/模板/插件）互不依赖，也不是画布可编辑的前提：
+      // 任一失败只在对应分组提示，不能把整页判成「加载画布失败」而让节点编辑与保存一起失效。
+      const [modelResult, skillResult, mcpResult, presetResult, pluginResult, defaultsResult]
+        = await Promise.allSettled([
+          request<{ ok: true; models: ModelView[] }>('/models'),
+          request<{ ok: true; skills: SkillView[] }>('/skills'),
+          request<{ ok: true; servers: McpServerView[] }>('/mcp'),
+          // 角色模板（FR-CANVAS-011）：唯一真源在后端，前端不另立第二份清单。
+          request<{ ok: true; presets: AgentRolePreset[] }>('/canvases/meta/presets'),
+          // profile 组合行：实例插件分节只列客户端行（宿主行由组合层管理）。
+          request<{ ok: true; rows: PluginRow[] }>('/plugins'),
+          // 用户级默认插件表（§0.1.4）：新建 agent 节点的初始 `plugins` 由后端投影，前端不复制规则。
+          request<{ ok: true; plugins: NodePluginRowView[]; diff: InstancePluginDiff; version: number }>('/plugins/defaults'),
+        ])
+      const auxiliaryFailures: { key: string; detail: string }[] = []
+      if (presetResult.status === 'fulfilled') setBuiltinPresets(presetResult.value.presets)
+      else auxiliaryFailures.push({ key: 'roleTemplate', detail: describeError(presetResult.reason) })
+      if (pluginResult.status === 'fulfilled') setPluginRows(pluginResult.value.rows)
+      else auxiliaryFailures.push({ key: 'pluginsTitle', detail: describeError(pluginResult.reason) })
+      if (defaultsResult.status === 'fulfilled') {
+        setDefaultNodePlugins(defaultsResult.value.plugins)
+        setDefaultsDiff(defaultsResult.value.diff)
+        setDefaultsVersion(defaultsResult.value.version)
+      } else {
+        auxiliaryFailures.push({ key: 'defaultsEdit', detail: describeError(defaultsResult.reason) })
+      }
       const document: CanvasData = {
         nodes: canvasResult.canvas.canvas.nodes,
         edges: canvasResult.canvas.canvas.edges,
@@ -460,23 +513,29 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       setHistory([document])
       setHistoryIndex(0)
       lastCommitRef.current = null
-      setModels(modelResult.models)
-      setSkills(skillResult.skills)
-      setServers(mcpResult.servers)
-      setProjects(projectResult.projects)
+      if (modelResult.status === 'fulfilled') setModels(modelResult.value.models)
+      else auxiliaryFailures.push({ key: 'groupModel', detail: describeError(modelResult.reason) })
+      if (skillResult.status === 'fulfilled') setSkills(skillResult.value.skills)
+      else auxiliaryFailures.push({ key: 'groupSkills', detail: describeError(skillResult.reason) })
+      if (mcpResult.status === 'fulfilled') setServers(mcpResult.value.servers)
+      else auxiliaryFailures.push({ key: 'groupMcp', detail: describeError(mcpResult.reason) })
+      setAuxiliaryErrors(auxiliaryFailures)
       request<{ ok: true } & CanvasAvailability>(`/canvases/${canvasId}/availability`)
         .then((result) => { setAvailability(result) })
         .catch(() => { setAvailability(null) })
       setConflict(false)
       setError(null)
-    } catch (failure) {
-      setError({ key: 'errorLoad', detail: describeError(failure) })
     } finally {
       setLoading(false)
     }
   }, [canvasId])
 
   useEffect(() => { void load() }, [load])
+
+  // 切换画布时网格偏好跟着切换（偏好按画布存，不把上一张的开关带过来）。
+  useEffect(() => {
+    setShowGrid(readGridPreference(canvasId))
+  }, [canvasId])
 
   // 断点切换时按原型语义重置：宽视口恢复内联列，窄视口收起抽屉（窄屏的收起态不带到宽屏）。
   useEffect(() => {
@@ -489,7 +548,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     return () => { query.removeEventListener('change', onChange) }
   }, [])
 
-  // 窄屏选中节点时展开抽屉（原型 selectNode(id, openPanel)）；已选中的节点不因关闭抽屉再弹开。
+  // 窄屏主选中变化时展开抽屉（键盘/程序化选中路径）；指针点击路径在节点按下时直接展开，
+  // 因此 Esc 关闭后再次点击同一节点仍会重新打开。
   const lastPrimaryRef = useRef<string | null>(null)
   useEffect(() => {
     if (narrow && primaryId !== null && lastPrimaryRef.current !== primaryId) setInspectorOpen(true)
@@ -642,11 +702,16 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       setSavedMeta(nextMeta)
       // 原型 editor.js:697/862：手动保存弹「已保存到本机」；自动保存静默。
       if (!silent) toast.show(t('editor', 'toastSaved'), 'success')
+      setAutoSaveHalted(false)
       setConflict(false)
       setError(null)
     } catch (failure) {
       setError({ key: 'errorSave', detail: describeError(failure) })
       if (failure instanceof Error && (failure as { code?: string }).code === 'VERSION_CONFLICT') setConflict(true)
+      // 自动保存失败即停：saving 回 false 会让同一个 effect 立刻重新挂定时器，
+      // 离线或永久性 4xx 下会变成每 720ms 一次的请求风暴，且错误行被反复覆盖。
+      // 下一次用户编辑（data/meta 变化）或手动保存成功后再恢复。
+      if (silent) setAutoSaveHalted(true)
     } finally {
       // 自动保存：写入已完成，但「保存中」至少呈现 360ms（原型节奏），不让状态一闪而过。
       if (silent) {
@@ -673,11 +738,13 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   }, [canvas, toast])
 
   // 自动保存：改动 720ms 防抖（只读模板不保存；需求文档 §12.3 第 4 条）。
+  // 自动保存失败后 autoSaveHalted 阻断重试；data/meta 变化（用户继续编辑）即恢复。
+  useEffect(() => { setAutoSaveHalted(false) }, [data, meta])
   useEffect(() => {
-    if (!dirty || saving || conflict || readOnly) return
+    if (!dirty || saving || conflict || readOnly || autoSaveHalted) return
     const timer = window.setTimeout(() => { void save(true) }, 720)
     return () => { window.clearTimeout(timer) }
-  }, [dirty, saving, conflict, save, readOnly])
+  }, [dirty, saving, conflict, save, readOnly, autoSaveHalted])
 
   // R33：SPA 内导航拦截——dirty 时经 router 阻塞器确认（外壳导航/任意 navigate 调用统一经过）。
   useEffect(() => {
@@ -751,6 +818,38 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   }, [commit, data])
 
   /**
+   * 节点采样参数的稀疏补丁：留空即删除该键（与「未设置」可区分）。
+   * @param nodeId - 目标节点。
+   * @param key - 采样字段。
+   * @param raw - 输入框原文。
+   */
+  const setNodeSampling = useCallback((nodeId: string, key: keyof NodeSampling, raw: string): void => {
+    const node = data.nodes.find(item => item.node_id === nodeId)
+    if (node === undefined) return
+    const trimmed = raw.trim()
+    const value = trimmed === '' ? undefined : Number(trimmed)
+    if (value !== undefined && !Number.isFinite(value)) return
+    // 按已知字段重建：留空即让该键消失（动态键不做 delete），其余字段原样保留。
+    const next: NodeSampling = {}
+    for (const name of ['temperature', 'max_tokens', 'max_tool_calls'] as const) {
+      const candidate = name === key ? value : node.sampling?.[name]
+      if (candidate === undefined) continue
+      next[name] = name === key
+        ? (name === 'temperature' ? Math.round(candidate * 10) / 10 : Math.trunc(candidate))
+        : candidate
+    }
+    const cleared = Object.keys(next).length === 0
+    const nodes = data.nodes.map((item) => {
+      if (item.node_id !== nodeId) return item
+      if (!cleared) return { ...item, sampling: next }
+      const withoutSampling = { ...item }
+      delete withoutSampling.sampling
+      return withoutSampling
+    })
+    commit({ ...data, nodes })
+  }, [commit, data])
+
+  /**
    * 切换节点角色模板：模板即预填，按模板重写提示词与工具（v0.4.0 预设切换的同一语义）。
    * @param nodeId - 目标节点。
    * @param presetId - 目标模板 id。
@@ -766,6 +865,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
 
   /** 新建角色模板并立即应用到选中节点：模板随画布数据保存，可继续新增。 */
   const createTemplate = (): void => {
+    // 只读模板：提交会被 commit 丢弃，继续弹「已创建」就是与事实相反的提示。
+    if (readOnly) return
     const name = templateName.trim()
     if (name === '' || selectedNode === null) return
     const taken = new Set(presets.map(preset => preset.id))
@@ -809,6 +910,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
    * @param presetId - 角色模板 id；`note` 表示注释节点。
    */
   const addNode = (presetId: string): void => {
+    // 画布未加载成功时 save() 会直接返回：此时允许加节点只会得到「本地有、库里没有」的假数据。
+    if (readOnly || canvas === null) return
     const note = presetId === 'note'
     const preset = presets.find(item => item.id === presetId)
     // 新节点落在当前视口中心附近（原型 editor.js:478-493）：全出血画布没有滚动容器，
@@ -861,7 +964,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     const gapX = 48
     const gapY = 34
     const padX = Math.max(16, (width - (columns * NODE_WIDTH + (columns - 1) * gapX)) / 2)
-    const rowHeight = data.nodes.reduce((tallest, node) => Math.max(tallest, nodeHeight(node)), 0)
+    const rowHeight = data.nodes.reduce((tallest, node) => Math.max(tallest, heightOf(node)), 0)
     const rows = Math.ceil(data.nodes.length / columns)
     const padY = Math.max(16, (height - (rows * rowHeight + (rows - 1) * gapY)) / 2)
     const placed = data.nodes.map((node, index) => ({
@@ -1036,7 +1139,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   }
 
   const addEdge = (from: string, to: string): void => {
-    if (from === to) return
+    if (readOnly || canvas === null || from === to) return
     // 注释节点不是 agent，不能成为委派边的端点（需求 §12.3 第 4 条、原型 editor.js:648-660）。
     const target = data.nodes.find(node => node.node_id === to)
     if (target === undefined || isNote(target)) return
@@ -1091,22 +1194,29 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     [liveTools],
   )
   const skillOptions = useMemo(
-    () => skills.map(skill => ({
-      id: skill.id,
-      label: `${skill.name} · ${skill.pkg_version}`,
-      disabledReason: skill.is_active ? null : t('common', 'stateInactive'),
-    })),
-    [skills],
+    // 运行期只链接「本人 + 系统」技能（syncProjectSkills 的同一判据）；他人的公共技能
+    // 在管理面可读，但不能选进节点，否则运行期挂载必然失败。
+    () => skills
+      .filter(skill => skill.user_id === null || (user !== null && skill.user_id === user.id))
+      .map(skill => ({
+        id: skill.id,
+        label: `${skill.name} · ${skill.pkg_version}`,
+        disabledReason: skill.is_active ? null : t('common', 'stateInactive'),
+      })),
+    [skills, user],
   )
   const mcpOptions = useMemo(
     // 选项 id 用**服务器名**而不是行 id：编译产物的 `mcpServers` 是「服务器名」列表，运行期挂载时
     // 名字直接做模型可见名的前缀（`mcp__<服务名>__<工具名>`，PRD-05 FR-MCP-005 的验收口径）。
-    () => servers.map(server => ({
-      id: server.name,
-      label: server.name,
-      disabledReason: server.is_active ? null : t('common', 'stateInactive'),
-    })),
-    [servers],
+    // 只列运行期能解析的服务器（本人或系统）：他人的公共服务器不参与挂载。
+    () => servers
+      .filter(server => server.user_id === null || (user !== null && server.user_id === user.id))
+      .map(server => ({
+        id: server.name,
+        label: server.name,
+        disabledReason: server.is_active ? null : t('common', 'stateInactive'),
+      })),
+    [servers, user],
   )
 
   const outgoing = selectedNode === null ? [] : data.edges.filter(edge => edge.from === selectedNode.node_id)
@@ -1161,7 +1271,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           const top = Math.min(marqueeState.y0, y)
           const bottom = Math.max(marqueeState.y0, y)
           const hits = data.nodes.filter(node => node.position.x < right && node.position.x + nodeWidth(node) > left
-            && node.position.y < bottom && node.position.y + nodeHeight(node) > top)
+            && node.position.y < bottom && node.position.y + heightOf(node) > top)
           const next = new Set(marqueeState.additive ? selectedIds : [])
           for (const hit of hits) next.add(hit.node_id)
           setSelectedIds(next)
@@ -1173,6 +1283,10 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     }
     const drag = dragRef.current
     if (drag === null) return
+    if (readOnly) return
+    if (!drag.moved && Math.abs(event.clientX - drag.startClientX) + Math.abs(event.clientY - drag.startClientY) > 3) {
+      drag.moved = true
+    }
     const rawX = Math.max(0, drag.startX + (event.clientX - drag.startClientX))
     const rawY = Math.max(0, drag.startY + (event.clientY - drag.startClientY))
     const dragged = data.nodes.find(node => node.node_id === drag.id)
@@ -1181,12 +1295,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     const aligned = dragged === undefined
       ? { x: rawX, y: rawY, vertical: [], horizontal: [] }
       : alignToPeers(
-        { id: dragged.node_id, x: rawX, y: rawY, height: nodeHeight(dragged), width: nodeWidth(dragged) },
+        { id: dragged.node_id, x: rawX, y: rawY, height: heightOf(dragged), width: nodeWidth(dragged) },
         data.nodes.map(node => ({
           id: node.node_id,
           x: node.position.x,
           y: node.position.y,
-          height: nodeHeight(node),
+          height: heightOf(node),
           width: nodeWidth(node),
         })),
       )
@@ -1197,7 +1311,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       : Math.max(0, bounds.width - (dragged === undefined ? NODE_WIDTH : nodeWidth(dragged)))
     const maxY = bounds === undefined
       ? Number.POSITIVE_INFINITY
-      : Math.max(0, bounds.height - (dragged === undefined ? AGENT_NODE_HEIGHT : nodeHeight(dragged)))
+      : Math.max(0, bounds.height - (dragged === undefined ? AGENT_NODE_HEIGHT : heightOf(dragged)))
     const x = Math.min(aligned.vertical.length > 0 ? Math.max(0, aligned.x) : Math.max(0, snap(rawX)), maxX)
     const y = Math.min(aligned.horizontal.length > 0 ? Math.max(0, aligned.y) : Math.max(0, snap(rawY)), maxY)
     setGuides({ vertical: aligned.vertical, horizontal: aligned.horizontal })
@@ -1221,6 +1335,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     setDraggingId(null)
     setGuides({ vertical: [], horizontal: [] })
     if (drag === null) return
+    // 只读模板的拖拽不改数据、也不写历史；单击（未移动）不产生撤销步。
+    if (readOnly || !drag.moved) return
     // 松手落到网格：PRD-02 FR-CANVAS-011 的验收是「出现对齐辅助线**且**松手后位置吸附网格」
     // ——辅助线只负责拖动中的引导（对齐到同伴边线可能落在网格之外，例如右边线 = 左 + 220），
     // 落盘位置仍必须是 16 的整数倍。
@@ -1243,12 +1359,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     setGroups(previous => ({ ...previous, [key]: !(previous[key] === true) }))
   }
 
-  /** 切换网格：浮动工具条与「更多 → 切换网格」共用，偏好只写本机。 */
+  /** 切换网格：浮动工具条与「更多 → 切换网格」共用，偏好只写本机（按画布区分）。 */
   const toggleGrid = (): void => {
     const next = !showGrid
     setShowGrid(next)
     try {
-      window.localStorage.setItem(GRID_KEY, next ? '1' : '0')
+      window.localStorage.setItem(`${GRID_KEY}.${canvasId}`, next ? '1' : '0')
     } catch {
       // 本机存储不可用：本次会话内仍按切换后的值渲染，只丢失下次进入的记忆。
     }
@@ -1448,9 +1564,13 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   /** 「添加节点」菜单（原型 editor.html:100-107）：角色模板分组 + 注释单列一组。 */
   const addNodeItems: MenuEntry[] = [
     { type: 'label', id: 'add-node-role', text: t('editor', 'addMenuRoleLabel') },
-    ...presets.map(preset => ({ id: preset.id, label: rolePresetName(preset, locale === 'en' ? 'en' : 'zh') })),
+    ...presets.map(preset => ({
+      id: preset.id,
+      label: rolePresetName(preset, locale === 'en' ? 'en' : 'zh'),
+      disabled: readOnly,
+    })),
     { type: 'separator', id: 'add-node-separator' },
-    { id: 'note', label: t('editor', 'agentTypeNote') },
+    { id: 'note', label: t('editor', 'agentTypeNote'), disabled: readOnly },
   ]
 
   /** 顶栏「更多」菜单（原型 editor.html:67-73）：复制画布 / 切换网格 / 清空画布 / 返回画布列表。 */
@@ -1459,9 +1579,17 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       id: 'package',
       label: t('editor', 'packaging'),
       icon: <IconArchiveOutlineMedium size={14} />,
-      disabled: readOnly,
+      // 抽屉需要真实画布；加载失败时置灰，避免点击后什么都不发生。
+      // 只读模板不置灰：只读约束的是编辑，打包/运行与列表页的入口一致可用。
+      disabled: canvas === null,
     },
-    { id: 'duplicate', label: t('editor', 'menuDuplicateCanvas'), icon: <IconCopyOutlineRegular size={14} /> },
+    {
+      id: 'duplicate',
+      label: t('editor', 'menuDuplicateCanvas'),
+      icon: <IconCopyOutlineRegular size={14} />,
+      // 画布加载失败时 duplicateCanvas 没有可复制的对象：置灰而不是点了没反应。
+      disabled: canvas === null,
+    },
     {
       id: 'grid',
       label: t('editor', 'menuToggleGrid'),
@@ -1492,15 +1620,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
         >
           <BrandGlyph size={22} />
         </button>
-        <button
-          type="button"
-          className={editor.railButton}
-          aria-label={t('common', 'actionBack')}
-          title={t('common', 'actionBack')}
-          onClick={() => { navigate('/canvas') }}
-        >
-          <IconChevronLeftOutlineRegular size={16} />
-        </button>
         <span className={editor.railDivider} />
         <Menu
           open={addMenuOpen}
@@ -1520,6 +1639,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               className={editor.railButton}
               aria-label={t('editor', 'toolbarAddNode')}
               title={t('editor', 'toolbarAddNode')}
+              disabled={readOnly}
               onClick={() => { setAddMenuOpen(!addMenuOpen) }}
             >
               <IconPlusOutlineRegular size={16} />
@@ -1557,18 +1677,9 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
         >
           <IconPanelLeftOutlineRegular size={16} />
         </button>
-        <button
-          type="button"
-          className={editor.railButton}
-          aria-label={t('editor', panelCollapsed ? 'expandPanel' : 'collapsePanel')}
-          title={t('editor', panelCollapsed ? 'expandPanel' : 'collapsePanel')}
-          aria-pressed={!panelCollapsed}
-          onClick={() => { setPanelCollapsed(!panelCollapsed) }}
-        >
-          <IconCodeOutlineRegular size={16} />
-        </button>
         <ThemeCycleButton
           authenticated
+          className={editor.railTheme}
           onError={(message) => { setError({ key: 'errorSave', detail: message }) }}
         />
       </aside>
@@ -1592,10 +1703,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               aria-label={t('editor', 'canvasName')}
               onChange={(event) => { setMeta({ ...meta, name: event.currentTarget.value }) }}
             />
-            <span className={editor.saveState} data-state={saving ? 'saving' : dirty ? 'dirty' : 'saved'}>
-              <span className={editor.saveDot} />
-              {saving ? t('editor', 'saving') : dirty ? t('common', 'stateUnsaved') : t('common', 'stateSaved')}
-            </span>
+            {canvas !== null && (
+              <span className={editor.saveState} data-state={saving ? 'saving' : dirty ? 'dirty' : 'saved'}>
+                <span className={editor.saveDot} />
+                {saving ? t('editor', 'saving') : dirty ? t('common', 'stateUnsaved') : t('common', 'stateSaved')}
+              </span>
+            )}
           </div>
           <div className={editor.toolbarRight}>
             <button
@@ -1631,14 +1744,6 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
             <span className={editor.topbarDivider} aria-hidden="true" />
             <Button
               size="sm"
-              className={editor.previewButton}
-              icon={<Glyph><path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.4" /></Glyph>}
-              onClick={() => { setPanelCollapsed(false); setPreviewSignal(value => value + 1) }}
-            >
-              {t('editor', 'previewAction')}
-            </Button>
-            <Button
-              size="sm"
               variant="primary"
               icon={<IconPlayOutlineRegular size={14} />}
               onClick={() => { openPage(`/run/${canvasId}`) }}
@@ -1649,6 +1754,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               size="sm"
               className={editor.packageButton}
               icon={<IconArchiveOutlineMedium size={14} />}
+              disabled={canvas === null}
               onClick={() => { setPackageOpen(true) }}
             >
               {t('editor', 'packaging')}
@@ -1686,6 +1792,19 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
         <div className={editor.body} data-inspector={inspectorOpen ? 'open' : 'closed'}>
           <div className={editor.stage} id="canvas" role="region" aria-label={t('editor', 'canvasRegion')}>
             <div className={editor.canvasPane}>
+              {/* 窄屏且检查器收起时，错误行原先只写进隐藏的抽屉（发送按钮看起来「没反应」）。
+                  这里在画布上方给一条始终可见的错误横幅。 */}
+              {narrow && !inspectorOpen && error !== null && (
+                <div className={editor.canvasNotice}>
+                  <NoticeLine
+                    tone="error"
+                    text={`${t('editor', error.key)} — ${error.detail}`}
+                    {...(error.key === 'errorLoad'
+                      ? { action: { label: t('common', 'actionRetry'), onClick: () => { void load() } } }
+                      : {})}
+                  />
+                </div>
+              )}
               <div className={editor.canvasFloat}>
                 <Menu
                   open={canvasAddOpen}
@@ -1702,6 +1821,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     <Button
                       size="sm"
                       icon={<IconPlusOutlineRegular size={14} />}
+                      disabled={readOnly}
                       onClick={() => { setCanvasAddOpen(!canvasAddOpen) }}
                     >
                       {t('editor', 'toolbarAddNode')}
@@ -1725,6 +1845,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   className={editor.canvasFloatIcon}
                   aria-label={t('editor', 'arrangeNodes')}
                   title={t('editor', 'arrangeNodes')}
+                  disabled={readOnly}
                   onClick={arrangeNodes}
                 >
                   <Glyph><circle cx="10" cy="10" r="6" /><circle cx="10" cy="10" r="2" /></Glyph>
@@ -1787,7 +1908,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     const from = data.nodes.find(node => node.node_id === edge.from)
                     const to = data.nodes.find(node => node.node_id === edge.to)
                     if (from === undefined || to === undefined) return null
-                    const path = edgePath(from, to)
+                    const path = edgePath(from, to, heightOf)
                     return (
                       <>
                         {/* 命中线：可见线 1.2px 无法命中（edgeLayer pointer-events:none +
@@ -1819,7 +1940,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                     return (
                       <path
                         className={editor.edgeTemp}
-                        d={tempEdgePath(from, portDrag.x, portDrag.y)}
+                        d={tempEdgePath(from, portDrag.x, portDrag.y, heightOf)}
                       />
                     )
                   })()}
@@ -1851,6 +1972,9 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                         setPrimaryId(node.node_id)
                         setSelectedEdgeId(null)
                       }
+                      // 窄屏：点击任意节点都展开检查器（原型 selectNode(id, openPanel)）；
+                      // Esc 关闭后再次点击同一节点也能重新打开。
+                      if (narrow) setInspectorOpen(true)
                       setDraggingId(node.node_id)
                       dragRef.current = {
                         id: node.node_id,
@@ -1858,6 +1982,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                         startClientY: event.clientY,
                         startX: node.position.x,
                         startY: node.position.y,
+                        moved: false,
                       }
                       event.currentTarget.setPointerCapture(event.pointerId)
                       // 焦点跟手：节点不可聚焦时方向键等价移动永远到不了 onKeyDown
@@ -1922,14 +2047,14 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                 ))}
               </div>
               <div className={editor.canvasHint}>{t('editor', 'canvasHint')}</div>
-              {!loading && data.nodes.length === 0 && (
+              {!loading && canvas !== null && data.nodes.length === 0 && (
                 <div className={editor.canvasEmpty}>
                   <span className={editor.canvasEmptyIcon}>
                     <Glyph size={20}><path d="M3 7h14M3 13h14M7 3v14M13 3v14" /></Glyph>
                   </span>
                   <p className={editor.canvasEmptyTitle}>{t('editor', 'emptyTitle')}</p>
                   <p className={editor.canvasEmptyDesc}>{t('editor', 'emptyDesc')}</p>
-                  <Button size="sm" variant="primary" onClick={() => { addNode('coordinator') }}>
+                  <Button size="sm" variant="primary" disabled={readOnly} onClick={() => { addNode('coordinator') }}>
                     {t('editor', 'emptyAdd')}
                   </Button>
                 </div>
@@ -1937,7 +2062,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
             </div>
           </div>
 
-          <aside className={editor.panel} ref={panelRef} aria-label={t('editor', 'inspectorRegion')} onBlur={() => { if (dirty && !saving) void save() }}>
+          <aside className={editor.panel} ref={panelRef} aria-label={t('editor', 'inspectorRegion')}>
             <div className={editor.panelHead}>
               <div className={editor.panelHeading}>
                 <h2 className={editor.panelTitle}>
@@ -1967,7 +2092,19 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               )}
             </div>
             <div className={editor.panelBody}>
-              <NoticeLine tone="error" text={error === null ? null : `${t('editor', error.key)} — ${error.detail}`} />
+              <NoticeLine
+                tone="error"
+                text={error === null ? null : `${t('editor', error.key)} — ${error.detail}`}
+                {...(error?.key === 'errorLoad'
+                  ? { action: { label: t('common', 'actionRetry'), onClick: () => { void load() } } }
+                  : {})}
+              />
+              <NoticeLine
+                tone="info"
+                text={auxiliaryErrors.length === 0
+                  ? null
+                  : `${t('editor', 'errorAuxiliaryLoad')} — ${auxiliaryErrors.map(item => `${t('editor', item.key)}: ${item.detail}`).join('; ')}`}
+              />
               <NoticeLine
                 tone="info"
                 text={staleRefs.length === 0 ? null : `${t('editor', 'refsUnavailable')} ${staleRefs.join('; ')}`}
@@ -1986,633 +2123,632 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
                   : {}}
               />
 
-              {selectedNode === null && (
-                <div className={editor.panelSection}>
-                  <div className={editor.panelGroup}>
-                    <Field label={t('editor', 'canvasName')} hint={t('editor', 'canvasNameHint')}>
-                      <Input
-                        value={meta.name}
-                        onChange={(event) => { setMeta({ ...meta, name: event.currentTarget.value }) }}
-                      />
-                    </Field>
-                    <Field label={t('editor', 'canvasDescription')}>
-                      <textarea
-                        className={`${css.textarea} ${editor.descriptionArea ?? ''}`}
-                        rows={3}
-                        value={meta.description}
-                        placeholder={t('editor', 'canvasDescriptionPlaceholder')}
-                        onChange={(event) => { setMeta({ ...meta, description: event.currentTarget.value }) }}
-                      />
-                    </Field>
-                    {/* 图标与标签和列表卡片同源（`canvases.iconLabel`/`common.labelTags`），
-                  保存走同一次 PATCH；卡片首字回落基于 `icon` 为空。 */}
-                    <Field label={t('canvases', 'iconLabel')}>
-                      <IconPicker value={meta.icon} onChange={(next) => { setMeta({ ...meta, icon: next }) }} />
-                    </Field>
-                    <Field label={t('common', 'labelTags')}>
-                      <Input
-                        value={meta.tags}
-                        placeholder={t('canvases', 'tagsPlaceholder')}
-                        onChange={(event) => { setMeta({ ...meta, tags: event.currentTarget.value }) }}
-                      />
-                    </Field>
-                    <div className={editor.field}>
-                      <span className={editor.fieldLabel}>{t('editor', 'runMode')}</span>
-                      <select
-                        className={editor.select}
-                        aria-label={t('editor', 'runMode')}
-                        value={data.settings?.run_mode ?? 'workspace-write'}
-                        onChange={(event) => {
-                          const runMode = event.currentTarget.value
-                          if (runMode !== 'workspace-write' && runMode !== 'approve-for-me' && runMode !== 'danger-full-access') return
-                          commit({ ...data, settings: { ...data.settings, run_mode: runMode } })
-                        }}
-                      >
-                        <option value="workspace-write">{t('editor', 'runModeWorkspaceWrite')}</option>
-                        <option value="approve-for-me">{t('editor', 'runModeApproveForMe')}</option>
-                        <option value="danger-full-access">{t('editor', 'runModeFullAccess')}</option>
-                      </select>
-                    </div>
-                    <div className={editor.field}>
-                      <span className={editor.fieldLabel}>{t('editor', 'liveFollow')}</span>
-                      {/* 原型 `state.liveFollow == null → true`：画布没有显式取值时默认开启，只有用户切换才写入。 */}
-                      <Switch
-                        checked={data.settings?.live_follow !== false}
-                        label={t('editor', 'liveFollow')}
-                        onChange={(next) => { commit({ ...data, settings: { ...data.settings, live_follow: next } }) }}
-                      />
-                      <span className={editor.fieldHint}>{t('editor', 'liveFollowHint')}</span>
-                    </div>
-                    <div className={editor.field}>
-                      <DisclosureRow
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'pluginsTitle')}
-                        open={groups.plugins === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('plugins') }}
-                      >
-                        <div className={editor.groupBody}>
-                          <span className={editor.fieldHint}>{t('editor', 'pluginsHint')}</span>
-                          {/* 宿主基线行（原型 editor.js:330-335 列出全部基线行）：只读呈现，装载由 profile 组合决定。 */}
-                          <span className={editor.fieldLabel}>{t('editor', 'hostBaselineTitle')}</span>
-                          <span className={editor.fieldHint}>{t('editor', 'hostBaselineHint')}</span>
-                          {hostBaselineRows.length === 0
-                            ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
-                            : (
-                              <>
-                                <span className={editor.fieldHint}>{t('editor', 'hostBaselineCount', { count: hostBaselineRows.length })}</span>
-                                {hostBaselineRows.map(row => (
-                                  <div key={row.id} className={editor.edgeRow}>
-                                    <span className={css.mono}>{row.id} · {row.name}</span>
-                                    <span className={editor.fieldHint}>
-                                      {row.disabled ? t('editor', 'pluginsBaselineOff') : t('editor', 'pluginBaselineOn')}
-                                    </span>
-                                  </div>
-                                ))}
-                              </>
-                            )}
-                          {/* 客户端插件行 = 该画布运行面板的装载集合（Plan W4）；宿主基线行只读列在上面。 */}
-                          <MultiSelectList
-                            options={pluginRows
-                              .filter(row => row.kind === 'client')
-                              .map(row => ({
+              {/* 只读模板：用原生的 fieldset[disabled] 一次性禁用检查器内全部表单控件
+                  （输入框/下拉/开关/按钮）。仅靠 commit 拦截会留下「能输入但不生效」的假象。 */}
+              <fieldset className={editor.readonlyFieldset} disabled={readOnly}>
+
+                {selectedNode === null && (
+                  <div className={editor.panelSection}>
+                    <div className={editor.panelGroup}>
+                      {/* 画布名称/描述/标签只在画布主菜单编辑（唯一入口）；运行档位与实时跟随
+                          属于「这一次运行怎么跑」，由运行面板承载，画布不重复这两份设置。 */}
+                      <div className={editor.field}>
+                        <DisclosureRow
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'pluginsTitle')}
+                          open={groups.plugins === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('plugins') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <span className={editor.fieldHint}>{t('editor', 'pluginsHint')}</span>
+                            {/* 宿主基线行（原型 editor.js:330-335 列出全部基线行）：只读呈现，装载由 profile 组合决定。 */}
+                            <span className={editor.fieldLabel}>{t('editor', 'hostBaselineTitle')}</span>
+                            <span className={editor.fieldHint}>{t('editor', 'hostBaselineHint')}</span>
+                            {hostBaselineRows.length === 0
+                              ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
+                              : (
+                                <>
+                                  <span className={editor.fieldHint}>{t('editor', 'hostBaselineCount', { count: hostBaselineRows.length })}</span>
+                                  {hostBaselineRows.map(row => (
+                                    <div key={row.id} className={editor.edgeRow}>
+                                      <span className={css.mono}>{row.id} · {row.name}</span>
+                                      <span className={editor.fieldHint}>
+                                        {row.disabled ? t('editor', 'pluginsBaselineOff') : t('editor', 'pluginBaselineOn')}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </>
+                              )}
+                            {/* 客户端插件行 = 该画布运行面板的装载集合（Plan W4）；宿主基线行只读列在上面。 */}
+                            <MultiSelectList
+                              options={pluginRows
+                                .filter(row => row.kind === 'client')
+                                .map(row => ({
+                                  id: row.id,
+                                  label: `${row.id} · ${row.name}`,
+                                  disabledReason: row.disabled ? t('editor', 'pluginsBaselineOff') : null,
+                                }))}
+                              selected={pluginRows
+                                .filter(row => row.kind === 'client' && !row.disabled && !disabledPlugins.has(row.id))
+                                .map(row => row.id)}
+                              emptyText={t('editor', 'pluginsEmpty')}
+                              onToggle={togglePlugin}
+                            />
+                            {/* 新增/替换客户端行与后端 `settings.plugins.add/replace` 同一写入口径：
+                        包名取自 `GET /plugins` 的客户端行清单，行 id 只在本画布实例内生效。 */}
+                            <span className={editor.fieldLabel}>{t('editor', 'clientAddTitle')}</span>
+                            <span className={editor.fieldHint}>{t('editor', 'clientAddHint')}</span>
+                            <MultiSelectList
+                              options={addableClientRows.map(row => ({
                                 id: row.id,
                                 label: `${row.id} · ${row.name}`,
-                                disabledReason: row.disabled ? t('editor', 'pluginsBaselineOff') : null,
+                                disabledReason: null,
                               }))}
-                            selected={pluginRows
-                              .filter(row => row.kind === 'client' && !row.disabled && !disabledPlugins.has(row.id))
-                              .map(row => row.id)}
-                            emptyText={t('editor', 'pluginsEmpty')}
-                            onToggle={togglePlugin}
-                          />
-                          {/* 新增/替换客户端行与后端 `settings.plugins.add/replace` 同一写入口径：
-                        包名取自 `GET /plugins` 的客户端行清单，行 id 只在本画布实例内生效。 */}
-                          <span className={editor.fieldLabel}>{t('editor', 'clientAddTitle')}</span>
-                          <span className={editor.fieldHint}>{t('editor', 'clientAddHint')}</span>
-                          <MultiSelectList
-                            options={addableClientRows.map(row => ({
-                              id: row.id,
-                              label: `${row.id} · ${row.name}`,
-                              disabledReason: null,
-                            }))}
-                            selected={addableClientRows
-                              .filter(base => hostAdds.some(row => row.name === base.name))
-                              .map(row => row.id)}
-                            emptyText={t('editor', 'clientAddEmpty')}
-                            onToggle={(id, next) => {
-                              const base = addableClientRows.find(row => row.id === id)
-                              if (base !== undefined) toggleClientAdd(base, next)
-                            }}
-                          />
-                          <span className={editor.fieldLabel}>{t('editor', 'clientReplaceTitle')}</span>
-                          <span className={editor.fieldHint}>{t('editor', 'clientReplaceHint')}</span>
-                          {clientReplaces.map(row => (
-                            <div key={row.id} className={editor.edgeRow}>
-                              <span className={css.mono}>{row.id} → {row.name}</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon={<IconTrashOutlineRegular size={14} />}
-                                aria-label={t('editor', 'pluginRemove')}
-                                onClick={() => { removeClientReplace(row.id) }}
-                              />
-                            </div>
-                          ))}
-                          <MultiSelectList
-                            options={pluginRows
-                              .filter(row => row.kind === 'client' && !clientReplaces.some(item => item.id === row.id))
-                              .map(row => ({ id: row.id, label: `${row.id} · ${row.name}`, disabledReason: null }))}
-                            selected={replaceDraft.id === '' ? [] : [replaceDraft.id]}
-                            emptyText={t('editor', 'clientReplaceEmpty')}
-                            onToggle={(id, next) => {
-                              setReplaceDraft({ ...replaceDraft, id: next ? id : '' })
-                              setReplaceError(null)
-                            }}
-                          />
-                          <MultiSelectList
-                            options={[...new Set(pluginRows.filter(row => row.kind === 'client').map(row => row.name))]
-                              .map(name => ({ id: name, label: name, disabledReason: null }))}
-                            selected={replaceDraft.name === '' ? [] : [replaceDraft.name]}
-                            emptyText={t('editor', 'clientReplaceEmpty')}
-                            onToggle={(name, next) => {
-                              setReplaceDraft({ ...replaceDraft, name: next ? name : '' })
-                              setReplaceError(null)
-                            }}
-                          />
-                          {replaceError !== null && <NoticeLine tone="error" text={replaceError} />}
-                          <Button size="sm" onClick={replaceClientPlugin}>{t('editor', 'pluginReplace')}</Button>
-                          <span className={editor.fieldLabel}>{t('editor', 'hostPluginsTitle')}</span>
-                          <span className={editor.fieldHint}>{t('editor', 'hostPluginsHint')}</span>
-                          {hostAdds.length === 0
-                            ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
-                            : hostAdds.map(row => (
+                              selected={addableClientRows
+                                .filter(base => hostAdds.some(row => row.name === base.name))
+                                .map(row => row.id)}
+                              emptyText={t('editor', 'clientAddEmpty')}
+                              onToggle={(id, next) => {
+                                const base = addableClientRows.find(row => row.id === id)
+                                if (base !== undefined) toggleClientAdd(base, next)
+                              }}
+                            />
+                            <span className={editor.fieldLabel}>{t('editor', 'clientReplaceTitle')}</span>
+                            <span className={editor.fieldHint}>{t('editor', 'clientReplaceHint')}</span>
+                            {clientReplaces.map(row => (
                               <div key={row.id} className={editor.edgeRow}>
-                                <span className={css.mono}>
-                                  {row.id} · {row.name}
-                                  {row.isolate === undefined ? '' : t('editor', 'pluginIsolateSuffix', { list: row.isolate.join(', ') })}
-                                </span>
+                                <span className={css.mono}>{row.id} → {row.name}</span>
                                 <Button
                                   size="sm"
                                   variant="ghost"
                                   icon={<IconTrashOutlineRegular size={14} />}
                                   aria-label={t('editor', 'pluginRemove')}
-                                  onClick={() => { removeHostPlugin(row.id) }}
+                                  onClick={() => { removeClientReplace(row.id) }}
                                 />
                               </div>
                             ))}
-                          <Field label={t('editor', 'pluginRowId')}>
-                            <Input
-                              value={hostPluginDraft.id}
-                              onChange={(event) => {
-                                setHostPluginDraft({ ...hostPluginDraft, id: event.currentTarget.value })
-                                setHostPluginError(null)
+                            <MultiSelectList
+                              options={pluginRows
+                                .filter(row => row.kind === 'client' && !clientReplaces.some(item => item.id === row.id))
+                                .map(row => ({ id: row.id, label: `${row.id} · ${row.name}`, disabledReason: null }))}
+                              selected={replaceDraft.id === '' ? [] : [replaceDraft.id]}
+                              emptyText={t('editor', 'clientReplaceEmpty')}
+                              onToggle={(id, next) => {
+                                setReplaceDraft({ ...replaceDraft, id: next ? id : '' })
+                                setReplaceError(null)
                               }}
                             />
-                          </Field>
-                          <Field label={t('editor', 'pluginPackage')}>
-                            <Input
-                              value={hostPluginDraft.name}
-                              onChange={(event) => {
-                                setHostPluginDraft({ ...hostPluginDraft, name: event.currentTarget.value })
-                                setHostPluginError(null)
+                            <MultiSelectList
+                              options={[...new Set(pluginRows.filter(row => row.kind === 'client').map(row => row.name))]
+                                .map(name => ({ id: name, label: name, disabledReason: null }))}
+                              selected={replaceDraft.name === '' ? [] : [replaceDraft.name]}
+                              emptyText={t('editor', 'clientReplaceEmpty')}
+                              onToggle={(name, next) => {
+                                setReplaceDraft({ ...replaceDraft, name: next ? name : '' })
+                                setReplaceError(null)
                               }}
                             />
-                          </Field>
-                          <Field label={t('editor', 'pluginIsolate')}>
-                            <Input
-                              value={hostPluginDraft.isolate}
-                              onChange={(event) => { setHostPluginDraft({ ...hostPluginDraft, isolate: event.currentTarget.value }) }}
-                            />
-                          </Field>
-                          <Field label={t('editor', 'pluginConfig')}>
-                            <textarea
-                              className={`${css.textarea} ${css.textareaMono}`}
-                              value={hostPluginDraft.config}
-                              onChange={(event) => {
-                                setHostPluginDraft({ ...hostPluginDraft, config: event.currentTarget.value })
-                                setHostPluginError(null)
-                              }}
-                            />
-                          </Field>
-                          {hostPluginError !== null && <NoticeLine tone="error" text={hostPluginError} />}
-                          <Button size="sm" onClick={addHostPlugin}>{t('editor', 'pluginAdd')}</Button>
-                        </div>
-                      </DisclosureRow>
-                    </div>
-                    {selectedEdgeId !== null && (
-                      <div className={editor.field}>
-                        <span className={editor.fieldLabel}>{t('editor', 'groupEdges')}</span>
-                        <div className={editor.edgeRow}>
-                          <span className={css.mono}>{selectedEdgeId}</span>
-                          <Button size="sm" variant="ghost" onClick={() => { removeEdge(selectedEdgeId) }}>
-                            {t('editor', 'edgesRemove')}
-                          </Button>
-                        </div>
+                            {replaceError !== null && <NoticeLine tone="error" text={replaceError} />}
+                            <Button size="sm" onClick={replaceClientPlugin}>{t('editor', 'pluginReplace')}</Button>
+                            <span className={editor.fieldLabel}>{t('editor', 'hostPluginsTitle')}</span>
+                            <span className={editor.fieldHint}>{t('editor', 'hostPluginsHint')}</span>
+                            {hostAdds.length === 0
+                              ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
+                              : hostAdds.map(row => (
+                                <div key={row.id} className={editor.edgeRow}>
+                                  <span className={css.mono}>
+                                    {row.id} · {row.name}
+                                    {row.isolate === undefined ? '' : t('editor', 'pluginIsolateSuffix', { list: row.isolate.join(', ') })}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon={<IconTrashOutlineRegular size={14} />}
+                                    aria-label={t('editor', 'pluginRemove')}
+                                    onClick={() => { removeHostPlugin(row.id) }}
+                                  />
+                                </div>
+                              ))}
+                            <Field label={t('editor', 'pluginRowId')}>
+                              <Input
+                                value={hostPluginDraft.id}
+                                onChange={(event) => {
+                                  setHostPluginDraft({ ...hostPluginDraft, id: event.currentTarget.value })
+                                  setHostPluginError(null)
+                                }}
+                              />
+                            </Field>
+                            <Field label={t('editor', 'pluginPackage')}>
+                              <Input
+                                value={hostPluginDraft.name}
+                                onChange={(event) => {
+                                  setHostPluginDraft({ ...hostPluginDraft, name: event.currentTarget.value })
+                                  setHostPluginError(null)
+                                }}
+                              />
+                            </Field>
+                            <Field label={t('editor', 'pluginIsolate')}>
+                              <Input
+                                value={hostPluginDraft.isolate}
+                                onChange={(event) => { setHostPluginDraft({ ...hostPluginDraft, isolate: event.currentTarget.value }) }}
+                              />
+                            </Field>
+                            <Field label={t('editor', 'pluginConfig')}>
+                              <textarea
+                                className={`${css.textarea} ${css.textareaMono}`}
+                                value={hostPluginDraft.config}
+                                onChange={(event) => {
+                                  setHostPluginDraft({ ...hostPluginDraft, config: event.currentTarget.value })
+                                  setHostPluginError(null)
+                                }}
+                              />
+                            </Field>
+                            {hostPluginError !== null && <NoticeLine tone="error" text={hostPluginError} />}
+                            <Button size="sm" onClick={addHostPlugin}>{t('editor', 'pluginAdd')}</Button>
+                          </div>
+                        </DisclosureRow>
                       </div>
-                    )}
-                    {/* 统计（原型 editor.js:336-340「统计」节）：节点 / 委派边计数 + 保存位置。 */}
-                    <div className={editor.panelSection}>
-                      <div className={editor.panelGroup}>
-                        <span className={editor.fieldLabel}>{t('editor', 'groupStats')}</span>
-                        <div className={editor.statRow}>
-                          <span>{t('editor', 'statsNodes')}</span>
-                          <span className={css.mono}>{String(data.nodes.length)}</span>
+                      {selectedEdgeId !== null && (
+                        <div className={editor.field}>
+                          <span className={editor.fieldLabel}>{t('editor', 'groupEdges')}</span>
+                          <div className={editor.edgeRow}>
+                            <span className={css.mono}>{selectedEdgeId}</span>
+                            <Button size="sm" variant="ghost" onClick={() => { removeEdge(selectedEdgeId) }}>
+                              {t('editor', 'edgesRemove')}
+                            </Button>
+                          </div>
                         </div>
-                        <div className={editor.statRow}>
-                          <span>{t('editor', 'statsEdges')}</span>
-                          <span className={css.mono}>{String(data.edges.length)}</span>
-                        </div>
-                        <div className={editor.statRow}>
-                          <span>{t('editor', 'statsSaveLocation')}</span>
-                          <span className={css.mono}>{t('editor', 'statsSaveLocationValue')}</span>
+                      )}
+                      {/* 统计（原型 editor.js:336-340「统计」节）：节点 / 委派边计数 + 保存位置。 */}
+                      <div className={editor.panelSection}>
+                        <div className={editor.panelGroup}>
+                          <span className={editor.fieldLabel}>{t('editor', 'groupStats')}</span>
+                          <div className={editor.statRow}>
+                            <span>{t('editor', 'statsNodes')}</span>
+                            <span className={css.mono}>{String(data.nodes.length)}</span>
+                          </div>
+                          <div className={editor.statRow}>
+                            <span>{t('editor', 'statsEdges')}</span>
+                            <span className={css.mono}>{String(data.edges.length)}</span>
+                          </div>
+                          <div className={editor.statRow}>
+                            <span>{t('editor', 'statsSaveLocation')}</span>
+                            <span className={css.mono}>{t('editor', 'statsSaveLocationValue')}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {selectedNode !== null && (
-                <>
-                  <DisclosureRow
-                    className={editor.panelSection}
-                    icon={<IconPlusOutlineRegular size={14} />}
-                    title={t('editor', 'groupIdentity')}
-                    open={groups.identity === true}
-                    expandable
-                    expandOnRowClick
-                    onToggle={() => { toggleGroup('identity') }}
-                  >
-                    <div className={editor.groupBody}>
-                      {/* 身份徽标（原型 editor.js:376-379 身份节首行）：角色模板名 · 协议代码。 */}
-                      <span className={editor.panelTypeBadge}>
-                        <NodeGlyph node={selectedNode} />
-                        {`${roleLabel(selectedNode, presets, locale)} · ${roleCode(selectedNode)}`}
-                      </span>
-                      {!isNote(selectedNode) && (
-                        <div className={editor.field}>
-                          <span className={editor.fieldLabel}>{t('editor', 'roleTemplate')}</span>
-                          <div className={css.chipRow}>
-                            {presets.map(preset => (
-                              <Pill
-                                key={preset.id}
-                                active={selectedNode.role === preset.id}
-                                aria-pressed={selectedNode.role === preset.id}
-                                onClick={() => {
-                                  if (selectedNode.role === preset.id) return
-                                  // 已偏离当前模板时，切换会用模板内容覆盖提示词与工具（v0.4.0 同一保护）。
-                                  if (roleDiffers(selectedNode, presets)) {
-                                    setAcknowledged(false)
-                                    setRoleSwitch({ nodeId: selectedNode.node_id, presetId: preset.id })
-                                    return
-                                  }
-                                  applyRole(selectedNode.node_id, preset.id)
-                                }}
-                              >
-                                {rolePresetName(preset, locale === 'en' ? 'en' : 'zh')}
-                              </Pill>
-                            ))}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              icon={<IconPlusOutlineRegular size={12} />}
-                              onClick={() => { setTemplateOpen(true) }}
-                            >
-                              {t('editor', 'roleTemplateNew')}
-                            </Button>
-                          </div>
-                          <span className={editor.fieldHint}>{t('editor', 'roleTemplateHint')}</span>
-                        </div>
-                      )}
-                      <Field label={t('editor', 'nodeName')}>
-                        <Input
-                          value={selectedNode.name}
-                          onChange={(event) => { updateNode(selectedNode.node_id, { name: event.currentTarget.value }) }}
-                        />
-                      </Field>
-                      {!isNote(selectedNode) && (
-                        <Field label={t('editor', 'nodeSummary')}>
-                          <Input
-                            value={selectedNode.summary ?? ''}
-                            onChange={(event) => { updateNode(selectedNode.node_id, { summary: event.currentTarget.value }) }}
-                          />
-                        </Field>
-                      )}
-                      <span className={editor.fieldHint}>
-                        {t('editor', 'positionLabel')} {selectedNode.position.x}, {selectedNode.position.y}
-                      </span>
-                    </div>
-                  </DisclosureRow>
-
-                  {/* 注释（原型 editor.js:381-386）：注释节点有独立的注释节，正文不写进身份节。 */}
-                  {isNote(selectedNode) && (
+                {selectedNode !== null && (
+                  <>
                     <DisclosureRow
                       className={editor.panelSection}
                       icon={<IconPlusOutlineRegular size={14} />}
-                      title={t('editor', 'groupNote')}
-                      open={groups.note === true}
+                      title={t('editor', 'groupIdentity')}
+                      open={groups.identity === true}
                       expandable
                       expandOnRowClick
-                      onToggle={() => { toggleGroup('note') }}
+                      onToggle={() => { toggleGroup('identity') }}
                     >
                       <div className={editor.groupBody}>
-                        {/* 与节点卡片同一正文来源（`system_prompt ?? summary`）：旧注释只存 summary 时也能继续编辑。 */}
-                        <textarea
-                          className={css.textarea}
-                          value={selectedNode.system_prompt ?? selectedNode.summary ?? ''}
-                          placeholder={t('editor', 'notePlaceholder')}
-                          aria-label={t('editor', 'notePlaceholder')}
-                          onChange={(event) => { updateNode(selectedNode.node_id, { system_prompt: event.currentTarget.value }) }}
-                        />
+                        {/* 身份徽标（原型 editor.js:376-379 身份节首行）：角色模板名 · 协议代码。 */}
+                        <span className={editor.panelTypeBadge}>
+                          <NodeGlyph node={selectedNode} />
+                          {`${roleLabel(selectedNode, presets, locale)} · ${roleCode(selectedNode)}`}
+                        </span>
+                        {!isNote(selectedNode) && (
+                          <div className={editor.field}>
+                            <span className={editor.fieldLabel}>{t('editor', 'roleTemplate')}</span>
+                            <div className={css.chipRow}>
+                              {presets.map(preset => (
+                                <Pill
+                                  key={preset.id}
+                                  active={selectedNode.role === preset.id}
+                                  aria-pressed={selectedNode.role === preset.id}
+                                  onClick={() => {
+                                    if (selectedNode.role === preset.id) return
+                                    // 已偏离当前模板时，切换会用模板内容覆盖提示词与工具（v0.4.0 同一保护）。
+                                    if (roleDiffers(selectedNode, presets)) {
+                                      setAcknowledged(false)
+                                      setRoleSwitch({ nodeId: selectedNode.node_id, presetId: preset.id })
+                                      return
+                                    }
+                                    applyRole(selectedNode.node_id, preset.id)
+                                  }}
+                                >
+                                  {rolePresetName(preset, locale === 'en' ? 'en' : 'zh')}
+                                </Pill>
+                              ))}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                icon={<IconPlusOutlineRegular size={12} />}
+                                onClick={() => { setTemplateOpen(true) }}
+                              >
+                                {t('editor', 'roleTemplateNew')}
+                              </Button>
+                            </div>
+                            <span className={editor.fieldHint}>{t('editor', 'roleTemplateHint')}</span>
+                          </div>
+                        )}
+                        <Field label={t('editor', 'nodeName')}>
+                          <Input
+                            value={selectedNode.name}
+                            onChange={(event) => { updateNode(selectedNode.node_id, { name: event.currentTarget.value }) }}
+                          />
+                        </Field>
+                        {!isNote(selectedNode) && (
+                          <Field label={t('editor', 'nodeSummary')}>
+                            <Input
+                              value={selectedNode.summary ?? ''}
+                              onChange={(event) => { updateNode(selectedNode.node_id, { summary: event.currentTarget.value }) }}
+                            />
+                          </Field>
+                        )}
+                        <span className={editor.fieldHint}>
+                          {t('editor', 'positionLabel')} {selectedNode.position.x}, {selectedNode.position.y}
+                        </span>
                       </div>
                     </DisclosureRow>
-                  )}
 
-                  {!isNote(selectedNode) && (
-                    <>
+                    {/* 注释（原型 editor.js:381-386）：注释节点有独立的注释节，正文不写进身份节。 */}
+                    {isNote(selectedNode) && (
                       <DisclosureRow
                         className={editor.panelSection}
                         icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupModel')}
-                        open={groups.model === true}
+                        title={t('editor', 'groupNote')}
+                        open={groups.note === true}
                         expandable
                         expandOnRowClick
-                        onToggle={() => { toggleGroup('model') }}
+                        onToggle={() => { toggleGroup('note') }}
                       >
                         <div className={editor.groupBody}>
-                          <div className={editor.field}>
-                            <span className={editor.fieldLabel}>{t('editor', 'nodeModel')}</span>
-                            <select
-                              className={editor.select}
-                              value={selectedNode.model_ref ?? ''}
-                              aria-label={t('editor', 'nodeModel')}
-                              onChange={(event) => { updateNode(selectedNode.node_id, { model_ref: event.currentTarget.value }) }}
-                            >
-                              <option value="">{t('editor', 'modelNone')}</option>
-                              {modelGroups.map(([provider, items]) => (
-                                <optgroup key={provider} label={provider}>
-                                  {items.map(item => (
-                                    <option key={item.id} value={item.id} disabled={item.disabled}>{item.label}</option>
-                                  ))}
-                                </optgroup>
-                              ))}
-                            </select>
-                            <span className={editor.fieldHint}>{t('editor', 'modelRequired')}</span>
-                          </div>
-                        </div>
-                      </DisclosureRow>
-
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupPrompt')}
-                        open={groups.prompt === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('prompt') }}
-                      >
-                        <div className={editor.groupBody}>
+                          {/* 与节点卡片同一正文来源（`system_prompt ?? summary`）：旧注释只存 summary 时也能继续编辑。 */}
                           <textarea
-                            className={`${css.textarea} ${css.textareaMono}`}
-                            value={selectedNode.system_prompt ?? ''}
-                            placeholder={t('editor', 'promptPlaceholder')}
-                            aria-label={t('editor', 'groupPrompt')}
+                            className={css.textarea}
+                            value={selectedNode.system_prompt ?? selectedNode.summary ?? ''}
+                            placeholder={t('editor', 'notePlaceholder')}
+                            aria-label={t('editor', 'notePlaceholder')}
                             onChange={(event) => { updateNode(selectedNode.node_id, { system_prompt: event.currentTarget.value }) }}
                           />
                         </div>
                       </DisclosureRow>
+                    )}
 
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupTools')}
-                        open={groups.tools === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('tools') }}
-                      >
-                        <div className={editor.groupBody}>
-                          {toolsError !== null && <NoticeLine tone="error" text={toolsError} />}
-                          <MultiSelectList
-                            options={toolOptions}
-                            selected={selectedNode.tools ?? []}
-                            emptyText={t('common', 'stateEmpty')}
-                            onToggle={(id, next) => {
-                              const current = selectedNode.tools ?? []
-                              updateNode(selectedNode.node_id, {
-                                tools: next ? [...current, id] : current.filter(item => item !== id),
-                              })
-                            }}
-                          />
-                        </div>
-                      </DisclosureRow>
-
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupSkills')}
-                        open={groups.skills === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('skills') }}
-                      >
-                        <div className={editor.groupBody}>
-                          <MultiSelectList
-                            options={skillOptions}
-                            selected={selectedNode.skills ?? []}
-                            stale={staleByNode.get(selectedNode.node_id)?.skills ?? []}
-                            emptyText={t('common', 'stateEmpty')}
-                            onToggle={(id, next) => {
-                              const current = selectedNode.skills ?? []
-                              updateNode(selectedNode.node_id, {
-                                skills: next ? [...current, id] : current.filter(item => item !== id),
-                              })
-                            }}
-                          />
-                        </div>
-                      </DisclosureRow>
-
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupMcp')}
-                        open={groups.mcp === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('mcp') }}
-                      >
-                        <div className={editor.groupBody}>
-                          <MultiSelectList
-                            options={mcpOptions}
-                            selected={selectedNode.mcp_servers ?? []}
-                            stale={staleByNode.get(selectedNode.node_id)?.servers ?? []}
-                            emptyText={t('common', 'stateEmpty')}
-                            onToggle={(id, next) => {
-                              const current = selectedNode.mcp_servers ?? []
-                              updateNode(selectedNode.node_id, {
-                                mcp_servers: next ? [...current, id] : current.filter(item => item !== id),
-                              })
-                            }}
-                          />
-                        </div>
-                      </DisclosureRow>
-
-                    </>
-                  )}
-
-                  {!isNote(selectedNode) && (
-                    <>
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupEdges')}
-                        open={groups.edges === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('edges') }}
-                      >
-                        <div className={editor.groupBody}>
-                          {outgoing.length === 0 && <span className={editor.fieldHint}>{t('editor', 'edgesNone')}</span>}
-                          {outgoing.map(edge => (
-                            <div key={edge.edge_id} className={editor.edgeRow}>
-                              <span className={css.mono}>
-                                {data.nodes.find(node => node.node_id === edge.to)?.name ?? edge.to}
-                              </span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                icon={<IconCloseOutlineRegular size={12} />}
-                                onClick={() => { removeEdge(edge.edge_id) }}
+                    {!isNote(selectedNode) && (
+                      <>
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupModel')}
+                          open={groups.model === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('model') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <div className={editor.field}>
+                              <span className={editor.fieldLabel}>{t('editor', 'nodeModel')}</span>
+                              <select
+                                className={editor.select}
+                                value={selectedNode.model_ref ?? ''}
+                                aria-label={t('editor', 'nodeModel')}
+                                onChange={(event) => { updateNode(selectedNode.node_id, { model_ref: event.currentTarget.value }) }}
                               >
-                                {t('editor', 'edgesRemove')}
-                              </Button>
-                            </div>
-                          ))}
-                          {edgeTargets.length === 0
-                            ? <span className={editor.fieldHint}>{t('editor', 'edgesNoTargets')}</span>
-                            : (
-                              <div className={editor.field}>
-                                <span className={editor.fieldLabel}>{t('editor', 'edgesAdd')}</span>
-                                <div className={editor.edgeAddRow}>
-                                  <select
-                                    className={editor.select}
-                                    value={edgeTargets.some(node => node.node_id === edgeTarget) ? edgeTarget : edgeTargets[0]?.node_id ?? ''}
-                                    aria-label={t('editor', 'edgesAdd')}
-                                    onChange={(event) => { setEdgeTarget(event.currentTarget.value) }}
-                                  >
-                                    {edgeTargets.map(node => (
-                                      <option key={node.node_id} value={node.node_id}>
-                                        {`${node.name} · ${roleLabel(node, presets, locale)}`}
-                                      </option>
+                                <option value="">{t('editor', 'modelNone')}</option>
+                                {modelGroups.map(([provider, items]) => (
+                                  <optgroup key={provider} label={provider}>
+                                    {items.map(item => (
+                                      <option key={item.id} value={item.id} disabled={item.disabled}>{item.label}</option>
                                     ))}
-                                  </select>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      const target = edgeTargets.some(node => node.node_id === edgeTarget)
-                                        ? edgeTarget
-                                        : edgeTargets[0]?.node_id ?? ''
-                                      if (target !== '') addEdge(selectedNode.node_id, target)
-                                    }}
-                                  >
-                                    {t('editor', 'edgesAddAction')}
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                        </div>
-                      </DisclosureRow>
+                                  </optgroup>
+                                ))}
+                              </select>
+                              <span className={editor.fieldHint}>{t('editor', 'modelRequired')}</span>
+                            </div>
+                          </div>
+                        </DisclosureRow>
 
-                      {/* 节点插件：原型没有这一节，保留在委派边之后（不在采样参数与委派边之间截断顺序）。 */}
-                      <DisclosureRow
-                        className={editor.panelSection}
-                        icon={<IconPlusOutlineRegular size={14} />}
-                        title={t('editor', 'groupNodePlugins')}
-                        open={groups.nodePlugins === true}
-                        expandable
-                        expandOnRowClick
-                        onToggle={() => { toggleGroup('nodePlugins') }}
-                      >
-                        <div className={editor.groupBody}>
-                          <span className={editor.fieldHint}>{t('editor', 'nodePluginsHint')}</span>
-                          {nodePlugins.length === 0
-                            ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
-                            : nodePlugins.map((row, index) => (
-                              <div key={`${row.id ?? row.name}-${String(index)}`} className={editor.edgeRow}>
-                                <span className={css.mono}>{row.id === undefined ? row.name : `${row.id} · ${row.name}`}</span>
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupSampling')}
+                          open={groups.sampling === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('sampling') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <div className={editor.field}>
+                              <span className={editor.fieldLabel}>{t('editor', 'samplingTemperature')}</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                max={2}
+                                step={0.1}
+                                value={selectedNode.sampling?.temperature ?? ''}
+                                placeholder={t('editor', 'samplingUnset')}
+                                aria-label={t('editor', 'samplingTemperature')}
+                                onChange={(event) => { setNodeSampling(selectedNode.node_id, 'temperature', event.currentTarget.value) }}
+                              />
+                            </div>
+                            <div className={editor.field}>
+                              <span className={editor.fieldLabel}>{t('editor', 'samplingMaxTokens')}</span>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={128000}
+                                step={256}
+                                value={selectedNode.sampling?.max_tokens ?? ''}
+                                placeholder={t('editor', 'samplingUnset')}
+                                aria-label={t('editor', 'samplingMaxTokens')}
+                                onChange={(event) => { setNodeSampling(selectedNode.node_id, 'max_tokens', event.currentTarget.value) }}
+                              />
+                            </div>
+                            <div className={editor.field}>
+                              <span className={editor.fieldLabel}>{t('editor', 'samplingTurnLimit')}</span>
+                              <Input
+                                type="number"
+                                min={1}
+                                max={100}
+                                step={1}
+                                value={selectedNode.sampling?.max_tool_calls ?? ''}
+                                placeholder={t('editor', 'samplingUnset')}
+                                aria-label={t('editor', 'samplingTurnLimit')}
+                                onChange={(event) => { setNodeSampling(selectedNode.node_id, 'max_tool_calls', event.currentTarget.value) }}
+                              />
+                            </div>
+                            <span className={editor.fieldHint}>{t('editor', 'samplingHint')}</span>
+                          </div>
+                        </DisclosureRow>
+
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupPrompt')}
+                          open={groups.prompt === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('prompt') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <textarea
+                              className={`${css.textarea} ${css.textareaMono}`}
+                              value={selectedNode.system_prompt ?? ''}
+                              placeholder={t('editor', 'promptPlaceholder')}
+                              aria-label={t('editor', 'groupPrompt')}
+                              onChange={(event) => { updateNode(selectedNode.node_id, { system_prompt: event.currentTarget.value }) }}
+                            />
+                          </div>
+                        </DisclosureRow>
+
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupTools')}
+                          open={groups.tools === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('tools') }}
+                        >
+                          <div className={editor.groupBody}>
+                            {toolsError !== null && <NoticeLine tone="error" text={toolsError} />}
+                            <MultiSelectList
+                              options={toolOptions}
+                              selected={selectedNode.tools ?? []}
+                              emptyText={t('common', 'stateEmpty')}
+                              onToggle={(id, next) => {
+                                const current = selectedNode.tools ?? []
+                                updateNode(selectedNode.node_id, {
+                                  tools: next ? [...current, id] : current.filter(item => item !== id),
+                                })
+                              }}
+                            />
+                          </div>
+                        </DisclosureRow>
+
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupSkills')}
+                          open={groups.skills === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('skills') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <MultiSelectList
+                              options={skillOptions}
+                              selected={selectedNode.skills ?? []}
+                              stale={staleByNode.get(selectedNode.node_id)?.skills ?? []}
+                              emptyText={t('common', 'stateEmpty')}
+                              onToggle={(id, next) => {
+                                const current = selectedNode.skills ?? []
+                                updateNode(selectedNode.node_id, {
+                                  skills: next ? [...current, id] : current.filter(item => item !== id),
+                                })
+                              }}
+                            />
+                          </div>
+                        </DisclosureRow>
+
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupMcp')}
+                          open={groups.mcp === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('mcp') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <MultiSelectList
+                              options={mcpOptions}
+                              selected={selectedNode.mcp_servers ?? []}
+                              stale={staleByNode.get(selectedNode.node_id)?.servers ?? []}
+                              emptyText={t('common', 'stateEmpty')}
+                              onToggle={(id, next) => {
+                                const current = selectedNode.mcp_servers ?? []
+                                updateNode(selectedNode.node_id, {
+                                  mcp_servers: next ? [...current, id] : current.filter(item => item !== id),
+                                })
+                              }}
+                            />
+                          </div>
+                        </DisclosureRow>
+
+                      </>
+                    )}
+
+                    {!isNote(selectedNode) && (
+                      <>
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupEdges')}
+                          open={groups.edges === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('edges') }}
+                        >
+                          <div className={editor.groupBody}>
+                            {outgoing.length === 0 && <span className={editor.fieldHint}>{t('editor', 'edgesNone')}</span>}
+                            {outgoing.map(edge => (
+                              <div key={edge.edge_id} className={editor.edgeRow}>
+                                <span className={css.mono}>
+                                  {data.nodes.find(node => node.node_id === edge.to)?.name ?? edge.to}
+                                </span>
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  icon={<IconTrashOutlineRegular size={14} />}
-                                  aria-label={t('editor', 'pluginRemove')}
-                                  onClick={() => { removeNodePlugin(index) }}
-                                />
+                                  icon={<IconCloseOutlineRegular size={12} />}
+                                  onClick={() => { removeEdge(edge.edge_id) }}
+                                >
+                                  {t('editor', 'edgesRemove')}
+                                </Button>
                               </div>
                             ))}
-                          <Field label={t('editor', 'pluginPackage')}>
-                            <Input
-                              value={nodePluginDraft.name}
-                              onChange={(event) => {
-                                setNodePluginDraft({ ...nodePluginDraft, name: event.currentTarget.value })
-                                setNodePluginError(null)
-                              }}
-                            />
-                          </Field>
-                          <Field label={t('editor', 'pluginRowIdOptional')}>
-                            <Input
-                              value={nodePluginDraft.id}
-                              onChange={(event) => {
-                                setNodePluginDraft({ ...nodePluginDraft, id: event.currentTarget.value })
-                                setNodePluginError(null)
-                              }}
-                            />
-                          </Field>
-                          <Field label={t('editor', 'pluginConfig')}>
-                            <textarea
-                              className={`${css.textarea} ${css.textareaMono}`}
-                              value={nodePluginDraft.config}
-                              onChange={(event) => {
-                                setNodePluginDraft({ ...nodePluginDraft, config: event.currentTarget.value })
-                                setNodePluginError(null)
-                              }}
-                            />
-                          </Field>
-                          {nodePluginError !== null && <NoticeLine tone="error" text={nodePluginError} />}
-                          <Button size="sm" onClick={addNodePlugin}>{t('editor', 'pluginAdd')}</Button>
-                        </div>
-                      </DisclosureRow>
-                    </>
-                  )}
+                            {edgeTargets.length === 0
+                              ? <span className={editor.fieldHint}>{t('editor', 'edgesNoTargets')}</span>
+                              : (
+                                <div className={editor.field}>
+                                  <span className={editor.fieldLabel}>{t('editor', 'edgesAdd')}</span>
+                                  <div className={editor.edgeAddRow}>
+                                    <select
+                                      className={editor.select}
+                                      value={edgeTargets.some(node => node.node_id === edgeTarget) ? edgeTarget : edgeTargets[0]?.node_id ?? ''}
+                                      aria-label={t('editor', 'edgesAdd')}
+                                      onChange={(event) => { setEdgeTarget(event.currentTarget.value) }}
+                                    >
+                                      {edgeTargets.map(node => (
+                                        <option key={node.node_id} value={node.node_id}>
+                                          {`${node.name} · ${roleLabel(node, presets, locale)}`}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const target = edgeTargets.some(node => node.node_id === edgeTarget)
+                                          ? edgeTarget
+                                          : edgeTargets[0]?.node_id ?? ''
+                                        if (target !== '') addEdge(selectedNode.node_id, target)
+                                      }}
+                                    >
+                                      {t('editor', 'edgesAddAction')}
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                          </div>
+                        </DisclosureRow>
 
-                  {/* 删除节点（原型 editor.js:413 .inspector-danger）：检查器末尾的独立危险操作区。 */}
-                  <div className={editor.panelDanger}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className={css.dangerButton}
-                      icon={<IconTrashOutlineRegular size={14} />}
-                      onClick={() => { removeNode(selectedNode.node_id) }}
-                    >
-                      {t('editor', 'deleteNode')}
-                    </Button>
-                  </div>
-                </>
-              )}
+                        {/* 节点插件：原型没有这一节，保留在委派边之后（不在采样参数与委派边之间截断顺序）。 */}
+                        <DisclosureRow
+                          className={editor.panelSection}
+                          icon={<IconPlusOutlineRegular size={14} />}
+                          title={t('editor', 'groupNodePlugins')}
+                          open={groups.nodePlugins === true}
+                          expandable
+                          expandOnRowClick
+                          onToggle={() => { toggleGroup('nodePlugins') }}
+                        >
+                          <div className={editor.groupBody}>
+                            <span className={editor.fieldHint}>{t('editor', 'nodePluginsHint')}</span>
+                            <Button size="sm" variant="outline" onClick={() => { setDefaultsOpen(true) }}>
+                              {t('editor', 'defaultsEdit')}
+                            </Button>
+                            {nodePlugins.length === 0
+                              ? <span className={editor.fieldHint}>{t('common', 'stateEmpty')}</span>
+                              : nodePlugins.map((row, index) => (
+                                <div key={`${row.id ?? row.name}-${String(index)}`} className={editor.edgeRow}>
+                                  <span className={css.mono}>{row.id === undefined ? row.name : `${row.id} · ${row.name}`}</span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon={<IconTrashOutlineRegular size={14} />}
+                                    aria-label={t('editor', 'pluginRemove')}
+                                    onClick={() => { removeNodePlugin(index) }}
+                                  />
+                                </div>
+                              ))}
+                            <Field label={t('editor', 'pluginPackage')}>
+                              <Input
+                                value={nodePluginDraft.name}
+                                onChange={(event) => {
+                                  setNodePluginDraft({ ...nodePluginDraft, name: event.currentTarget.value })
+                                  setNodePluginError(null)
+                                }}
+                              />
+                            </Field>
+                            <Field label={t('editor', 'pluginRowIdOptional')}>
+                              <Input
+                                value={nodePluginDraft.id}
+                                onChange={(event) => {
+                                  setNodePluginDraft({ ...nodePluginDraft, id: event.currentTarget.value })
+                                  setNodePluginError(null)
+                                }}
+                              />
+                            </Field>
+                            <Field label={t('editor', 'pluginConfig')}>
+                              <textarea
+                                className={`${css.textarea} ${css.textareaMono}`}
+                                value={nodePluginDraft.config}
+                                onChange={(event) => {
+                                  setNodePluginDraft({ ...nodePluginDraft, config: event.currentTarget.value })
+                                  setNodePluginError(null)
+                                }}
+                              />
+                            </Field>
+                            {nodePluginError !== null && <NoticeLine tone="error" text={nodePluginError} />}
+                            <Button size="sm" onClick={addNodePlugin}>{t('editor', 'pluginAdd')}</Button>
+                          </div>
+                        </DisclosureRow>
+                      </>
+                    )}
+
+                    {/* 删除节点（原型 editor.js:413 .inspector-danger）：检查器末尾的独立危险操作区。 */}
+                    <div className={editor.panelDanger}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={css.dangerButton}
+                        icon={<IconTrashOutlineRegular size={14} />}
+                        onClick={() => { removeNode(selectedNode.node_id) }}
+                      >
+                        {t('editor', 'deleteNode')}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </fieldset>
             </div>
           </aside>
         </div>
-
-        {/* 运行面板是画布与检查器之下的整行（原型 editor.html:136-173：底部面板全宽）。 */}
-        <CanvasPreview
-          canvasId={canvasId}
-          projects={projects}
-          onError={(detail) => { setError({ key: 'errorPreview', detail }) }}
-          collapsed={panelCollapsed}
-          onToggleCollapsed={() => { setPanelCollapsed(!panelCollapsed) }}
-          focusSignal={previewSignal}
-        />
 
         <RiskConfirmation
           open={roleSwitch !== null}
@@ -2691,6 +2827,21 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           onClose={() => { setPackageOpen(false) }}
         />
 
+        {/* 用户级默认插件表（需求 §0.1.4）：替换项只影响本人默认表，新建 agent 节点随即采用。 */}
+        <DefaultPluginsDialog
+          open={defaultsOpen}
+          diff={defaultsDiff}
+          version={defaultsVersion}
+          onClose={() => { setDefaultsOpen(false) }}
+          onSaved={(view) => {
+            setDefaultsDiff(view.diff)
+            setDefaultsVersion(view.version)
+            setDefaultNodePlugins(view.plugins)
+            setDefaultsOpen(false)
+            toast.show(t('editor', 'defaultsSaved'), 'success')
+          }}
+        />
+
         {/* 节点删除确认（原型 removeNode）：确认才删除节点与相连委派边，取消不改动任何数据。 */}
         <Modal
           open={deletePending !== null && deleteTargets.length > 0}
@@ -2713,406 +2864,148 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   )
 }
 
-/** 预览条目（与 Host 侧 `PreviewStream` 的折叠结果同形；轻量，只承载呈现所需字段）。 */
-interface PreviewEntry {
-  seq: number
-  kind: 'text' | 'tool' | 'status' | 'error'
-  text?: string
-  toolName?: string
-  phase?: 'start' | 'result' | 'error'
-  turn?: number
-}
-
-/** 预览读取响应。 */
-interface PreviewResponse {
-  ok: true
-  sessionKey: string
-  status: string
-  lastSeq: number
-  entries: PreviewEntry[]
-}
-
-/** 轮询间隔（轻量路径：不另建推送通道，按短周期增量读取即可呈现流式效果）。 */
-const PREVIEW_POLL_MS = 700
-
 /**
- * 画布编辑器内的实时预览（PRD-02 FR-CANVAS-017）。
+ * 用户级默认插件表对话框（需求 §0.1.4）。
  *
- * 与「运行」按钮的关系：运行进完整运行面板（原生客户端插件树），预览留在编辑器内，
- * 只呈现**纯文本流与工具状态**——不复刻卡片体系。停止与清空是预览自己的两个动作，
- * 分别落到既有的取消路由与本地缓冲。
+ * 默认表只接受实例新增行（后端按空基线校验，`disable`/`replace`/`configure` 会 422），
+ * 因此这里只编辑 `add` 行；「替换其中某个插件」= 删掉一行再加一行。
+ * @param props - 打开态、当前差异与版本、关闭与保存回调。
  */
-/**
- * 预览运行状态的呈现文案。
- *
- * Host 侧状态词（preview-stream.ts `statusOf`：pending/running/completed/idle/failed/stopped）是英文
- * 原文，直接摆上界面会在中文语境里混出机器词（R7）——这里统一过一遍字典；未知值原样呈现
- * （不猜、不静默吞）。状态在 state 里存原文、渲染时才翻译，切语言也不会残留旧语种。
- */
-function previewStatusLabel(status: string): string {
-  if (status === 'pending') return t('editor', 'previewPending')
-  if (status === 'running') return t('editor', 'previewRunning')
-  if (status === 'completed') return t('editor', 'previewCompleted')
-  if (status === 'idle') return t('editor', 'previewIdle')
-  if (status === 'failed') return t('editor', 'previewFailed')
-  if (status === 'stopped') return t('editor', 'previewStopped')
-  if (status === 'starting') return t('editor', 'previewStarting')
-  return status
-}
-
-function CanvasPreview({ canvasId, projects, onError, collapsed, onToggleCollapsed, focusSignal }: {
-  canvasId: string
-  projects: RunProjectView[]
-  onError: (detail: string) => void
-  /** 折叠到 40px（只留标题栏与状态）。 */
-  collapsed: boolean
-  /** 折叠/展开切换（底部栏与工具栏图标轨共用同一状态）。 */
-  onToggleCollapsed: () => void
-  /** 顶栏「实时预览」的递增信号：切到预览标签并把焦点交给输入框。 */
-  focusSignal: number
+function DefaultPluginsDialog({ open, diff, version, onClose, onSaved }: {
+  open: boolean
+  diff: InstancePluginDiff
+  version: number
+  onClose: () => void
+  onSaved: (view: { diff: InstancePluginDiff; version: number; plugins: NodePluginRowView[] }) => void
 }) {
-  const [message, setMessage] = useState('')
-  const [tab, setTab] = useState<'console' | 'preview'>('console')
-  const [entries, setEntries] = useState<PreviewEntry[]>([])
-  const [sessionKey, setSessionKey] = useState<string | null>(null)
-  // 状态存 Host 原文（pending/running/…/starting），渲染时经 previewStatusLabel 翻译。
-  const [status, setStatus] = useState('idle')
+  const [rows, setRows] = useState<{ id: string; name: string; config: string }[]>([])
+  const [draft, setDraft] = useState({ id: '', name: '', config: '' })
+  const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [running, setRunning] = useState(false)
-  const cursorRef = useRef(0)
-  /** 「清空日志」的丢弃水位线：已读到的 seq 在清空后不再回放（在途拉取的响应也按它过滤）。 */
-  const clearedRef = useRef(0)
-  /** 在途拉取是否仍可采纳：停止/清空后置 false，旧响应不再把状态改回「运行中」。 */
-  const activeRef = useRef(false)
-  const logRef = useRef<HTMLDivElement | null>(null)
-  const inputWrapRef = useRef<HTMLSpanElement | null>(null)
-  /** 已处理的顶栏预览信号：输入框只在预览标签内挂载，切标签后补一次聚焦。 */
-  const focusedSignalRef = useRef(0)
 
-  // 顶栏「实时预览」：切到预览标签（原型 editor.js:1070-1074）。
   useEffect(() => {
-    if (focusSignal === 0) return
-    setTab('preview')
-  }, [focusSignal])
+    if (!open) return
+    setRows((diff.add ?? []).map(row => ({
+      id: row.id,
+      name: row.name,
+      config: row.config === undefined ? '' : JSON.stringify(row.config, null, 2),
+    })))
+    setDraft({ id: '', name: '', config: '' })
+    setError(null)
+    setBusy(false)
+  }, [open, diff])
 
-  // 输入框随预览标签挂载：切到预览后再聚焦，避免对未挂载的输入框调用 focus。
-  useEffect(() => {
-    if (tab !== 'preview' || focusSignal === 0 || focusedSignalRef.current === focusSignal) return
-    focusedSignalRef.current = focusSignal
-    inputWrapRef.current?.querySelector('input')?.focus()
-  }, [tab, focusSignal])
-
-  const candidates = projects.filter(project => project.agentic_flow_id === canvasId)
-
-  /** 增量拉取一次预览日志（水位线只前进，重复条目不会重放）。 */
-  const pull = useCallback(async (): Promise<void> => {
-    if (sessionKey === null) return
+  /** 解析配置文本：空串 = 无配置；非法 JSON 返回失败由调用方给产品文案。 */
+  const parseConfig = (text: string): { ok: true; value?: unknown } | { ok: false } => {
+    if (text.trim() === '') return { ok: true }
     try {
-      const result = await request<PreviewResponse>(
-        `/sessions/${encodeURIComponent(sessionKey)}/preview?after=${String(cursorRef.current)}`,
-      )
-      if (!activeRef.current) return
-      if (result.entries.length > 0) {
-        cursorRef.current = result.lastSeq
-        // 清空之前已呈现过的条目不再回放：在途响应同样丢弃，旧日志不会因为一次拉取而复活。
-        const fresh = result.entries.filter(entry => entry.seq > clearedRef.current)
-        if (fresh.length > 0) setEntries(previous => [...previous, ...fresh])
-      }
-      if (result.status !== 'unknown') setStatus(result.status)
-      if (result.status === 'completed' || result.status === 'idle' || result.status === 'stopped' || result.status === 'failed') {
-        activeRef.current = false
-        setRunning(false)
-      }
-    } catch (failure) {
-      onError(describeError(failure))
-      activeRef.current = false
-      setRunning(false)
-    }
-  }, [sessionKey, onError])
-
-  // 运行期间按短周期增量读取；停止后自然退出轮询（不另建推送通道）。
-  useEffect(() => {
-    if (!running || sessionKey === null) return
-    const timer = window.setInterval(() => { void pull() }, PREVIEW_POLL_MS)
-    return () => { window.clearInterval(timer) }
-  }, [running, sessionKey, pull])
-
-  // 日志追加后贴底（预览是「看最新」的视图）。
-  useEffect(() => {
-    const node = logRef.current
-    if (node === null) return
-    node.scrollTop = node.scrollHeight
-  }, [entries])
-
-  /** 发起一次试运行：复用运行域既有路由（编译 → mainagent 就位 → 投递消息）。 */
-  const send = async (): Promise<void> => {
-    const text = message.trim()
-    if (text === '' || busy) return
-    setBusy(true)
-    try {
-      let key = sessionKey
-      if (key === null) {
-        const projectId = candidates[0]?.id ?? null
-        if (projectId === null) {
-          // 运行项目必须有沙箱目录（FR-CANVAS-040/041）：没有项目时明确要求先建项目，
-          // 不再以空目录发起注定被 FOLDER_REQUIRED 拒绝的请求。
-          onError(t('editor', 'previewProjectRequired'))
-          setBusy(false)
-          return
-        }
-        const session = await request<{ ok: true; session: RunSessionView }>('/runs', {
-          method: 'POST',
-          body: { canvasId, projectId },
-        })
-        key = session.session.session_key
-        setSessionKey(key)
-        cursorRef.current = 0
-        setEntries([])
-      }
-      await request(`/sessions/${encodeURIComponent(key)}/prompt`, { method: 'POST', body: { text } })
-      setMessage('')
-      activeRef.current = true
-      setRunning(true)
-      setStatus('starting')
-    } catch (failure) {
-      onError(describeError(failure))
-    } finally {
-      setBusy(false)
+      return { ok: true, value: JSON.parse(text) }
+    } catch {
+      return { ok: false }
     }
   }
 
-  /** 停止当前试运行。 */
-  const stop = async (): Promise<void> => {
-    if (sessionKey === null) return
-    setBusy(true)
-    try {
-      await request(`/sessions/${encodeURIComponent(sessionKey)}/cancel`, {
-        method: 'POST',
-        body: { reason: 'stopped from the canvas preview' },
-      })
-      activeRef.current = false
-      setRunning(false)
-      setStatus('stopped')
-    } catch (failure) {
-      onError(describeError(failure))
-    } finally {
-      setBusy(false)
+  const addRow = (): void => {
+    const name = draft.name.trim()
+    if (name === '') {
+      setError(t('editor', 'pluginNameRequired'))
+      return
     }
+    const parsed = parseConfig(draft.config)
+    if (!parsed.ok) {
+      setError(t('editor', 'pluginConfigInvalid'))
+      return
+    }
+    const id = draft.id.trim() === '' ? (name.split('/').slice(-1)[0] ?? name) : draft.id.trim()
+    if (rows.some(row => row.id === id)) {
+      setError(t('editor', 'pluginRowDuplicate'))
+      return
+    }
+    setRows([...rows, { id, name, config: draft.config.trim() === '' ? '' : draft.config }])
+    setDraft({ id: '', name: '', config: '' })
+    setError(null)
   }
 
-  /**
-   * 清空日志（原型 clear-btn：先停掉在跑的试运行，再把状态复位为「未运行」）。
-   * 水位线保持——否则下一次轮询会把已读过的旧日志当成新条目重新追加。
-   */
-  const clearLog = (): void => {
-    clearedRef.current = cursorRef.current
-    setEntries([])
-    activeRef.current = false
-    if (running && sessionKey !== null) {
-      void request(`/sessions/${encodeURIComponent(sessionKey)}/cancel`, {
-        method: 'POST',
-        body: { reason: 'stopped from the canvas preview' },
-      }).catch((failure: unknown) => { onError(describeError(failure)) })
+  const save = (): void => {
+    if (busy) return
+    const add: NonNullable<InstancePluginDiff['add']> = []
+    for (const row of rows) {
+      const parsed = parseConfig(row.config)
+      if (!parsed.ok) {
+        setError(t('editor', 'pluginConfigInvalid'))
+        return
+      }
+      add.push({ id: row.id, name: row.name, ...(parsed.value === undefined ? {} : { config: parsed.value }) })
     }
-    setRunning(false)
-    setStatus('idle')
+    const next: InstancePluginDiff = { ...diff }
+    if (add.length === 0) delete next.add
+    else next.add = add
+    setBusy(true)
+    setError(null)
+    void (async () => {
+      try {
+        const view = await request<{ ok: true; diff: InstancePluginDiff; version: number; plugins: NodePluginRowView[] }>(
+          '/plugins/defaults', { method: 'PUT', body: { diff: next, version } },
+        )
+        onSaved({ diff: view.diff, version: view.version, plugins: view.plugins })
+      } catch (failure) {
+        setError(describeError(failure))
+        setBusy(false)
+      }
+    })()
   }
 
   return (
-    <div className={editor.preview} data-collapsed={collapsed ? '' : undefined} role="region" aria-label={t('editor', 'previewRegion')}>
-      <div className={editor.previewBar}>
-        <div className={editor.consoleTabs} role="tablist" aria-label={t('editor', 'consoleTabs')}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'console'}
-            className={tab === 'console' ? `${editor.consoleTab} ${editor.consoleTabActive}` : editor.consoleTab}
-            onClick={() => {
-              // 折叠状态下先展开面板再切换（原型 setTab 的 is-collapsed 处理）。
-              if (collapsed) onToggleCollapsed()
-              setTab('console')
-            }}
-          >
-            {t('editor', 'consoleTab')}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'preview'}
-            className={tab === 'preview' ? `${editor.consoleTab} ${editor.consoleTabActive}` : editor.consoleTab}
-            onClick={() => {
-              if (collapsed) onToggleCollapsed()
-              setTab('preview')
-            }}
-          >
-            {t('editor', 'previewTab')}
-          </button>
-        </div>
-        <span className={editor.consoleStatus}>
-          <span className={editor.consoleDot} data-live={running ? '' : undefined} />
-          {previewStatusLabel(status)}
-        </span>
-        <span className={editor.toolbarSpacer} />
-        {/* 面板 meta（原型 .console__meta）：一行陈述本次试运行的真实来源。 */}
-        <span className={editor.consoleMeta}>{t('editor', 'consoleMeta')}</span>
-        {running && (
-          <Button
-            size="sm"
-            variant="ghost"
-            icon={<IconStopFillRegular size={12} />}
-            disabled={busy}
-            onClick={() => { void stop() }}
-          >
-            {t('editor', 'previewStop')}
-          </Button>
-        )}
-        <Button size="sm" variant="ghost" onClick={clearLog}>
-          {t('editor', 'previewClear')}
-        </Button>
-        <button
-          type="button"
-          className={editor.consoleCollapse}
-          aria-label={t('editor', collapsed ? 'expandPanel' : 'collapsePanel')}
-          title={t('editor', collapsed ? 'expandPanel' : 'collapsePanel')}
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapsed}
-        >
-          {collapsed ? <IconChevronUpOutlineRegular size={14} /> : <IconChevronDownOutlineRegular size={14} />}
-        </button>
-      </div>
-
-      {!collapsed && (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t('editor', 'defaultsTitle')}
+      closeLabel={t('common', 'actionClose')}
+      footer={(
         <>
-          <div className={editor.previewLog} ref={logRef}>
-            {tab === 'console'
-              ? (
-                <>
-                  {entries.length === 0 && (
-                    <div className={editor.consoleEmpty}>
-                      <span className={editor.consoleEmptyTitle}>{t('editor', 'consoleEmptyTitle')}</span>
-                      <p className={editor.consoleEmptyDesc}>{t('editor', 'consoleEmptyDesc')}</p>
-                    </div>
-                  )}
-                  {entries.map(entry => <PreviewLine key={entry.seq} entry={entry} />)}
-                </>
-              )
-              : (
-                <>
-                  {entries.length === 0 && (
-                    <div className={editor.consoleEmpty}>
-                      <span className={editor.consoleEmptyTitle}>{t('editor', 'previewEmptyTitle')}</span>
-                      <p className={editor.consoleEmptyDesc}>{t('editor', 'previewEmptyDesc')}</p>
-                    </div>
-                  )}
-                  {/* 轻量预览同时呈现文本流与工具状态：连续工具条目合成一行紧凑 chip。 */}
-                  {groupPreviewEntries(entries).map(row => (row.tools
-                    ? (
-                      <div key={`tools-${String(row.key)}`} className={editor.previewToolChips}>
-                        {row.entries.map(entry => <PreviewLine key={entry.seq} entry={entry} chips />)}
-                      </div>
-                    )
-                    : row.entries.map(entry => <PreviewLine key={entry.seq} entry={entry} />)))}
-                </>
-              )}
-          </div>
-
-          {/* 测试输入只在「实时预览」标签内（原型 editor.html:160-171）：运行日志标签不提供发送口。 */}
-          {tab === 'preview' && (
-            <div className={editor.previewInput}>
-              <span className={editor.previewInputField} ref={inputWrapRef}>
-                <Input
-                  value={message}
-                  placeholder={t('editor', 'previewPlaceholder')}
-                  onChange={(event) => { setMessage(event.currentTarget.value) }}
-                  onKeyDown={(event) => { if (event.key === 'Enter') void send() }}
-                />
-              </span>
-              <Button size="sm" variant="primary" disabled={busy || message.trim() === ''} onClick={() => { void send() }}>
-                {busy ? t('editor', 'previewSending') : t('editor', 'previewSend')}
-              </Button>
-            </div>
-          )}
+          <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
+          <Button variant="primary" disabled={busy} onClick={save}>{t('editor', 'defaultsSave')}</Button>
         </>
       )}
-    </div>
-  )
-}
-
-/** 预览行分组：连续工具条目合成一行 chip，其余条目各自成行。 */
-interface PreviewRow {
-  key: number
-  entries: PreviewEntry[]
-  tools: boolean
-}
-
-/**
- * 把预览条目按「连续工具条目」分组。
- * @param entries - 预览条目（seq 递增）。
- * @returns 预览行。
- */
-function groupPreviewEntries(entries: PreviewEntry[]): PreviewRow[] {
-  const rows: PreviewRow[] = []
-  for (const entry of entries) {
-    const last = rows[rows.length - 1]
-    const tools = entry.kind === 'tool'
-    if (tools && last !== undefined && last.tools) last.entries.push(entry)
-    else rows.push({ key: entry.seq, entries: [entry], tools })
-  }
-  return rows
-}
-
-/**
- * 把 Host 原文的轮次条目翻成当前语言（`turn N started` / `turn ended (reason)`；流协议不变）。
- * @param entry - 状态或错误条目。
- * @param failed - 该条目是否表示回合失败。
- * @returns 本地化文案；不是轮次条目时保留原文。
- */
-function turnLine(entry: PreviewEntry, failed: boolean): string {
-  const raw = entry.text ?? ''
-  if (entry.turn === undefined || !raw.startsWith('turn ')) return raw
-  if (raw.startsWith('turn ended')) return t('editor', failed ? 'turnFailed' : 'turnEnded', { turn: entry.turn })
-  return t('editor', 'turnStarted', { turn: entry.turn })
-}
-
-/**
- * 工具阶段的状态文案键。
- * @param phase - 工具阶段。
- * @returns 文案键。
- */
-function toolStateKey(phase: PreviewEntry['phase']): string {
-  if (phase === 'start') return 'previewToolRunning'
-  if (phase === 'error') return 'previewToolFailed'
-  return 'previewToolDone'
-}
-
-/**
- * 工具状态 chip 的语气。
- * @param phase - 工具阶段。
- * @returns Tag 语气（执行中=信息、完成=成功、失败=危险）。
- */
-function toolTone(phase: PreviewEntry['phase']): 'info' | 'success' | 'danger' {
-  if (phase === 'start') return 'info'
-  if (phase === 'error') return 'danger'
-  return 'success'
-}
-
-/**
- * 渲染一条预览条目（纯文本与工具状态两态，绝不在此复刻卡片）。
- * @param entry - 预览条目。
- * @param chips - 工具条目是否用紧凑状态 chip 呈现（实时预览标签用它）。
- */
-function PreviewLine({ entry, chips = false }: { entry: PreviewEntry; chips?: boolean }): ReactElement {
-  if (entry.kind === 'text') return <p className={editor.previewText}>{entry.text}</p>
-  if (entry.kind === 'error') return <p className={editor.previewError}>{turnLine(entry, true)}</p>
-  if (entry.kind === 'status') return <p className={editor.previewStatusLine}>{turnLine(entry, false)}</p>
-  // 工具名缺失时只呈现状态词，不拼出 "undefined"（结果事件理论上能按 callId 对上名字）。
-  const state = t('editor', toolStateKey(entry.phase))
-  const label = entry.toolName === undefined ? state : `${entry.toolName} — ${state}`
-  if (chips) return <Tag tone={toolTone(entry.phase)}>{label}</Tag>
-  return (
-    <p className={editor.previewTool}>
-      <span className={editor.previewToolName}>{label}</span>
-      {entry.text === undefined || entry.text === '' ? '' : `\n${entry.text}`}
-    </p>
+    >
+      <div className={editor.groupBody}>
+        <span className={editor.fieldHint}>{t('editor', 'defaultsHint')}</span>
+        {rows.length === 0
+          ? <span className={editor.fieldHint}>{t('editor', 'defaultsEmpty')}</span>
+          : rows.map((row, index) => (
+            <div key={`${row.id}-${String(index)}`} className={editor.edgeRow}>
+              <span className={css.mono}>{row.id} · {row.name}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<IconTrashOutlineRegular size={14} />}
+                aria-label={t('editor', 'pluginRemove')}
+                onClick={() => { setRows(rows.filter((_row, position) => position !== index)) }}
+              />
+            </div>
+          ))}
+        <Field label={t('editor', 'pluginPackage')}>
+          <Input
+            value={draft.name}
+            onChange={(event) => { setDraft({ ...draft, name: event.currentTarget.value }); setError(null) }}
+          />
+        </Field>
+        <Field label={t('editor', 'pluginRowIdOptional')}>
+          <Input
+            value={draft.id}
+            onChange={(event) => { setDraft({ ...draft, id: event.currentTarget.value }); setError(null) }}
+          />
+        </Field>
+        <Field label={t('editor', 'pluginConfig')}>
+          <textarea
+            className={`${css.textarea} ${css.textareaMono}`}
+            value={draft.config}
+            onChange={(event) => { setDraft({ ...draft, config: event.currentTarget.value }); setError(null) }}
+          />
+        </Field>
+        {error !== null && <NoticeLine tone="error" text={error} />}
+        <Button size="sm" onClick={addRow}>{t('editor', 'pluginAdd')}</Button>
+      </div>
+    </Modal>
   )
 }
