@@ -42,17 +42,27 @@ function optionalText(value: unknown): string | undefined {
 export function mountOperationAreaBridge(ctx: Context, runtime: FrameworkRuntime): void {
   /**
    * 解析一次请求的归属：会话键 → 台账行 → 用户与运行项目。
+   *
+   * 信任门只证明「某个账号已登录」，**不证明**该账号拥有这个会话：会话键由请求体给出，
+   * 任何登录用户都可以填别人的键。因此归属行还必须与连接绑定的账号一致；不一致按
+   * 「不存在」返回（不泄漏他人会话是否存在）。
+   * @param req - 原始请求（取连接绑定的账号）。
    * @param sessionKey - 会话键。
    * @returns 用户 id 与运行项目 id。
    */
-  const ownerOf = async (sessionKey: string): Promise<{ userId: string; projectId: string }> => {
+  const ownerOf = async (req: IncomingMessage, sessionKey: string): Promise<{ userId: string; projectId: string }> => {
     if (sessionKey.trim() === '') {
       throw new BridgeFailure(400, 'SESSION_KEY_REQUIRED', 'sessionKey is required: ownership is resolved from the run ledger, never reported by the client')
     }
+    const admission = ctx.connection.admit(req)
+    const accountId = 'peer' in admission ? ctx.connection.accountIdOf(admission.peer) : undefined
+    if (accountId === undefined) {
+      throw new BridgeFailure(401, 'UNAUTHENTICATED', 'the operation area bridge requires a signed-in account')
+    }
     // 分支/子代理子会话没有自己的台账行：按会话树根解析到已登记的运行（与账号作用域同一份）。
     const ownership = await resolveSessionOwnership(ctx, runtime, sessionKey)
-    if (ownership === undefined) {
-      throw new BridgeFailure(404, 'SESSION_NOT_IN_LEDGER', `session ${sessionKey} has no run ledger row; the operation area serves runs of this instance only`)
+    if (ownership === undefined || ownership.row.user_id !== accountId) {
+      throw new BridgeFailure(404, 'SESSION_NOT_IN_LEDGER', `session ${sessionKey} has no run ledger row for this account`)
     }
     const row = ownership.row
     if (row.run_project_id.trim() === '') {
@@ -87,7 +97,7 @@ export function mountOperationAreaBridge(ctx: Context, runtime: FrameworkRuntime
       const body = method === 'GET' ? {} : await readJsonBody(req)
       const query = (name: string): string | undefined => url.searchParams.get(name) ?? undefined
       const sessionKey = optionalText(body.sessionKey) ?? query('sessionKey')
-      const owner = await ownerOf(sessionKey ?? '')
+      const owner = await ownerOf(req, sessionKey ?? '')
       const input: OpsInput = {
         userId: owner.userId,
         projectId: owner.projectId,

@@ -108,9 +108,16 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
       if (typeof body.liveFollow !== 'boolean') {
         throw new BridgeFailure(400, 'LIVE_FOLLOW_REQUIRED', 'liveFollow must be a boolean')
       }
+      // 会话键由请求体给出：信任门只证明「某账号已登录」，归属行还必须与连接绑定的账号一致，
+      // 否则任何登录用户都能凭他人的会话键改写其运行设置（不匹配按不存在返回）。
+      const admission = ctx.connection.admit(req)
+      const accountId = 'peer' in admission ? ctx.connection.accountIdOf(admission.peer) : undefined
+      if (accountId === undefined) {
+        throw new BridgeFailure(401, 'UNAUTHENTICATED', 'changing run settings requires a signed-in account')
+      }
       const ownership = await resolveSessionOwnership(ctx, runtime, sessionKey)
-      if (ownership === undefined) {
-        throw new BridgeFailure(404, 'SESSION_NOT_IN_LEDGER', `session ${sessionKey} has no run ledger row; run settings serve runs of this instance only`)
+      if (ownership === undefined || ownership.row.user_id !== accountId) {
+        throw new BridgeFailure(404, 'SESSION_NOT_IN_LEDGER', `session ${sessionKey} has no run ledger row for this account`)
       }
       const agent = ctx.agents.get(sessionKey as SessionId)
       if (agent === undefined) {
