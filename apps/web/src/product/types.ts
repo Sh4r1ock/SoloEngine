@@ -302,6 +302,14 @@ export interface McpCallResult {
   violations?: McpArgumentViolation[]
 }
 
+/** 节点级采样参数：只保留有真实请求消费者的字段；留空表示未设置（不写键）。 */
+export interface NodeSampling {
+  temperature?: number
+  max_tokens?: number
+  /** 该节点每个回合允许的工具调用次数上限（与模型配置的工具轮次上限同一口径）。 */
+  max_tool_calls?: number
+}
+
 /** 画布节点（`canvas.ts` CanvasNode）：只有 agent 与注释两种，角色是模板引用。 */
 export interface CanvasNode {
   node_id: string
@@ -317,6 +325,8 @@ export interface CanvasNode {
   mcp_servers?: string[]
   /** 节点级插件行：只挂进该 agent 作用域（流程级插件不在这里）。 */
   plugins?: NodePluginRowView[]
+  /** 节点级采样参数（编译期写入该 agent 的请求配置）。 */
+  sampling?: NodeSampling
   position: { x: number; y: number }
 }
 
@@ -347,7 +357,7 @@ export interface InstancePluginDiff {
 
 /** 画布全局设置。 */
 export interface CanvasSettings {
-  /** 运行档位 = 原生权限预设名（工作区可写 / 白名单自动 / 完全访问）。 */
+  /** 运行档位 = 原生权限预设名（工作区内修改 / 自动审查 / 完全权限），只作编译进运行的默认值；面板原生选择器可随时改。 */
   run_mode?: 'workspace-write' | 'approve-for-me' | 'danger-full-access'
   live_follow?: boolean
   /** 画布内自定义角色模板（内置模板在 `@soloengine/types`，这里只存用户新增的）。 */
@@ -386,6 +396,11 @@ export interface CanvasView {
   updated_at: string | null
   version: number
   canvas: CanvasData
+  /**
+   * 列表视图专用：该行 `canvas_data` 损坏时的原因（后端以空画布占位返回，单张读取仍 422）。
+   * 列表必须照常渲染其它行，故用这一字段把损坏事实标在卡片上。
+   */
+  canvas_error?: { code: string; message: string }
 }
 
 /** 运行项目行（`canvas.ts` RunProjectRow）。 */
