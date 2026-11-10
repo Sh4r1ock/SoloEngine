@@ -23,7 +23,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { scopeOf, scopeParentOf } from '@deepseek-ai/dsh-scope'
@@ -46,12 +46,13 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-client-modules'
 // 引入模块声明，使 `ctx.pluginManager` 在类型上可见；类型同时用于管理层投影。
 import type { BundleInfo, ChangeResult, PluginInstallRequestId, PluginSpecInspection } from '@deepseek-ai/dsh-plugin-manager'
-import { FrameworkRuntime, BUSINESS_TABLES } from '@soloengine/framework'
+import { FrameworkRuntime, BUSINESS_TABLES, FRAMEWORK_VERSION } from '@soloengine/framework'
 import type { ManagedBundleRow, ManagedChangeResult, ManagedInspection } from '@soloengine/framework'
 import { mountOperationAreaBridge } from './ops-bridge.ts'
+import { mountRunSettingsBridge } from './run-settings-bridge.ts'
+import { resolveSessionOwnership, rootSessionKeyOf } from './session-ownership.ts'
 import { attachFollowLayer, attachLedgerWriters, retireSessionsAfterCanvasDelete } from './ledger-writers.ts'
 import { attachCreatorAudit, mountProductSettings } from './product-surfaces.ts'
-import { mountDirectoryPickerBridge } from './directory-picker-bridge.ts'
 import { mountFileChanges } from './file-changes.ts'
 import { PreviewStream, mountPreviewStream } from './preview-stream.ts'
 import { mountLedgerRebuild } from './ledger-rebuild.ts'
@@ -60,7 +61,8 @@ import { CloudNodeRuntime } from './cloud-node.ts'
 import { SessionContainers } from './cloud-containers.ts'
 import { SessionVms } from './cloud-vms.ts'
 import { WorkspaceSync } from './workspace-sync.ts'
-import { FilesystemObjectStore, WorkspaceStore } from '@soloengine/image-distribution'
+import { objectStoreFromEnv } from './object-store-config.ts'
+import { WorkspaceStore } from '@soloengine/image-distribution'
 import ContainerSubprocessRuntime from '@soloengine/subprocess-container'
 import { RETURN_COOKIE } from './trust-bootstrap.ts'
 import { PRODUCT_SURFACE_PATHS, RUN_PANEL_PREFIX, RUN_ROUTE_ROOT, TOOL_MAP } from '@soloengine/types'
@@ -77,6 +79,7 @@ import {
 import {
   createRunDriver,
   followIntentProjectionDefinition,
+  nodeAttributionProjectionDefinition,
   parseNodeLabels,
   runContextProjectionDefinition,
   type NodeAttribution,
@@ -84,7 +87,12 @@ import {
 
 export type { Config } from './config.ts'
 export { resolveProductPageIndex } from './config.ts'
-export { createRunDriver, followIntentProjectionDefinition, runContextProjectionDefinition } from './run-driver.ts'
+export {
+  createRunDriver,
+  followIntentProjectionDefinition,
+  nodeAttributionProjectionDefinition,
+  runContextProjectionDefinition,
+} from './run-driver.ts'
 
 /** Cordis plugin name. */
 export const name = 'soloengine-host'
@@ -238,7 +246,7 @@ function resolveWorkspaceSync(root: string, cloud: CloudNodeRuntime | undefined)
   return new WorkspaceSync({
     store: new WorkspaceStore({
       root: join(root, 'data', 'workspace-cache'),
-      remote: new FilesystemObjectStore(resolve(raw)),
+      remote: objectStoreFromEnv(raw),
     }),
     saveManifest: (sessionKey, files) => cloud.saveWorkspaceManifest(sessionKey, files),
     loadManifest: sessionKey => cloud.workspaceManifest(sessionKey),
@@ -451,32 +459,6 @@ function resolveVms(config: Config): SessionVms | undefined {
 }
 
 /**
- * 取一棵会话树的根：运行面板的深链只指向「一次运行」。
- *
- * 台账也登记子代理子会话（FR-STO-005 要求子会话的消息按会话树归属到画布节点），
- * 而父指向按 FR-STO-004 的字段纪律留在 dsh 会话头（`header.parentSession`）里、不落业务表，
- * 所以这里沿会话头上溯到无父的一层。读不到会话头（日志缺失）时停在原键：面板照常打开该会话。
- * @param ctx - 能读 `sessionPersistence` 的上下文。
- * @param sessionKey - 台账里该 flow 的最新会话键。
- * @returns 同一棵会话树的根会话键。
- */
-async function rootSessionKeyOf(ctx: Context, sessionKey: string): Promise<string> {
-  const persistence = ctx.get('sessionPersistence')
-  if (persistence === undefined) return sessionKey
-  let current = sessionKey
-  const seen = new Set<string>([current])
-  for (;;) {
-    const header = (await persistence.stat(SessionId(current)))?.header
-    if (header?.parentSession === undefined) return current
-    const parent = String(header.parentSession)
-    // 环只可能来自损坏的会话头；停在上一个节点，不让页面陷入死循环。
-    if (seen.has(parent)) return current
-    seen.add(parent)
-    current = parent
-  }
-}
-
-/**
  * Mount the framework layer's REST surface onto the harness HTTP server.
  * @param ctx - Plugin context (must inject `webServer`).
  * @param config - Validated plugin configuration.
@@ -537,6 +519,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
       max_tokens: row.max_tokens,
       max_input_tokens: row.max_input_tokens,
       max_output_tokens: row.max_output_tokens,
+      top_p: row.top_p,
+      frequency_penalty: row.frequency_penalty,
+      presence_penalty: row.presence_penalty,
+      extra_params: row.extra_params,
+      max_tool_calls: row.max_tool_calls,
       timeout: row.timeout,
       is_active: row.is_active,
       version: row.version,
@@ -544,6 +531,15 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     })),
     resolveApiKey: (userId: string, id: string) => runtime.models.resolveApiKey(userId, id),
     ownerOfSession: async (sessionId: string) => (await runtime.runs.ownerOf(sessionId)) ?? undefined,
+  })
+
+  // 框架层的归属回退：没有自己台账行的会话（分支、子代理子会话）按会话树根解析。
+  // 模型路由的「会话属于谁」、变更台账的沙箱根都问这一处，避免各自只认自己那一行。
+  runtime.runs.setOwnershipResolver(async (sessionKey) => {
+    const ownership = await resolveSessionOwnership(ctx, runtime, sessionKey)
+    return ownership === undefined
+      ? undefined
+      : { userId: ownership.row.user_id, projectId: ownership.row.run_project_id }
   })
 
   // 跨用户会话归属（需求 §0.1.4 / 187）：原生 RPC 与事件流走的是信任门（进程令牌换签名
@@ -556,16 +552,50 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const dispose = guardCtx.connection.setAccountScope({
           authorize: async ({ userId, sessionIds, instance }) => {
             for (const sessionId of sessionIds) {
-              // 真源只有一份：`sessions` 台账（归属用户 + 归属画布）。
-              const row = await runtime.runs.ledger.byKey(sessionId)
-              if (row === undefined || row.user_id !== userId) return false
-              // 运行面板按 agenticflow 收窄（`/run/:flow` 的面板只认本画布的会话）。
-              if (instance !== undefined && row.agentic_flow_id !== instance) return false
+              // 真源只有一份：`sessions` 台账（归属用户 + 归属画布），会话自己的行或会话树根的行。
+              // 分支/草稿会话由会话引擎直接创建，没有自己的台账行；沿父链归到已登记的
+              // 画布根再判定，否则创建者刚生成的分支会话也会被 403 拒绝。
+              // 带实例（`/run/:flow` 面板）且根也没有行时，按会话头 cwd 命中本画布的运行项目
+              // 补登根行——面板里的「新会话」由此获得归属，否则它既不在列表里也发不出消息。
+              const ownership = await resolveSessionOwnership(guardCtx, runtime, sessionId, {
+                userId,
+                ...(instance === undefined ? {} : { instance }),
+                adopt: instance !== undefined,
+              })
+              if (ownership === undefined) return false
             }
             return true
           },
-          // 会话列表 / 检索 / 实时投影的收窄集合（同一份台账，按画布收窄）。
-          ownedSessions: (userId, instance) => runtime.runs.ledger.sessionKeysOf(userId, instance),
+          // 会话列表 / 检索 / 实时投影的收窄集合：台账根 + 其全部分支/草稿后代。
+          ownedSessions: async (userId, instance) => {
+            const roots = await runtime.runs.ledger.sessionKeysOf(userId, instance)
+            const persistence = guardCtx.get('sessionPersistence')
+            if (persistence === undefined || roots.length === 0) return roots
+            // 分支/草稿会话由会话引擎直接创建，没有自己的台账行；按会话头把后代并进
+            // 根集合，侧栏、检索和实时投影才能看见它们。
+            const children = new Map<string, string[]>()
+            for (const snapshot of await persistence.list()) {
+              const parent = snapshot.header.parentSession
+              if (parent === undefined) continue
+              const key = String(parent)
+              const bucket = children.get(key)
+              if (bucket === undefined) children.set(key, [String(snapshot.header.id)])
+              else bucket.push(String(snapshot.header.id))
+            }
+            const owned = [...roots]
+            const seen = new Set(roots)
+            const queue = [...roots]
+            while (queue.length > 0) {
+              const current = queue.shift() as string
+              for (const child of children.get(current) ?? []) {
+                if (seen.has(child)) continue
+                seen.add(child)
+                owned.push(child)
+                queue.push(child)
+              }
+            }
+            return owned
+          },
           // 模型目录的收窄集合：只给本人启用中的配置路由名。
           ownedModelRoutes: async userId =>
             (await runtime.models.listActive(userId)).map(row => `soloengine-${row.id}`),
@@ -788,6 +818,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           driverCtx.effect(() => () => cloud.stop(), 'soloengine-host.cloudNode')
         }
         runtime.runs.setDriver(driver)
+        // 启动对账：上一进程遗留的 pending/running 行不会再推进；驱动就位后按活会话
+        // 判定收敛为失败，避免画布列表与会话台账永久显示「运行中」。
+        void runtime.runs.settleInterrupted().then((settled) => {
+          if (settled > 0) console.log(`soloengine: settled ${String(settled)} interrupted session row(s)`)
+        }).catch((error: unknown) => {
+          console.log(`soloengine: session ledger startup reconcile failed: ${String(error)}`)
+        })
         // FR-CANVAS-014：画布编辑器的工具多选来自 harness 侧的工具集合——
         // **实时注册**（全局注册表；fs/命令类工具注册在各 agent 作用域，全局面不重复出现）
         // 与**编译器画布词汇表**（TOOL_MAP 的画布工具名 + run_command，编译契约的同一张表）
@@ -826,12 +863,14 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           })
         }, MCP_SYNC_INTERVAL_MS)
         driverCtx.effect(() => () => { clearInterval(mcpTimer) })
-        // 运行上下文与工具呈现意图两条投影（会话头与操作区叠加的数据源）：
+        // 运行上下文 / 工具呈现意图 / 节点归属三条投影（会话头、操作区与冷恢复的数据源）：
         // 注册即可逆效果，卸载即撤销。
         driverCtx.sessionProjections.register(runContextProjectionDefinition)
         driverCtx.sessionProjections.register(followIntentProjectionDefinition)
+        driverCtx.sessionProjections.register(nodeAttributionProjectionDefinition)
         console.log(
-          `soloengine: run driver wired (preset=${agentPreset}, maxDelegationDepth=${String(maxDepth)}, projection=soloengine.runContext+soloengine.followIntent)`,
+          `soloengine: run driver wired (preset=${agentPreset}, maxDelegationDepth=${String(maxDepth)},`
+          + ' projection=soloengine.runContext+soloengine.followIntent+soloengine.nodeAttribution)',
         )
       },
     )
@@ -873,11 +912,18 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     // 两者激活（headless 形态干脆没有），只注入 `connection` 会在它先就绪时读到未提供的 webServer。
     const fiber = ctx.inject(['webServer', 'connection'], (bridgeCtx) => {
       mountOperationAreaBridge(bridgeCtx, runtime)
-      // 目录选择桥：产品页面「新建运行项目」的目录选择走 dsh 原生 directory-picker seam。
-      mountDirectoryPickerBridge(bridgeCtx)
     })
     return () => { void fiber.dispose() }
   }, 'soloengine-host.operationAreaBridge()')
+
+  // 运行设置桥（运行面板侧）：实时跟随是「这一次运行怎么跑」的开关，由面板随时调整；
+  // 与操作区桥同一套信任门与归属解析，另需活会话与投影服务才能写回 run-context。
+  ctx.effect(() => {
+    const fiber = ctx.inject(['webServer', 'connection', 'agents', 'sessionProjections'], (bridgeCtx) => {
+      mountRunSettingsBridge(bridgeCtx, runtime)
+    })
+    return () => { void fiber.dispose() }
+  }, 'soloengine-host.runSettingsBridge()')
 
   // 产品页面、运行面板深链与根入口：frontend-static 只服务 dist 根，深链一律 404——故以具名
   // 路由承接同一个 dist index（根路径用 exact，前缀用 prefix），并走同一条浏览器鉴权
@@ -889,6 +935,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     typeof launch?.installAnchor === 'string' ? launch.installAnchor : undefined,
     root,
   )
+  // 产品壳的版本注入：登录品牌面板脚注读 `__SOLOENGINE_VERSION__`，与 `/api/solo/health`
+  // 的 `version` 同源（`FRAMEWORK_VERSION`），不在前端硬编码版本串。
+  const versionInjection: IndexInjection = {
+    kind: 'global',
+    name: '__SOLOENGINE_VERSION__',
+    value: FRAMEWORK_VERSION,
+  }
   ctx.effect(() => {
     const fiber = ctx.inject(['webServer', 'connection', 'clientModules'], (routeCtx) => {
       // 本次请求的运行面板注入行：只在 `renderIndex` 的同步窗口内可见，渲染完立即清空，
@@ -963,6 +1016,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const owned = 'peer' in admission
             ? await routeCtx.connection.ownedSessionIdsOf(admission.peer)
             : []
+          // 实例组合的读取同样按调用方账号收窄：未绑定账号（原生/未登录）保持原生行为，
+          // 已绑定账号只能解析自己可见的画布（他人画布按不存在处理，与列表口径一致）。
+          const accountId = 'peer' in admission ? routeCtx.connection.accountIdOf(admission.peer) : undefined
           const latest = await runtime.runs.latestSessionKeyOfFlow(
             flowSegment,
             owned === undefined ? undefined : new Set(owned),
@@ -974,7 +1030,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           // 组合错误（未知行、包不可解析、依赖被关闭）一律整页报错（加载期报错，不静默降级）。
           let selection: { enabled: string[]; disabled: string[] }
           try {
-            selection = await runtime.plugins.clientSelection(flowSegment)
+            selection = await runtime.plugins.clientSelection(flowSegment, accountId)
           } catch (error) {
             res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' })
             res.end(clientTreeErrorPage(flowSegment, [error instanceof Error ? error.message : String(error)]))
@@ -1020,8 +1076,10 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
             ...(instanceGraph === base ? {} : { instanceGraph }),
           })
         }
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-        res.end(await render(runInjections))
+        // 入口文档引用的是带内容哈希的 bundle：缓存这份 HTML 会让重建后的页面继续加载旧
+        // bundle（实测：界面停在修复前的构建）。静态资源名字随内容变化，保持默认缓存。
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(await render([versionInjection, ...runInjections]))
       }
       routeCtx.effect(() => {
         const disposers = [

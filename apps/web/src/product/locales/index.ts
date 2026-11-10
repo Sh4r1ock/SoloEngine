@@ -16,8 +16,6 @@ import { market } from './market.ts'
 import { packaging } from './packaging.ts'
 import { settings } from './settings.ts'
 import { users } from './users.ts'
-import { runStart } from './runStart.ts'
-import { directoryDialog } from './directoryDialog.ts'
 
 export const dictionaries = {
   common,
@@ -35,8 +33,6 @@ export const dictionaries = {
   packaging,
   settings,
   users,
-  runStart,
-  directoryDialog,
 }
 
 /** 命名空间名。 */

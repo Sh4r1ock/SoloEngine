@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { isProductPagePathname } from '@soloengine/types'
 import { ApiError, SESSION_EXPIRED_EVENT, clearTokens, describeError, readAccessToken, request } from './api.ts'
 import { t, useLocale } from './i18n.ts'
-import { navigate, runStartFlow, useRoute } from './router.ts'
+import { navigate, useRoute } from './router.ts'
 import { loadPreferences, resetPreferences } from './preferences.ts'
 import { AppShell } from './components/AppShell.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
@@ -20,7 +20,6 @@ import { McpPage } from './pages/McpPage.tsx'
 import { MarketPage } from './pages/MarketPage.tsx'
 import { SettingsPage } from './pages/SettingsPage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
-import { RunStartPage } from './pages/RunStartPage.tsx'
 import type { UserView } from './types.ts'
 import css from './styles/common.module.css'
 
@@ -29,7 +28,7 @@ import css from './styles/common.module.css'
  * 产品面（含根路径 `/`）由本 SPA 渲染，面板面（`/run/*`）走 DSH 原生壳、不在此列。
  */
 function isKnownPath(pathname: string): boolean {
-  return isProductPagePathname(pathname) || runStartFlow(pathname) !== null
+  return isProductPagePathname(pathname)
 }
 
 /**
@@ -51,7 +50,6 @@ function documentTitle(name: string): string {
     case 'settings': return t('shell', 'docTitleSettings')
     case 'users': return t('shell', 'docTitleUsers')
     case 'styleguide': return t('shell', 'docTitleStyleguide')
-    case 'runStart': return t('shell', 'docTitleRun')
     default: return t('shell', 'docTitleCanvases')
   }
 }
@@ -119,8 +117,9 @@ export function ProductApp() {
   // 未登录且不在登录页/首页 → 重定向登录。令牌还在（只是这一轮没问到服务器）时不重定向，
   // 否则「服务瞬断 → 被赶到登录页」依旧会把用户当成已退出。
   useEffect(() => {
-    if (checked && user === null && readAccessToken() === null && route.name !== 'login' && route.name !== 'home'
-      && route.name !== 'runStart') navigate('/login')
+    if (checked && user === null && readAccessToken() === null && route.name !== 'login' && route.name !== 'home') {
+      navigate('/login')
+    }
   }, [checked, user, route.name])
 
   // 已登录却在登录页 → 回到画布列表。
@@ -186,17 +185,18 @@ export function ProductApp() {
   const page = (() => {
     switch (route.name) {
       case 'styleguide': return <StyleguidePage />
-      case 'canvases': return <CanvasesPage />
-      case 'canvas': return <CanvasEditorPage canvasId={route.params.id ?? ''} user={user} />
+      case 'canvases': return <CanvasesPage user={user} />
+      // 画布/技能 id 变化必须**重建**页面：编辑器里挂着实时预览会话、技能文件页挂着
+      // 当前文件与未保存缓冲；复用实例会让新画布继续连着上一张画布的会话。
+      case 'canvas': return <CanvasEditorPage key={route.params.id ?? ''} canvasId={route.params.id ?? ''} user={user} />
       case 'models': return <ModelsPage />
       case 'skills': return <SkillsPage user={user} />
-      case 'skill': return <SkillFilePage skillId={route.params.id ?? ''} />
+      case 'skill': return <SkillFilePage key={route.params.id ?? ''} skillId={route.params.id ?? ''} user={user} />
       case 'mcp': return <McpPage />
       case 'market': return <MarketPage />
       case 'settings': return <SettingsPage />
       case 'users': return <UsersPage user={user} />
-      case 'runStart': return <RunStartPage flowId={route.params.id ?? ''} />
-      default: return <CanvasesPage />
+      default: return <CanvasesPage user={user} />
     }
   })()
 
@@ -209,7 +209,7 @@ export function ProductApp() {
 
   return (
     <AppShell
-      active={route.name === 'runStart' ? 'canvases' : route.name}
+      active={route.name}
       user={user}
       wide={route.name === 'skill' || route.name === 'styleguide' || route.name === 'mcp'}
       onLogout={logout}

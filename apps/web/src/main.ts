@@ -62,10 +62,9 @@ const reportFailure = (reason: unknown): void => {
 try {
   const el = document.getElementById('root')
   if (el === null) throw new Error('web app: missing #root')
-  // `/run/:flow` 还没有运行会话时宿主注入空态标记：这一屏属于管理层（选目录并发起运行），
-  // 由产品应用渲染起始页；有会话时同一条 URL 不带该标记，仍装载原生面板。
-  const emptyRunPanel = (globalThis as { __SOLOENGINE_RUN_EMPTY__?: boolean }).__SOLOENGINE_RUN_EMPTY__ === true
-  if (isProductPagePathname(window.location.pathname) || emptyRunPanel) {
+  // `/run/:flow` 始终由 DSH 原生面板渲染（没有会话时由面板自己的空态承接）；产品 SPA
+  // 只负责产品页面，不再为运行入口提供任何中间页。
+  if (isProductPagePathname(window.location.pathname)) {
     void import('./product/main.tsx').then(
       ({ mountProductApp }) => { mountProductApp(el) },
       (reason: unknown) => { console.error('web app: product page module failed to load', reason) },

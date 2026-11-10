@@ -87,6 +87,10 @@
       config:
         shellDialect: pwsh
         timeoutMs: 300000
+        # 受限档（workspace-write）只允许写工作区；Windows PowerShell 的 PSReadLine 每次接受一行都会
+        # 追加 %APPDATA%\...\ConsoleHost_history.txt，被拒后重绘会吞掉该行（用户看到命令没执行）。
+        # 在启动参数里关掉历史落盘：会话内上下键历史仍在内存中，跨进程历史不再写用户目录。
+        shellArgs: ['-NoLogo', '-NoProfile', '-NoExit', '-Command', 'try { Set-PSReadLineOption -HistorySaveStyle SaveNothing } catch { }']
 
     # 终端六件套（open/send/read/signal/close/list）：模型显式操作指定终端会话。
     - id: tool-terminal
@@ -155,10 +159,10 @@
   disabled: true
 
 # 目录选择钉在**页内浏览**形态（替换基线 `directory-picker-auto` 的自适应选择）。
-# 产品是 Web 控制台：运行起始页的「选目录」必须在页面内完成——远程/局域网访问时宿主桌面上的
-# OS 选择器无法驱动，原生对话框在部分 Windows 会话里还会被系统直接确认（实测返回进程工作目录），
-# 结果既不可控也不可复现。门面仍是同一个 `ctx.directoryPicker` seam，只换后端与前端两行；
-# 运行面板里的「添加工作区」也随这一行换成同一套页内对话框。
+# 产品是 Web 控制台：远程/局域网访问时宿主桌面上的 OS 选择器无法驱动，且本机实测原生对话框
+# 会在无人操作时直接返回路径（一次误启动即在工作区之外建运行）。门面仍是同一个
+# `ctx.directoryPicker` seam，只换后端与前端两行；运行面板里的「添加工作区」使用同一套页内对话框。
+# 注意：产品不再自建任何目录对话框——运行入口用受管工作根直接启动，选择动作只在面板里发生。
 - id: directory-picker
   disabled: true
 

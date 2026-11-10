@@ -2,31 +2,15 @@
  * 极简 history 路由：pushState + popstate，无第三方 router。
  * 路由表来自 `@soloengine/types` 的 `productPageRoute`（唯一真源，本文件不再手写段表）；
  * 未知路径落到 /canvases。
+ *
+ * `/run/:agenticFlowId` 不属于产品页面：它由 DSH 原生面板渲染（含「还没有会话」的空态），
+ * 产品 SPA 不再为它提供任何中间页。
  */
 import { useSyncExternalStore } from 'react'
-import { matchProductRouteRoot, productPageRoute, RUN_ROUTE_ROOT, type ProductPageName } from '@soloengine/types'
+import { productPageRoute, type ProductPageName } from '@soloengine/types'
 
-/**
- * 路由名：产品页面名 + 运行起始页。
- *
- * 运行起始页不是产品 URL 契约里的产品页面（`/run/:flow` 的归属是 Harness 面）；它只在宿主
- * 判定「该画布还没有运行会话」时进入（`__SOLOENGINE_RUN_EMPTY__`），此时不装载 Harness 客户端树，
- * 由管理层渲染「选目录并开始」。有会话的同一条 URL 仍由原生面板渲染。
- */
-export type RouteName = ProductPageName | 'runStart'
-
-/**
- * 该路径是否是运行起始页：宿主注入空态标记，且路径落在运行面板根下。
- * @param pathname - 当前路径。
- * @returns 画布 id；不是起始页时为 null。
- */
-export function runStartFlow(pathname: string): string | null {
-  const empty = (globalThis as { __SOLOENGINE_RUN_EMPTY__?: boolean }).__SOLOENGINE_RUN_EMPTY__
-  if (empty !== true) return null
-  const matched = matchProductRouteRoot(pathname)
-  if (matched === undefined || matched.root.segment !== RUN_ROUTE_ROOT.segment) return null
-  return matched.param ?? null
-}
+/** 路由名：产品页面名。 */
+export type RouteName = ProductPageName
 
 /** 一次匹配结果。 */
 export interface RouteMatch {
@@ -65,8 +49,6 @@ function normalize(pathname: string): string {
 export function matchRoute(pathname: string, search = ''): RouteMatch {
   const path = normalize(pathname)
   const query = new URLSearchParams(search)
-  const startFlow = runStartFlow(path)
-  if (startFlow !== null) return { name: 'runStart', params: { id: startFlow }, query, pathname: path }
   const matched = productPageRoute(path)
   if (matched === undefined) return { name: 'canvases', params: {}, query, pathname: path }
   return {
