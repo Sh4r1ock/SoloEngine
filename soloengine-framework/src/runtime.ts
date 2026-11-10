@@ -9,7 +9,7 @@
 
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
-import { SoloDatabase, openBusinessDatabase, type BusinessDatabase } from './db/index.ts'
+import { SoloDatabase, openBusinessDatabase, resolveDatabaseForm, type BusinessDatabase } from './db/index.ts'
 import { MasterKey, MasterKeyError } from './crypto/index.ts'
 import { TokenService } from './auth/index.ts'
 import { AccountService } from './modules/accounts.ts'
@@ -167,7 +167,9 @@ export class FrameworkRuntime {
     this.profileDir = options.profileDir ?? join(this.dataDir, 'dsh-home', 'profiles', 'soloengine')
     const databasePath = options.databasePath ?? join(this.dataDir, 'database', 'soloengine.db')
     this.databasePath = databasePath
-    this.databaseForm = options.databaseForm ?? 'single'
+    // 与 `openBusinessDatabase` 同一判据（含 `SOLOENGINE_DB_FORM`）：形态决定项目目录的租户边界，
+    // 只读显式配置会让「环境变量配置的云节点」按单机规则放行任意宿主机目录。
+    this.databaseForm = resolveDatabaseForm(options.databaseForm)
     this.executionPlatform = (options.executor ?? 'local') === 'local' ? process.platform : 'linux'
     const keysDir = options.keysDir ?? join(this.dataDir, 'home', 'keys')
     mkdirSync(this.dataDir, { recursive: true })
