@@ -1,0 +1,3244 @@
+{
+  "version": 1,
+  "frozenAt": "2026-10-31",
+  "upstreamRelease": "0.2.1-rc.2",
+  "upstreamSource": "deepseek_harness（只读代码池，W1 同步与冻结核对后由用户删除；审计不读取它）",
+  "generated": [
+    "packages/core/session/src/known-event-types.ts",
+    "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
+    "packages/extensions/tool-cordis/src/api-catalog.ts",
+    "packages/preset/agent-preset/skills/cordis-composition-reference/references/packages.md"
+  ],
+  "packages": [
+    {
+      "dir": "packages/api/account-controller",
+      "name": "@deepseek-ai/dsh-api-account-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/api/account-controller @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:d1276b860687e4397eba46d5c650db598c73f4f4388bc30f76dc2766292faa82"
+    },
+    {
+      "dir": "packages/api/gateway",
+      "name": "@deepseek-ai/dsh-api-gateway",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/api/gateway @ 0.2.1-rc.2",
+      "note": "改：网关按绑定账号判定会话归属（需求 §0.1.4 / 功能行 187）；协议与其余行为不变",
+      "fileCount": 38,
+      "digest": "sha256:8bfdaa28855a99298ead4d7d4f13218c96e64a0000aa2cb2cd8a78a106cf8bb9"
+    },
+    {
+      "dir": "packages/api/job-controller",
+      "name": "@deepseek-ai/dsh-api-job-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/api/job-controller @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 25,
+      "digest": "sha256:6ebad7102eaec63038bf9a72b07a0b9626ab3322588755dbb15a7e9f38b8cacb"
+    },
+    {
+      "dir": "packages/api/remote-access",
+      "name": "@deepseek-ai/dsh-api-remote-access",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/api/remote-access @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:e387203355e51c1ff5af39a01657ebc028b571b188e22642761bbe3700765663"
+    },
+    {
+      "dir": "packages/api/remotes",
+      "name": "@deepseek-ai/dsh-api-remotes",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/api/remotes @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:00b0c8d8441b6b54e5a98fcdf318a1afb3b45fbb940358b8819a5d7d693ced2c"
+    },
+    {
+      "dir": "packages/api/session-controller",
+      "name": "@deepseek-ai/dsh-api-session-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/api/session-controller @ 0.2.1-rc.2",
+      "note": "改：session/list、search、control 与模型目录按绑定账号收敛（需求 §0.1.4 / 功能行 187）；方法契约不变",
+      "fileCount": 94,
+      "digest": "sha256:a4d5057ae7ded79d2eda2c3f404c938ca883eacc4e19b745d0d96c9de30cc6ce"
+    },
+    {
+      "dir": "packages/api/settings-controller",
+      "name": "@deepseek-ai/dsh-api-settings-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/api/settings-controller @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:f77929d3df2c9946fd264150220b267214d17e719f319d26d9e7894c2ca0a8d9"
+    },
+    {
+      "dir": "packages/api/terminal-controller",
+      "name": "@deepseek-ai/dsh-api-terminal-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/api/terminal-controller @ 0.2.1-rc.2",
+      "note": "增：agent 终端 Remote（agentTerminals/agentSpawn/agentRead/agentSend/agentSignal/agentBackends）与 agentSendWaitMs，供面板接续 agent 同一 PTY（人机同 owner）；agentSpawn 的空白 type 解析为组合默认后端",
+      "fileCount": 34,
+      "digest": "sha256:43ddd1482121d4675e8b120a9799eda156a8412314040ae2613912bcbc56f32e"
+    },
+    {
+      "dir": "packages/api/workspace-controller",
+      "name": "@deepseek-ai/dsh-api-workspace-controller",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/api/workspace-controller @ 0.2.1-rc.2",
+      "note": "改：`follow` 的 Workspace/Session 可见性收窄到调用连接所属账号（SoloEngine 再收窄到一个 agenticflow）拥有的 Session；无账号作用域时保持原生全量行为（R199/R200 的 flow 隔离）。为读取连接绑定账号，包内新增对 `@deepseek-ai/dsh-client-connection` 的类型引用与 tsconfig 项目引用（`HostConnectionHandle`），并补对应用例",
+      "fileCount": 26,
+      "digest": "sha256:be8eafc155667353292729c8bb2757e55ef45e553718a21a683359177a8abdea"
+    },
+    {
+      "dir": "packages/api/workspace-files",
+      "name": "@deepseek-ai/dsh-api-workspace-files",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/api/workspace-files @ 0.2.1-rc.2",
+      "note": "增：工作区写原语 write/mkdir/rename/removeEntry（create-only/version 守卫）与 WorkspaceFileWriteOptions/WorkspaceMutationResult，供文件树编辑与 mtime 冲突检测；删除方法命名 removeEntry（`remove` 会与 Client Remote 命名空间服务自身的方法冲突）",
+      "fileCount": 33,
+      "digest": "sha256:7b1d0d5f18ddb396e1a1be79c79420fbbdb47664eb02720f524334b0adc0512d"
+    },
+    {
+      "dir": "packages/attachment/attachment",
+      "name": "@deepseek-ai/dsh-attachment",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/attachment/attachment @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:871c04be4e14371ed86846a26dedee6a9559ce10d5be739d457bc121f1763fea"
+    },
+    {
+      "dir": "packages/attachment/attachment-local",
+      "name": "@deepseek-ai/dsh-attachment-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/attachment/attachment-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:132b1feafc72abd04773feac7075d4822332ccf9ba0ada2cb48d640659642636"
+    },
+    {
+      "dir": "packages/boot/app-boot",
+      "name": "@deepseek-ai/dsh-app-boot",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/boot/app-boot @ 0.2.1-rc.2",
+      "note": "裁剪：可选/按需 bundle 清单与 profile 模板按 D16 裁剪后的携带范围清空——`ON_DEMAND_BUNDLES` 与 `OFFICIAL_ON_DEMAND_CATALOG` 去掉 subagent-claude-code/codex；`OPTIONAL_BUNDLES` 清空（session-search、ralph、terminal、badge-skill、session-titles、agent-team、voice-input、cot-translation、auto-review、inspector、plugin-market、tool-worktree 均不随产品携带，用户需要时手动安装 DSH 插件）；`PROFILE_TEMPLATES` 移除 acp/sdk/sdk-minimal。",
+      "fileCount": 50,
+      "digest": "sha256:d971e4dd810ef08231ecbf904864ac69bfa3607575a6506254834aed0720d4ff"
+    },
+    {
+      "dir": "packages/boot/cmdline",
+      "name": "@deepseek-ai/dsh-cmdline",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/boot/cmdline @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:872503165b798923e9e393eef4917f4b28cc73eecc2a5ea17ae34e3d7cb6e6ce"
+    },
+    {
+      "dir": "packages/boot/config-editor",
+      "name": "@deepseek-ai/dsh-config-editor",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/boot/config-editor @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:9797b56aed8af88df124a83f20355af70e1087bbdf9a9b1f1df2672ade1749a0"
+    },
+    {
+      "dir": "packages/boot/hmr",
+      "name": "@deepseek-ai/dsh-hmr",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/boot/hmr @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 24,
+      "digest": "sha256:6505963386b6a2d00ff582866a1295da8bc45c49ccaa8ec7fa65d8c9c57a513f"
+    },
+    {
+      "dir": "packages/boot/plugin-manager",
+      "name": "@deepseek-ai/dsh-plugin-manager",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/boot/plugin-manager @ 0.2.1-rc.2",
+      "note": "裁剪：删除依赖非空官方目录的测试用例（D16）",
+      "fileCount": 36,
+      "digest": "sha256:c7cc1f5147df2cef475322836c729b32d0e4e7b9ab39bf7eb8bb82d6d369f555"
+    },
+    {
+      "dir": "packages/boot/plugin-market",
+      "name": "@deepseek-ai/dsh-plugin-market",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/boot/plugin-market @ 0.2.1-rc.2",
+      "note": "仅 README/i18n：断链改写 + 双语文档记录复签",
+      "fileCount": 23,
+      "digest": "sha256:0c8aae0a4395644df95500c1b690172ed6b7dd75190bc6c8962f07b71ee65c59"
+    },
+    {
+      "dir": "packages/bundle/base",
+      "name": "@deepseek-ai/dsh-base",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/bundle/base @ 0.2.1-rc.2",
+      "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；其余组合行未改",
+      "fileCount": 9,
+      "digest": "sha256:29042b34097c89e7cb14a7eeb854cd294ae350550d01a48a4442b39f7bce21d8"
+    },
+    {
+      "dir": "packages/bundle/headless",
+      "name": "@deepseek-ai/dsh-headless",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/bundle/headless @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:cdc0c6d7dcda85d037535ffda9be1b03fca5dc92ce51fd74cca23877ececb7c7"
+    },
+    {
+      "dir": "packages/bundle/web-app",
+      "name": "@deepseek-ai/dsh-web-app",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.1-rc.2",
+      "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言（`(SOLOENGINE_EXECUTOR ?? 'local') !== 'local'` ⇒ Linux 镜像，其余跟宿主平台），不再只看宿主 `process.platform`；容器/microVM 形态里模型看到的 shell 工具与执行环境内真实存在的 shell 因此一致（R201）",
+      "fileCount": 26,
+      "digest": "sha256:1072601e21c3960c3e634b71938365610f9284fb4345aaa9f0435304583c3241"
+    },
+    {
+      "dir": "packages/client/connection",
+      "name": "@deepseek-ai/dsh-client-connection",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/connection @ 0.2.1-rc.2",
+      "note": "增：`INSTANCE_HEADER`/`INSTANCE_PARAM` 按账号+实例给浏览器 Peer 分片；`ConnectionAccountScope`、`ConnectionCookieResponse`、`ConnectionIndexBootstrap` 与登录升级后的 v3 用户 cookie（`userId`，含回环 authority 识别）；`accountIdOf(peer)`；RPC 负载的 Session 归属围栏（`sessionIdentitiesOf`，只认 `sessionId`/`parentSessionId`）。`authorizeIndex` 的 `bootstrap`（回环首访 303 到令牌 URL 并回跳原路径）收进原生实现，产品只保留回跳 cookie 的消费端与日志（R199）。测试：二进制 RPC 的 1 MiB HTTP 传输在并发门禁下超过默认 5s，单测显式声明 30s 预算（断言不变）；并提供账号可见的模型路由集合（`ownedModelRouteNamesOf`），供模型目录按账号过滤。",
+      "fileCount": 44,
+      "digest": "sha256:60c886f179f3917445689c001bd8e1adec21eab198a41f01678ca901acaa47d2"
+    },
+    {
+      "dir": "packages/client/file-upload",
+      "name": "@deepseek-ai/dsh-client-file-upload",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/file-upload @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 19,
+      "digest": "sha256:bbc720de43ea5b943c853af1dee4f6c4691c4e098a67983f4aaf6dc6106dd188"
+    },
+    {
+      "dir": "packages/client/hmr",
+      "name": "@deepseek-ai/dsh-client-hmr",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/hmr @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:e285d2fc376a9ff0e48ea3154133536707fb15d711bcbf856ce6c77a7e60378f"
+    },
+    {
+      "dir": "packages/client/locale",
+      "name": "@deepseek-ai/dsh-client-locale",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/locale @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 29,
+      "digest": "sha256:a358deff9633e08f99cf1f883765bd7ce391a39cc5711c91566b360581a908e5"
+    },
+    {
+      "dir": "packages/client/modules",
+      "name": "@deepseek-ai/dsh-client-modules",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/modules @ 0.2.1-rc.2",
+      "note": "增：`ClientModuleRegistry.extendGraph(extraPackages, baseUrl)` 实例客户端图，供 /run/:flow 只装载本画布的行（Plan W4 / 功能行 186）；全局图与 HMR 组合不变；实例制品响应按 URL 保留并由 registry 直接服务（上限 256，`MAX_RETAINED_INSTANCE_RESPONSES`），供该实例的 package 请求按 baseUrl 取用。",
+      "fileCount": 19,
+      "digest": "sha256:15dac57d146bed91ef71c028b09fbb934f2f734be36f1c132cbb6f25a08e9c47"
+    },
+    {
+      "dir": "packages/client/product-analytics",
+      "name": "@deepseek-ai/dsh-client-product-analytics",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/product-analytics @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 22,
+      "digest": "sha256:f7dec1c5cd4441a1648238d87b972f93591987252e3d7c2ab90e22fc49c0632d"
+    },
+    {
+      "dir": "packages/client/resources",
+      "name": "@deepseek-ai/dsh-client-resources",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/resources @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:1e121553674ec11ee92a943d7b438d35c2e982438e10f9fe8ac641d378663656"
+    },
+    {
+      "dir": "packages/client/shortcuts",
+      "name": "@deepseek-ai/dsh-client-shortcuts",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/shortcuts @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 33,
+      "digest": "sha256:f69dcf2927eba77821ad8c09480a6253d0d1d66e427fcc30b8903b2f7459fbef"
+    },
+    {
+      "dir": "packages/client/store",
+      "name": "@deepseek-ai/dsh-client-store",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/store @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:01556bb945ea9fdc88191b28f25c1c471c90181e1e954e824812df320a3dddf1"
+    },
+    {
+      "dir": "packages/client/ui-agent-preset",
+      "name": "@deepseek-ai/dsh-client-ui-agent-preset",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-agent-preset @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 32,
+      "digest": "sha256:03edcef6acc517c9079027d5c550d48bf75bcda3ca62b039f54b7809c9c964d9"
+    },
+    {
+      "dir": "packages/client/ui-approval",
+      "name": "@deepseek-ai/dsh-client-ui-approval",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-approval @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:8d715d1500af1fe80d6053020a2ba762549936f1c0b191d0ca4248572412e94a"
+    },
+    {
+      "dir": "packages/client/ui-attachment",
+      "name": "@deepseek-ai/dsh-client-ui-attachment",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-attachment @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 29,
+      "digest": "sha256:cbe0461dae538f6d68ba2f15c233c14558f66d7d6926fdf2c8e2f5be7f5e134e"
+    },
+    {
+      "dir": "packages/client/ui-brand-official",
+      "name": "@deepseek-ai/dsh-client-ui-brand-official",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-brand-official @ 0.2.1-rc.2",
+      "note": "改：品牌内容换为 SoloEngine 标记/字标（BrandGlyph）并注册会话 hero 品牌槽；品牌名收进 client/locales.ts（客户端文案归属门禁）；包名、槽位契约与座位不变；./static 与 src/ 不再进入发行载荷（产品壳经 ./src/* 编译源码，publication-payload 禁源）",
+      "fileCount": 15,
+      "digest": "sha256:f387e67976aebc59cd45e8fa65ddc2aa1eb9e951b2d82cece98e27f9df660ca2"
+    },
+    {
+      "dir": "packages/client/ui-chat",
+      "name": "@deepseek-ai/dsh-client-ui-chat",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-chat @ 0.2.1-rc.2",
+      "note": "改造：按域分层门禁 scripts/verify-client-domain-graph.ts 把 flow-motion 契约移入 contract/（chat/flow-motion.ts 仅再导出），行为与导出契约不变（Plan W23）；fork 会话在 `onCreated` 里直接打开子会话（子标题改名失败不再把用户留在源视图）",
+      "fileCount": 187,
+      "digest": "sha256:fc1031224b09e65c8a8cedf8aa9837433589d821bc52b70c18a6e7ac8b0617fd"
+    },
+    {
+      "dir": "packages/client/ui-commands",
+      "name": "@deepseek-ai/dsh-client-ui-commands",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-commands @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 25,
+      "digest": "sha256:664dcf8a14440595a36c22b799987a8b13e3d0afb57b0ea05bf02197374ad2d7"
+    },
+    {
+      "dir": "packages/client/ui-conversation",
+      "name": "@deepseek-ai/dsh-client-ui-conversation",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-conversation @ 0.2.1-rc.2",
+      "note": "改造：按域分层门禁把输入编辑器与提交策略移到包顶层 src/client/，域内组件不再跨域取值；行为与导出契约不变（Plan W23）",
+      "fileCount": 150,
+      "digest": "sha256:0838d8050fb1541a75bcd256989b756bfb2dceb4455d98c6cb4cbde46d82d989"
+    },
+    {
+      "dir": "packages/client/ui-deepseek-model-label-1017",
+      "name": "@deepseek-ai/dsh-client-ui-deepseek-model-label-1017",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-deepseek-model-label-1017 @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:5e396b94dc9a2954c96405b8efa87c1b335f28f93e504bfbe8fcda3a7ec34495"
+    },
+    {
+      "dir": "packages/client/ui-deliverables",
+      "name": "@deepseek-ai/dsh-client-ui-deliverables",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-deliverables @ 0.2.1-rc.2",
+      "note": "测试适配：`tests/present-open.host.spec.ts` 增加文件符号链接能力探针，无 SeCreateSymbolicLinkPrivilege 的 Windows 主机（EPERM）只跳过「拒绝最终符号链接」一条，其余 29 条照常运行；Linux 车道仍覆盖该拒绝用例。运行时代码零改动。",
+      "fileCount": 47,
+      "digest": "sha256:9e09afaf360578612914c6926bb79428ad7d44a950f06a53f930935b3d41481e"
+    },
+    {
+      "dir": "packages/client/ui-directory-picker-browse",
+      "name": "@deepseek-ai/dsh-client-ui-directory-picker-browse",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-directory-picker-browse @ 0.2.1-rc.2",
+      "note": "改：新建文件夹的两类可操作拒绝（名称无效 `gateway/bad-request`、同名已存在 `directory-picker/exists`）改为本地化文案（中文/英文词条 `browser.createInvalid`/`browser.createExists`），其余失败仍透传宿主文案；行为与交互不变",
+      "fileCount": 15,
+      "digest": "sha256:63b3381f30129b9f6330564cd34830d0a970ce572f7458db858ba129b736883b"
+    },
+    {
+      "dir": "packages/client/ui-directory-picker-native",
+      "name": "@deepseek-ai/dsh-client-ui-directory-picker-native",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-directory-picker-native @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:a6d8522ce5fb1b02394dc60007d0ee33af2215b6e71d7763de9c3b9d25f36876"
+    },
+    {
+      "dir": "packages/client/ui-dockkit",
+      "name": "@deepseek-ai/dsh-client-ui-dockkit",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-dockkit @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 39,
+      "digest": "sha256:034d5c9a7478f0054f00d738fb7ffc6f6cd052d3207ebdda515b4a76cec8ff5c"
+    },
+    {
+      "dir": "packages/client/ui-goal",
+      "name": "@deepseek-ai/dsh-client-ui-goal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-goal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:9e16501ecd72bc24bfed8eabe92d4a4983050df5ba723b3da3227517a7b44102"
+    },
+    {
+      "dir": "packages/client/ui-input-trigger",
+      "name": "@deepseek-ai/dsh-client-ui-input-trigger",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-input-trigger @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:d89da893dec67127582b89a61c9745ea0356dcdc27868bf8c48b47340fe3bfd0"
+    },
+    {
+      "dir": "packages/client/ui-jobs",
+      "name": "@deepseek-ai/dsh-client-ui-jobs",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-jobs @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:70d56c2a4c77ab9993d3e535ea7912e17d4c071d1738464acdfc00e5b86e5f8b"
+    },
+    {
+      "dir": "packages/client/ui-layout",
+      "name": "@deepseek-ai/dsh-client-ui-layout",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-layout @ 0.2.1-rc.2",
+      "note": "新增 `ThemePresenter` 再导出（Plan W7 ⑧）：产品壳静态消费主题 DOM 投影，行为与实现体不变；./static 与 src/ 不再进入发行载荷（产品壳经 ./src/* 编译源码，publication-payload 禁源）",
+      "fileCount": 26,
+      "digest": "sha256:c8948124012c1b065e7ffc112ebbd9d11d6c9b6005c2747bd7cc5eaee6cbb03b"
+    },
+    {
+      "dir": "packages/client/ui-message-feedback",
+      "name": "@deepseek-ai/dsh-client-ui-message-feedback",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-message-feedback @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 25,
+      "digest": "sha256:d952cc8fdcdfa7f5c931d8e6305d62bd88e8e535c3caf1a13c72c7bb3c11e610"
+    },
+    {
+      "dir": "packages/client/ui-model-selection",
+      "name": "@deepseek-ai/dsh-client-ui-model-selection",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-model-selection @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:8126eecf8ce222bc11d5a4b06f369b37e6f035c34de415b5b627d345b95940e8"
+    },
+    {
+      "dir": "packages/client/ui-open-in-app",
+      "name": "@deepseek-ai/dsh-client-ui-open-in-app",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-open-in-app @ 0.2.1-rc.2",
+      "note": "仅测试时序随 ui-primitives Toast 保持期 3200ms（原型 §5.4）调整；产品代码与上游逐字一致。",
+      "fileCount": 29,
+      "digest": "sha256:5ae2d3be731bf76456fcd4a19805aff73a5d43df18cd26a026155f46482aa16c"
+    },
+    {
+      "dir": "packages/client/ui-permission-presets",
+      "name": "@deepseek-ai/dsh-client-ui-permission-presets",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-permission-presets @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:62791135db111ca8d2a3bf9c9ac37b4c7ba3d667e03c949f9fc6f2e415a5dfab"
+    },
+    {
+      "dir": "packages/client/ui-plan",
+      "name": "@deepseek-ai/dsh-client-ui-plan",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-plan @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:a508bc037eb5ff4aeaea36d69766ba94b7ee09421e2bddbe6d0fb3e34be9840c"
+    },
+    {
+      "dir": "packages/client/ui-plugin-manager",
+      "name": "@deepseek-ai/dsh-client-ui-plugin-manager",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-plugin-manager @ 0.2.1-rc.2",
+      "note": "改造：按域分层门禁把内置配图移到 src/client/ 顶层（配图创作指引同步）；仅补注释说明内置分组列表不代表包可用性。产品不再使用 /plugin-manager 深链（缺陷 80 已删），因此没有冷启动选中改动",
+      "fileCount": 34,
+      "digest": "sha256:862932ae723641eddcc2ef2899e49998cb1172225543b1cd9aadac9017aec228"
+    },
+    {
+      "dir": "packages/client/ui-primitives",
+      "name": "@deepseek-ai/dsh-client-ui-primitives",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-primitives @ 0.2.1-rc.2",
+      "note": "改（原包原改，按原型组件规格）：Tag 20px 高 / 4px 标记圆角 / 12-20 字号；Menu 最小宽 180、行高 32、8px 间距与内边距、4px 圆角、15px 图标、键盘焦点环与禁用 caption；Switch 32×18 轨道 + 0.5px 发丝线、12px 滑块、选中位移 14px；Button 禁用态改边框/底色/caption（不再整块 opacity），primary/outline/toolbar 增加 active 态；Input 增加 hover 边框；Toast 保持期 3200ms、底部居中（上游 3000ms/顶部居中）。另按需求 D8/D22 深色对齐：info（accent）徽标深色改为原型 accent-weak 实心底（20% 品牌蓝混墨底 #19253f）+ 白字，浅色保持原 10% 透明底；并去掉 tests 首部重复/单个 UTF-8 BOM。调色板其余取值、数据属性与组件 API 不变。",
+      "fileCount": 251,
+      "digest": "sha256:bfe6db8105e5ab5c514303c439edde4c9a8fe0c43396076972f7de4d155567ea"
+    },
+    {
+      "dir": "packages/client/ui-reference",
+      "name": "@deepseek-ai/dsh-client-ui-reference",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-reference @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:61ce57359aed6ad1278cf1002397746f03c99eeec156f045fa9cf9b02a37799b"
+    },
+    {
+      "dir": "packages/client/ui-renderer",
+      "name": "@deepseek-ai/dsh-client-ui-renderer",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-renderer @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 29,
+      "digest": "sha256:c17d7c1c7eea430730a5d3e476063696a40d503c16f36f1cb6bed7b71dc7a83b"
+    },
+    {
+      "dir": "packages/client/ui-schedule",
+      "name": "@deepseek-ai/dsh-client-ui-schedule",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-schedule @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 76,
+      "digest": "sha256:9c8d70032b7a4cb78a7aaf7b739a78bbce92586e01872b32b5bdf3fab62fea67"
+    },
+    {
+      "dir": "packages/client/ui-secret-mask",
+      "name": "@deepseek-ai/dsh-client-ui-secret-mask",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-secret-mask @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 23,
+      "digest": "sha256:ba4b23d28a16f4d2bf64e7c47f1deac7ab3a679da6699a0551f85689fa88a2dd"
+    },
+    {
+      "dir": "packages/client/ui-session",
+      "name": "@deepseek-ai/dsh-client-ui-session",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-session @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:3ce6c2e7a9e714d1c7b4c7bee8e1ce3e4fecb9d3d7a687c3e9385e12786d4370"
+    },
+    {
+      "dir": "packages/client/ui-settings",
+      "name": "@deepseek-ai/dsh-client-ui-settings",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:ee1c2adde2dd006aec56d040084eb2244a8615bcd58d1e21b081eb7aec3c31ae"
+    },
+    {
+      "dir": "packages/client/ui-settings-account",
+      "name": "@deepseek-ai/dsh-client-ui-settings-account",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-settings-account @ 0.2.1-rc.2",
+      "note": "改造：按域分层门禁把 onboarding 配图移到包顶层、onboarding 词典移入 contract/locales/；行为与导出契约不变（Plan W23）",
+      "fileCount": 145,
+      "digest": "sha256:ca5e352fbe368c95547e6c7da15dd1b59e525facd6c00deab3e6433caf5a06c3"
+    },
+    {
+      "dir": "packages/client/ui-settings-agent-loop",
+      "name": "@deepseek-ai/dsh-client-ui-settings-agent-loop",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-agent-loop @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:8b4d96c325d77495cbfbffdf39e6fc4cbfea55621b8f3a36ec293be549e17b60"
+    },
+    {
+      "dir": "packages/client/ui-settings-general",
+      "name": "@deepseek-ai/dsh-client-ui-settings-general",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-general @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 41,
+      "digest": "sha256:41b14d1d282c505dac6db1dd64213da6e5c1889179c64df4144244155cc07ae4"
+    },
+    {
+      "dir": "packages/client/ui-settings-models",
+      "name": "@deepseek-ai/dsh-client-ui-settings-models",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-models @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 50,
+      "digest": "sha256:a25714558df58635d1cd0fe93c01649d02498c8eb57b8340b58213d967178a34"
+    },
+    {
+      "dir": "packages/client/ui-settings-plugin-inventory",
+      "name": "@deepseek-ai/dsh-client-ui-settings-plugin-inventory",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-plugin-inventory @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:3456e5d580e2a988985ec3d7a0acd3d3f71d72eb0d2281f64a6d47ef7ad4fa16"
+    },
+    {
+      "dir": "packages/client/ui-settings-plugins",
+      "name": "@deepseek-ai/dsh-client-ui-settings-plugins",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-plugins @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:0b30f0ed23ea6e7809bef85a15219f9dc0fb14ab40ee53b2edde6fa95e5d1e65"
+    },
+    {
+      "dir": "packages/client/ui-settings-session-log",
+      "name": "@deepseek-ai/dsh-client-ui-settings-session-log",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-session-log @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:a2313336fd148fceb62926e0b4056866192e160f2dd5844218fdc874256393b9"
+    },
+    {
+      "dir": "packages/client/ui-settings-shell",
+      "name": "@deepseek-ai/dsh-client-ui-settings-shell",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-shell @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:e90ad253213f19ee2919a97ce3e2afaf5ed6f6c75a3973c29f2b4656e09c3094"
+    },
+    {
+      "dir": "packages/client/ui-settings-subagent",
+      "name": "@deepseek-ai/dsh-client-ui-settings-subagent",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-subagent @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:43c986cf3253f840399e0f239a572ff15032feb99d88502db0910c8fef3ed6c8"
+    },
+    {
+      "dir": "packages/client/ui-settings-web-search",
+      "name": "@deepseek-ai/dsh-client-ui-settings-web-search",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-settings-web-search @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:3411d7c1bee59d6d7f19447990eb6b910e4b7fd1f1318404a230d0c9534584ae"
+    },
+    {
+      "dir": "packages/client/ui-shortcuts",
+      "name": "@deepseek-ai/dsh-client-ui-shortcuts",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-shortcuts @ 0.2.1-rc.2",
+      "note": "仅测试时序随 ui-primitives Toast 保持期 3200ms（原型 §5.4）调整；产品代码与上游逐字一致。",
+      "fileCount": 21,
+      "digest": "sha256:df69e78469b6db2df856d09b197b05097a321da2687a21c0306e83b0c3100984"
+    },
+    {
+      "dir": "packages/client/ui-sidebar",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 24,
+      "digest": "sha256:1f317580077fceb2599a135af46d6b76efe7e760af341296eb4ca8bbd8d925f2"
+    },
+    {
+      "dir": "packages/client/ui-sidebar-browser",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar-browser",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar-browser @ 0.2.1-rc.2",
+      "note": "增：同源代理加载（proxyPrefix 配置 + proxy.ts 路由/拒绝原因呈现），地址栏与前进后退保留；未配置代理时为上游直连；iframe 观察地址经允许表解析后入历史（kind 必填）；并按域分层门禁把共享契约移入 contract/、页面与呈现移入 browser/，顶层只留装配",
+      "fileCount": 50,
+      "digest": "sha256:2ac18b4202b2a1c5f6c7dfc6cc25f71f440e0ccdcc65aa9470ed96c3da82a17d"
+    },
+    {
+      "dir": "packages/client/ui-sidebar-documentpreview",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar-documentpreview @ 0.2.1-rc.2",
+      "note": "改造：textDefinition() 的地址模式放宽为字符类重复，让点开头的文件名（.gitignore/.env 等）也由兜底文本预览认领——产品文件树要能打开点文件，原生 globstar 不含字面点段；只此一处，其余逐字一致（R146：原生效果与所需不同即改造复用）。并按域分层门禁把 document/zoom 契约移入 contract/、文本预览移入 text/",
+      "fileCount": 188,
+      "digest": "sha256:0e0fe709434b5b4359680d9336ee132742545cbd1565e3ca9b779ce9dfffb986"
+    },
+    {
+      "dir": "packages/client/ui-sidebar-files",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar-files",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar-files @ 0.2.1-rc.2",
+      "note": "改：官方只读文件树在本包内改造为可编辑文件树（同名 kind files 的 extension 档接管）：经 workspaceFiles 写原语做新建/重命名/删除、根下名称搜索（有界 BFS、200ms 防抖）、当前工具指向项高亮、变更联动刷新；另把搜索框焦点环改用 --dsw-focus-ring-color。其余浏览/打开契约不变。",
+      "fileCount": 29,
+      "digest": "sha256:430cbcd95fa8dd7beca288470fa47bb87a9a04fc16881ef2433e33afd1768017"
+    },
+    {
+      "dir": "packages/client/ui-sidebar-right",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar-right",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar-right @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 51,
+      "digest": "sha256:56611ee5fcd8c6f8a802bc1e7d2f30cec13442d166dc64370846e5ef362ee9f7"
+    },
+    {
+      "dir": "packages/client/ui-sidebar-terminal",
+      "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-sidebar-terminal @ 0.2.1-rc.2",
+      "note": "改：右侧栏终端由上游的用户 shell/xterm 面板改造为 agent 终端面板（AgentTerminalPanel）：挂到本会话平台 PTY、轮询有界 scrollback、按行发送与 SIGINT、刷新恢复、Host 重启后按会话日志回放并标注新代际；保留 terminal.new/dock pane 契约；测试与 README 同步；发布 files 补 lib/client.*.js（client.terminal.js 懒加载 chunk）。；输入行在终端未挂载或正在执行时禁用（避免把按键发往不存在的 PTY）",
+      "fileCount": 25,
+      "digest": "sha256:cb5b4923f1f4e2368459c26353b26ff254ee97462cbe60c3e630d7955ab76550"
+    },
+    {
+      "dir": "packages/client/ui-skill",
+      "name": "@deepseek-ai/dsh-client-ui-skill",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-skill @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:0b4145378d660641576c5b8b7ac6babde8380814f1e84c2b63df76da459e8bf6"
+    },
+    {
+      "dir": "packages/client/ui-slots",
+      "name": "@deepseek-ai/dsh-client-ui-slots",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-slots @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:d7c3e82530df841be6982562e41e35d7b0373e58051127f077950d6a0ea54717"
+    },
+    {
+      "dir": "packages/client/ui-subagent",
+      "name": "@deepseek-ai/dsh-client-ui-subagent",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-subagent @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 20,
+      "digest": "sha256:ef2d245ebd944b7e6bec2e7cc5d3a4c4f6b7cafb08997eb7e1d9013f00258d12"
+    },
+    {
+      "dir": "packages/client/ui-theme",
+      "name": "@deepseek-ai/dsh-client-ui-theme",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-theme @ 0.2.1-rc.2",
+      "note": "增：static.ts 导出 CONTRAST_TOKEN_OVERRIDES（三处对比度校正的共享真源）；六色与 Montserrat 原本就是原生 token（#4176e6=deepseek-500、#e1e5ee=neutral-bluish-200），机制/三档偏好/字号机制未改，无第二套 token 文件。并按需求 D8/D22 深色对齐：design-platform.css 深色块就地改为原型深色块取值——页面 #0f1115、面板/侧栏/输入 #313236、表头/当前导航 #27292c、文字 #ffffff/#a4a5a6/#9a9b9d、选中 accent #19253f；启动画布与 thinking 渐变同步 #0f1115；浅色不变；./static、./styles/* 与 src/ 不再进入发行载荷（产品壳经 ./src/* 编译源码，publication-payload 禁源；lib/styles 仍发布品牌字体）",
+      "fileCount": 60,
+      "digest": "sha256:fa1a1488df24be62fa285b28f10fa75e83590cff5ce718247755150f49ce8a2b"
+    },
+    {
+      "dir": "packages/client/ui-tool",
+      "name": "@deepseek-ai/dsh-client-ui-tool",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-tool @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 78,
+      "digest": "sha256:21114f652fb43ec5d7e216ab73f0ee16812343abec7c02de0cdc952a5e69a18d"
+    },
+    {
+      "dir": "packages/client/ui-trajectory",
+      "name": "@deepseek-ai/dsh-client-ui-trajectory",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-trajectory @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 59,
+      "digest": "sha256:10a900ae2db93efc973e089ebb9daf915b2538748bf027b4034f8d484747082a"
+    },
+    {
+      "dir": "packages/client/ui-user-questions",
+      "name": "@deepseek-ai/dsh-client-ui-user-questions",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-user-questions @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 28,
+      "digest": "sha256:fa547d0a305e95e4edcde6134cc28287727f70cbe6c8288896163f6bd45135fb"
+    },
+    {
+      "dir": "packages/client/ui-workflow-run",
+      "name": "@deepseek-ai/dsh-client-ui-workflow-run",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/ui-workflow-run @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:5ddd105c7ec04d53facd9e46ef59b9065957403b4ac4a4cc1753256647959ee1"
+    },
+    {
+      "dir": "packages/client/ui-workspace",
+      "name": "@deepseek-ai/dsh-client-ui-workspace",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/client/ui-workspace @ 0.2.1-rc.2",
+      "note": "改造：按域分层门禁把 rows 样式表移到包顶层 src/client/，避免域内组件跨域导入（行为与导出契约不变，Plan W23）；新增 `UiWorkspace.claimStartupSession(sessionId)`（文档已指明的会话在启动恢复时优先打开，绝不新建草稿会话）；会话行动作与浏览器组件随样式表更新导入路径；并去掉 tests 首部重复/单个 UTF-8 BOM（2026-11-04 乱码清理）",
+      "fileCount": 47,
+      "digest": "sha256:12dee630927ba95c3b5dff9efe4444f8cf1b49b3b2cb07ecca4dd405c54422c8"
+    },
+    {
+      "dir": "packages/client/web",
+      "name": "@deepseek-ai/dsh-client-web",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/client/web @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 26,
+      "digest": "sha256:18687e88a9fc0dc1465a6d21def805b63252d0017b2276664ca0ecd1c4044980"
+    },
+    {
+      "dir": "packages/compaction/command-compact",
+      "name": "@deepseek-ai/dsh-command-compact",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/compaction/command-compact @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:58711eb462f3cef829b9ab04503d345c32754647540f705da712668c0464730d"
+    },
+    {
+      "dir": "packages/compaction/compaction",
+      "name": "@deepseek-ai/dsh-compaction",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/compaction/compaction @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:c5cfe9c8b2047ad8b07a98ce885b4769cece79793bde49ac46dcd5a5da2ddbc3"
+    },
+    {
+      "dir": "packages/compaction/compaction-basic",
+      "name": "@deepseek-ai/dsh-compaction-basic",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/compaction/compaction-basic @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:4056d82b0e3f8f9a5f3370617635acd869eaab25772e73c28370cfda334add36"
+    },
+    {
+      "dir": "packages/compaction/compaction-image-offload",
+      "name": "@deepseek-ai/dsh-compaction-image-offload",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/compaction/compaction-image-offload @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:883692fefbd08c74305f70f79f9feef20688b09acf37317e7416b6bbbdd89194"
+    },
+    {
+      "dir": "packages/compaction/compaction-tool-result-pruner",
+      "name": "@deepseek-ai/dsh-compaction-tool-result-pruner",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/compaction/compaction-tool-result-pruner @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:afd0d5f305617668c940f994f1903673f7f1adf8593d3d7faa1fb11e013996dc"
+    },
+    {
+      "dir": "packages/context/agent-instructions",
+      "name": "@deepseek-ai/dsh-agent-instructions",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/agent-instructions @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:2086c73a994b3307ab7226e7c9dbc88aedfc501125c7a5c1f8f2875811cd241f"
+    },
+    {
+      "dir": "packages/context/file-reference",
+      "name": "@deepseek-ai/dsh-file-reference",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/file-reference @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:6d51d204ca9502fcaf2fe7c64fc777b987d2a2cb7440ea1352f63fe61da9b1ea"
+    },
+    {
+      "dir": "packages/context/file-reference-local",
+      "name": "@deepseek-ai/dsh-file-reference-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/file-reference-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:fe3a058cc13fd871c11a95d2ea12f8e9dd6c701d126443e7629d85ff80188d53"
+    },
+    {
+      "dir": "packages/context/harness-dev-context",
+      "name": "@deepseek-ai/dsh-harness-dev-context",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/harness-dev-context @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:9c796ccd40194274295de0df9a2dc8f46a6a81a5c27243e88a3e96afb19fc487"
+    },
+    {
+      "dir": "packages/context/session-reference",
+      "name": "@deepseek-ai/dsh-session-reference",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/session-reference @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 18,
+      "digest": "sha256:f091d5e806833c4da0e2debd839a0c5d8fe677087aff7fdd6d07176893e6270c"
+    },
+    {
+      "dir": "packages/context/time-context",
+      "name": "@deepseek-ai/dsh-time-context",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/time-context @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:18ce88728140864bcc68cbd8b268b50ef882c8c181a6a7c84845cb4579158107"
+    },
+    {
+      "dir": "packages/context/tmux-context",
+      "name": "@deepseek-ai/dsh-tmux-context",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/context/tmux-context @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:1cbb4090e21d3cacd19f7c729c746fdffa56915f88b600fe79a58bf21459c8cb"
+    },
+    {
+      "dir": "packages/core/agent",
+      "name": "@deepseek-ai/dsh-agent",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/core/agent @ 0.2.1-rc.2",
+      "note": "增：请求选项 `temperature`（采样温度，随每轮请求折叠进 fold 配置）；不改变既有选项与默认行为",
+      "fileCount": 22,
+      "digest": "sha256:b49984d3ad0682d2c422559782e97851b5daa2cd9db90be32ca2ddd6b2afb6e2"
+    },
+    {
+      "dir": "packages/core/agent-default-model",
+      "name": "@deepseek-ai/dsh-agent-default-model",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/core/agent-default-model @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:97ac8abb791ebafa458dc8e69a88f02f36eedacb4c8527573bd1392b529f580e"
+    },
+    {
+      "dir": "packages/core/agent-loop",
+      "name": "@deepseek-ai/dsh-agent-loop",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/core/agent-loop @ 0.2.1-rc.2",
+      "note": "改：把 `options.temperature` 折进每轮请求头配置（与 `maxTokens`/`reasoningEffort` 同一路径）；README/i18n 移除 sdk-minimal 断链并记录复签",
+      "fileCount": 43,
+      "digest": "sha256:50de2c8da9ce48ec89cef9956f4dc4be3888348de1d19bd69a9c4c883844735d"
+    },
+    {
+      "dir": "packages/core/agent-tool-presentation",
+      "name": "@deepseek-ai/dsh-agent-tool-presentation",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/core/agent-tool-presentation @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:9729556c8ceeec3cf0cb6f3f5eeeccc48aa25990ecfcc4c9c0720a5b082ccb8a"
+    },
+    {
+      "dir": "packages/core/scope",
+      "name": "@deepseek-ai/dsh-scope",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/core/scope @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:fd40a4e4f63c1d43c7d9ea37db9902c99457261065932a308b58041d86c0f112"
+    },
+    {
+      "dir": "packages/core/session",
+      "name": "@deepseek-ai/dsh-session",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/core/session @ 0.2.1-rc.2",
+      "note": "仅 GENERATED known-event-types.ts 不同（gen-persistence-catalog 复现）",
+      "fileCount": 36,
+      "digest": "sha256:ee64a624b4c88cdfb1a3c202fe582bc235587bc5910e84a1155c5cbcc06db48b"
+    },
+    {
+      "dir": "packages/core/system-prompt",
+      "name": "@deepseek-ai/dsh-system-prompt",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/core/system-prompt @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:2840673219da622d01f557a2763611f0e2f488b39a501c79831d63445638f84b"
+    },
+    {
+      "dir": "packages/core/tools",
+      "name": "@deepseek-ai/dsh-tools",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/core/tools @ 0.2.1-rc.2",
+      "note": "改造：gen-tool-catalog 清单按 D16 裁剪后的实际工具集收敛（移除 browser-use、create_worktree、ralph、spawn_teammate、team_task_*、wait_agent 与 tool-team 重复项）",
+      "fileCount": 30,
+      "digest": "sha256:4bec775fe96b431098641a41437b3f4542ca257303e96e22b98a0d4b2025d2ef"
+    },
+    {
+      "dir": "packages/credentials/authorization",
+      "name": "@deepseek-ai/dsh-authorization",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/credentials/authorization @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:442d978c2e7caf16c936152243a11c41168c85433d0a23a74a21c42228e07f95"
+    },
+    {
+      "dir": "packages/credentials/credentials",
+      "name": "@deepseek-ai/dsh-credentials",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/credentials/credentials @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:6125aaea3665f78b92bccc909c04af3e7c1a197bb593bb963c40f6215fa841db"
+    },
+    {
+      "dir": "packages/credentials/credentials-local",
+      "name": "@deepseek-ai/dsh-credentials-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/credentials/credentials-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:8b3dea8b3896c5bb75907047b27f35c6a7ee5770dcbecee6f9a4e6c839a69884"
+    },
+    {
+      "dir": "packages/credentials/deepseek-account",
+      "name": "@deepseek-ai/dsh-deepseek-account",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/credentials/deepseek-account @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:cbf5e5110d6c123e5dad36aa2c82abbcb0f14900a66d6fcb4cb9561b2c7ef1a4"
+    },
+    {
+      "dir": "packages/credentials/deepseek-account-platform",
+      "name": "@deepseek-ai/dsh-deepseek-account-platform",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/credentials/deepseek-account-platform @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:44cf7b5a89b48856b2ca43fe8ae789a2460bb7ae68693dd9760872e65286ddbb"
+    },
+    {
+      "dir": "packages/deliverables/tool-present",
+      "name": "@deepseek-ai/dsh-tool-present",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/deliverables/tool-present @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:df3be2bc1aed81cccf2e127feb6de0c08648ede2e4bc2cd9d1dda8c61b58c520"
+    },
+    {
+      "dir": "packages/deliverables/workspace-changes",
+      "name": "@deepseek-ai/dsh-workspace-changes",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/deliverables/workspace-changes @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 24,
+      "digest": "sha256:0531af629bb292d2eaeb1b970015a5e591d334f9597efaead9233f1f3156ed86"
+    },
+    {
+      "dir": "packages/document/office-to-pdf",
+      "name": "@deepseek-ai/dsh-office-to-pdf",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/document/office-to-pdf @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:1ba8963aa40dac69acebdde67f69d188ed225edc647c9cab3953d720b3226116"
+    },
+    {
+      "dir": "packages/experimental/tool-session-query",
+      "name": "@deepseek-ai/dsh-tool-session-query",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/experimental/tool-session-query @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:2749dcc056a0a1d5cfa03b1241e81d6d09f5c988d898e01986f35235365452ad"
+    },
+    {
+      "dir": "packages/experimental/tool-terminal",
+      "name": "@deepseek-ai/dsh-tool-terminal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/experimental/tool-terminal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:78d474a91f8c26c9af7e57f54adab690ec67a0c887afa753e9dd703eec89245d"
+    },
+    {
+      "dir": "packages/extensions/cordis-client-runner",
+      "name": "@deepseek-ai/dsh-cordis-client-runner",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/extensions/cordis-client-runner @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 25,
+      "digest": "sha256:f0d565a2fa5cfa0b95ec74b9b3e9666a8f4d5058c6c45ab2075b67c90103a08d"
+    },
+    {
+      "dir": "packages/extensions/cordis-host-runner",
+      "name": "@deepseek-ai/dsh-cordis-host-runner",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/extensions/cordis-host-runner @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 21,
+      "digest": "sha256:049d39bed9888549aba06c1def03a31fdabdbabae27d3754841e87ec90dcd814"
+    },
+    {
+      "dir": "packages/extensions/tool-cordis",
+      "name": "@deepseek-ai/dsh-tool-cordis",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/extensions/tool-cordis @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:61c680b16d7aafc639e960ced3473db5e2472894e182b2e7fa550a3c2b586e5b"
+    },
+    {
+      "dir": "packages/extensions/ui-cordis",
+      "name": "@deepseek-ai/dsh-client-ui-cordis",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/extensions/ui-cordis @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 30,
+      "digest": "sha256:4b29280ddb76a76601d9b79430f627e43a17231540003d41f5b4df56b4367e9a"
+    },
+    {
+      "dir": "packages/feedback/command-feedback",
+      "name": "@deepseek-ai/dsh-command-feedback",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/feedback/command-feedback @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:f18b486b1a01e50b66a1e797948b264ce2e2b1760d21980e551a8b4bfa5095a9"
+    },
+    {
+      "dir": "packages/feedback/message-feedback",
+      "name": "@deepseek-ai/dsh-message-feedback",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/feedback/message-feedback @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:077b737eef6e832863c2916da91075d51d4fa909239c0d245bd9b3f5e7836ce4"
+    },
+    {
+      "dir": "packages/fs/fs",
+      "name": "@deepseek-ai/dsh-fs",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/fs/fs @ 0.2.1-rc.2",
+      "note": "新增目录变更原语 mkdir/rename/remove（基类默认拒绝，R187 文件树编辑）与 FS_ALREADY_EXISTS 错误码；README.zh 与英文版同步",
+      "fileCount": 8,
+      "digest": "sha256:68416a9b6bba14c535302d63b1c79a98fc423c6ef460d002a170f7420dd3f6a6"
+    },
+    {
+      "dir": "packages/fs/fs-local",
+      "name": "@deepseek-ai/dsh-fs-local",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/fs/fs-local @ 0.2.1-rc.2",
+      "note": "增：mkdir/rename/remove 本地实现（rename 拒绝覆盖已存在目标）",
+      "fileCount": 12,
+      "digest": "sha256:ece04797152f90428cb0b906922e6f08374cfe72ed29985c5f0369c1a3e49c67"
+    },
+    {
+      "dir": "packages/fs/fs-observation-policy",
+      "name": "@deepseek-ai/dsh-fs-observation-policy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/fs/fs-observation-policy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:7c9022d5936533f1064eb0636555d4893727a9071526e73d36b410397b23fd23"
+    },
+    {
+      "dir": "packages/fs/fs-sandbox",
+      "name": "@deepseek-ai/dsh-fs-sandbox",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/fs/fs-sandbox @ 0.2.1-rc.2",
+      "note": "在 mkdir/rename/remove 上增加按调用沙箱围栏（rename 围栏两端）并补单测；README.zh 与英文版同步",
+      "fileCount": 11,
+      "digest": "sha256:f0c8d39e3cde491a24d2b2482116cfee0f756a0e305e18e5dfddd318a4f7b75e"
+    },
+    {
+      "dir": "packages/fs/tool-fs",
+      "name": "@deepseek-ai/dsh-tool-fs",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/fs/tool-fs @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 27,
+      "digest": "sha256:8dbdc7b4b1259624359403a210a4a05dadb8e244374fe21045148f0784279e87"
+    },
+    {
+      "dir": "packages/fs/tool-fs-search",
+      "name": "@deepseek-ai/dsh-tool-fs-search",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/fs/tool-fs-search @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:4731ea66b1686c04abf4d62e5ff4875f57a1e500894929922325349114d9dda3"
+    },
+    {
+      "dir": "packages/fs/tool-str-replace-editor",
+      "name": "@deepseek-ai/dsh-tool-str-replace-editor",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/fs/tool-str-replace-editor @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:dd8c4a3817ce1f31e32eca70e85bd41a3b74889d7057d21ab52f565b527cc176"
+    },
+    {
+      "dir": "packages/goal/command-goal",
+      "name": "@deepseek-ai/dsh-command-goal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/goal/command-goal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:084fc133d9f0022c55826546b705d5e3304ab07642a6dcc5967d22e32a97ee45"
+    },
+    {
+      "dir": "packages/goal/goal",
+      "name": "@deepseek-ai/dsh-goal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/goal/goal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:f668a39991acbcee24c8bbd5fc2901a246c7ca64356118710d6b784e802b48ea"
+    },
+    {
+      "dir": "packages/goal/goal-round-driver",
+      "name": "@deepseek-ai/dsh-goal-round-driver",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/goal/goal-round-driver @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:4a6395d6d5221d994900cc237c08fbdb46874d72ee70e684b3104c35d7c5814a"
+    },
+    {
+      "dir": "packages/goal/tool-goal",
+      "name": "@deepseek-ai/dsh-tool-goal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/goal/tool-goal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:39592a91d3dbb1e4fdd175be6d60d886090e6da5acdb3d3161772c593949179b"
+    },
+    {
+      "dir": "packages/guard/repeat-tool-reminder",
+      "name": "@deepseek-ai/dsh-repeat-tool-reminder",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/guard/repeat-tool-reminder @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:57d22ae76878b685b0107ca9b087f1c27af5aeca524f68134babf91d78ac429a"
+    },
+    {
+      "dir": "packages/guard/timeout-policy",
+      "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/guard/timeout-policy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:9fce48146c49c020170cbbe6968944510ec59f8e1bf7848238ab236e51180878"
+    },
+    {
+      "dir": "packages/host/directory-picker",
+      "name": "@deepseek-ai/dsh-host-directory-picker",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/directory-picker @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:71bb654806ac592e9b2a3697d012cc90e1b059738ee4548eacb7ddb6c1f780d4"
+    },
+    {
+      "dir": "packages/host/directory-picker-auto",
+      "name": "@deepseek-ai/dsh-host-directory-picker-auto",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/directory-picker-auto @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:95f61eaa7984b5ae7d06f21f2c39b4c55a6d877f551272f78f1c7ea185dbecb3"
+    },
+    {
+      "dir": "packages/host/directory-picker-browse",
+      "name": "@deepseek-ai/dsh-host-directory-picker-browse",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/directory-picker-browse @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:12272c648150a96c7cfd71b6feb5257b7fb676cfd72b34a19c1b743309e26ccf"
+    },
+    {
+      "dir": "packages/host/directory-picker-native",
+      "name": "@deepseek-ai/dsh-host-directory-picker-native",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/directory-picker-native @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 21,
+      "digest": "sha256:c9a618e3caf09cfeeb892c25c74f640e9b44afe88dad5cb2dcd945d3940a641a"
+    },
+    {
+      "dir": "packages/host/frontend-static",
+      "name": "@deepseek-ai/dsh-host-frontend-static",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/host/frontend-static @ 0.2.1-rc.2",
+      "note": "Index responses carry cache-control: no-store so a rebuilt shell is not pinned to the previous content-hashed bundle by a cached index document.",
+      "fileCount": 7,
+      "digest": "sha256:28cdeb37d5492001fe4b57e9a227c9589fc35fb8676fd9526ed8eb1fbaa95381"
+    },
+    {
+      "dir": "packages/host/open-in-app",
+      "name": "@deepseek-ai/dsh-host-open-in-app",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/open-in-app @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 18,
+      "digest": "sha256:c45851cd369d5af9e3a2c9d935d4c10a03adb0f56a471755dbbdd898d5d91b47"
+    },
+    {
+      "dir": "packages/host/plugin-inventory",
+      "name": "@deepseek-ai/dsh-host-plugin-inventory",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/plugin-inventory @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:1e1d47b933d58f8a8fc8a0cc064e79d50ee73d08a957c9c97eded54863b7e122"
+    },
+    {
+      "dir": "packages/host/product-telemetry-otel",
+      "name": "@deepseek-ai/dsh-host-product-telemetry-otel",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/product-telemetry-otel @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:edac27fc75dbc9e5922cb37f9f019095fec36ecad6ad6c9d522695fcfd6a0d4d"
+    },
+    {
+      "dir": "packages/host/webserver",
+      "name": "@deepseek-ai/dsh-host-webserver",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/host/webserver @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:ccd5c560945e5a58bed8a7298454a0807629916e118c9c8b32ee9222016f7855"
+    },
+    {
+      "dir": "packages/identity/anonymous-user-id",
+      "name": "@deepseek-ai/dsh-anonymous-user-id",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/identity/anonymous-user-id @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:50b36eb6db4aa7bbf736431f52d2f5535da98aa90bb77938f3dc061ce1de9ee6"
+    },
+    {
+      "dir": "packages/interaction/commands",
+      "name": "@deepseek-ai/dsh-commands",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/interaction/commands @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:1b5b9d8566f73525cfd0eaa68bc3429583ce5e6f058356b74ee8509017e252cd"
+    },
+    {
+      "dir": "packages/interaction/permission-presets",
+      "name": "@deepseek-ai/dsh-permission-presets",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/interaction/permission-presets @ 0.2.1-rc.2",
+      "note": "新增第四档预设 approve-for-me 与确定性准入门（approve-for-me.ts + index 接线：工具名单/命令前缀/固定高风险检查/可选复核，未命中回原生审批）；原三档、2 种策略与既有契约不变（R186）",
+      "fileCount": 14,
+      "digest": "sha256:8dc19ce3a81a09c2ee3450424a478ecff7aadbb2ebac520818a5c841899353b0"
+    },
+    {
+      "dir": "packages/interaction/tool-ask-user",
+      "name": "@deepseek-ai/dsh-tool-ask-user",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/interaction/tool-ask-user @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:3ea710bb43e5f8d56c72ddc135960dc31f4408bab8a9385abedc2970154245e5"
+    },
+    {
+      "dir": "packages/interaction/user-approval",
+      "name": "@deepseek-ai/dsh-user-approval",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/interaction/user-approval @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:00b05600704db14d282fe0a520fa89cab8860cabe78b28ebfbc417718fb0e21f"
+    },
+    {
+      "dir": "packages/interaction/user-questions",
+      "name": "@deepseek-ai/dsh-user-questions",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/interaction/user-questions @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:ad85673b4ca496b026b422f3fc62073cdd94c085cb060df070244e6e11defb7f"
+    },
+    {
+      "dir": "packages/jobs/jobs",
+      "name": "@deepseek-ai/dsh-jobs",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/jobs/jobs @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:15e512048f4b2e38a1ac9caac38b08969040e34ede31887c1b4e6378ecf13e06"
+    },
+    {
+      "dir": "packages/jobs/jobs-local",
+      "name": "@deepseek-ai/dsh-jobs-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/jobs/jobs-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:2bae5f739bad5d506990f5a862e49cce7024cff733d3fc5771cb755983da3035"
+    },
+    {
+      "dir": "packages/jobs/tool-jobs",
+      "name": "@deepseek-ai/dsh-tool-jobs",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/jobs/tool-jobs @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:79b3995619e55906842b93c018733c0184f09c9ba1e4e7822d8d317ad871f979"
+    },
+    {
+      "dir": "packages/llm/deepseek-llm-api-extensions",
+      "name": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/deepseek-llm-api-extensions @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:0f6e9ab857a8a1e8d9b363d41796c9374f6d87600ea3895655c17af11814d3a2"
+    },
+    {
+      "dir": "packages/llm/llm",
+      "name": "@deepseek-ai/dsh-llm",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/llm/llm @ 0.2.1-rc.2",
+      "note": "增：`ModelRequest.samplingParams`（提供方特定采样字段，如 OpenAI 兼容的 `top_p`/`frequency_penalty`/`presence_penalty`；不支持的适配器忽略）",
+      "fileCount": 32,
+      "digest": "sha256:3ff98c13e477ec7cb998d0d063843818c1e31161a3dc281413ccbaf93d4155b0"
+    },
+    {
+      "dir": "packages/llm/llm-deepseek",
+      "name": "@deepseek-ai/dsh-llm-deepseek",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 57,
+      "digest": "sha256:0724edf036ba6bb2e84a44248a4ea5b0f1e80d8a9ccf73d3b94ca96369fe26f5"
+    },
+    {
+      "dir": "packages/llm/llm-deepseek-account",
+      "name": "@deepseek-ai/dsh-llm-deepseek-account",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek-account @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 18,
+      "digest": "sha256:1553bd94375007257809b3b4d91baf51e20708558b1163e48d507626638a14dd"
+    },
+    {
+      "dir": "packages/llm/llm-deepseek-api-key",
+      "name": "@deepseek-ai/dsh-llm-deepseek-api-key",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek-api-key @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:82f75113639018f94b70d39e30f787eb0d6348a5ea12ee389507528f2bf9ad21"
+    },
+    {
+      "dir": "packages/llm/llm-pi-ai",
+      "name": "@deepseek-ai/dsh-llm-pi-ai",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/llm/llm-pi-ai @ 0.2.1-rc.2",
+      "note": "对外新增三个再导出（`resolveProfiles`/`credentialStoreFrom`/`authContextFrom`），供 @soloengine/llm-db-adapter 按行复用 pi-ai 的 OpenAI 兼容协议；适配器把 `samplingParams` 原样并入请求体；其余实现体不变",
+      "fileCount": 50,
+      "digest": "sha256:17c88b16253de06b4d7e4da8462b910ef12392594dfa7b87d8316ddf47e937bd"
+    },
+    {
+      "dir": "packages/llm/llm-retry",
+      "name": "@deepseek-ai/dsh-llm-retry",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/llm-retry @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:8c095bdbd995e9697490cd5ad53eb259301f1dc5ae0f8d2c96a780e31b7d4b00"
+    },
+    {
+      "dir": "packages/llm/plugin-package-inventory-deepseek",
+      "name": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/plugin-package-inventory-deepseek @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:c4fd1cb66de3f0ebaeb4d4bb5bc13402c85b54b3f06435040e15d006f80b2665"
+    },
+    {
+      "dir": "packages/llm/token-meter",
+      "name": "@deepseek-ai/dsh-token-meter",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/token-meter @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:7698d6566f2ec14836f372d979dc73dcc7cd1dcda44060dca5f6035a802c7b8a"
+    },
+    {
+      "dir": "packages/lsp/lsp",
+      "name": "@deepseek-ai/dsh-lsp",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/lsp/lsp @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:0a459811d3da96e7cf47be7bf7cf2fe6389c2051fb4c94c8fe8c3bde6d238035"
+    },
+    {
+      "dir": "packages/lsp/lsp-stdio",
+      "name": "@deepseek-ai/dsh-lsp-stdio",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/lsp/lsp-stdio @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:860255babe309dbd07b08c0afed3c44e5cea4dea2b82f86c070c437a18fdc07d"
+    },
+    {
+      "dir": "packages/lsp/tool-lsp",
+      "name": "@deepseek-ai/dsh-tool-lsp",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/lsp/tool-lsp @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:4babb0fc4608af2fdcff3cf61740c54159975442ef26fac67e9a50a409897302"
+    },
+    {
+      "dir": "packages/mcp/mcp-client",
+      "name": "@deepseek-ai/dsh-mcp-client",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/mcp/mcp-client @ 0.2.1-rc.2",
+      "note": "Config/ToolBridgeOptions 新增 disabledTools：在注册前把停用工具从模型可见集合排除（PRD-05 FR-MCP-008），默认空数组保持原行为；两种 transport 的五个公共字段各自平铺（配置目录生成器只接受 `z.object` 的普通键，不接受 spread），该文件登记为 jscpd 窄例外",
+      "fileCount": 26,
+      "digest": "sha256:610c080dbee9901d76f9408612c94bc364e4ae387e10a00491b0852760ea9196"
+    },
+    {
+      "dir": "packages/mcp/mcp-resources",
+      "name": "@deepseek-ai/dsh-mcp-resources",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/mcp/mcp-resources @ 0.2.1-rc.2",
+      "note": "仅 README/i18n：移除 sdk-minimal 断链 + 双语文档记录复签",
+      "fileCount": 11,
+      "digest": "sha256:302bcccb34d83a9bd923326b0cf62523bded4e8dda756c3bf0dab556ba644069"
+    },
+    {
+      "dir": "packages/plan/plan-mode",
+      "name": "@deepseek-ai/dsh-plan-mode",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/plan/plan-mode @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:290ab4a3f220701bd8f6a7eb8986d90f14a21aa0b445eed0ad494c599b8acef7"
+    },
+    {
+      "dir": "packages/preset/agent-preset",
+      "name": "@deepseek-ai/dsh-agent-preset",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/preset/agent-preset @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 29,
+      "digest": "sha256:25284dc1f93510797c23b1fe938e2f8ecf66b288355268403bafce7c6150847e"
+    },
+    {
+      "dir": "packages/preset/agent-preset-registry",
+      "name": "@deepseek-ai/dsh-agent-preset-registry",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/preset/agent-preset-registry @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 27,
+      "digest": "sha256:a5ec7ec37292dda065979b87f56e92f6ca02921d009cb467dea7970611506980"
+    },
+    {
+      "dir": "packages/preset/persona",
+      "name": "@deepseek-ai/dsh-persona",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/preset/persona @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:b4e0adfefc288bd6121d3e15a129b60b9ad072ff1cd24e251de3143026cc0cda"
+    },
+    {
+      "dir": "packages/ptc-runtime/ptc-runtime",
+      "name": "@deepseek-ai/dsh-ptc-runtime",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 9,
+      "digest": "sha256:719909bf05ba418cd96e04d3988b8d9e56533c58ddab34b170cd3355c6264f1c"
+    },
+    {
+      "dir": "packages/ptc-runtime/ptc-runtime-node",
+      "name": "@deepseek-ai/dsh-ptc-runtime-node",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime-node @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 47,
+      "digest": "sha256:db695114253f02e23e23329fe5725556b2386fe4f4897f7297abe47f680dc7c7"
+    },
+    {
+      "dir": "packages/sandbox/sandbox",
+      "name": "@deepseek-ai/dsh-sandbox",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/sandbox/sandbox @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:5eb4dcbd035107a75aa00c24251374053c6e588ff8d93d93b231f6bc2d1329db"
+    },
+    {
+      "dir": "packages/sandbox/sandbox-local",
+      "name": "@deepseek-ai/dsh-sandbox-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/sandbox/sandbox-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:831c482b410d7a7b9232d0824934ffa65d46fbca8628e8463c7fede1e616cba3"
+    },
+    {
+      "dir": "packages/sandbox/sandbox-policy",
+      "name": "@deepseek-ai/dsh-sandbox-policy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/sandbox/sandbox-policy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:8db07141eab2b4607c14307777239976f5c8d3ce89432bd746954778b07d754c"
+    },
+    {
+      "dir": "packages/sandbox/sandbox-windows-acl",
+      "name": "@deepseek-ai/dsh-sandbox-windows-acl",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/sandbox/sandbox-windows-acl @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 37,
+      "digest": "sha256:c259dbde16dc473e52ffc9ebc10f95dcc514b54c25095fca30177b116832c97c"
+    },
+    {
+      "dir": "packages/schedule/schedule",
+      "name": "@deepseek-ai/dsh-schedule",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/schedule/schedule @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 35,
+      "digest": "sha256:230d390a01bdce7b245aebe079b6c68fbab473abd1388a95cd95336d0692739c"
+    },
+    {
+      "dir": "packages/schedule/tool-schedule",
+      "name": "@deepseek-ai/dsh-tool-schedule",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/schedule/tool-schedule @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:d22b521615ce2e9b394c5ef1fe8f60d84e6b1bdcc1b8f460e454901828d706f4"
+    },
+    {
+      "dir": "packages/session-query/session-log-export",
+      "name": "@deepseek-ai/dsh-session-log-export",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session-query/session-log-export @ 0.2.1-rc.2",
+      "note": "测试删除 team/message/queued 载体（D16 裁剪该事件类型），其余 6 个载体用例已恢复并通过；产品代码与上游逐字一致。",
+      "fileCount": 27,
+      "digest": "sha256:b2a8f15fcc27e133cdd19f94748032236395a730e348a30b050e93aefe8c5b9f"
+    },
+    {
+      "dir": "packages/session-query/session-query",
+      "name": "@deepseek-ai/dsh-session-query",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session-query/session-query @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 22,
+      "digest": "sha256:a71b5315f03fc3041eedde12a27622978de1eeda4dcc2c56c47e14e039e37671"
+    },
+    {
+      "dir": "packages/session-query/session-query-sqlite",
+      "name": "@deepseek-ai/dsh-session-query-sqlite",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session-query/session-query-sqlite @ 0.2.1-rc.2",
+      "note": "新增 `Config.colocated`：同一实现把派生索引建在共享业务库内（不写 application_id/user_version，版本记入 schema_versions）；默认独立派生索引行为不变（R1/R204，2026-10-31 收口）",
+      "fileCount": 13,
+      "digest": "sha256:a87ac8da044083852d0999d1e3591b04f5efee8827151777bd692422e8d8fe67"
+    },
+    {
+      "dir": "packages/session/session-checkpoint-policy",
+      "name": "@deepseek-ai/dsh-session-checkpoint-policy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-checkpoint-policy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:5b9e1255c664d9933b322e04db70f27c47d34bbdf80bf96d91b4b53e4daf16ac"
+    },
+    {
+      "dir": "packages/session/session-format",
+      "name": "@deepseek-ai/dsh-session-format",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 18,
+      "digest": "sha256:f1ee6a614ed187d43c4d88b723ff26cde5bd510af2072a2d8be8dfb6eba72159"
+    },
+    {
+      "dir": "packages/session/session-format-catalog",
+      "name": "@deepseek-ai/dsh-session-format-catalog",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format-catalog @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:f86c93305462ca9b25f913dd898fa16bc60274ab0c1e6e8ae712f46f0928e075"
+    },
+    {
+      "dir": "packages/session/session-format-v0-to-v1",
+      "name": "@deepseek-ai/dsh-session-format-v0-to-v1",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format-v0-to-v1 @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 21,
+      "digest": "sha256:6612905383461ae031994ba1f3d0fe8f42a11a6b3891ee37f129045871ad24ec"
+    },
+    {
+      "dir": "packages/session/session-format-v1-to-v2",
+      "name": "@deepseek-ai/dsh-session-format-v1-to-v2",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format-v1-to-v2 @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:998fffc8042180e236e8e7057ab5d576c501477d89b84b7681a6b6ddc3bc064f"
+    },
+    {
+      "dir": "packages/session/session-format-v2-to-v3",
+      "name": "@deepseek-ai/dsh-session-format-v2-to-v3",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format-v2-to-v3 @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 21,
+      "digest": "sha256:9b5aacedb09a979aa388436b0f46caeb41ddfeeaa4f85ea1065458e14294c1b5"
+    },
+    {
+      "dir": "packages/session/session-format-v3-to-v4",
+      "name": "@deepseek-ai/dsh-session-format-v3-to-v4",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/session-format-v3-to-v4 @ 0.2.1-rc.2",
+      "note": "测试的 EXPECTED_CONFLICTS 删除 8 条 D16 已裁剪的 SDK subagent fixture；产品代码与上游逐字一致。",
+      "fileCount": 43,
+      "digest": "sha256:cf2500e681be7d0395fe2b20edc9886297c14fe6dcbc11448a1f1db6bb80a5b5"
+    },
+    {
+      "dir": "packages/session/session-log-deepseek",
+      "name": "@deepseek-ai/dsh-session-log-deepseek",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-log-deepseek @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:e48a26683c2a4f783ad818ec23c949669da6eeae840c3d4c1b583e3f599a9b8b"
+    },
+    {
+      "dir": "packages/session/session-persistence",
+      "name": "@deepseek-ai/dsh-session-persistence",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-persistence @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:453d8a5ff352d1971cae326c765ba59a853590f50818f7a77958290e8f55d23b"
+    },
+    {
+      "dir": "packages/session/session-persistence-jsonl",
+      "name": "@deepseek-ai/dsh-session-persistence-jsonl",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-persistence-jsonl @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 47,
+      "digest": "sha256:2455697c518546d339a478b3fbf1aa9fd7240bf12af52280d66f59431e8c56e9"
+    },
+    {
+      "dir": "packages/session/session-projection",
+      "name": "@deepseek-ai/dsh-session-projection",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-projection @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:693779400bd695c9da5e8dfcc804ea20345185f1d81b127c5c572a34ac455aad"
+    },
+    {
+      "dir": "packages/session/session-projection-cache",
+      "name": "@deepseek-ai/dsh-session-projection-cache",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-projection-cache @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:44e1444b1b34ad6a21e4cd1a4fe88fbdd720ac55ca1b8d8188125d15516e2a88"
+    },
+    {
+      "dir": "packages/session/session-stats",
+      "name": "@deepseek-ai/dsh-session-stats",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-stats @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:ac04c2d634daa7a2eade8502fc8c056072b5983edc872a1a24864620661535d8"
+    },
+    {
+      "dir": "packages/session/session-telemetry",
+      "name": "@deepseek-ai/dsh-session-telemetry",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-telemetry @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:58ae75abbfee2ff60ae44d9158e0cdb325360fe3275b03243605081196f8e78a"
+    },
+    {
+      "dir": "packages/session/session-telemetry-otel",
+      "name": "@deepseek-ai/dsh-session-telemetry-otel",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-telemetry-otel @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:5d78576b23854f6b051e4aa96bad48d8e80ee5e3b9e5d833874f667ca8c55679"
+    },
+    {
+      "dir": "packages/session/session-title",
+      "name": "@deepseek-ai/dsh-session-title",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/session-title @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 17,
+      "digest": "sha256:c446acc9bfc9c39347e86243c793bb32985959f261241cf917afffcfed9abeea"
+    },
+    {
+      "dir": "packages/session/session-title-first-prompt-llm",
+      "name": "@deepseek-ai/dsh-session-title-first-prompt-llm",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/session-title-first-prompt-llm @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 11,
+      "digest": "sha256:38f48bfaf09e605c99c179e0a6c2998e1dd8d255932f9340a56dcf76036372d3"
+    },
+    {
+      "dir": "packages/session/session-title-llm",
+      "name": "@deepseek-ai/dsh-session-title-llm",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/session-title-llm @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 7,
+      "digest": "sha256:21fbef431f967eec4221dc9ba2db99a0da7beb26b846942e68c095bc86131a96"
+    },
+    {
+      "dir": "packages/session/session-turn-outline",
+      "name": "@deepseek-ai/dsh-session-turn-outline",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-turn-outline @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:e81728355032a10eed86f8ee77f032cc81bdb963cf834b4cd0e1faa58fc7c42e"
+    },
+    {
+      "dir": "packages/session/tool-working-directory",
+      "name": "@deepseek-ai/dsh-tool-working-directory",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/tool-working-directory @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 6,
+      "digest": "sha256:dabb85f83fed397f28dc1bfc38df8f6eed52f6d45292b8223bfa35a51c53e41c"
+    },
+    {
+      "dir": "packages/session/working-directory",
+      "name": "@deepseek-ai/dsh-working-directory",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/working-directory @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:0e8bd86c2cd6a0824bfe4e873aabc6599cabeb08c35779a127742df8dcbb74c8"
+    },
+    {
+      "dir": "packages/settings/settings",
+      "name": "@deepseek-ai/dsh-settings",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/settings/settings @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:c1b591cf350ae5a20071b9ef97026df0d90226307ec4df369a57b6d31ab0b28e"
+    },
+    {
+      "dir": "packages/shell/bash-local",
+      "name": "@deepseek-ai/dsh-bash-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/bash-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:e2047804211b645c06fb91c94489b825fb7f822d520e1bae2d628aea44936ca1"
+    },
+    {
+      "dir": "packages/shell/bash-sandbox",
+      "name": "@deepseek-ai/dsh-bash-sandbox",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/bash-sandbox @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:84cb37b3e7e5fc7836de0f913e0e2523747989b5ce5d928e255d9a450bc07410"
+    },
+    {
+      "dir": "packages/shell/pwsh-local",
+      "name": "@deepseek-ai/dsh-pwsh-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/pwsh-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:c31d005e616a6375b47f70dc59be91969349660dd6d17d37be8acc5b3a4bc073"
+    },
+    {
+      "dir": "packages/shell/pwsh-sandbox",
+      "name": "@deepseek-ai/dsh-pwsh-sandbox",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/pwsh-sandbox @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:9228c12907a88f6492bd8b135510337554930efa1c9430d0446360959ad46848"
+    },
+    {
+      "dir": "packages/shell/shell",
+      "name": "@deepseek-ai/dsh-shell",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/shell @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:cfe850dff4a25b65ad375d9adfd7d27185b4a631df96a77ef158af0efa71d9aa"
+    },
+    {
+      "dir": "packages/shell/shell-env",
+      "name": "@deepseek-ai/dsh-shell-env",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/shell-env @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:d8086d0d53f9eb1b327f3ff328c0d6752e6fe1edad49189ef7dd2f1c096192bd"
+    },
+    {
+      "dir": "packages/shell/tool-bash",
+      "name": "@deepseek-ai/dsh-tool-bash",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/tool-bash @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:1e175d69428096d85f560ef24d7fc2a3773b7d34f715c2c31b81abf6ca256e0b"
+    },
+    {
+      "dir": "packages/shell/tool-bash-persistent",
+      "name": "@deepseek-ai/dsh-tool-bash-persistent",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/tool-bash-persistent @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:705aea0c9b52b2558e99c230c47fa0c1eb84c0f0bf7b72a990fec650118544c7"
+    },
+    {
+      "dir": "packages/shell/tool-pwsh",
+      "name": "@deepseek-ai/dsh-tool-pwsh",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/tool-pwsh @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:01f88292b03c352c057d3a0bf3a184b56500e197823f9202c172127a27e90969"
+    },
+    {
+      "dir": "packages/shell/tool-pwsh-persistent",
+      "name": "@deepseek-ai/dsh-tool-pwsh-persistent",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/shell/tool-pwsh-persistent @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:537ec890a8647635cbebb679dd9f968f53b12a66410eea7015dc297ea943c963"
+    },
+    {
+      "dir": "packages/skill/skill",
+      "name": "@deepseek-ai/dsh-skill",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/skill/skill @ 0.2.1-rc.2",
+      "note": "增：`SkillRegistry.restrict(names)` 与快照/取用的作用域过滤，供节点级技能作用域（功能行 190）；原有发现与注册语义不变",
+      "fileCount": 9,
+      "digest": "sha256:cb10505c37724d59940673ae245aac650c84c911c1dcc2edce462f100dd8e0b3"
+    },
+    {
+      "dir": "packages/skill/skill-filesystem",
+      "name": "@deepseek-ai/dsh-skill-filesystem",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/skill/skill-filesystem @ 0.2.1-rc.2",
+      "note": "roots() 增加运行目录自身的一层项目技能根（<运行项目>/.dsh/skills 与 .agents/skills，rank 比仓库根更小）：SoloEngine 的 per-user 技能农场物化在运行项目内，而 findProjectRoot 只认 .git；项目位于仓库子目录时技能会静默不可见。tests 增嵌套运行项目用例。",
+      "fileCount": 10,
+      "digest": "sha256:b5ab42010cb7ca51b81011a8ddad8a6e7fa40211d2629f0ba2df2bda7fd35a5f"
+    },
+    {
+      "dir": "packages/skill/skill-office",
+      "name": "@deepseek-ai/dsh-skill-office",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/skill/skill-office @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 23,
+      "digest": "sha256:44019f30204737207945c7c5c7e00e5bdeb7e68d19be6a6300d7c5888efabcf6"
+    },
+    {
+      "dir": "packages/skill/tool-skill",
+      "name": "@deepseek-ai/dsh-tool-skill",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/skill/tool-skill @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:5d55b5ec03aaf4fcb86b0e5570a8f5ef0d615a4d2bcc1d65877c045d72dc69c5"
+    },
+    {
+      "dir": "packages/skill/tool-workspace-dependencies",
+      "name": "@deepseek-ai/dsh-tool-workspace-dependencies",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/skill/tool-workspace-dependencies @ 0.2.1-rc.2",
+      "note": "文档：随 Python SDK 移除同步 README 的运行时载体表述（D21）；代码与上游一致",
+      "fileCount": 8,
+      "digest": "sha256:bd7e930d457637f0b037d2766fbbcf13b3e63d7bcec0206eab2f85aec7876d2d"
+    },
+    {
+      "dir": "packages/spill/spill",
+      "name": "@deepseek-ai/dsh-spill",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/spill/spill @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:ffdf31257b396dc3b001d539ea1fce4ec5d1a8a2e8933cc009ca659cca996501"
+    },
+    {
+      "dir": "packages/spill/spill-local",
+      "name": "@deepseek-ai/dsh-spill-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/spill/spill-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:313a00e56f35b88bd1d877128636302db88452e5cd50cd30305f64c2e8590a51"
+    },
+    {
+      "dir": "packages/spill/spill-policy",
+      "name": "@deepseek-ai/dsh-spill-policy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/spill/spill-policy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:2e1b486281ed80234570175620b9edbbad1c7fbd0bd1c12e6c73346ea917bd0b"
+    },
+    {
+      "dir": "packages/storage/storage",
+      "name": "@deepseek-ai/dsh-storage",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/storage/storage @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:451ca3be1102861b3d112ef9d41b9324084e0fc6894e2b40144d3121029cb3ec"
+    },
+    {
+      "dir": "packages/storage/storage-domain",
+      "name": "@deepseek-ai/dsh-storage-domain",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/storage/storage-domain @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:c1000c85340a2f039ddfe4a57a2d15faa92932da3ef838cf6d062a2989b05ea2"
+    },
+    {
+      "dir": "packages/storage/storage-json",
+      "name": "@deepseek-ai/dsh-storage-json",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/storage/storage-json @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:983ce5042ea79f33924f41872011c1422648ad730bb0f0320d14f1b5e72c7485"
+    },
+    {
+      "dir": "packages/storage/storage-sqlite",
+      "name": "@deepseek-ai/dsh-storage-sqlite",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/storage/storage-sqlite @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:8dbffb74499406a4f23706bdb31a0ef80e6672f448a032fdadb357c5e99c488e"
+    },
+    {
+      "dir": "packages/subagent/subagent",
+      "name": "@deepseek-ai/dsh-subagent",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/subagent/subagent @ 0.2.1-rc.2",
+      "note": "增：`SubagentStartRequest.setup`（本地子代理在预设挂载之后、首个回合之前执行产品侧组合；外部后端拒绝该字段）与 `SubagentStartRequest.scopeParent`（把子代理作用域挂到产品实例作用域之下，实例插件/隔离服务与预设服务同时可达）；manager 在本地物化时透传。另增 `SubagentResumeComposition` 与 `SubagentRuntime.registerResumeComposition(parent, composition)`：冷恢复（`send_message` 唤醒已持久化子会话）没有启动请求可携带产品组合，由产品在每个活跃父 agent 上登记一次，manager 在描述符之后、恢复后首个回合之前重放 `setup` 与 `scopeParent`。SoloEngine 画布用它把节点级 persona/工具/技能/MCP/插件注入被委派节点、让子代理留在该 flow 实例内，并在进程重启后的冷恢复中按子会话日志里的节点归属重放同一组合（PRD-01 §每节点一个完整 agent、§实例隔离）",
+      "fileCount": 63,
+      "digest": "sha256:f89f2fd0694f500e50bbda618ce8e53750df52afd80ca23a0329cfaeb81fc783"
+    },
+    {
+      "dir": "packages/subagent/subagent-fork-in-process",
+      "name": "@deepseek-ai/dsh-subagent-fork-in-process",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subagent/subagent-fork-in-process @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:829243c7438f3cc8f163f9f2812784ff6004d03ef3a350f8d34671f298b3e712"
+    },
+    {
+      "dir": "packages/subagent/subagent-spawn-in-process",
+      "name": "@deepseek-ai/dsh-subagent-spawn-in-process",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subagent/subagent-spawn-in-process @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:64c57bed921e929421084558ed87590ce357a07f989935c10adcdb33ce052546"
+    },
+    {
+      "dir": "packages/subagent/tool-subagent",
+      "name": "@deepseek-ai/dsh-tool-subagent",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subagent/tool-subagent @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 25,
+      "digest": "sha256:4c12917942fa5eaad912bbb95b6d92eed2616bbac45470da705c11a62f8395f1"
+    },
+    {
+      "dir": "packages/subagent/tool-subagent-control",
+      "name": "@deepseek-ai/dsh-tool-subagent-control",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subagent/tool-subagent-control @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:4cecd16e8f33fa3be3309abc11ccfe7f32118c28804dfe8f0e91a7d58aad7867"
+    },
+    {
+      "dir": "packages/subprocess/subprocess",
+      "name": "@deepseek-ai/dsh-subprocess",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subprocess/subprocess @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:304d9900cf58e4d2d40b70f16f7e5534c54205170e675b7a397e9c2e8786c0bc"
+    },
+    {
+      "dir": "packages/subprocess/subprocess-local",
+      "name": "@deepseek-ai/dsh-subprocess-local",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subprocess/subprocess-local @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 47,
+      "digest": "sha256:a4e1aef539e57029a91911dcef852dda2d0a6dba222168cca6e3dbe7f1906e12"
+    },
+    {
+      "dir": "packages/subprocess/win32-process",
+      "name": "@deepseek-ai/dsh-win32-process",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/subprocess/win32-process @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 20,
+      "digest": "sha256:e8d3d92927121a83a44ba938d900e128d83db41e84a3d876a46e4181b56c5495"
+    },
+    {
+      "dir": "packages/telemetry/otel",
+      "name": "@deepseek-ai/dsh-otel",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/telemetry/otel @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:6f3002339f9c036f819b6ce8cf8f13356f1ac85dca71f6d3ce6b070c1f9bb759"
+    },
+    {
+      "dir": "packages/terminal/terminal",
+      "name": "@deepseek-ai/dsh-terminal",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/terminal/terminal @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:bc76d7aab5dd6036576623dc3b0809c3a98347c7afd5ecdb2e5ad6e89ea8106a"
+    },
+    {
+      "dir": "packages/terminal/terminal-bash",
+      "name": "@deepseek-ai/dsh-terminal-bash",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/terminal/terminal-bash @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 17,
+      "digest": "sha256:dcbf62db48fac9cc52cafc9a3cd8d1ba6e8f80b880404f9e5765f7964caa46f7"
+    },
+    {
+      "dir": "packages/test-support/agent-loop-testkit",
+      "name": "@deepseek-ai/dsh-agent-loop-testkit",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/test-support/agent-loop-testkit @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:045fa91f3cb8ac1801341b5da867fa01730e329127410addc1c2e25e5cc0fab2"
+    },
+    {
+      "dir": "packages/test-support/client-runtime",
+      "name": "@deepseek-ai/dsh-client-test-runtime",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/test-support/client-runtime @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 37,
+      "digest": "sha256:7a81c929f05166036fe650c209dd91afdf48273d0615ec6a6ab4cdd545482380"
+    },
+    {
+      "dir": "packages/test-support/llm-mock-server",
+      "name": "@deepseek-ai/dsh-llm-mock-server",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/test-support/llm-mock-server @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:e66d6e5f837ce73cccdf0c5f80b98fd16599d6563a542a6106ced8dc8b458d30"
+    },
+    {
+      "dir": "packages/test-support/llm-replay",
+      "name": "@deepseek-ai/dsh-llm-replay",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/test-support/llm-replay @ 0.2.1-rc.2",
+      "note": "测试的 expectedUnsupported 删除 D16 已裁剪的 webworker-runtime fixture 条目；产品代码与上游逐字一致。",
+      "fileCount": 9,
+      "digest": "sha256:9aacf842d5f3707e89fc908fd55681b5aadf373f22b1b56e2c46b1a934df5cb6"
+    },
+    {
+      "dir": "packages/test-support/loader-smoke",
+      "name": "@deepseek-ai/dsh-loader-smoke",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/test-support/loader-smoke @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:784af314385db1bdab29ab99276c25d039a5a7862f77cb17ae8ef04d077b89cd"
+    },
+    {
+      "dir": "packages/test-support/remote-mock",
+      "name": "@deepseek-ai/dsh-remote-mock",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/test-support/remote-mock @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 16,
+      "digest": "sha256:735f89aa0ff3d7a51200885e48658b2773072d2dbf15a6489082d62705c6713f"
+    },
+    {
+      "dir": "packages/test-support/session-snapshot",
+      "name": "@deepseek-ai/dsh-session-snapshot",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/test-support/session-snapshot @ 0.2.1-rc.2",
+      "note": "归一化补 JSON 转义拼写：产品把 cwd 经 JSON.stringify 嵌进 working-directory/sandbox-policy 文本，Windows 下是双反斜杠，原 cwdSpellings 只认单反斜杠拼写导致 {{cwd}} 替换失败；新增转义拼写与原拼写同集去重，POSIX 行为不变，并加单测锁定",
+      "fileCount": 112,
+      "digest": "sha256:d271c607fe582474fd3c43e9f692988967329eac8adc4405b59063d5e3f0f6f3"
+    },
+    {
+      "dir": "packages/todo/tool-todo",
+      "name": "@deepseek-ai/dsh-tool-todo",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/todo/tool-todo @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 14,
+      "digest": "sha256:73f8164daa068191dbbe8daae43d943d3c55c401fe6bc564b6b6dda45c48bf90"
+    },
+    {
+      "dir": "packages/typert/generator",
+      "name": "@deepseek-ai/dsh-typert-generator",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/typert/generator @ 0.2.1-rc.2",
+      "note": "增：分析器跳过 `.css` 导出，供客户端包公开 `./styles/*` 子路径（D02）；其余生成规则不变",
+      "fileCount": 61,
+      "digest": "sha256:8c23ddb4d215e4f826df25102ace1e32f338988eda46aee29646c5f1b51e044c"
+    },
+    {
+      "dir": "packages/typert/loader",
+      "name": "@deepseek-ai/dsh-typert-loader",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/typert/loader @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:91781a9cec96c070829aeab548ccef294509187afcbe2f276252afce4b3c3ae4"
+    },
+    {
+      "dir": "packages/typert/protocol",
+      "name": "@deepseek-ai/dsh-typert-protocol",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/typert/protocol @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:8db43737b331f0277d84d76edf62034157e3e8855019b6c5c226ab5b106fa9c3"
+    },
+    {
+      "dir": "packages/typert/registry",
+      "name": "@deepseek-ai/dsh-typert-registry",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/typert/registry @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:9de45e61ce5f7483fb9579ddb394bd75ed2cd7ef17eb927c7456f2f29fbeee54"
+    },
+    {
+      "dir": "packages/util/atomic-write",
+      "name": "@deepseek-ai/dsh-atomic-write",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/atomic-write @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:171cac18c70b42c63823b2e891f910819a86801f01b42a731ea656656eceea48"
+    },
+    {
+      "dir": "packages/util/brand",
+      "name": "@deepseek-ai/dsh-brand",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/brand @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:38cfb1976e705ea4765ce1c66db225529f455c1bf4d37072734fe804fdffcbda"
+    },
+    {
+      "dir": "packages/util/chunked-list",
+      "name": "@deepseek-ai/dsh-chunked-list",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/chunked-list @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:765d39e19ccf0d8b7469d37d0cae489645ae5b836fa13e67a124c1c73029c8c6"
+    },
+    {
+      "dir": "packages/util/code-language",
+      "name": "@deepseek-ai/dsh-util-code-language",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/code-language @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:5d273314bb55fbef75625f1a181bbbd6cefe6bd9fab39ba5e87ea181b8038495"
+    },
+    {
+      "dir": "packages/util/crypto",
+      "name": "@deepseek-ai/dsh-util-crypto",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/crypto @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:6a85215cf9482383a0b9e70b3a4c3df5f97ab3cee41ebe651bca917a1cd5981d"
+    },
+    {
+      "dir": "packages/util/deque",
+      "name": "@deepseek-ai/dsh-deque",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/deque @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:a5eeebf8d05c8998cbc2443edcd3015114d28268e1b30f87c996cb4688bc9b40"
+    },
+    {
+      "dir": "packages/util/home-paths",
+      "name": "@deepseek-ai/dsh-home-paths",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/home-paths @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:2fc3b64db4fa372698ac943e1cf979403d7a00d354a08a4c1a2c7b761bed749c"
+    },
+    {
+      "dir": "packages/util/http-proxy",
+      "name": "@deepseek-ai/dsh-http-proxy",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/http-proxy @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:b1917a5ba43753417ea5d315cf2fa39cb71468ddcc530cb632b70fb9a85ba0a6"
+    },
+    {
+      "dir": "packages/util/launch-environment",
+      "name": "@deepseek-ai/dsh-launch-environment",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/launch-environment @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:1cf5f0f235db7406f136512d2f9d351d1c233e5291750fe2c07f30dc96446fd2"
+    },
+    {
+      "dir": "packages/util/lazy-require",
+      "name": "@deepseek-ai/dsh-lazy-require",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/lazy-require @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:cdb59c17c8045cfcb4e65007fe29af9aa72660a7669aa4ebafebc9346733e641"
+    },
+    {
+      "dir": "packages/util/native-command",
+      "name": "@deepseek-ai/dsh-native-command",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/native-command @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 19,
+      "digest": "sha256:24326aa1d417f5226ff6d0c39bccba658a96f4b6a6bea862280dddc0494eaa31"
+    },
+    {
+      "dir": "packages/util/output-retention",
+      "name": "@deepseek-ai/dsh-output-retention",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/output-retention @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:a462383d19725aa37734486c7fac280072239fd784f2da5f63672ae5ef427293"
+    },
+    {
+      "dir": "packages/util/package-manifest",
+      "name": "@deepseek-ai/dsh-package-manifest",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/package-manifest @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:39317d2e9836e1f352ca69b934202f76f9377e06c17e1b47461f5872f7e0cfc5"
+    },
+    {
+      "dir": "packages/util/plugin-market-index",
+      "name": "@deepseek-ai/dsh-plugin-market-index",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/plugin-market-index @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 8,
+      "digest": "sha256:54cc1d5ce07341725f875b29b6d523e31ac3fa7e8e71996d7cd3a18468985067"
+    },
+    {
+      "dir": "packages/util/time",
+      "name": "@deepseek-ai/dsh-util-time",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/time @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:f48fe6187545bb94c5c446cf584f45a1d49b5680c5591516ce8839948ec4bb80"
+    },
+    {
+      "dir": "packages/util/timeout",
+      "name": "@deepseek-ai/dsh-timeout",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/timeout @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:0887550db8b6efa512a426b8f0daa3a78aba38e338dfbfad43e73bb682acc215"
+    },
+    {
+      "dir": "packages/util/values",
+      "name": "@deepseek-ai/dsh-util-values",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/values @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:ff333753f1a7260fd181516203ddcef9f5115669d528bf0dcdc440388e4897ac"
+    },
+    {
+      "dir": "packages/util/workspace-path",
+      "name": "@deepseek-ai/dsh-util-workspace-path",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/workspace-path @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:914ef5b045cbfedbc513a50e4756f58457b838ba25b875b867ad9156786dee05"
+    },
+    {
+      "dir": "packages/web/tool-web",
+      "name": "@deepseek-ai/dsh-tool-web",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/tool-web @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:57c3f224059a08402d7b115044cacc6b0f800e8dcdc22b494eae8ffe68392a8e"
+    },
+    {
+      "dir": "packages/web/web",
+      "name": "@deepseek-ai/dsh-web",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 10,
+      "digest": "sha256:408a5b87fb25d5653eec6660265b889ad210e7461afa53ba829045947f7a2898"
+    },
+    {
+      "dir": "packages/web/web-deepseek-api",
+      "name": "@deepseek-ai/dsh-web-deepseek-api",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web-deepseek-api @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 18,
+      "digest": "sha256:4371376477d7773c13d629e3795f1af3008f6bd4e289faee772e4e68fbb97c4f"
+    },
+    {
+      "dir": "packages/web/web-fetch-http",
+      "name": "@deepseek-ai/dsh-web-fetch-http",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web-fetch-http @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:d37f4419eb4383912fe6f3b35da4493e74b874943686d1152d84a51997b38659"
+    },
+    {
+      "dir": "packages/web/web-search-deepseek",
+      "name": "@deepseek-ai/dsh-web-search-deepseek",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web-search-deepseek @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 15,
+      "digest": "sha256:2a750f52cf968314d133c6ba1f4dc114777f2edf2c84ba660253f1399a55eaaf"
+    },
+    {
+      "dir": "packages/web/web-search-exa",
+      "name": "@deepseek-ai/dsh-web-search-exa",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web-search-exa @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:0075c083600b585c9e5ef2911c728e7d33590472c74ec7e545c924fe4627e65c"
+    },
+    {
+      "dir": "packages/web/web-search-perplexity",
+      "name": "@deepseek-ai/dsh-web-search-perplexity",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/web/web-search-perplexity @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:218ade847ea2a0ec4439a02d2493a9f437d7fe7989a477e2fab81f19a087f8e0"
+    },
+    {
+      "dir": "packages/workflow/tool-workflow",
+      "name": "@deepseek-ai/dsh-tool-workflow",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/workflow/tool-workflow @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 11,
+      "digest": "sha256:34a948aeb6147bb8a938950d13b425932a3ca4f187cdca9a70edf6a65d632c96"
+    },
+    {
+      "dir": "packages/workflow/workflow",
+      "name": "@deepseek-ai/dsh-workflow",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/workflow/workflow @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 9,
+      "digest": "sha256:4673d464a075f9ff04ea4ed1ff4edf7362cfa2c6b4f546baa043cc4de197e939"
+    },
+    {
+      "dir": "packages/workflow/workflow-ptc",
+      "name": "@deepseek-ai/dsh-workflow-ptc",
+      "version": "0.2.1-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/workflow/workflow-ptc @ 0.2.1-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "fileCount": 28,
+      "digest": "sha256:917da7226c72fb996de9df761cf1f19445fe8e572494dd0f90a333f16100d2b3"
+    },
+    {
+      "dir": "packages/workspace/workspace",
+      "name": "@deepseek-ai/dsh-workspace",
+      "version": "0.2.1-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/workspace/workspace @ 0.2.1-rc.2",
+      "note": "",
+      "fileCount": 13,
+      "digest": "sha256:99bf4f91ea7bbf185c33f58f8c508d0b3f5054956530acb7b33f4cdcb3e773b1"
+    }
+  ],
+  "product": [
+    "packages/soloengine/agent-compiler",
+    "packages/soloengine/browser-proxy",
+    "packages/soloengine/business-db-postgres",
+    "packages/soloengine/client-bootstrap",
+    "packages/soloengine/cloud-control",
+    "packages/soloengine/cloud-control-postgres",
+    "packages/soloengine/egress-proxy",
+    "packages/soloengine/executor-container",
+    "packages/soloengine/executor-vm",
+    "packages/soloengine/host",
+    "packages/soloengine/image-distribution",
+    "packages/soloengine/instance-runtime",
+    "packages/soloengine/llm-db-adapter",
+    "packages/soloengine/open-preview",
+    "packages/soloengine/sandbox-container",
+    "packages/soloengine/session-persistence-postgres",
+    "packages/soloengine/session-persistence-sqlite",
+    "packages/soloengine/session-query-postgres",
+    "packages/soloengine/storage-postgres",
+    "packages/soloengine/subprocess-container",
+    "packages/soloengine/tools",
+    "packages/soloengine/types",
+    "packages/soloengine/ui-conversation",
+    "packages/soloengine/ui-document-editor",
+    "packages/soloengine/ui-operation-area",
+    "packages/soloengine/ui-theme"
+  ],
+  "dropped": [
+    {
+      "dir": "packages/acp/acp",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/browser-use/browser-use",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/bundle/acp-app",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/bundle/sdk-app",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/bundle/sdk-minimal",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/computer-use/computer-use",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/agent-team-web-profile",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/browser-use-chrome-devtools-mcp",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/browser-use-playwright-mcp",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/browser-use-runtime",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/browser-use-stagehand-native",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/client-ui-cot-translation",
+      "name": "",
+      "version": "",
+      "reason": "cot 翻译的客户端半边：依赖 experimental-translator，未携带（无引用方）"
+    },
+    {
+      "dir": "packages/experimental/computer-use-cua-driver-mcp",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/computer-use-cua-driver-native",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/cot-translation-bundle",
+      "name": "",
+      "version": "",
+      "reason": "cot 翻译 bundle：依赖 experimental-translator 与 client-ui-cot-translation，未携带"
+    },
+    {
+      "dir": "packages/experimental/cua",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/cua-macos",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/hooks-claude-code",
+      "name": "",
+      "version": "",
+      "reason": "hook 桥接插件：hook 协议已携带（hook-protocol，语料可读），桥接未组合、无引用方"
+    },
+    {
+      "dir": "packages/experimental/hooks-codex",
+      "name": "",
+      "version": "",
+      "reason": "hook 桥接插件：hook 协议已携带（hook-protocol，语料可读），桥接未组合、无引用方"
+    },
+    {
+      "dir": "packages/experimental/translator",
+      "name": "",
+      "version": "",
+      "reason": "cot 翻译引擎：未携带（无组合行引用）"
+    },
+    {
+      "dir": "packages/experimental/webhook",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/experimental/webhook-github",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/hooks/hook-protocol",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/hooks/hooks-claude-code",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/hooks/hooks-codex",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/sdk/client",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/sdk/protocol",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/sdk/server",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/ssh/fs-ssh",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/ssh/sandbox-ssh",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/ssh/ssh",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/ssh/ssh-helper-runtime",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/ssh/subprocess-ssh",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/subagent/subagent-claude-code",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/subagent/subagent-codex",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/subagent/subagent-dsh-sdk",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/webhook/webhook",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/webhook/webhook-github",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/client/ui-plugin-market",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/agent-team",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/agent-team-profile",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/api-speech-to-text",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/auto-review",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/badge-skill-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/claude-code-mods",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/client-ui-agent-team",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/client-ui-claude-code-mods",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/client-ui-voice-input",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/hook-protocol",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/inspector",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/inspector-profile",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/plugin-market-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/ptc-runtime-python",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/ralph-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/session-inspector",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/session-search",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/session-title-all-prompts-llm",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/session-titles-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/skill-badge",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/speech-to-text",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/speech-to-text-sensevoice",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/terminal-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/tool-agent-team",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/tool-ralph",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/tool-worktree",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/voice-input-bundle",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/webworker-packer",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/webworker-runtime",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/experimental/worktree",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    },
+    {
+      "dir": "packages/subagent/subagent-acp",
+      "name": "",
+      "version": "",
+      "reason": "D16 + D1 明确不带项（experimental 绝大多数 / acp / plugin-market）；资产归档于 bat/removed-20261031"
+    }
+  ]
+}

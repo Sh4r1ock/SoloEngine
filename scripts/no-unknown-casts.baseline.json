@@ -1,21 +1,6 @@
 {
-  "apps/cli/tests/built-bin.e2e.ts": {
-    "e3b3858336ae260253abe549d2b763f5087ab4e8650f4eb5b323339eff0a6ce4": 1
-  },
-  "apps/cli/tests/profiles/acp/tests/acp.e2e.ts": {
-    "e3b3858336ae260253abe549d2b763f5087ab4e8650f4eb5b323339eff0a6ce4": 1
-  },
-  "apps/cli/tests/profiles/acp/tests/cleanup.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1
-  },
   "apps/cli/tests/profiles/headless/tests/session-format-guard.expected.e2e.ts": {
     "340837865a9f6222ae46d41b594c4c079ae3935c004433c76da047df31c8008f": 1
-  },
-  "apps/cli/tests/profiles/sdk/keyless-smoke.e2e.ts": {
-    "08756a7f91b523251984249f9feaff65e1b872dc2ec4cac53066f3f780ac9cd8": 1,
-    "0bbadf9d39ca1ba462cca60fc4ada51822b349a542af26ac043515bc11194de4": 1,
-    "52faf4558fcd91bd27dbdfa7e497843e8eeb75ea5f68ee231335018d5b3f2053": 1,
-    "e34ab721c5fc4fe363263a2dab71dad5ba379f3a1e3c3f555234e78f1c70eb02": 1
   },
   "apps/cli/tests/web-auth.e2e.ts": {
     "a2b9a35fdf6552ba148d15436c9b3f98ed5763a2b91a95f579b951fd6613e75c": 1
@@ -79,6 +64,9 @@
   "apps/desktop/tests/windows-update-publisher.spec.ts": {
     "166d96cf5548261d768f2ca6566611cfed9b98c954cbf1abfb6349e5f6a1f16e": 1
   },
+  "apps/web/src/product/pages/McpPage.tsx": {
+    "48e85f8e8a5aaa7a2ceaa70e1fc1b36985669442eb2e54bfd984c016102fb30a": 1
+  },
   "apps/web/tests/assembled-boot.ts": {
     "203f87d9e4f18ce1f00bf575fe96f724975341cbb67b8c51ea45d4cbb8e60005": 1,
     "56cede35ce34488cdae4b19aec217c9c939377eb891fe68827fbd64cd019170c": 1,
@@ -96,10 +84,6 @@
     "5a8270cf9b1e554ae0cff6eaf7086e44c22f61a08e5f91dc7e1397eccaa726a5": 1,
     "d0d869812e25f9b60a88de7207566804dc7d1f38c74e0c1d67a7b25fee5af3e9": 1
   },
-  "apps/web/tests/shipped-composition.e2e.ts": {
-    "5bb6193769cfbb9fc09abd705fed714917784de269546fde14ac1171fb00644b": 1,
-    "c0a4d4dd9b52881eb8190c56fb8ea5a25a70590b78b1e4a0996defab767699f0": 1
-  },
   "apps/web/tests/smoke-real.e2e.ts": {
     "621628e4e895b24171e82d1b3fa3ecb12970e8eb0dfccab8bacc8c5784188a28": 1
   },
@@ -108,40 +92,6 @@
   },
   "apps/web/tests/workspace-management.e2e.ts": {
     "326597b335539db945b2e3b7c86638d40849d2077c0a5670d064e45486f4e407": 2
-  },
-  "benchmarks/conversation-fold/conversation-fold.worker.client.ts": {
-    "1bce926682b8c613226bdbcf2bc75b369dcb9b9e94172f1e1a5a48f72736095a": 1
-  },
-  "packages/acp/acp/src/index.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1
-  },
-  "packages/acp/acp/src/updates.ts": {
-    "d021e1acc96493233ec8a9cba000e9847acded67c39d913fa893761aaf917250": 1
-  },
-  "packages/acp/acp/tests/approval.spec.ts": {
-    "cfa5e037e20d61e7139f1482c8be264ec74720280b531c39791eca1947834b5c": 1
-  },
-  "packages/acp/acp/tests/content.spec.ts": {
-    "45e226235f6b865973de0f0fe92892cfb0007e0596ed4263015df7e4db1e578d": 1,
-    "806c78568a3ca86f0863f896ddc033cb78cd927981b012dd1187e1069de3da50": 1,
-    "b6b13437ac831e308dad37dac7d462f90d494864b83060d8259e21b69fbd4428": 1,
-    "ca58113ae0553196569efd2b6322bf8799c4ef365d9f868917428d2529c46891": 1
-  },
-  "packages/acp/acp/tests/harness.ts": {
-    "7fe58280287ff63d40e979e72329f975e11015a95e9a8eec207a5a78748d3c89": 2
-  },
-  "packages/acp/acp/tests/mcp.spec.ts": {
-    "675c87b795fc26ac67070e7d49a9cd0750861386e09c8af8c5b212df146148dc": 1,
-    "c8143cf470138c1cff63fe1eed254de749779427c65ed0e635df999c1926ce92": 1
-  },
-  "packages/acp/acp/tests/model-control.spec.ts": {
-    "2eaef770949ab37a50b7ca061635842999eafbccabd1fb41bb24dabadcf2e851": 1
-  },
-  "packages/acp/acp/tests/updates.spec.ts": {
-    "1236c44ff3e9bddee9e26949567c68ea48623c4dbaa594e70dcb32b4fb8e2973": 1,
-    "3c5e7f2e3ddae10d67995210f3a3169829681f159d0aeb9c4b285b9e3093b5dc": 3,
-    "6770425e763df5cd99384a405194cdf588f2ff1815ab6c2ed0b8a231a9c15776": 1,
-    "851114a0852473e0906e628282926cb9b638c6ef0ca0f5218ec6b2d46b8c8f2b": 2
   },
   "packages/api/gateway/src/index.ts": {
     "099e513016a77c37185ffa1b5b7aab222118f08bcbcfe677d149d9fae4d4b62e": 1,
@@ -685,15 +635,6 @@
   "packages/client/ui-sidebar-right/tests/seat.client.spec.tsx": {
     "1e3017afba65017e855900ad51f65999e712b08beb1b33bfe996d3cdb137a105": 1
   },
-  "packages/client/ui-sidebar-terminal/tests/terminal-body.client.spec.tsx": {
-    "2619b64fb6b7aaf380269d12e204e1f44eee31ff48e151313c326dae4ef2887c": 1
-  },
-  "packages/client/ui-sidebar-terminal/tests/terminal-cursor.client.spec.ts": {
-    "c17c30832b2cde55b57c2c94083562feb1e941ade2d01268f1d49d31a6c6e2ca": 1
-  },
-  "packages/client/ui-sidebar-terminal/tests/terminal-theme.client.spec.ts": {
-    "1fa946c54b497010d85a36dcb586ae0a99991d8eb4eab8ef709eb34af373fdc5": 1
-  },
   "packages/client/ui-sidebar/src/client/index.ts": {
     "4c73f40f3ce989f285848573d7154fb295886bba707ad829e2c8c089e326aeea": 1
   },
@@ -1013,142 +954,6 @@
   "packages/document/office-to-pdf/tests/queue.spec.ts": {
     "bbe31b89b81048bb47c7158e78670deec5f2973286f9abc591290a8fdd851cf1": 1
   },
-  "packages/experimental/agent-team/src/journal.ts": {
-    "364930a7ddcc79316a9ffc126602f45ae56a3cecdb80484c5c8a79686f8f1057": 1
-  },
-  "packages/experimental/agent-team/tests/projection-events.spec.ts": {
-    "71ffbcca0bb71d3b595143632491d4c5d580aaf6ac384c22116e038995b2f2b5": 1,
-    "a66c8967969859328890e6049a0bd9e90403861eb19ed5d6937da5505aa79c05": 1,
-    "bd3a42d7bc38a7deb366d7ad1364f2ab01be2af077aae04e49b9c8a61b9e1c7d": 1,
-    "d8076a64f8d940fb0a5c3df15e9e1c8fb7ac05e84762a6198dbbfcffcf379821": 1
-  },
-  "packages/experimental/agent-team/tests/team.spec.ts": {
-    "3ae979a4364fe22772c89133e79ea216cdb4f3163c7cb02c47eb1a5d4788e661": 3,
-    "ae5776af8c1e9965a4eca94bcbc07b65da8d2e9e24e4570d2141b34d60b4f90f": 1
-  },
-  "packages/experimental/auto-review/tests/auto-review.spec.ts": {
-    "5bb6193769cfbb9fc09abd705fed714917784de269546fde14ac1171fb00644b": 1
-  },
-  "packages/experimental/browser-use-runtime/src/index.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1
-  },
-  "packages/experimental/browser-use-runtime/tests/mcp-upstream.ts": {
-    "c7ebc7c7acc1a0f8577ad33a47ed688b038513b45d4699643883141899cc3957": 1
-  },
-  "packages/experimental/browser-use-runtime/tests/mcp.spec.ts": {
-    "7cd8349e569767fe1ff3636e09ac0c69496cb0cd4efa9a2552d2a724f04fb316": 1
-  },
-  "packages/experimental/browser-use-stagehand-native/tests/loader-composition.spec.ts": {
-    "2bacab667d9b30188705724df1ae681fd51fb4ebc2668d8e062bfd37d6eb54f1": 1
-  },
-  "packages/experimental/browser-use-stagehand-native/tests/worker.spec.ts": {
-    "019c354b579e6d5cfa63e106e3b3047817fe5a37eee532abd7ab4aa80d28676a": 1,
-    "4777453719b1a12ac03d7405a7cc1662ac1873b8eb0016a08ccd11f27076e803": 1
-  },
-  "packages/experimental/computer-use-cua-driver-mcp/tests/composition.spec.ts": {
-    "154da39139a0074bad3d13a624e5fa62d1f7ce19dc8b9c28a73af3263cd7f10e": 1
-  },
-  "packages/experimental/computer-use-cua-driver-native/src/index.ts": {
-    "98ab79b61c12534bc4d6e41c57e35c7e965276a4766fd11f344f88f06e808d4f": 1
-  },
-  "packages/experimental/computer-use-cua-driver-native/tests/loader-composition.spec.ts": {
-    "2bacab667d9b30188705724df1ae681fd51fb4ebc2668d8e062bfd37d6eb54f1": 1
-  },
-  "packages/experimental/hook-protocol/tests/events.spec.ts": {
-    "a59fe57e5f3994018a6bd25208b9c2f56a7bcf7353d6ec2d453564f3f5c225f2": 1
-  },
-  "packages/experimental/hooks-claude-code/tests/bridge.spec.ts": {
-    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1
-  },
-  "packages/experimental/hooks-claude-code/tests/coverage-cases.ts": {
-    "38a7cf3dfd5da2f739390f5b233b97731f3bfa1ac3a51fdb8e1594735764bb80": 1,
-    "54f541ed10b92b1386306754b4a96741f6d9e40058ddac191f5aed03af30c32a": 1,
-    "593ac2fabae51a87153bf285d326f2de6ddb84bf2581f2ac280083b9bc130188": 1
-  },
-  "packages/experimental/hooks-codex/tests/bridge.spec.ts": {
-    "bced8a97654435422589a4bdd1b46b5147d4120cd5b496dcf055c453494ce0ab": 1
-  },
-  "packages/experimental/inspector/src/client/cdp/console.ts": {
-    "8e933eb759fc1e8a1eacb9cf2c152713d00eb46d47ca7d3b1f2d072c49527ca8": 1
-  },
-  "packages/experimental/inspector/src/client/cdp/runtime.ts": {
-    "392585a96b7dfe0976d95276c523004ae45f1ad3c3f9454256d754c7a88a578f": 1
-  },
-  "packages/experimental/inspector/src/client/cdp/stack.ts": {
-    "130ead859312eee64805093e7e060fab76b9c1bab33b973231587fd8ba833811": 1
-  },
-  "packages/experimental/inspector/src/shared/bridge/buffer.ts": {
-    "3f287e7468b58a0221e1f58e0add0d93ed4d1d8ec3bb608425a13f2db111f793": 1,
-    "487a58a6269113d4cbfd31915a9abdbf016e672be9a2af2c6d5d57b087d0b011": 1
-  },
-  "packages/experimental/inspector/src/shared/bridge/rpc.ts": {
-    "ac27d4e89088933a10cd991087d462ec6159a2174c42d2edf4ee2cdbfe212062": 2
-  },
-  "packages/experimental/inspector/src/shared/cordis/collector.ts": {
-    "539af7158f6057075289d3b1543bd5b692887755287d81f91d9b9c7cc14cf9cb": 2,
-    "b49bec37d69d567c1d190deba3d328cc9249239df7f68457e38f48b61a11ba28": 1
-  },
-  "packages/experimental/inspector/src/shared/cordis/publisher.ts": {
-    "539af7158f6057075289d3b1543bd5b692887755287d81f91d9b9c7cc14cf9cb": 1
-  },
-  "packages/experimental/inspector/src/worker/bridge/endpoint.ts": {
-    "476641b6b1a453ed291d178449a59525cad998a29cab5c3578bb2f40580426fb": 1
-  },
-  "packages/experimental/inspector/src/worker/bridge/hub.ts": {
-    "ac27d4e89088933a10cd991087d462ec6159a2174c42d2edf4ee2cdbfe212062": 2
-  },
-  "packages/experimental/inspector/src/worker/inspection/query-router.ts": {
-    "46197efe57255c9d92d64476470c89d0602c7333bf98ad75509bf43c1b357a3b": 2,
-    "ac27d4e89088933a10cd991087d462ec6159a2174c42d2edf4ee2cdbfe212062": 1
-  },
-  "packages/experimental/inspector/src/worker/realms/host/runtime.ts": {
-    "67b3449f6e9ef4d8549d4f8a884f7b145729a874c6932021cdbd172f039467ed": 1
-  },
-  "packages/experimental/inspector/tests/built-lib.e2e.ts": {
-    "e6d717ef24b9cd1d6e495964b92fbf63ee76c92f6335c0a3a61196cc88611dcc": 1
-  },
-  "packages/experimental/inspector/tests/client-browser.e2e.ts": {
-    "1ac632125c7236caec63ed82aa837557d2f1f251a140654c830812be3d817b48": 1
-  },
-  "packages/experimental/inspector/tests/cordis-model.host.spec.ts": {
-    "b7989cffe0567e32b0f861c65eb3ff18a90e2229e51984d863799568fb5b3c85": 1
-  },
-  "packages/experimental/inspector/tests/cordis-query.host.spec.ts": {
-    "6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b": 1
-  },
-  "packages/experimental/inspector/tests/cordis-tree.host.spec.ts": {
-    "6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b": 1,
-    "ba88ac61a16f289db489af5cc40cd7da634e169c6108befc36d22bd3090e92cb": 1
-  },
-  "packages/experimental/inspector/tests/fetch-observer.host.spec.ts": {
-    "5a3201df0da2f36bc7f4b81ab08dae1fcb66e7cca91014c75365d13d8e5e95bd": 3
-  },
-  "packages/experimental/inspector/tests/fixtures/client-source.client.ts": {
-    "228ef60d37fc4d6ce787a98f826ac491b306a563b72caa5eb7ed3e34687ad6a0": 1
-  },
-  "packages/experimental/inspector/tests/fixtures/client-source.host.ts": {
-    "e538f1f3d9dadee6079b7ae4f6063b9106492e8c15c246a30c0c36f44215d593": 1
-  },
-  "packages/experimental/inspector/tests/loader-composition.host.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/inspector/tests/network.host.spec.ts": {
-    "1445c240aa0eb4e86eb90abafa475e07f762ffcabc59286fb620764eb652249d": 2
-  },
-  "packages/experimental/inspector/tests/plugin.client.spec.ts": {
-    "148509a0193d8d3c16a606a15f5145770f454c2ebc70dd0ccaa51fc1a0f43e99": 1,
-    "2066ad746457f15b6737d62124c4ec81f2140fc3fa425187eac8e3b1c3b6ab0b": 8
-  },
-  "packages/experimental/ptc-runtime-python/src/index.ts": {
-    "b121cee14635b00f7891217013e4682493cf96f676710be60722fdf8b862aea3": 1
-  },
-  "packages/experimental/tool-ralph/src/index.ts": {
-    "6fe9024d30e0d4757a348b83d246925b3f5aeaf2e79a0eff4bf12f3c9fb5826b": 1,
-    "cec7714d93bd00a87b261199e97562ce99a73ae4b4e2414728d874d24bfed7a4": 1
-  },
-  "packages/experimental/tool-ralph/tests/tool-ralph.spec.ts": {
-    "47df8a1ea0e482122f196eb20bb3ae93a50e59d7c80d822c5e8a29efd1c05eb8": 1
-  },
   "packages/experimental/tool-session-query/tests/sqlite-integration.spec.ts": {
     "a66cea6887fa5e33f4d504a7899fcb4b99d79958f6aed01288af1ad6ff557298": 1
   },
@@ -1159,62 +964,6 @@
   },
   "packages/experimental/tool-terminal/tests/loader-composition.spec.ts": {
     "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/webhook-github/tests/body.spec.ts": {
-    "130dbbbe723b0d72d5a736596b3513f42b65a6e3909164b05bce810393f36b96": 1
-  },
-  "packages/experimental/webhook-github/tests/handler.spec.ts": {
-    "171a57417a610abfca8b6ef7c8a8bfe71a2c5cc27f6a52158bb9de709d51c234": 1,
-    "981ca4f4ab5668c2c8d0d0bddf9bff66535bbdd27c8bb47816a83e610b60432f": 1,
-    "e60b9922c7a65986547062e8ce78ac09d83b0c0ac9533030deed3a596d3067b3": 2,
-    "f4fa3c346edf323b9d6e18fa1fc720d828de054c14daf95822308634e0e7fe15": 1
-  },
-  "packages/experimental/webhook-github/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/webhook/tests/loader-composition.spec.ts": {
-    "59c63f734e8bba862325f776e3fcbebd78a84cfb4161f8df41c216950d9bf351": 1
-  },
-  "packages/experimental/webhook/tests/session.spec.ts": {
-    "febbe0687d7079e44a15b802235157043bad5a5f188348db89fe00f50532bee8": 1
-  },
-  "packages/experimental/webworker-packer/src/preview.ts": {
-    "cdd46c8ceda6d5707bc2abfba329351ba06bcc030b314a3c799d72a4971bd5a4": 1
-  },
-  "packages/experimental/webworker-packer/tests/preview.spec.ts": {
-    "cdd46c8ceda6d5707bc2abfba329351ba06bcc030b314a3c799d72a4971bd5a4": 1
-  },
-  "packages/experimental/webworker-runtime/src/compile/transform.ts": {
-    "48bb7e26a882fa7a44a4175f843d20846606976c7d6fdaf67c8a08dd8830b95e": 1
-  },
-  "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/stream.ts": {
-    "8d4298961ca8095e069df7c940bd5082e0a90f76a24f517d5f547566e0631b6c": 1
-  },
-  "packages/experimental/webworker-runtime/src/storage/image-gzip.ts": {
-    "6e98416b48d495e803b58ad4c34c66ddd8f1857e08cbba9016eef0a31f15382a": 1
-  },
-  "packages/experimental/webworker-runtime/tests/client/load-bundle.spec.ts": {
-    "23ba66e2bbb47a4f75d61a471b0126fc3544f01768b4e593fcb7dfaca81d4af9": 1
-  },
-  "packages/experimental/webworker-runtime/tests/node/child-process.spec.ts": {
-    "7fe58280287ff63d40e979e72329f975e11015a95e9a8eec207a5a78748d3c89": 1
-  },
-  "packages/experimental/webworker-runtime/tests/node/fs-watch-stream.spec.ts": {
-    "353205721417fcf2b8e50fe2c09a1692d33cd248680ba761c0aabf7ed0688c79": 1,
-    "48a9c1c41789eb408cf6c1db9979f8afc245546ac41d03e3ab65eec3137d42fe": 1,
-    "5741e967f70a1c9cf4d39b864c51457fa1e7a079fe99079013936543d80d3cba": 1,
-    "7f6509f26ad866cf393071affc3560444301146138d7f62e3ed622cf9999b3ad": 1,
-    "a8ae2770b4b6b0b3eeb99fc83295c66af54716c54725ed1de9e667a1ff55e21a": 1
-  },
-  "packages/experimental/webworker-runtime/tests/transport/tunnel-client.spec.ts": {
-    "57012c2a1a6607e1296bdf33eb3d118eb2caae1abbbb1e8eed966837de75cd55": 1,
-    "ce85127d7198918f7141235a5784b3db422482fcd6a5a3ae24c5d94f22f4239e": 2
-  },
-  "packages/experimental/webworker-runtime/tests/vfs-example-fixture.spec.ts": {
-    "e3b3858336ae260253abe549d2b763f5087ab4e8650f4eb5b323339eff0a6ce4": 1
-  },
-  "packages/experimental/webworker-runtime/tests/vfs-example-fixture.ts": {
-    "d3e642e91bcbc51168a96a4ab1d85291de54989eec33c4f36bb5acb18aef7a39": 1
   },
   "packages/extensions/cordis-client-runner/src/client/providers.ts": {
     "3706ba0e7ecb37ef9aa4d5e6bb732001b78443acf77f015f97b1b11d3a2cf941": 1,
@@ -1485,42 +1234,8 @@
     "b11cd98512344f722d8f4026b1e4b396a2769da508e3ebd4b4e21cc5b335b00d": 1,
     "ceb382b1210b481d9d9fba7d6b2ff7a0841dec5912965879328c3431047313fe": 1
   },
-  "packages/sdk/client/tests/dispose.spec.ts": {
-    "febbe0687d7079e44a15b802235157043bad5a5f188348db89fe00f50532bee8": 1
-  },
-  "packages/sdk/client/tests/sdk-client.spec.ts": {
-    "621fe7f17b45f1b6c23790c07f8ea3e49a7207e2d9c25e6ed0d74c40f5ca149e": 1,
-    "63a69fcdd1764e0ba52911c311b5068815276fab9f673ee498386432f78cd6dc": 2,
-    "fc12552d1d3b7146ed53d5d1a2f546ffac66ff774234caade9702fd84f8c0d27": 1
-  },
-  "packages/sdk/protocol/tests/transport.spec.ts": {
-    "06af1b2f0b19426e1bc87d38e344c0e5675a4ab1d72b4487741f3b0b8c3eb619": 2
-  },
-  "packages/sdk/server/src/server.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1,
-    "5c1e60550b8cda845c02f71cd04a53b55bd092185de3480c8ff86a16547fbedb": 2
-  },
-  "packages/sdk/server/tests/built-scope-carrier.e2e.ts": {
-    "6214651eb1154a364fe011aaf0c89b0a6474bb9a6c6be82d00a0b25d4d9479ed": 1
-  },
-  "packages/sdk/server/tests/server.spec.ts": {
-    "1305ff452c4a44d797b7183012d24a22dae0d8db51ee4104dd18a9d72471f1b5": 1,
-    "1e04616b7ebb8d39f6f8ebe3a37e818dc869ed192904956f4e4409c9403d26ea": 1,
-    "2ebb3092eeca4a2ce280c148caf4c4dc665442292f278d3fe15d9b0471281491": 2,
-    "43ac5cd0dcbc6818e678a5c15173052eaceb5125b1873dd4c2aa245dd9920bc5": 1,
-    "51d0436f82db36e4f96258fd28bfbf1916f2c3c400e6c649144932fbbbc9dd30": 1,
-    "66dc9c6e95154cfee02c5e2f03371b36e5572efe6fbcf3c5b4adbb9440e59008": 1,
-    "71fa45c63f1d2dc12e6a4da1120a9ca227ef1b1ffbce510cd0d8847d85f278c0": 9,
-    "80fa2ee81263d11fc1fafe6b7dbb608e8ed6e7c7e8e7fa3e726b600e82425294": 1,
-    "82025e3228e5dab025f1c3434c0303baf066b7f40f30352764abc7374a693928": 1,
-    "926edbfe0199937da6ec9d119cfd16f6cbc674a242de8f433980da6e6ea8b13b": 1,
-    "9b52ca4ca1a86eb1d34576ca3c210d2e09677553e2a0b0e505675782034c147e": 1,
-    "9c3213cd8f09df05b9aceba2033b68f6b61c1abe2231167622ef3fa462d77424": 1,
-    "a03ef245e286d905868294bee2e81ac282cfa0a5161a1edd6d8b0aa167932fb6": 1,
-    "ae0162b189937f84fb9a162eabbc7496f7e196c00e960aef4fe8e5b3e4b87d8d": 3,
-    "d54d74835af1518a4723a7cc803efc0d4e8e337ebb80b813b6ef76bdb813be17": 1
-  },
   "packages/session-query/session-log-export/tests/archive.host.spec.ts": {
+    "12207f0631597a7ac481bc4f4026c734c8a699da1686c253d2eee3a53f5b9b70": 1,
     "1d9879c5cd7b3171db3efae89c8fd81db13524d63e6816581453edca88e4abda": 1,
     "201a3f8dd0749071dff38ecd91d998c3bc8da2170b80dabd5f84eed8d1584a22": 1,
     "3015032c3fef2657726ebb7df6285f98083596bd5f7ae492652336161b3316fa": 1,
@@ -1786,48 +1501,8 @@
   "packages/spill/spill-policy/tests/spill-policy.spec.ts": {
     "454b667cdac6de305d79d51ef853272212a80166952a84385c7c915f595ae0a6": 1
   },
-  "packages/ssh/ssh/src/helper-processes.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1
-  },
-  "packages/ssh/subprocess-ssh/src/index.ts": {
-    "04bc8a44533574365dfedf563e2356458bcf95f990a00906938c977c1d683356": 1
-  },
   "packages/storage/storage-domain/src/index.ts": {
     "0fae329186de631f08edbf22f01cbfbf15d7c1ea8dce64e4cefa8ad0a8d43dea": 1
-  },
-  "packages/subagent/subagent-acp/tests/subagent-acp.e2e.ts": {
-    "daa15206e19d6a8fbae646d678889b2e6933ece824e48dd06c95d2096861d5c1": 1
-  },
-  "packages/subagent/subagent-acp/tests/subagent-acp.spec.ts": {
-    "daa15206e19d6a8fbae646d678889b2e6933ece824e48dd06c95d2096861d5c1": 2,
-    "f77e5cbd2d2d911087f7faecc4b0b5bffdfb44ca5d0bcf7823ba9777feca7799": 2
-  },
-  "packages/subagent/subagent-claude-code/tests/real-product.spec.ts": {
-    "03847806b1cfd410cc85f1e90d671aac43e667c5c41e5792c729fd4ff655fb6b": 1,
-    "656905a0db6cd229fa72610416ef7ba9d2d320c8c99352bd0d205dee4e13bd8d": 1,
-    "adda026f7ad49b47496f381a0c04997300597d040b8a81045a848573485ed299": 1
-  },
-  "packages/subagent/subagent-claude-code/tests/subagent-claude-code.spec.ts": {
-    "2cedee48f4fb8ce4bbd10567fdfbee69e8dd11dbc85af9b824de33c2b77abfbf": 1,
-    "4e94c461ab08f535e20f71ebe8bb9a8c911a936c7068f24e259956c06d17c05d": 1,
-    "cdcbd6cc73a09b6613864cdfb5b14d0cf66dc2484d26916cb32929deca1032de": 3,
-    "f85c96616fff1bb1e21886bd2fad64e9e34d89d090ab96ab7804f702278cd23d": 4,
-    "fa05a5e504ed74b5a07cb6281c787b507eb6c44db768803f4dad034dd69cb3b9": 1
-  },
-  "packages/subagent/subagent-codex/tests/real-deepseek.e2e.ts": {
-    "dee4487a97778a2383f1b378d59b3dae098152273d956dc360f23c69680fe0ea": 1
-  },
-  "packages/subagent/subagent-codex/tests/real-product.spec.ts": {
-    "03847806b1cfd410cc85f1e90d671aac43e667c5c41e5792c729fd4ff655fb6b": 1,
-    "656905a0db6cd229fa72610416ef7ba9d2d320c8c99352bd0d205dee4e13bd8d": 1,
-    "adda026f7ad49b47496f381a0c04997300597d040b8a81045a848573485ed299": 1
-  },
-  "packages/subagent/subagent-codex/tests/subagent-codex.spec.ts": {
-    "fa05a5e504ed74b5a07cb6281c787b507eb6c44db768803f4dad034dd69cb3b9": 1
-  },
-  "packages/subagent/subagent-dsh-sdk/tests/subagent-dsh-sdk.spec.ts": {
-    "daa15206e19d6a8fbae646d678889b2e6933ece824e48dd06c95d2096861d5c1": 2,
-    "f77e5cbd2d2d911087f7faecc4b0b5bffdfb44ca5d0bcf7823ba9777feca7799": 1
   },
   "packages/subagent/subagent/src/catalog.ts": {
     "3e704e331ed2fc5d4c0855e2455b31b82924c525f2e267416e393cdbd36c251b": 1,
@@ -2089,10 +1764,6 @@
   "scripts/benchmark-npm-resolution.ts": {
     "f30cc8d63e02fd6608c2c80f9564bfc17f171581770ba2df4b1a62a8869a3105": 1
   },
-  "scripts/gen-tool-catalog.ts": {
-    "86969c58d27d2ec65c0607b449bbb5ab4644717f0627729a5a193937d51f419e": 1,
-    "ebe146aded1e6f3e71f166a7f88720e560b336bbb92d19cea0b2bdab58c46f8a": 1
-  },
   "scripts/persistence-changes.ts": {
     "2c01874686204d2e1723ae4a9c54f15c98a53cc1e88682b0b432f79f91dd28ac": 3,
     "eff6e18c764150f86c2db750beb6df4dc99d4ae44bbd9c745d092afda3f45982": 1
@@ -2115,13 +1786,22 @@
     "63a77f914e85aa8d63dd649be95c82f64756e06e8faa0a9aa3b53d14daebd2e5": 1,
     "9cf0e19dc31ae2d244530fb4853d2877c0490271a5f930ad330e210051b41cd8": 1
   },
-  "snapshots/sdk/sdk.snapshot.ts": {
-    "782d52268c631008e0fec08f76f87751765690287d5acdfae45021a754900290": 1
+  "soloengine-framework/src/modules/router.ts": {
+    "c1dd970ec669ace9c1c54a44d6711be11fef1807a02d39ffa60defcc39382535": 1
   },
-  "website/tests/page-markdown-actions.spec.ts": {
-    "ea14e4cf19829fb573c9f3378cdf4333aedbedb0675596d8c873d284036ba9a5": 1
+  "soloengine-vendor/dsh-turn-rewind/src/client/index.tsx": {
+    "b121cee14635b00f7891217013e4682493cf96f676710be60722fdf8b862aea3": 1
   },
-  "website/tests/raw-markdown.spec.ts": {
-    "016337c62f55ffcdfc006da693aaf9bb20c3bb49260939c0d50191117c48934e": 1
+  "soloengine-vendor/dsh-turn-rewind/src/git-checkpoint.ts": {
+    "2e9e311422cde832a7845345839e70240c26140bd5d5e5a625d79fc977977b28": 1
+  },
+  "soloengine-vendor/dsh-turn-rewind/src/path-cache.ts": {
+    "d3b6dad64b3538d5889bda2b5951b807880cbe039d6128f64c63afc7971b2a42": 1
+  },
+  "soloengine-vendor/dsh-turn-rewind/src/path-utils.ts": {
+    "e941ee9320fe4d2fc699606b2b7d7d93900fc398eb12a6413476fc0cb2202a8c": 1
+  },
+  "soloengine-vendor/dsh-turn-rewind/src/rewind-host.ts": {
+    "3731644758b2a2bcc522000c131faf6cb3654e9f19e01c27e29dd7a033f2849e": 1
   }
 }
