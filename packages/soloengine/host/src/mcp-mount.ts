@@ -197,43 +197,6 @@ export class McpMountSupervisor {
   }
 
   /**
-   * 注销一个作用域（连接器 fiber 随作用域卸载；通常在作用域销毁时自动发生）。
-   * @param agentCtx - 要注销的 Agent 上下文。
-   */
-  release(agentCtx: Context): void {
-    this.scopes.delete(agentCtx)
-  }
-
-  /**
-   * 当前登记的作用域标签（取证用）。
-   * @returns 形如 `<agentId>@<sessionKey>` 的作用域标签。
-   */
-  keys(): string[] {
-    return [...this.scopes.values()].map(state => `${state.target.agentId}@${state.target.sessionKey}`)
-  }
-
-  /**
-   * 某作用域已挂载的服务器名（取证用；按作用域标签查）。
-   * @param label - 作用域标签。
-   * @returns 已挂载的服务器名。
-   */
-  mountedServers(label: string): string[] {
-    const state = [...this.scopes.values()].find(item => `${item.target.agentId}@${item.target.sessionKey}` === label)
-    return [...(state?.mounted.keys() ?? [])]
-  }
-
-  /**
-   * 某作用域某服务器当前停用的工具（取证用）。
-   * @param label - 作用域标签。
-   * @param serverName - 服务器名。
-   * @returns 该服务器当前停用的工具名。
-   */
-  disabledTools(label: string, serverName: string): string[] {
-    const state = [...this.scopes.values()].find(item => `${item.target.agentId}@${item.target.sessionKey}` === label)
-    return [...(state?.disabledTools.get(serverName) ?? [])]
-  }
-
-  /**
    * 把一行 MCP 记录翻译成连接器的原生 config。
    * @param name - 服务器名（模型可见名前缀）。
    * @param id - 服务器 ID（取传输子表用）。
