@@ -27,6 +27,20 @@ import { BridgeFailure, readJsonBody, sendFailure, sendJson } from './bridge-jso
 const RUN_SETTINGS_PREFIX = '/soloengine/run-settings'
 
 /**
+ * 面板发起运行时的受管工作根：`<该账号的隔离项目根>/runs/<canvasId>`。
+ *
+ * 目录必须在账号自己的隔离项目根之内：云形态的沙箱根判据只接受该根下的目录
+ * （`canvas.ts` 的 `assertProjectFolderAllowed`），单机形态下也避免两个账号把同一张
+ * 公共模板画布跑进同一份工作区。
+ * @param projectsRoot - 该账号的隔离项目根（`userDirs.sub(username, 'projects')`）。
+ * @param canvasId - 画布 id。
+ * @returns 绝对目录。
+ */
+export function panelRunFolder(projectsRoot: string, canvasId: string): string {
+  return join(projectsRoot, 'runs', canvasId)
+}
+
+/**
  * 挂载运行设置桥。
  * @param ctx - 已注入 `webServer`、`connection`、`agents` 与 `sessionProjections` 的上下文。
  * @param runtime - 框架层运行时（会话归属台账）。
@@ -56,7 +70,12 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
         if (canvas === undefined) {
           throw new BridgeFailure(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} is not visible to this account`)
         }
-        const folderPath = join(process.env.SOLOENGINE_ROOT ?? process.cwd(), 'data', 'runs', canvasId)
+        const user = await runtime.accounts.byId(userId)
+        if (user === undefined) {
+          throw new BridgeFailure(404, 'USER_NOT_FOUND', `account ${userId} not found`)
+        }
+        runtime.userDirs.ensure(user.username)
+        const folderPath = panelRunFolder(runtime.userDirs.sub(user.username, 'projects'), canvasId)
         mkdirSync(folderPath, { recursive: true })
         try {
           const session = await runtime.runs.createRun(userId, { canvasId, folderPath })
