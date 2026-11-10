@@ -21,40 +21,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { FrameworkError, type FrameworkRuntime } from '@soloengine/framework'
 import type {} from '@soloengine/types'
 import { resolveSessionOwnership } from './session-ownership.ts'
-import { sendFailure, sendJson } from './bridge-json.ts'
+import { BridgeFailure, readJsonBody, sendFailure, sendJson } from './bridge-json.ts'
 
 /** 桥前缀（与 /soloengine/workspace、/soloengine/changes 互不遮蔽）。 */
 const RUN_SETTINGS_PREFIX = '/soloengine/run-settings'
-
-/** 桥自身的结构化错误。 */
-class BridgeFailure extends Error {
-  /**
-   * @param status - HTTP 状态码。
-   * @param code - 稳定错误码。
-   * @param message - 人类可读原因（指出具体项）。
-   */
-  constructor(readonly status: number, readonly code: string, message: string) {
-    super(message)
-    this.name = 'BridgeFailure'
-  }
-}
-
-/**
- * 读取请求体（JSON；空体即 `{}`）。
- * @param req - 请求。
- * @returns 解析后的对象。
- */
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
-  const raw = Buffer.concat(chunks).toString('utf8')
-  if (raw.trim() === '') return {}
-  const parsed: unknown = JSON.parse(raw)
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('request body must be a JSON object')
-  }
-  return parsed as Record<string, unknown>
-}
 
 /**
  * 挂载运行设置桥。
