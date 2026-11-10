@@ -746,9 +746,9 @@
       "version": "0.2.1-rc.2",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/client/ui-sidebar-files @ 0.2.1-rc.2",
-      "note": "改：官方只读文件树在本包内改造为可编辑文件树（同名 kind files 的 extension 档接管）：经 workspaceFiles 写原语做新建/重命名/删除、根下名称搜索（有界 BFS、200ms 防抖）、当前工具指向项高亮、变更联动刷新；另把搜索框焦点环改用 --dsw-focus-ring-color。其余浏览/打开契约不变。",
+      "note": "改：官方只读文件树在本包内改造为可编辑文件树（同名 kind files 的 extension 档接管）：经 workspaceFiles 写原语做新建/重命名/删除、根下名称搜索（有界 BFS、200ms 防抖）、当前工具指向项高亮、变更联动刷新；另把搜索框焦点环改用 --dsw-focus-ring-color。其余浏览/打开契约不变。2026-11-11：`FilesBody.module.css` 文件尾多余空行按仓库规范收口（无行为变化），摘要随重冻。",
       "fileCount": 29,
-      "digest": "sha256:430cbcd95fa8dd7beca288470fa47bb87a9a04fc16881ef2433e33afd1768017"
+      "digest": "sha256:a79ccd54fa208a4cb47368930e023e97db2a12ca48c0ceaee6e04d0967036151"
     },
     {
       "dir": "packages/client/ui-sidebar-right",
