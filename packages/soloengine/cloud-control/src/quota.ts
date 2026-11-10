@@ -165,12 +165,14 @@ export class AdmissionController {
       return { ok: false, code: 'OVERLOADED', retryAfterSeconds: 1 }
     }
     // 超卖池：集群活跃接近声明容量时按用户公平份额裁决（与控制面放置闸门同一份判定）。
+    // 分母是「有活跃会话的用户数」，不是配置过策略的用户数：节点上历史用户会不断累积，
+    // 用配置数会让份额被摊薄到 1，只剩一个活跃用户时也会被误判为超出份额。
     const gate = quotaGate({
       policy: state.policy,
       active: state.active,
       clusterCapacity: this.clusterCapacity,
       clusterActive: this.clusterActive,
-      activeUsers: this.users.size,
+      activeUsers: this.activeUserCount() + (state.active === 0 ? 1 : 0),
     })
     if (gate !== 'ok') {
       return { ok: false, code: 'QUOTA_EXCEEDED', reason: gate, retryAfterSeconds: 1 }
@@ -224,5 +226,14 @@ export class AdmissionController {
       state.tokens = Math.min(state.policy.burstCapacity, state.tokens + elapsed * state.policy.refillPerSecond)
       state.updatedAtMs = nowMs
     }
+  }
+
+  /** 当前有活跃会话的用户数（超卖池公平份额的分母）。 */
+  private activeUserCount(): number {
+    let count = 0
+    for (const state of this.users.values()) {
+      if (state.active > 0) count += 1
+    }
+    return count
   }
 }
