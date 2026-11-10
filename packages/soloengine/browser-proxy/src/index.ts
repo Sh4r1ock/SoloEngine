@@ -414,6 +414,17 @@ export function apply(ctx: Context, config: Config = {}): void {
     const disposeUpgrade = ctx.webServer.registerUpgrade({
       path: upgradePath,
       handler: (req, socket, head) => {
+        // 升级路径与 HTTP 前缀路由同一道信任门：upgrade 不经过前缀 handler，必须在这里单独判定，
+        // 否则任何能连到端口的客户端都能把本实例当成出站 WebSocket 中继。
+        const rejection = ctx.connection.requestRejection(req)
+        if (rejection !== undefined) {
+          socket.write(
+            `HTTP/1.1 ${String(rejection)} Untrusted\r\ncontent-type: text/plain; charset=utf-8\r\n\r\n`
+            + 'browser proxy rejected the upgrade (the trust cookie is missing or invalid)',
+          )
+          socket.destroy()
+          return
+        }
         void (async () => {
           const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
           const raw = url.searchParams.get('target') ?? ''
