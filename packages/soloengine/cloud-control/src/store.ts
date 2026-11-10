@@ -315,55 +315,67 @@ export class ControlStore implements ControlRepository {
   ): Promise<RepositoryLeaseResult> {
     const expiresAt = new Date(now.getTime() + input.ttlMs).toISOString()
     const nowIso = now.toISOString()
-    const existing = await this.getLease(input.sessionKey)
-    if (existing === undefined) {
-      this.db.prepare(`
-        INSERT INTO cloud_session_leases (session_key, node_id, epoch, holder, expires_at, renewed_at, user_id)
-        VALUES (?, ?, 1, ?, ?, ?, ?)
-      `).run(input.sessionKey, input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null)
-      this.audit(input.sessionKey, input.nodeId, 1, 'lease-acquired', nowIso, { holder: input.holder })
-      return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: true }
-    }
-    if (existing.holder === input.holder && existing.nodeId === input.nodeId) {
-      // 旧租约可能没有归属（跨节点配额上线前取得）：同一持有者续约时补写。
-      if (input.userId !== undefined && existing.userId !== input.userId) {
-        this.db.prepare('UPDATE cloud_session_leases SET user_id = ? WHERE session_key = ?')
-          .run(input.userId, input.sessionKey)
-      }
-      // 自己名下已过期的租约不能走「续约」（续约要求未到期），否则本节点会永远 LEASE_HELD。
-      // 过期但无人接管时重新取得同一代写权：epoch 不变，写围栏语义不受影响。
-      if (Date.parse(existing.expiresAt) <= now.getTime()) {
-        const refreshed = this.db.prepare(`
-          UPDATE cloud_session_leases SET expires_at = ?, renewed_at = ?
-          WHERE session_key = ? AND holder = ? AND epoch = ? AND expires_at <= ?
-        `).run(expiresAt, nowIso, input.sessionKey, input.holder, existing.epoch, nowIso)
-        if (Number(refreshed.changes) !== 1) {
-          return { ok: false, code: 'LEASE_HELD', lease: (await this.getLease(input.sessionKey)) ?? existing }
+    // 并发首取（两个节点同时冷恢复同一会话）时，双方都可能读到「无租约」再同时插入。
+    // 插入用 OR IGNORE：输的一方重读当前租约并按「已被持有」返回，而不是把唯一约束
+    // 抛成控制面故障（那会被网关当成上游 500，而不是可重试的 409）。
+    // 有界重试：只有「赢家插入后又立刻释放」这一条极窄路径需要重读，不能无限循环。
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const existing = await this.getLease(input.sessionKey)
+      if (existing === undefined) {
+        const inserted = this.db.prepare(`
+          INSERT OR IGNORE INTO cloud_session_leases (session_key, node_id, epoch, holder, expires_at, renewed_at, user_id)
+          VALUES (?, ?, 1, ?, ?, ?, ?)
+        `).run(input.sessionKey, input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null)
+        if (Number(inserted.changes) === 1) {
+          this.audit(input.sessionKey, input.nodeId, 1, 'lease-acquired', nowIso, { holder: input.holder })
+          return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: true }
         }
-        this.audit(input.sessionKey, input.nodeId, existing.epoch, 'lease-refreshed', nowIso, { holder: input.holder })
+        const raced = await this.getLease(input.sessionKey)
+        if (raced === undefined) continue // 赢家插入后立刻释放：重读一次，走正常首取路径。
+        return { ok: false, code: 'LEASE_HELD', lease: raced }
+      }
+      if (existing.holder === input.holder && existing.nodeId === input.nodeId) {
+        // 旧租约可能没有归属（跨节点配额上线前取得）：同一持有者续约时补写。
+        if (input.userId !== undefined && existing.userId !== input.userId) {
+          this.db.prepare('UPDATE cloud_session_leases SET user_id = ? WHERE session_key = ?')
+            .run(input.userId, input.sessionKey)
+        }
+        // 自己名下已过期的租约不能走「续约」（续约要求未到期），否则本节点会永远 LEASE_HELD。
+        // 过期但无人接管时重新取得同一代写权：epoch 不变，写围栏语义不受影响。
+        if (Date.parse(existing.expiresAt) <= now.getTime()) {
+          const refreshed = this.db.prepare(`
+            UPDATE cloud_session_leases SET expires_at = ?, renewed_at = ?
+            WHERE session_key = ? AND holder = ? AND epoch = ? AND expires_at <= ?
+          `).run(expiresAt, nowIso, input.sessionKey, input.holder, existing.epoch, nowIso)
+          if (Number(refreshed.changes) !== 1) {
+            return { ok: false, code: 'LEASE_HELD', lease: (await this.getLease(input.sessionKey)) ?? existing }
+          }
+          this.audit(input.sessionKey, input.nodeId, existing.epoch, 'lease-refreshed', nowIso, { holder: input.holder })
+          return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: false }
+        }
+        const renewed = await this.renewLease(input.sessionKey, input.holder, existing.epoch, input.ttlMs, now)
+        if (!renewed) return { ok: false, code: 'LEASE_HELD', lease: existing }
         return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: false }
       }
-      const renewed = await this.renewLease(input.sessionKey, input.holder, existing.epoch, input.ttlMs, now)
-      if (!renewed) return { ok: false, code: 'LEASE_HELD', lease: existing }
-      return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: false }
+      if (Date.parse(existing.expiresAt) > now.getTime()) {
+        return { ok: false, code: 'LEASE_HELD', lease: existing }
+      }
+      const takeover = this.db.prepare(`
+        UPDATE cloud_session_leases
+        SET node_id = ?, epoch = epoch + 1, holder = ?, expires_at = ?, renewed_at = ?,
+            user_id = COALESCE(?, user_id)
+        WHERE session_key = ? AND epoch = ? AND expires_at <= ?
+      `).run(input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null, input.sessionKey,
+        existing.epoch, nowIso)
+      if (Number(takeover.changes) !== 1) {
+        return { ok: false, code: 'LEASE_HELD', lease: (await this.getLease(input.sessionKey)) ?? existing }
+      }
+      const lease = await this.writtenLease(input.sessionKey)
+      this.audit(input.sessionKey, input.nodeId, lease.epoch, 'lease-takeover', nowIso,
+        { previousHolder: existing.holder, previousEpoch: existing.epoch })
+      return { ok: true, lease, acquired: true }
     }
-    if (Date.parse(existing.expiresAt) > now.getTime()) {
-      return { ok: false, code: 'LEASE_HELD', lease: existing }
-    }
-    const takeover = this.db.prepare(`
-      UPDATE cloud_session_leases
-      SET node_id = ?, epoch = epoch + 1, holder = ?, expires_at = ?, renewed_at = ?,
-          user_id = COALESCE(?, user_id)
-      WHERE session_key = ? AND epoch = ? AND expires_at <= ?
-    `).run(input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null, input.sessionKey,
-      existing.epoch, nowIso)
-    if (Number(takeover.changes) !== 1) {
-      return { ok: false, code: 'LEASE_HELD', lease: (await this.getLease(input.sessionKey)) ?? existing }
-    }
-    const lease = await this.writtenLease(input.sessionKey)
-    this.audit(input.sessionKey, input.nodeId, lease.epoch, 'lease-takeover', nowIso,
-      { previousHolder: existing.holder, previousEpoch: existing.epoch })
-    return { ok: true, lease, acquired: true }
+    throw new Error(`soloengine: acquiring the lease for ${input.sessionKey} kept losing to concurrent writers`)
   }
 
   /**
