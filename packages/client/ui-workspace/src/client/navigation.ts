@@ -43,6 +43,12 @@ export interface UiWorkspace {
    */
   openSession(target: SessionTarget): void
   /**
+   * Declare the Session the current document addresses: startup restoration opens it
+   * instead of the saved selection or a new draft.
+   * @param sessionId - Session the URL addresses.
+   */
+  claimStartupSession(sessionId: SessionId): void
+  /**
    * Connect a Workspace and open its Session unless a later navigation supersedes it.
    * @param workspaceId - target Workspace.
    * @param beforeOpen - optional synchronous preparation for the selected Session,
@@ -160,6 +166,8 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     {}, { persist: { name: 'dsh.sessions.current' } },
   )
   private mainReference: SessionReference | undefined
+  /** Session the current document addresses; startup restoration prefers it over a draft. */
+  private startupSession: SessionId | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -275,6 +283,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   openSession(target: SessionTarget): void {
     this.replaceMain(target, this.lifetime.signal, 'reveal')
+  }
+
+  claimStartupSession(sessionId: SessionId): void {
+    this.startupSession = sessionId
   }
 
   openWorkspace(
@@ -440,6 +452,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   private async restoreSelection(workspaces: WorkspaceSnapshot, sessions: SessionListState): Promise<void> {
+    const claimed = this.startupSession
+    if (claimed !== undefined) {
+      this.startupSession = undefined
+      if (sessions.byId[claimed] !== undefined) this.replaceMain(claimed, this.lifetime.signal, 'preserve')
+      return
+    }
     const saved = this.selection.getSnapshot()
     if (saved.subagentAddress !== undefined) {
       this.replaceMain(saved.subagentAddress, this.lifetime.signal, 'preserve')
