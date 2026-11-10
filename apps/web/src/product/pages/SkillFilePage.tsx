@@ -20,7 +20,7 @@ import { useToastHost } from '../components/Toaster.tsx'
 import { Field } from '../components/Field.tsx'
 import { PathValue } from '../components/PathValue.tsx'
 import { submitFormOnEnter } from '../utils/submitOnEnter.ts'
-import type { SkillFileEntry, SkillView } from '../types.ts'
+import type { SkillFileEntry, SkillView, UserView } from '../types.ts'
 import css from '../styles/common.module.css'
 import skillCss from '../styles/skill-file.module.css'
 
@@ -62,19 +62,29 @@ type TreeRow =
 /**
  * 渲染技能文件编辑器。
  * @param props.skillId - 技能 ID。
+ * @param props.user - 当前用户（决定该技能是否可写）。
  */
-export function SkillFilePage({ skillId }: { skillId: string }) {
+export function SkillFilePage({ skillId, user }: { skillId: string; user: UserView }) {
   const locale = useLocale()
   const [skill, setSkill] = useState<SkillView | null>(null)
   const [files, setFiles] = useState<SkillFileEntry[]>([])
+  /** 包内目录（含空目录）：骨架里的 references/ 与 scripts/ 没有文件时也要出现在文件树。 */
+  const [directories, setDirectories] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [edit, setEdit] = useState<EditState>(EMPTY_EDIT)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  /** 自动保存失败后暂停重试：下一次用户输入或手动保存成功再恢复（防止请求风暴）。 */
+  const [autoSaveHalted, setAutoSaveHalted] = useState(false)
+  /** 新建/重命名的在途门闩：双击提交只允许一次请求（第二次的错误会写进已关闭的弹窗）。 */
+  const creatingRef = useRef(false)
+  const [creating, setCreating] = useState(false)
+  const renamingRef = useRef(false)
+  const [renaming, setRenaming] = useState(false)
   // 页面级文案存「键 + 动态细节」，渲染时翻译（S5-F9 / S7-F29 同一规则）：本页在 AppShell 内，
   // 语言 Pill 始终可达，存已翻译字符串会在切换语言后残留旧语种。
-  const [error, setError] = useState<{ key: string; detail: string } | null>(null)
+  const [error, setError] = useState<{ key: string; detail: string; retry?: () => void } | null>(null)
   // 保存等成功反馈走 Toast（原型 skill-file.js:103/376/432/457 的 App.toast）。
   const toast = useToastHost()
   const [createOpen, setCreateOpen] = useState(false)
@@ -91,6 +101,8 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
   const [fileSize, setFileSize] = useState(0)
   // 备注状态：编辑中 / 最近一次写入成功 / 无待写改动（沿用台账被动文案）。
   const [notesState, setNotesState] = useState<'idle' | 'dirty' | 'saved'>('idle')
+  /** 备注加载失败的原因：只让备注区不可编辑并就近提示，技能与文件清单仍可用。 */
+  const [notesError, setNotesError] = useState<string | null>(null)
   // 弹窗内失败的就近文案：页面级 NoticeLine 会被 Modal 遮罩挡住（实测遮罩命中错误行），
   // 用户在弹窗里看不到任何反馈——与模型页/技能页「错误就近呈现」同一规则。
   const [dialogError, setDialogError] = useState<string | null>(null)
@@ -104,28 +116,43 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
   const areaRef = useRef<HTMLTextAreaElement | null>(null)
   const gutterRef = useRef<HTMLPreElement | null>(null)
   const [cursor, setCursor] = useState({ line: 1, column: 1 })
+  // 写权限与后端 `mutableRow` 同一判定：自己的技能；系统技能仅超管；他人公共技能只读。
+  const writable = skill !== null
+    && (skill.user_id === user.id || (skill.user_id === null && user.is_superuser))
+
+  /** 备注独立加载：失败只在备注区提示并禁用写入，不影响技能与文件清单（二者是编辑前提）。 */
+  const loadNotes = useCallback(async (): Promise<void> => {
+    try {
+      const result = await request<{ ok: true; notes: Record<string, string> }>(`/skills/${skillId}/notes`)
+      setNotes(result.notes)
+      setNotesError(null)
+    } catch (failure) {
+      setNotesError(describeError(failure))
+    }
+  }, [skillId])
 
   const loadTree = useCallback(async (): Promise<void> => {
     setLoading(true)
+    // 备注与文件清单互不依赖：独立请求，失败只落到备注区（否则备注故障会让整页不可用）。
+    const notesLoad = loadNotes()
     try {
-      const [skillResult, fileResult, noteResult] = await Promise.all([
+      const [skillResult, fileResult] = await Promise.all([
         request<{ ok: true; skills: SkillView[] }>('/skills'),
-        request<{ ok: true; files: SkillFileEntry[] }>(`/skills/${skillId}/files`),
-        // FR-SKILL-006：备注存台账（skills_packages.notes），刷新后仍在。
-        request<{ ok: true; notes: Record<string, string> }>(`/skills/${skillId}/notes`),
+        request<{ ok: true; files: SkillFileEntry[]; directories?: string[] }>(`/skills/${skillId}/files`),
       ])
       const found = skillResult.skills.find(item => item.id === skillId) ?? null
       setSkill(found)
       versionRef.current = found === null ? 0 : found.version
       setFiles(fileResult.files)
-      setNotes(noteResult.notes)
+      setDirectories(fileResult.directories ?? [])
       setError(null)
     } catch (failure) {
-      setError({ key: 'errorLoad', detail: describeError(failure) })
+      setError({ key: 'errorLoad', detail: describeError(failure), retry: () => { void loadTree() } })
     } finally {
       setLoading(false)
     }
-  }, [skillId])
+    await notesLoad
+  }, [skillId, loadNotes])
 
   useEffect(() => { void loadTree() }, [loadTree])
 
@@ -194,7 +221,9 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
    */
   const save = useCallback(async (text: string, silent = false): Promise<void> => {
     const target = selected
-    if (target === null) return
+    if (target === null || !writable) return
+    // 二进制条目没有可编辑文本：保存按钮与自动保存都不得发出写入（后端会 415）。
+    if (files.some(entry => entry.path === target && entry.text === null)) return
     setSaving(true)
     try {
       await request(`/skills/${skillId}/file`, { method: 'PUT', body: { path: target, text } })
@@ -203,14 +232,17 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       setEdit(previous => ({ ...previous, saved: text }))
       // 原型 skill-file.js:103/110：自动保存静默落盘，手动保存才提示。
       if (!silent) toast.show(t('skillFile', 'toastSaved'), 'success')
+      setAutoSaveHalted(false)
       setError(null)
     } catch (failure) {
       if (selectedRef.current !== target) return
       setError({ key: 'errorSave', detail: describeError(failure) })
+      // 自动保存失败即停：saving 回 false 会让同一 effect 立刻重挂定时器（1600ms 一次的请求风暴）。
+      if (silent) setAutoSaveHalted(true)
     } finally {
       setSaving(false)
     }
-  }, [selected, skillId])
+  }, [selected, skillId, writable, files])
 
   const dirty = selected !== null && edit.text !== edit.saved
 
@@ -263,11 +295,13 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
   useEffect(() => flushNotes, [flushNotes])
 
   // 自动保存：改动 1600ms 防抖（失焦另有即时保存；需求文档 §12.3 第 7 条）。
+  // 失败后 autoSaveHalted 阻断重试；用户继续输入（edit.text 变化）即恢复。
+  useEffect(() => { setAutoSaveHalted(false) }, [edit.text])
   useEffect(() => {
-    if (!dirty || saving) return
+    if (!dirty || saving || autoSaveHalted) return
     const timer = window.setTimeout(() => { void save(edit.text, true) }, 1600)
     return () => { window.clearTimeout(timer) }
-  }, [dirty, saving, edit.text, save])
+  }, [dirty, saving, edit.text, save, autoSaveHalted])
 
   // R33：SPA 内导航拦截——复用 router 阻塞注册表（与画布编辑器同一机制）。
   useEffect(() => {
@@ -331,6 +365,21 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       files: SkillFileEntry[]
     }
     const root: DirNode = { dirs: new Map(), files: [] }
+    // 空目录也算树的一部分：按后端返回的目录清单先建节点（顺序无关，walk 时统一排序）。
+    for (const directory of directories) {
+      let node = root
+      for (const part of directory.split('/')) {
+        if (part === '') continue
+        const existing = node.dirs.get(part)
+        if (existing !== undefined) {
+          node = existing
+          continue
+        }
+        const created: DirNode = { dirs: new Map(), files: [] }
+        node.dirs.set(part, created)
+        node = created
+      }
+    }
     for (const entry of files) {
       const parts = entry.path.split('/')
       let node = root
@@ -361,7 +410,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
     }
     walk(root, 0, '')
     return rows
-  }, [files])
+  }, [files, directories])
 
   const selectedEntry = files.find(entry => entry.path === selected) ?? null
   const binarySelected = selectedEntry !== null && selectedEntry.text === null
@@ -379,7 +428,12 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
 
   /** 切换文件：有未保存改动时先确认，取消则保留当前文件与文本。 */
   const requestOpenFile = (path: string): void => {
-    if (selected !== null && path !== selected && dirty) {
+    if (path === selected) {
+      // 已选文件再次点击不重新 GET：服务端内容会覆盖尚未落盘的文本。
+      if (dirty) setSwitchTarget(path)
+      return
+    }
+    if (selected !== null && dirty) {
       setSwitchTarget(path)
       return
     }
@@ -406,6 +460,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
 
   /** 新建空文件（表单提交入口：Enter 与底部按钮共用）。 */
   const submitNewFile = (): void => {
+    if (creatingRef.current) return
     const path = newPath.trim()
     const invalid = validateNewPath(path)
     if (invalid !== null) {
@@ -413,6 +468,8 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       return
     }
     setNewPathError(null)
+    creatingRef.current = true
+    setCreating(true)
     void (async () => {
       try {
         await request(`/skills/${skillId}/file`, { method: 'POST', body: { path, text: '' } })
@@ -424,12 +481,16 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       } catch (failure) {
         // 后端校验仍是最终守卫（越界、并发创建同名文件等）。
         setDialogError(`${t('skillFile', 'errorCreate')} — ${describeError(failure)}`)
+      } finally {
+        creatingRef.current = false
+        setCreating(false)
       }
     })()
   }
 
   /** 重命名当前文件（表单提交入口：Enter 与底部按钮共用）。 */
   const submitRename = (): void => {
+    if (renamingRef.current) return
     const from = selected
     if (from === null) return
     const to = renamePath.trim()
@@ -442,30 +503,48 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       setRenameOpen(false)
       return
     }
+    renamingRef.current = true
+    setRenaming(true)
     void (async () => {
       try {
-        await request(`/skills/${skillId}/file/rename`, { method: 'POST', body: { from, to } })
-      } catch (failure) {
-        setDialogError(`${t('skillFile', 'errorRename')} — ${describeError(failure)}`)
-        return
-      }
-      // 先刷新（拿到新版本号与最新备注），再迁移备注并落库：
-      // 反过来会让刷新回来的旧备注覆盖掉迁移结果。
-      await loadTree()
-      // 备注跟随文件重命名迁移；旧键不保留，避免同名重建时「复活」旧备注。
-      const note = notes[from]
-      if (note !== undefined) {
-        const nextNotes: Record<string, string> = {}
-        for (const [path, value] of Object.entries(notes)) {
-          if (path !== from) nextNotes[path] = value
+        if (dirty) {
+          // 先落盘未保存文本再移动文件：否则 openFile(to) 会用服务端旧内容覆盖编辑区。
+          try {
+            await request(`/skills/${skillId}/file`, { method: 'PUT', body: { path: from, text: edit.text } })
+            if (selectedRef.current === from) setEdit(previous => ({ ...previous, saved: edit.text }))
+            setAutoSaveHalted(false)
+          } catch (failure) {
+            setDialogError(`${t('skillFile', 'errorSave')} — ${describeError(failure)}`)
+            return
+          }
         }
-        nextNotes[to] = note
-        setNotes(nextNotes)
-        writeNotes(nextNotes)
+        try {
+          await request(`/skills/${skillId}/file/rename`, { method: 'POST', body: { from, to } })
+        } catch (failure) {
+          setDialogError(`${t('skillFile', 'errorRename')} — ${describeError(failure)}`)
+          return
+        }
+        // 先刷新（拿到新版本号与最新备注），再迁移备注并落库：
+        // 反过来会让刷新回来的旧备注覆盖掉迁移结果。
+        await loadTree()
+        // 备注跟随文件重命名迁移；旧键不保留，避免同名重建时「复活」旧备注。
+        const note = notes[from]
+        if (note !== undefined) {
+          const nextNotes: Record<string, string> = {}
+          for (const [path, value] of Object.entries(notes)) {
+            if (path !== from) nextNotes[path] = value
+          }
+          nextNotes[to] = note
+          setNotes(nextNotes)
+          writeNotes(nextNotes)
+        }
+        setRenameOpen(false)
+        toast.show(t('skillFile', 'toastRenamed', { name: to }), 'success')
+        await openFile(to)
+      } finally {
+        renamingRef.current = false
+        setRenaming(false)
       }
-      setRenameOpen(false)
-      toast.show(t('skillFile', 'toastRenamed', { name: to }), 'success')
-      await openFile(to)
     })()
   }
 
@@ -497,6 +576,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
           </span>
           <Button
             icon={<IconPlusOutlineRegular size={14} />}
+            disabled={!writable}
             onClick={() => { setNewPath(''); setNewPathError(null); setDialogError(null); setCreateOpen(true) }}
           >
             {t('skillFile', 'newFile')}
@@ -504,7 +584,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
           <Button
             variant="primary"
             icon={<Glyph><path d="M4 4h9l3 3v9H4V4Z" /><path d="M7 4v4h6V4M7 16v-4h6v4" /></Glyph>}
-            disabled={saving}
+            disabled={saving || !writable || binarySelected}
             onClick={() => { void save(edit.text) }}
           >
             {saving ? t('skillFile', 'saving') : t('skillFile', 'save')}
@@ -518,12 +598,12 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
                 // 二进制条目禁止重命名：二进制没有可编辑的文本内容，编辑器里也没有它的字节；
                 // 重命名是文件系统内的移动，必须由后端按字节搬运（`renameFile`）。
                 label: t('skillFile', 'renameCurrent'),
-                disabled: selected === null,
+                disabled: selected === null || !writable,
               },
               { type: 'separator', id: 'separator' },
               // 二进制重命名与「至少保留一个文件」按原型用提示说明原因（skill-file.js:386/442），
               // 而不是留下一个没有任何解释的禁用项。
-              { id: 'delete', label: t('skillFile', 'deleteCurrent'), danger: true, disabled: selected === null },
+              { id: 'delete', label: t('skillFile', 'deleteCurrent'), danger: true, disabled: selected === null || !writable },
             ]}
             onSelect={(id) => {
               setMenuOpen(false)
@@ -564,10 +644,14 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
         text={error === null
           ? null
           : error.detail === '' ? t('skillFile', error.key) : `${t('skillFile', error.key)} — ${error.detail}`}
+        {...(error?.retry === undefined
+          ? {}
+          : { action: { label: t('common', 'actionRetry'), onClick: error.retry } })}
       />
       {loading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
 
-      {!loading && (
+      {/* 加载失败不是「空技能」：错误行已说明原因，空目录树与空编辑器会把它伪装成没有文件。 */}
+      {!loading && error?.key !== 'errorLoad' && (
         <div className={skillCss.layout}>
           <aside className={skillCss.treePane} aria-label={t('skillFile', 'tree')}>
             <div className={skillCss.panelHead}>
@@ -632,7 +716,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
                     className={dirty && !binarySelected ? skillCss.saveDotDirty : skillCss.saveDot}
                     aria-hidden="true"
                   />
-                  {binarySelected
+                  {binarySelected || !writable
                     ? t('skillFile', 'readOnly')
                     : dirty ? t('common', 'stateUnsaved') : t('common', 'stateSaved')}
                 </span>
@@ -680,6 +764,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
                   aria-label={t('skillFile', 'editorAria', { path: selected })}
                   spellCheck={false}
                   wrap="off"
+                  readOnly={!writable}
                   value={edit.text}
                   onBlur={() => { if (dirty) void save(edit.text) }}
                   onChange={(event) => { applyEdit(event.currentTarget.value) }}
@@ -746,12 +831,20 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
                   : notesState === 'saved' ? t('common', 'stateSaved') : t('skillFile', 'noteState')}
               </span>
             </div>
+            {notesError !== null && (
+              <NoticeLine
+                tone="error"
+                text={`${t('skillFile', 'errorNotesLoad')} — ${notesError}`}
+                action={{ label: t('common', 'actionRetry'), onClick: () => { void loadNotes() } }}
+              />
+            )}
             {selected === null
               ? <div className={skillCss.noteEmpty}>{t('skillFile', 'emptyFile')}</div>
               : (
                 <textarea
                   className={skillCss.noteArea}
                   aria-label={t('skillFile', 'note')}
+                  readOnly={!writable || notesError !== null}
                   value={notes[selected] ?? ''}
                   placeholder={t('skillFile', 'notePlaceholder')}
                   onBlur={() => { flushNotes() }}
@@ -809,8 +902,9 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
               type="submit"
               form="new-file-form"
               variant="primary"
+              disabled={creating}
             >
-              {t('skillFile', 'createFile')}
+              {creating ? t('skillFile', 'creating') : t('skillFile', 'createFile')}
             </Button>
           </>
         )}
@@ -850,9 +944,9 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
               type="submit"
               form="rename-form"
               variant="primary"
-              disabled={selected === null}
+              disabled={selected === null || renaming}
             >
-              {t('common', 'actionRename')}
+              {renaming ? t('skillFile', 'renaming') : t('common', 'actionRename')}
             </Button>
           </>
         )}
@@ -878,7 +972,7 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
       <Modal
         open={deleteOpen}
         onClose={() => { setDeleteOpen(false) }}
-        title={t('common', 'confirmDeleteTitle')}
+        title={t('common', 'deleteNamedTitle', { name: selected ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={t('common', 'confirmDeleteDescription')}
         footer={(
@@ -901,6 +995,18 @@ export function SkillFilePage({ skillId }: { skillId: string }) {
                     setFileSize(0)
                     setNotesState('idle')
                     toast.show(t('skillFile', 'toastDeleted'), 'success')
+                    // 待写快照来自删除前的整包，且定时器闭包持有该快照：只改 ref 仍会把已删除
+                    // 路径写回台账，因此直接取消这一次待写。
+                    if (notesTimer.current !== null) {
+                      window.clearTimeout(notesTimer.current)
+                      notesTimer.current = null
+                    }
+                    notesPending.current = null
+                    setNotes((previous) => {
+                      if (previous[path] === undefined) return previous
+                      // 删一个键就重建对象：动态键不走 delete（保持隐藏类稳定）。
+                      return Object.fromEntries(Object.entries(previous).filter(([key]) => key !== path))
+                    })
                     await loadTree()
                   } catch (failure) {
                     setDialogError(`${t('skillFile', 'errorDelete')} — ${describeError(failure)}`)

@@ -28,6 +28,7 @@ function installFailureText(failure: unknown, name: string): string {
   if (failure instanceof ApiError) {
     switch (failure.code) {
       case 'MARKET_ALREADY_INSTALLED': return t('market', 'errorAlreadyInstalled', { name })
+      case 'MCP_NAME_TAKEN': return t('market', 'errorMcpNameTaken', { name })
       case 'MARKET_DIRECTORY_ORPHANED': return t('market', 'errorDirectoryOrphaned', { name })
       case 'MARKET_NAME_MISMATCH': return t('market', 'errorNameMismatch', { name })
       case 'MARKET_SOURCE_MISSING': return t('market', 'errorSourceMissing', { name })
@@ -114,6 +115,8 @@ export function MarketPage() {
   const [installing, setInstalling] = useState<Set<string>>(() => new Set<string>())
   // 已安装项（按名称持久）：技能读 /skills，MCP 读 /mcp，安装后立即并入，无需猜测。
   const [installedNames, setInstalledNames] = useState<Set<string>>(() => new Set<string>())
+  /** 已安装集合的请求序号：切换类型后旧类型的慢响应不能把名字写进当前类型的集合。 */
+  const installedSeq = useRef(0)
   const [kindCounts, setKindCounts] = useState<{ skill: number; mcp: number } | null>(null)
 
   const markInstalling = (id: string, on: boolean): void => {
@@ -184,15 +187,19 @@ export function MarketPage() {
 
   // 已安装项：与本地清单同名即视为已安装（技能与 MCP 各自一套清单）。
   const loadInstalled = useCallback(async (): Promise<void> => {
+    const seq = ++installedSeq.current
     try {
       if (kind === 'skill') {
         const result = await request<{ ok: true; skills: SkillView[] }>('/skills')
+        if (seq !== installedSeq.current) return
         setInstalledNames(new Set(result.skills.map(skill => skill.name)))
       } else {
         const result = await request<{ ok: true; servers: McpServerView[] }>('/mcp')
+        if (seq !== installedSeq.current) return
         setInstalledNames(new Set(result.servers.map(server => server.name)))
       }
     } catch (failure) {
+      if (seq !== installedSeq.current) return
       setError({ text: `${t('market', 'errorInstalled')} — ${describeError(failure)}`, listFailed: false })
     }
   }, [kind])
@@ -225,7 +232,12 @@ export function MarketPage() {
   const switchKind = (next: 'skill' | 'mcp'): void => {
     setKind(next)
     setCategory(null)
-    if (next !== kind) setCategories([])
+    if (next !== kind) {
+      setCategories([])
+      // 已安装集合按类型区分：换类型先作废旧响应并清空，避免另一类型的同名条目被误标「已安装」。
+      installedSeq.current += 1
+      setInstalledNames(new Set<string>())
+    }
   }
 
   /** 清除搜索、分类、精选与排序（空态里的恢复动作，与原型一致）。 */
@@ -246,8 +258,8 @@ export function MarketPage() {
         subtitle={t('market', 'subtitle')}
         actions={(
           <>
-            <Button onClick={() => { navigate('/skill') }}>{t('market', 'localSkills')}</Button>
-            <Button onClick={() => { navigate('/mcp') }}>{t('market', 'localMcp')}</Button>
+            <Button variant="outline" onClick={() => { navigate('/skill') }}>{t('market', 'localSkills')}</Button>
+            <Button variant="outline" onClick={() => { navigate('/mcp') }}>{t('market', 'localMcp')}</Button>
           </>
         )}
       />
@@ -322,7 +334,17 @@ export function MarketPage() {
               label={t('market', 'featuredOnly')}
               onChange={(next) => { setFeaturedOnly(next) }}
             />
-            <span>{t('market', 'featuredOnly')}</span>
+            {/* 原型把文字与开关包在同一个 label 里：点文字也切换。开关本身是 button，
+                这里用不可聚焦的冗余按钮承接文字点击，屏幕阅读器仍只读开关的可访问名。 */}
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden="true"
+              className={css.switchText}
+              onClick={() => { setFeaturedOnly(!featuredOnly) }}
+            >
+              {t('market', 'featuredOnly')}
+            </button>
           </span>
           <span className={css.spacer} />
           <span className={css.count}>
@@ -346,7 +368,8 @@ export function MarketPage() {
             整体推下去（实测筛选时卡片 y 216 → 358，回弹 142px，R1 非预期位移）。
             已有内容时不再插行，只在首屏（还没有任何条目）时显示加载态。 */}
         {loading && entries.length === 0 && <div className={common.empty}>{t('common', 'stateLoading')}</div>}
-        {!loading && entries.length === 0 && (
+        {/* 加载失败不是「没有匹配条目」：错误行已经说明原因，空态不能同屏再报一次。 */}
+        {!loading && entries.length === 0 && error?.listFailed !== true && (
           <div className={common.emptyState}>
             <span className={common.emptyIcon} aria-hidden="true"><IconArchiveOutlineRegular size={22} /></span>
             <p className={common.emptyTitle}>{t('market', 'empty')}</p>

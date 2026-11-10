@@ -7,7 +7,10 @@
  * publish one fixed, current-session-only preset with a synchronous admission
  * check; settings defaults remain limited to the configured table. The read
  * side exposes a process catalog plus the current-value-only `permissions`
- * Session projection; the write side ships as the `/permission` command.
+ * Session projection; the write side ships as the `/permission` command. The
+ * additional `approve-for-me` entry carries this package's own deterministic
+ * admission gate: it answers only approval requests whose call matches the
+ * configured tool/command rules and always delegates everything else.
  *
  * @module dsh-permission-presets
  */
@@ -28,10 +31,23 @@ import { SANDBOX_MODES, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-shell'
 import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { APPROVAL_POLICIES, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+// Side-effect type import: declaration-merges the pre-execute event this gate
+// observes without taking a runtime dependency on the tool registry.
+import type {} from '@deepseek-ai/dsh-tools'
+// Type-only: the optional reviewer uses the live LLM service when composed.
+import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
+import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 // Type-only: resolves the required projection service and optional settings/command children.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { PermissionCatalog, PermissionSelection, PresetOption } from './types.ts'
+import {
+  APPROVE_FOR_ME_PRESET, admit, parseCommandPrefixes, reviewAllows, reviewPrompt, REVIEW_POLICY,
+  type Admission, type ApproveForMeConfig, type PendingCall,
+} from './approve-for-me.ts'
+
+export { APPROVE_FOR_ME_PRESET } from './approve-for-me.ts'
+export type { ApproveForMeConfig } from './approve-for-me.ts'
 
 export type * from './types.ts'
 
@@ -90,6 +106,9 @@ const AUTO_PRESET_SPEC: PresetSpec = {
   sandbox: 'danger-full-access',
   approval: 'ask',
 }
+
+/** Bound on retained pending calls per session; one entry per in-flight call. */
+const PENDING_CALL_LIMIT = 64
 
 /**
  * The projection unit's knob state: the last seen value of each knob event,
@@ -159,7 +178,8 @@ export interface PermissionSettings {
 export interface Config {
   /**
    * The preset table: name → knob bundle. Defaults to `workspace-write`
-   * (workspace-write + ask) and `danger-full-access` (danger-full-access +
+   * (workspace-write + ask), `approve-for-me` (workspace-write + ask with the
+   * rule-gated admission gate), and `danger-full-access` (danger-full-access +
    * never). The names `custom` and `auto` are reserved for derived state and
    * the Auto review integration respectively.
    */
@@ -169,13 +189,15 @@ export interface Config {
    * sandbox and approval defaults is used.
    */
   defaultPreset: Volatile<string | undefined>
+  /** Admission rules for the `approve-for-me` preset; empty rules approve nothing. */
+  approveForMe: ApproveForMeConfig
 }
 
 /**
  * Owns the deployment's configured permission presets, the fixed Auto
- * integration hook, and their write path. Requires a confining `ctx.shell` executor and
- * `ctx.approval`; unmatched knob values are reported as
- * {@link CUSTOM_PRESET}, not an error.
+ * integration hook, their write path, and the `approve-for-me` admission gate.
+ * Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob
+ * values are reported as {@link CUSTOM_PRESET}, not an error.
  */
 export class PermissionPresetService extends TypertRemoteService {
   // Inline schema call: the config catalog walks `static Config` statically.
@@ -190,12 +212,21 @@ export class PermissionPresetService extends TypertRemoteService {
         sandbox: 'workspace-write', approval: 'ask',
         name: 'workspace-write', description: 'Write inside the workspace and permitted temporary directories; wider retries require approval.',
       },
+      'approve-for-me': {
+        sandbox: 'workspace-write', approval: 'ask',
+        name: 'Approve for me', description: 'Approve rule-matched escalations automatically; unmatched requests return to native approval, and a missing answerer fails closed.',
+      },
       'danger-full-access': {
         sandbox: 'danger-full-access', approval: 'never',
         name: 'danger-full-access', description: 'Full file access without approval prompts.',
       },
     }),
     defaultPreset: z.string().volatile(),
+    approveForMe: z.object({
+      tools: z.array(z.string()).default([]),
+      commandPrefixes: z.array(z.string()).default([]),
+      review: z.boolean().default(false),
+    }).default({ tools: [], commandPrefixes: [], review: false }),
   })
 
   static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
@@ -203,6 +234,11 @@ export class PermissionPresetService extends TypertRemoteService {
   private readonly presets: Record<string, PresetSpec>
   private autoAdmit: (() => void) | undefined
   private defaultSettings: () => PermissionSettings
+  private readonly admission: ApproveForMeConfig
+  private readonly prefixes: readonly (readonly string[])[]
+  /** Arguments of recent pending calls, keyed by their approval timeout route. */
+  private readonly pending = new WeakMap<object, Map<string, PendingCall>>()
+  private reviewerUnavailable = false
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'permissionPresets')
@@ -210,6 +246,10 @@ export class PermissionPresetService extends TypertRemoteService {
     ctx.inject(['settings'], (child) => { child.effect(() => child.settings.configure({ auto: false }, ctx.fiber)) })
     // The schema defaulted the table — the cast records that runtime fact.
     this.presets = config.presets
+    // A malformed command prefix is a load-time misconfiguration: admitting on
+    // a prefix nobody can parse would silently widen the automatic set.
+    this.admission = config.approveForMe
+    this.prefixes = parseCommandPrefixes(config.approveForMe.commandPrefixes)
     if (CUSTOM_PRESET in this.presets) {
       throw new Error(`permission: "${CUSTOM_PRESET}" is reserved for the derived not-a-preset state and cannot name a table entry`)
     }
@@ -248,6 +288,35 @@ export class PermissionPresetService extends TypertRemoteService {
     for (const session of ctx.sessions.list()) {
       this.pinInitialPermission(session)
     }
+
+    // The `approve-for-me` gate. The approval request itself carries only the
+    // call id, so the pre-execute observer retains the exact parsed arguments
+    // of every pending call; the approval listener then answers only requests
+    // that the configured rules admit and delegates everything else.
+    ctx.on('tools/pre-execute', (exec, next) => {
+      const agent = exec.agent
+      if (agent !== undefined) this.remember(agent.session, exec)
+      return next()
+    }, { prepend: true })
+    ctx.on('approval/request', async (req, next) => {
+      const session = req.agent.session
+      let verdict: Admission = 'human'
+      try {
+        if (this.current(session) === APPROVE_FOR_ME_PRESET) {
+          const call = req.callId === undefined ? undefined : this.pending.get(session)?.get(String(req.callId))
+          if (call !== undefined) {
+            verdict = admit(call, this.admission, this.prefixes)
+            if (verdict === 'review') {
+              verdict = await this.narrowedByReviewer(session, call, req.signal) ? 'allow' : 'human'
+            }
+          }
+        }
+      } catch (error) {
+        this.ctx.logger.warn(`permission: approve-for-me check failed and returned to native approval (${error instanceof Error ? error.message : String(error)})`)
+        verdict = 'human'
+      }
+      return verdict === 'allow' ? 'allowed-once' : next()
+    }, { prepend: true })
 
     // The /permission command: the one write path a web client uses (the
     // popup contribution submits the picked preset as this line). The child
@@ -323,6 +392,71 @@ export class PermissionPresetService extends TypertRemoteService {
    */
   get defaultPreset(): string {
     return this.defaultSettings().defaultPreset
+  }
+
+  /**
+   * Retain one pending call's parsed arguments for its approval request.
+   * @param session - the session the call belongs to.
+   * @param exec - the pre-execute execution being dispatched.
+   */
+  private remember(session: Session, exec: ToolExecution): void {
+    const calls = this.pending.get(session) ?? new Map<string, PendingCall>()
+    if (calls.size >= PENDING_CALL_LIMIT) {
+      const oldest = calls.keys().next()
+      /* v8 ignore next -- a map at its bound always yields a first key. */
+      if (!oldest.done) calls.delete(oldest.value)
+    }
+    calls.set(String(exec.callId), { toolName: exec.name, arguments: exec.arguments })
+    this.pending.set(session, calls)
+  }
+
+  /**
+   * Ask the current session model to confirm one rule-matched call. The
+   * reviewer can only narrow the rule set: a missing route, absent LLM
+   * service, failed stream, or any response other than the exact allow object
+   * returns the request to native human approval.
+   * @param session - the session whose route the reviewer uses.
+   * @param call - the rule-matched pending call.
+   * @param signal - cancellation lifetime of the pending approval request.
+   * @returns whether the reviewer explicitly allowed the call.
+   */
+  private async narrowedByReviewer(session: Session, call: PendingCall, signal: AbortSignal | undefined): Promise<boolean> {
+    const llm = this.ctx.get('llm')
+    if (llm === undefined) {
+      if (!this.reviewerUnavailable) {
+        this.reviewerUnavailable = true
+        this.ctx.logger.warn('permission: approve-for-me review is enabled but no LLM service is composed; requests return to native approval')
+      }
+      return false
+    }
+    const header = session.requestHeader()
+    if (header === undefined || header.config.provider === '' || header.config.model === '') return false
+    const options: GenerateOptions = {
+      provider: header.config.provider,
+      model: header.config.model,
+      system: REVIEW_POLICY,
+      messages: [{
+        role: 'user',
+        content: [{ type: 'text', text: reviewPrompt(call, session.header.cwd ?? '') }],
+      }],
+      temperature: 0,
+      ...signal === undefined ? {} : { signal },
+    }
+    let text = ''
+    let finished = false
+    for await (const chunk of llm.stream(options)) {
+      switch (chunk.type) {
+        case 'text-delta':
+          text += chunk.text
+          break
+        case 'finish':
+          finished = chunk.reason.kind === 'stop'
+          break
+        default:
+          break
+      }
+    }
+    return finished && reviewAllows(text)
   }
 
   private permissionState(session: Session): PermissionProjectionState {

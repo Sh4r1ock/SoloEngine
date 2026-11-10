@@ -1,0 +1,580 @@
+/* 技能文件：240 目录树 + 自适应等宽编辑区 + 280 备注栏（需求文档 §12.3 第 7 条）。 */
+
+.pageShell {
+  height: calc(100vh - 48px);
+  min-height: 560px;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--se-space-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--se-space-2);
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  /* 原型 .file-breadcrumb 与 h1 的间距 8；headerText 的 flex gap 已给 4，这里补 4，
+     使 h1 距页头 20（面包屑 12 + 8）。 */
+  margin-bottom: var(--se-space-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.breadcrumbLink {
+  border: 0;
+  padding: 0;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.breadcrumbLink:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.breadcrumbCurrent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+}
+
+/* 页头动作键按原型 .btn：13/22、500、8 圆角、0 16 内边距、8 间距；透明 0.5 描边保留
+   原型边框占位（原语按钮无边框，宽度会少 1px）。 */
+.headerActions > button {
+  height: 36px;
+  padding: 0 var(--se-space-4);
+  border: 0.5px solid transparent;
+  border-radius: var(--se-radius-sm);
+  gap: var(--se-space-2);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+/* 原型 .icon-btn--lg：36×36 图标键（原语按图标 + 14px 内边距算成 44 宽）。 */
+button.iconButton {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+}
+
+button.iconButton:active:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-active);
+}
+
+button.iconButton:disabled {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--dsw-alias-label-caption);
+}
+
+.count {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 280px;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  overflow: hidden;
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.treePane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.editorPane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.notePane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-2);
+  height: 40px;
+  flex: none;
+  padding: 0 var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.panelTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--se-space-2);
+}
+
+.treeEmpty {
+  padding: var(--se-space-4);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 文件夹行：24px 行高、等宽 12/1、三级文字（原型 `.tree-folder`）；
+   层级缩进 8 + depth×14 属运行时几何样式，由行内 padding-left 给出。 */
+.treeFolder {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  width: 100%;
+  box-sizing: border-box;
+  height: 24px;
+  padding-right: var(--se-space-2);
+  border: 0;
+  background-color: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeFolder:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.treeFolder:focus-visible,
+.treeItem:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.treeFolderName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  width: 100%;
+  box-sizing: border-box;
+  height: 28px;
+  padding-right: var(--se-space-2);
+  border: 0;
+  border-radius: var(--se-radius-xs);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.treeItem:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 两级选择器压过 `.treeItem:hover`（原型 `.tree-file.is-active` 同样写在 hover 之后）。 */
+.treeItem.treeItemActive {
+  background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.treeItemActive .treeIcon {
+  color: var(--dsw-static-deepseek-500);
+}
+
+.treeIcon {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.treePath {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeTag {
+  flex: none;
+  margin-left: auto;
+}
+
+/* 树内标记 16px 高（原型 `.tree-file .tag`）。 */
+.treeItem .treeTag {
+  height: 16px;
+  line-height: 16px;
+}
+
+.editorToolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  height: 40px;
+  flex: none;
+  padding: 0 var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.pathPlaceholder {
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 当前文件路径：12/20 等宽、一级文字、单行省略（原型 `.file-path`）。
+   元素+类压过 `.mono` 的次级文字色（同特异度时依赖注入顺序，不可靠）。 */
+span.pathValue {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  flex: none;
+  margin-left: auto;
+}
+
+/* 图标动作键：28×28（原型 `.icon-btn`），图标由原语 icon 槽承担。 */
+button.iconAction {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+button.iconAction:active:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-active);
+}
+
+button.iconAction:disabled {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--dsw-alias-label-caption);
+}
+
+.saveState {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.saveDot,
+.saveDotDirty {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-border-l3);
+}
+
+.saveDotDirty {
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.editorEmpty {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  padding: var(--se-space-7);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.editorBox {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--dsw-alias-bg-base);
+  /* 自适应等宽编辑区（需求文档 §12.3 第 7 条）：铺满目录树与备注栏之间的中间列，
+     不再按阅读列限宽——限宽会把行号槽与代码行一起挤到中间，两侧留白。 */
+  width: 100%;
+}
+
+.gutter {
+  box-sizing: border-box;
+  margin: 0;
+  width: 48px;
+  flex: none;
+  overflow: hidden;
+  padding: var(--se-space-3) var(--se-space-2);
+  border-right: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: right;
+  user-select: none;
+}
+
+.editorArea {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--se-space-3) var(--se-space-4);
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  resize: none;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+.editorArea:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.binaryState {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-7);
+  background-color: var(--dsw-alias-bg-base);
+  text-align: center;
+}
+
+.binaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.binaryTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  /* 正文 14/24（规范 §2）：14px 文本一律 24 行高，不用 22。 */
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.binaryDesc {
+  margin: 0;
+  max-width: 44ch;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.editorFoot {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  height: 32px;
+  flex: none;
+  padding: 0 var(--se-space-3);
+  border-top: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.footHint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.noteArea {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--se-space-3);
+  border: 0;
+  outline: none;
+  resize: none;
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.noteArea:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.noteEmpty {
+  padding: var(--se-space-4);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.noteHint {
+  flex: none;
+  margin: 0;
+  padding: var(--se-space-3);
+  border-top: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+@media (max-width: 1180px) {
+  .layout {
+    grid-template-columns: 220px minmax(0, 1fr) 240px;
+  }
+}
+
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 150px;
+  }
+
+  .notePane {
+    grid-column: 1 / -1;
+    border-left: 0;
+    border-top: 0.5px solid var(--se-hairline);
+  }
+
+  .noteHint {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .pageShell {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 170px 460px 160px;
+    flex: none;
+  }
+
+  .treePane {
+    border-right: 0;
+    border-bottom: 0.5px solid var(--se-hairline);
+  }
+
+  .footHint {
+    display: none;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+}

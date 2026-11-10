@@ -14,11 +14,13 @@ export type NoticeTone = 'error' | 'success' | 'info'
  * @param props.tone - error / success / info。
  * @param props.text - 文案；为空时不渲染。
  * @param props.action - 可选的行内操作（例如「重新加载」）。
+ * @param props.id - 可选元素 id（供字段 aria-describedby 指向）。
  */
-export function NoticeLine({ tone, text, action }: {
+export function NoticeLine({ tone, text, action, id }: {
   tone: NoticeTone
   text: string | null
   action?: { label: string; onClick: () => void }
+  id?: string
 }) {
   if (text === null || text === '') return null
   const className = tone === 'error' ? css.errorLine : tone === 'success' ? css.successLine : css.infoLine
@@ -26,7 +28,7 @@ export function NoticeLine({ tone, text, action }: {
     ? <IconWarningOutlineRegular size={16} />
     : tone === 'success' ? <IconCheckOutlineRegular size={16} /> : <IconQuestionOutlineRegular size={14} />
   return (
-    <div className={className} role={tone === 'error' ? 'alert' : 'status'}>
+    <div id={id} className={className} role={tone === 'error' ? 'alert' : 'status'}>
       {/* 语气图标是纯装饰：原生图标原语只收 {size, className}（禁改），不会自标 aria-hidden，
           裸渲染会在无障碍树里留下无名 image 节点（实测 a11y 快照出现 `- image`）。
           产品层在此包一层装饰标记，文字已完整表达状态。 */}

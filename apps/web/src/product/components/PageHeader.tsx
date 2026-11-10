@@ -4,11 +4,13 @@ import css from '../styles/common.module.css'
 
 /**
  * 渲染页面标题与操作区。
+ * @param props.eyebrow - 可选的等宽眉标（设计系统等开发参考页）。
  * @param props.title - 页面标题（已本地化）。
  * @param props.subtitle - 副标题。
  * @param props.actions - 右侧操作节点。
  */
-export function PageHeader({ title, subtitle, actions }: {
+export function PageHeader({ eyebrow, title, subtitle, actions }: {
+  eyebrow?: string
   title: string
   subtitle?: string
   actions?: ReactNode
@@ -16,6 +18,7 @@ export function PageHeader({ title, subtitle, actions }: {
   return (
     <header className={css.header}>
       <div className={css.headerText}>
+        {eyebrow !== undefined && <div className={css.eyebrow}>{eyebrow}</div>}
         <h1 className={css.title}>{title}</h1>
         {subtitle !== undefined && <p className={css.subtitle}>{subtitle}</p>}
       </div>

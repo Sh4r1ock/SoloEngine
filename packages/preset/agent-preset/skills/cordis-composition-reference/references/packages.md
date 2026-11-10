@@ -17,7 +17,7 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-api-settings-controller` | yes | Remote owner for the configuration surfaces over the settings-domain seams |
 | `@deepseek-ai/dsh-api-terminal-controller` | yes | Session-owned interactive terminals with shell discovery, screen recovery and typed Remote control |
 | `@deepseek-ai/dsh-api-workspace-controller` | yes | Workspace Remote commands and reconnect-safe state transport |
-| `@deepseek-ai/dsh-api-workspace-files` | yes | Workspace file service and Client resource provider: bounded reads, directory listing, and live metadata over the workspaceFiles Remote namespace |
+| `@deepseek-ai/dsh-api-workspace-files` | yes | Workspace file service and Client resource provider: bounded reads, directory listing, live metadata, and workspace-confined human mutations over the workspaceFiles Remote namespace |
 
 ## attachment
 
@@ -74,7 +74,6 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-permission-presets` | no | Permission surfaces: a new-session default in General settings and a current-session /permission popup over the permissions projection |
 | `@deepseek-ai/dsh-client-ui-plan` | no | Plan mode controls, persistent transcript plan cards, and sidebar Markdown previews |
 | `@deepseek-ai/dsh-client-ui-plugin-manager` | yes | Plugin management for the dsh web client: the sidebar Plugins panel installs, enables, disables, retries, and composes installed plugin packages |
-| `@deepseek-ai/dsh-client-ui-plugin-market` | no | Discover tab of the dsh web Plugins page: browse configured plugin market indexes and install their bundles |
 | `@deepseek-ai/dsh-client-ui-reference` | no | Unified Web @file and @session reference source |
 | `@deepseek-ai/dsh-client-ui-renderer` | no | Browser UI renderer: React slot bindings, ctx.uiRenderer, and the assembled application root |
 | `@deepseek-ai/dsh-client-ui-schedule` | no | Host task management page and Session reminder catalog |
@@ -93,11 +92,11 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@deepseek-ai/dsh-client-ui-settings-web-search` | no | Settings page of the DeepSeek web-search provider on the dsh web client's Plugins page: its API key, endpoint, and per-request search budget |
 | `@deepseek-ai/dsh-client-ui-shortcuts` | no | Keyboard shortcut reference, recording, and local preference editing |
 | `@deepseek-ai/dsh-client-ui-sidebar` | no | Sidebar plugin: session multi-level tree, search, grouping, state dots |
-| `@deepseek-ai/dsh-client-ui-sidebar-browser` | no | Sandboxed Web browser tabs for the right Sidebar |
+| `@deepseek-ai/dsh-client-ui-sidebar-browser` | yes | Sandboxed Web browser tabs for the right Sidebar |
 | `@deepseek-ai/dsh-client-ui-sidebar-documentpreview` | yes | Extensible Sidebar previews for Office documents, spreadsheets, Markdown, code, images, PDF, HTML, and plain text |
 | `@deepseek-ai/dsh-client-ui-sidebar-files` | no | Workspace file tree tab type for the right Sidebar: lazy directory listing over the workspaceFiles Remote namespace, opening files into the Sidebar |
 | `@deepseek-ai/dsh-client-ui-sidebar-right` | no | Right Sidebar: the docking surface's session-bound state, its panel and header expand control, and the navigation service over it |
-| `@deepseek-ai/dsh-client-ui-sidebar-terminal` | no | Interactive shell tabs for the right Sidebar |
+| `@deepseek-ai/dsh-client-ui-sidebar-terminal` | no | Line-oriented agent terminal tabs for the right Sidebar: attaches to the Session's platform terminals |
 | `@deepseek-ai/dsh-client-ui-skill` | no | Web skill references and the dedicated skill tool row |
 | `@deepseek-ai/dsh-client-ui-subagent` | no | Subagent conversation catalog, continuation routing UI, and '@' reference source |
 | `@deepseek-ai/dsh-client-ui-theme` | yes | Theme plugin: Host bootstrap for the pre-plugin palette; DOM-free ThemeRuntime for light/dark/system state; --dsw-* token styles and Appearance settings row |
@@ -164,24 +163,6 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 
 | Package | Config | Description |
 |---|---|---|
-| `@deepseek-ai/dsh-experimental-agent-team` | yes | Implicit-root Agent Teams roster, direct peer messaging, and shared task DAG |
-| `@deepseek-ai/dsh-experimental-api-speech-to-text` | yes | Authenticated experimental speech transcription for browser clients |
-| `@deepseek-ai/dsh-experimental-auto-review` | no | Per-tool LLM authorization review for the DeepSeek Harness Auto permission preset |
-| `@deepseek-ai/dsh-experimental-claude-code-mods` | yes | Experimental bridge: load Claude Code mods (hooks modules) and run their hook chains on DeepSeek Harness extension points |
-| `@deepseek-ai/dsh-experimental-client-ui-agent-team` | no | Web Agent Teams roster, task board, and teammate navigation |
-| `@deepseek-ai/dsh-experimental-client-ui-claude-code-mods` | no | Web band above the prompt for Claude Code mods: draws each session's mod tree and sends button presses back to the bridge |
-| `@deepseek-ai/dsh-experimental-client-ui-voice-input` | no | Record speech and insert editable text into the conversation draft |
-| `@deepseek-ai/dsh-experimental-inspector` | yes | Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection |
-| `@deepseek-ai/dsh-experimental-ptc-runtime-python` | yes | CPython subprocess implementation of the DeepSeek Harness PTC execution seam |
-| `@deepseek-ai/dsh-experimental-session-inspector` | no | Experimental virtualized Session log and live Chat group/node inspectors |
-| `@deepseek-ai/dsh-experimental-speech-to-text` | yes | Experimental speech recognition with independently selectable providers |
-| `@deepseek-ai/dsh-experimental-speech-to-text-sensevoice` | yes | Local SenseVoice ONNX transcription with a managed sherpa-onnx process |
-| `@deepseek-ai/dsh-experimental-tool-agent-team` | yes | Scoped model-facing Agent Teams tools over ctx.agentTeams |
-| `@deepseek-ai/dsh-experimental-tool-worktree` | no | Model tool that creates and enters a new Git worktree |
-| `@deepseek-ai/dsh-experimental-worktree` | yes | Creates a named Git worktree and changes the calling Session working directory |
-| `@deepseek-ai/dsh-session-title-all-prompts-llm` | yes | All-user-messages LLM provider plugin for DeepSeek Harness session titles |
-| `@deepseek-ai/dsh-skill-badge` | no | Bundled dsh badge skill provider for DeepSeek Harness |
-| `@deepseek-ai/dsh-tool-ralph` | yes | Model-facing fresh-agent Ralph loop over the workflow and subagent seams |
 | `@deepseek-ai/dsh-tool-session-query` | yes | Workspace-authorized model-facing session history search, trace, and event read tools |
 | `@deepseek-ai/dsh-tool-terminal` | yes | Six model-facing persistent PTY tools with owner isolation and generic background-job integration |
 
@@ -381,16 +362,18 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | `@soloengine/browser-proxy` | yes | SoloEngine 浏览器同源代理（Host 面）：catch-all 持续代理 + SSRF 五条防线 + Location/HTML 重写 + hop-by-hop 头剔除 + WebSocket upgrade 转发。 |
 | `@soloengine/client-bootstrap` | no | SoloEngine URL 直达会话与启动接线（自研客户端）：/run/:agenticFlowId → 该画布最近一次运行的原生会话选择。 |
 | `@soloengine/host` | yes | SoloEngine 框架挂载：把框架层 Express REST 挂进 dsh host-webserver 的同一条 HTTP 服务（唯一端口），并负责就绪输出与业务库自检。 |
-| `@soloengine/llm-db-adapter` | yes | SoloEngine DB 密钥模型适配器：把 llm_configs 每行暴露为一条 soloengine-<id> 模型路由，执行时从数据库解密密钥与地址，秒级轮询发现变更并全量替换。 |
+| `@soloengine/llm-db-adapter` | yes | SoloEngine 模型路由适配器：把管理层每条启用中的模型配置暴露为一条 soloengine-<id> 路由，执行时向管理层要已解密密钥与地址，秒级轮询发现变更并全量替换。 |
 | `@soloengine/open-preview` | no | SoloEngine 预览记录（Host 面）：soloengine/preview 事件族声明 + 会话投影（去重置顶、上限 50）。 |
-| `@soloengine/terminal-bridge` | no | SoloEngine 终端桥（Host 面）：把 ctx.terminals 的 owner 归属会话经同一条 HTTP 服务暴露给浏览器，并提供跨重启已持久输出的回放读取。 |
+| `@soloengine/sandbox-container` | no | SoloEngine 的容器沙箱提供方（W10.7）：把会话执行边界声明为由每会话容器承担，配合按会话路由的容器子进程提供方；无会话作用域的调用直接拒绝。 |
+| `@soloengine/session-persistence-postgres` | yes | SoloEngine 的 PostgreSQL 会话日志后端：把事件日志与头信息写进同一个 PG 库的 log schema，与 JSONL 后端同契约、可整组替换。 |
+| `@soloengine/session-persistence-sqlite` | yes | SoloEngine 的 SQLite 会话日志后端：把事件日志与头信息写进单机业务库（与业务表同库、表分割），与 JSONL/PG 后端同契约、可整组替换。 |
+| `@soloengine/session-query-postgres` | yes | SoloEngine 的 PostgreSQL 会话检索后端：在同一个 PG 库的 search schema 里维护可丢弃派生索引，与 SQLite 检索后端同契约、可整组替换。 |
+| `@soloengine/storage-postgres` | yes | SoloEngine 的 PostgreSQL 键值后端：注册为 storage 后端 postgres，与 SQLite 后端同契约、可单独替换。 |
+| `@soloengine/subprocess-container` | yes | SoloEngine 的按会话执行世界子进程提供方（W10.7）：把 shell 命令放进该会话的容器（docker exec）或全 VM（ssh）里执行，工作区映射到 /workspace；无会话路由的命令仍走本机。 |
 | `@soloengine/tools` | no | SoloEngine 特有工具（Host 面）：运行诊断 get_diagnostics。 |
-| `@soloengine/ui-brand` | no | SoloEngine 品牌与产品呈现（自研客户端）：经原生品牌座位注册侧栏品牌行与无会话首屏标记。 |
 | `@soloengine/ui-conversation` | no | SoloEngine 会话头座位与对话节点与预览卡片（自研客户端）：经 conversation.session.header.* 座位与键控 conversation.chat.node 注册。 |
-| `@soloengine/ui-document-editor` | no | SoloEngine 编辑器/文档面板（自研客户端）：在官方 documentpreviews 注册表上补编辑能力与 Office（docx/xlsx/pptx）浏览器内渲染，并落纯文本兜底说明。 |
-| `@soloengine/ui-operation-area` | no | SoloEngine 操作区联动层与浏览器/变更面板（自研客户端）：呈现意图 → openResource/openTab 自动跟随，同源代理浏览器面板，变更台账面板。 |
-| `@soloengine/ui-sidebar-files` | no | SoloEngine 编辑型文件树（自研客户端）：以同名 kind files 的 extension 档接管官方只读文件树，具备懒加载/新建/删除/重命名/搜索/当前文件高亮/变更联动刷新。 |
-| `@soloengine/ui-terminal-owner` | no | SoloEngine 终端面板（自研客户端）：以同名 kind terminal 的 extension 档接管官方终端面板，呈现 ctx.terminals 的 owner 归属会话（行式契约 + 接续输入 + 刷新恢复 + 跨重启回放与代际标注）。 |
+| `@soloengine/ui-document-editor` | no | SoloEngine 编辑器/文档面板（自研客户端）：在官方 documentpreviews 注册表上补文本编辑能力（保存写回项目目录）；Office/表格文档交官方 office/excel 渲染器，不自建解析器。 |
+| `@soloengine/ui-operation-area` | no | SoloEngine 操作区联动层与变更面板（自研客户端）：呈现意图 → openResource/openTab 自动跟随，变更台账面板。 |
 | `@soloengine/ui-theme` | no | SoloEngine 设计语言阶梯 token（--se-space/radius/z）——运行面板与产品页面共用的单一真源。 |
 
 ## spill
@@ -414,7 +397,6 @@ Every package below exports a Cordis plugin that a bundle patch can name in a Lo
 | Package | Config | Description |
 |---|---|---|
 | `@deepseek-ai/dsh-subagent` | yes | Abstract subagent seam (ctx.subagents): named-provider registry for delegating to child agents |
-| `@deepseek-ai/dsh-subagent-acp` | yes | Out-of-process ACP subagent backend: drives a child agent in a spawned subprocess over the Agent Client Protocol |
 | `@deepseek-ai/dsh-subagent-fork-in-process` | yes | In-process fork subagent backend: runs a child agent seeded with a prefix of the parent's log |
 | `@deepseek-ai/dsh-subagent-spawn-in-process` | yes | In-process spawn subagent backend: runs a fresh child agent on ctx.agents |
 | `@deepseek-ai/dsh-tool-subagent` | yes | Model-facing subagent delegation tool over the ctx.subagents seam |

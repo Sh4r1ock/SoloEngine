@@ -1,0 +1,25 @@
+{
+  "minTokens": 60,
+  "minLines": 6,
+  "mode": "mild",
+  "format": ["typescript", "tsx"],
+  "pattern": "**/*.{ts,tsx}",
+  "ignore": [
+    "**/tests/**",
+    "**/tsdown.config.ts",
+    "packages/soloengine/session-persistence-postgres/src/**",
+    "packages/soloengine/session-query-postgres/src/**",
+    "packages/soloengine/cloud-control-postgres/src/**",
+    "packages/soloengine/instance-runtime/src/index.ts",
+    "packages/client/ui-sidebar-browser/src/index.ts",
+    "packages/client/ui-sidebar-documentpreview/src/index.ts",
+    "packages/mcp/mcp-client/src/index.ts"
+  ],
+  "ignorePattern": [
+    "(?s)/\\* jscpd:ignore-start \\*/.*?/\\* jscpd:ignore-end \\*/"
+  ],
+  "reporters": ["console"],
+  "exitCode": 1,
+  "noColors": true,
+  "noTips": true
+}

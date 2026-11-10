@@ -108,6 +108,18 @@ export class SessionLedger {
   }
 
   /**
+   * 列出全部进行中（`pending` / `running`）的归属行。
+   *
+   * 供启动对账使用：这些行只可能由仍在推进的循环收敛，进程退出后不会有任何写入者。
+   * @returns 进行中的归属行（按主键升序）。
+   */
+  async inFlight(): Promise<SessionLedgerRow[]> {
+    return await this.db.prepare(
+      "SELECT * FROM sessions WHERE status IN ('pending', 'running') ORDER BY id ASC",
+    ).all<SessionLedgerRow>()
+  }
+
+  /**
    * 该用户在一个 agenticflow 内可见的会话键（连接层账号作用域的收窄集合）。
    *
    * 省略 `instance` 时返回该用户的全部会话（管理面视图）；给出时只返回归属该画布的

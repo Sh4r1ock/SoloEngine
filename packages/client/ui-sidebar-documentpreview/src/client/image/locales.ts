@@ -1,4 +1,4 @@
-import { zoomEn, zoomZh } from '../zoom/locales.ts'
+import { zoomEn, zoomZh } from '../contract/zoom/locales.ts'
 
 /** Locale-owned image renderer labels and status text. */
 export const zh = {

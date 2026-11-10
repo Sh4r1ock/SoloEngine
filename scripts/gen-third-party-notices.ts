@@ -1,8 +1,7 @@
 /**
  * Generate `THIRD_PARTY_NOTICES.md` from the workspace manifests: every
  * external dependency named by a workspace `package.json`, the vendored-package
- * manifest in `vendor/README.md`, the Python `pyproject.toml` files, the shared
- * Python distribution lock, and the pnpm patch list. npm metadata comes from the installed
+ * manifest in `vendor/README.md`, and the pnpm patch list. npm metadata comes from the installed
  * store, so the tree must be installed. `--check` verifies the committed
  * artifact. Tier policy and ownership live in
  * `.agents/notes/implemented/process/2026-07-30-generated-third-party-notices.md`.
@@ -11,11 +10,8 @@
 import { existsSync, globSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import * as yaml from 'js-yaml'
-import { parse as parseToml, type TomlTableWithoutBigInt, type TomlValueWithoutBigInt } from 'smol-toml'
 import parseSpdx from 'spdx-expression-parse'
-import primaryRuntimeLock from './primary-runtime/lock.json' with { type: 'json' }
 import { browserBundledExternals } from './browser-bundled-externals.ts'
-import { DEVTOOLS_NPM_VERSION, DEVTOOLS_SOURCE_REVISION } from '../packages/experimental/inspector/scripts/devtools/source.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const OUT = 'THIRD_PARTY_NOTICES.md'
@@ -90,32 +86,6 @@ const OVERRIDES: Record<string, { license?: string; repo?: string }> = {
   'node-addon-require-builtin': { repo: 'https://www.npmjs.com/package/node-addon-require-builtin' },
   // No `license` field in the published manifest; the tarball's LICENSE.txt is the MIT text.
 }
-
-/**
- * Python metadata is recorded from the distributions' license and project
- * fields; generation does not require installing their wheels. Both Python
- * manifests and the shared runtime lock reject names absent from this map.
- */
-const PYTHON_METADATA: Record<string, { license: string; repo: string; role?: string }> = {
-  pydantic: { license: 'MIT', repo: 'https://github.com/pydantic/pydantic', role: 'runtime dependency of `deepseek-harness-sdk`' },
-  hatchling: { license: 'MIT', repo: 'https://github.com/pypa/hatch', role: 'build backend' },
-  'et-xmlfile': { license: 'MIT', repo: 'https://foss.heptapod.net/openpyxl/et_xmlfile' },
-  lxml: { license: 'BSD-3-Clause', repo: 'https://github.com/lxml/lxml' },
-  numpy: { license: 'BSD-3-Clause', repo: 'https://github.com/numpy/numpy' },
-  openpyxl: { license: 'MIT', repo: 'https://foss.heptapod.net/openpyxl/openpyxl' },
-  pandas: { license: 'BSD-3-Clause', repo: 'https://github.com/pandas-dev/pandas' },
-  pillow: { license: 'MIT-CMU', repo: 'https://github.com/python-pillow/Pillow' },
-  'python-dateutil': { license: 'Apache-2.0 OR BSD-3-Clause', repo: 'https://github.com/dateutil/dateutil' },
-  'python-docx': { license: 'MIT', repo: 'https://github.com/python-openxml/python-docx' },
-  'python-pptx': { license: 'MIT', repo: 'https://github.com/scanny/python-pptx' },
-  pytest: { license: 'MIT', repo: 'https://github.com/pytest-dev/pytest', role: 'test-only' },
-  six: { license: 'MIT', repo: 'https://github.com/benjaminp/six' },
-  'typing-extensions': { license: 'PSF-2.0', repo: 'https://github.com/python/typing_extensions' },
-  tzdata: { license: 'Apache-2.0', repo: 'https://github.com/python/tzdata' },
-  xlsxwriter: { license: 'BSD-2-Clause', repo: 'https://github.com/jmcnamara/XlsxWriter' },
-}
-
-type PythonMetadata = typeof PYTHON_METADATA
 
 /** The `package.json` fields this generator reads. */
 export interface Manifest {
@@ -492,157 +462,6 @@ function collectVendored(): (VendoredRow & { sourceDirectory: string })[] {
   })
 }
 
-/** Whether a parsed TOML value is a table rather than an array or scalar. */
-function isTomlTable(value: TomlValueWithoutBigInt | undefined): value is TomlTableWithoutBigInt {
-  return value !== undefined && typeof value === 'object' && !Array.isArray(value)
-}
-
-/** Parse one PEP 508 requirement string into its distribution name. */
-function parsePythonRequirement(requirement: string): string {
-  const name = /^\s*([a-zA-Z][a-zA-Z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(?:[<>=!~;@].*)?$/.exec(requirement)?.[1]
-  if (name === undefined) {
-    throw new Error(`gen-third-party-notices: cannot read a distribution name from the requirement ${JSON.stringify(requirement)}.`)
-  }
-  return name
-}
-
-/** Add the string requirements from one parsed TOML array. */
-function collectPythonRequirementArray(
-  names: string[],
-  value: TomlValueWithoutBigInt | undefined,
-  location: string,
-  allowGroupIncludes = false,
-): void {
-  if (value === undefined) return
-  if (!Array.isArray(value)) {
-    throw new Error(`gen-third-party-notices: ${location} must be an array.`)
-  }
-  for (const item of value) {
-    if (typeof item === 'string') {
-      names.push(parsePythonRequirement(item))
-      continue
-    }
-    if (allowGroupIncludes && isTomlTable(item) && typeof item['include-group'] === 'string' && Object.keys(item).length === 1) {
-      continue
-    }
-    throw new Error(`gen-third-party-notices: ${location} contains an unsupported requirement entry.`)
-  }
-}
-
-/** Read an optional TOML table and reject a present non-table value. */
-function optionalTomlTable(value: TomlValueWithoutBigInt | undefined, location: string): TomlTableWithoutBigInt | undefined {
-  if (value === undefined || isTomlTable(value)) return value
-  throw new Error(`gen-third-party-notices: ${location} must be a table.`)
-}
-
-/**
- * Parse a `pyproject.toml` project identity and every requirement it declares:
- * `requires` under
- * `[build-system]`, `dependencies` under `[project]`, and every key under
- * `[project.optional-dependencies]` and `[dependency-groups]`. A TOML parser
- * owns comments, quoted keys, escapes, and array boundaries; unsupported
- * requirement forms fail instead of disappearing from the notices.
- * @param text - the complete `pyproject.toml` contents.
- * @returns the local project name and declared requirement names.
- */
-function parsePyproject(text: string): { projectName?: string; requirements: string[] } {
-  const names: string[] = []
-  const document = parseToml(text, { integersAsBigInt: false })
-  const buildSystem = optionalTomlTable(document['build-system'], '[build-system]')
-  const project = optionalTomlTable(document.project, '[project]')
-  const projectName = project?.name
-  if (projectName !== undefined && typeof projectName !== 'string') {
-    throw new Error('gen-third-party-notices: [project].name must be a string.')
-  }
-  collectPythonRequirementArray(names, buildSystem?.requires, '[build-system].requires')
-  collectPythonRequirementArray(names, project?.dependencies, '[project].dependencies')
-
-  const optional = optionalTomlTable(project?.['optional-dependencies'], '[project.optional-dependencies]')
-  for (const [group, requirements] of Object.entries(optional ?? {})) {
-    collectPythonRequirementArray(names, requirements, `[project.optional-dependencies].${group}`)
-  }
-
-  const groups = optionalTomlTable(document['dependency-groups'], '[dependency-groups]')
-  for (const [group, requirements] of Object.entries(groups ?? {})) {
-    collectPythonRequirementArray(names, requirements, `[dependency-groups].${group}`, true)
-  }
-  return projectName === undefined
-    ? { requirements: names }
-    : { projectName, requirements: names }
-}
-
-/**
- * Read every requirement name declared by one `pyproject.toml`.
- * @param text - the complete `pyproject.toml` contents.
- * @returns each declared requirement's distribution name, in file order.
- */
-export function parsePyprojectRequirements(text: string): string[] {
-  return parsePyproject(text).requirements
-}
-
-/** Normalize a Python distribution name according to the packaging name rule. */
-function normalizePythonDistributionName(name: string): string {
-  return name.toLowerCase().replace(/[-_.]+/g, '-')
-}
-
-/**
- * Resolve external Python dependencies after excluding local project names.
- * @param pyprojects - complete local `pyproject.toml` contents.
- * @param metadata - disclosure metadata for every external dependency.
- * @returns disclosed dependencies in normalized name order.
- */
-export function collectPythonDependencies(
-  pyprojects: string[],
-  metadata: PythonMetadata = PYTHON_METADATA,
-): { name: string; license: string; repo: string; role: string }[] {
-  const parsed = pyprojects.map(parsePyproject)
-  const firstParty = new Set(parsed.flatMap(({ projectName }) => (
-    projectName === undefined ? [] : [normalizePythonDistributionName(projectName)]
-  )))
-  const found = new Set(parsed
-    .flatMap(({ requirements }) => requirements.map(normalizePythonDistributionName))
-    .filter(name => !firstParty.has(name)))
-  return [...found].sort((a, b) => a.localeCompare(b)).map((name) => {
-    const entry = metadata[name]
-    if (entry === undefined) throw new Error(`gen-third-party-notices: python dependency ${name} is missing from PYTHON_METADATA.`)
-    return { name, ...entry, role: entry.role ?? 'Python project dependency' }
-  })
-}
-
-/** Direct Python dependencies named by the `pyproject.toml` manifests under `python/`. */
-function collectPython(): { name: string; license: string; repo: string; role: string }[] {
-  const manifests = globSync('python/*/pyproject.toml', { cwd: root })
-  if (manifests.length === 0) throw new Error('gen-third-party-notices: no python/*/pyproject.toml found; the Python tree moved.')
-  return collectPythonDependencies(manifests.map(path => readFileSync(resolve(root, path), 'utf8')))
-}
-
-/**
- * Disclose every bundled wheel distribution using its locked version, rejecting duplicate normalized names.
- * @param packages - Distribution names and exact versions from the shared runtime lock.
- * @param metadata - License and source metadata for every locked distribution.
- * @returns Normalized, sorted distribution identities with versions and licenses.
- */
-export function collectBundledPythonDependencies(
-  packages: Readonly<Record<string, string>>,
-  metadata: PythonMetadata = PYTHON_METADATA,
-): { name: string; version: string; license: string; repo: string }[] {
-  const normalized = new Map<string, string>()
-  for (const [distribution, version] of Object.entries(packages)) {
-    const name = normalizePythonDistributionName(distribution)
-    const previous = normalized.get(name)
-    if (previous !== undefined && previous !== version) {
-      throw new Error(`gen-third-party-notices: bundled Python distribution ${name} has conflicting locked versions.`)
-    }
-    if (previous !== undefined) throw new Error(`gen-third-party-notices: bundled Python distribution ${name} has duplicate normalized names.`)
-    normalized.set(name, version)
-  }
-  return [...normalized].sort(([a], [b]) => a.localeCompare(b)).map(([name, version]) => {
-    const entry = metadata[name]
-    if (entry === undefined) throw new Error(`gen-third-party-notices: bundled Python distribution ${name} is missing from PYTHON_METADATA.`)
-    return { name, version, license: entry.license, repo: entry.repo }
-  })
-}
-
 /** pnpm-patched external packages, from `pnpm-workspace.yaml`. */
 function collectPatched(): { spec: string; patch: string }[] {
   const workspace = yaml.load(readFileSync(resolve(root, 'pnpm-workspace.yaml'), 'utf8')) as { patchedDependencies?: Record<string, string> }
@@ -744,8 +563,6 @@ ${rows.join('\n')}
  */
 export async function render(): Promise<string> {
   const browser = await browserBundledExternals(root)
-  // The Inspector's Host build hook compiles this standalone frontend outside the Client bundle graph.
-  browser.add('chrome-devtools-frontend')
   // The linked-manifest cache is keyed by name only, so it must not outlive
   // the manifests map it was resolved from; render() owns that single load.
   workspaceLinkedManifestCache.clear()
@@ -755,8 +572,6 @@ export async function render(): Promise<string> {
   const devDeps = npm.filter(dep => !dep.runtime)
   const kitRuntime = runtimeDeps.some(dep => dep.name === LIBREOFFICE_KIT_PACKAGE)
   const vendored = collectVendored()
-  const python = collectPython()
-  const bundledPython = collectBundledPythonDependencies(primaryRuntimeLock.pythonPackages)
   const patched = collectPatched()
   const claudeDistribution = runtimeDeps.some(
     dep => dep.name === CLAUDE_AGENT_SDK_PACKAGE,
@@ -765,7 +580,6 @@ export async function render(): Promise<string> {
     : undefined
   const nonPermissiveDev = devDeps.filter(dep => !isPermissive(dep.license))
   assertRuntimeLicenses(runtimeDeps)
-  assertRuntimeLicenses(bundledPython)
   const patchedLines = patched.map(({ spec, patch }) => `- \`${spec}\` — [\`${patch}\`](${patch})`)
 
   return `<!-- Generated by scripts/gen-third-party-notices.ts — do not edit by hand.
@@ -775,9 +589,9 @@ export async function render(): Promise<string> {
 
 DeepSeek Harness is licensed under [MIT](LICENSE). It depends on the third-party software listed below. Each project remains under its own license; nothing in this file changes those terms.
 
-This file lists **direct** dependencies declared by the workspace, the explicitly disclosed official Claude Code platform payload closure, and the Bundled Python distributions. It is generated by \`scripts/gen-third-party-notices.ts\`, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Run \`pnpm run gen-third-party-notices\` after changing one of its inputs, or \`pnpm run verify-third-party-notices\` for the standalone check.
+This file lists **direct** dependencies declared by the workspace and the explicitly disclosed official Claude Code platform payload closure. It is generated by \`scripts/gen-third-party-notices.ts\`, and \`scripts/gen-third-party-notices.spec.ts\` asserts in the test lane that the committed bytes match. Run \`pnpm run gen-third-party-notices\` after changing one of its inputs, or \`pnpm run verify-third-party-notices\` for the standalone check.
 
-The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`. The Python SDK closure is recorded separately in [\`python/sdk/uv.lock\`](python/sdk/uv.lock).
+The complete npm transitive closure, including the Landlock launcher workspace, is recorded with exact pinned versions in [\`pnpm-lock.yaml\`](pnpm-lock.yaml) — inspect it with \`pnpm licenses list\`.
 
 ## Vendored source (\`vendor/\`)
 
@@ -789,17 +603,13 @@ ${vendored.map(row => `| \`${row.npmName}\` | \`${row.upstreamName}\` | [${row.s
 
 ## Runtime npm dependencies
 
-External packages installed for runtime use or distributed inside the prebuilt browser artifacts. Browser inputs are resolved through the shipping tsdown and Vite configurations, independently of npm dependency sections. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI, Web UI, and Python SDK runtime load by default.
+External packages installed for runtime use or distributed inside the prebuilt browser artifacts. Browser inputs are resolved through the shipping tsdown and Vite configurations, independently of npm dependency sections. The tier covers every plugin a user can mount from \`cordis.yml\` — not only what the \`dsh\` CLI and Web UI load by default.
 
 ${renderNpmTable(runtimeDeps)}
 
 pnpm applies local patches to the following packages at install time, so shipped artifacts carry modified copies; each patch file is the complete record of the modification:
 
 ${patchedLines.join('\n')}
-
-## Chrome DevTools frontend
-
-The optional experimental Inspector distributes a locally compiled copy of [chrome-devtools-frontend ${DEVTOOLS_NPM_VERSION}](https://www.npmjs.com/package/chrome-devtools-frontend/v/${DEVTOOLS_NPM_VERSION}), from upstream revision [${DEVTOOLS_SOURCE_REVISION}](https://chromium.googlesource.com/devtools/devtools-frontend/+/${DEVTOOLS_SOURCE_REVISION}). The build includes the Chromium [BSD-3-Clause license](packages/experimental/inspector/assets/devtools/LICENSE) and the third-party license and notice files supplied by the npm source. The Chromium root license does not replace those dependencies' licenses.
 
 ${renderClaudeDistribution(claudeDistribution)}
 ${kitRuntime ? `
@@ -816,23 +626,6 @@ External packages **directly declared** for development, tests, types, or toolin
 
 ${renderNpmTable(devDeps)}
 ${renderNonPermissiveNote(nonPermissiveDev)}
-## Python SDK dependencies (\`python/\`)
-
-Direct dependencies of the \`pyproject.toml\` manifests, plus \`uv\` as the development workflow tool.
-
-| Package | License | Role |
-| --- | --- | --- |
-${python.map(dep => `| [\`${dep.name}\`](${dep.repo}) | ${dep.license} | ${dep.role} |`).join('\n')}
-| [\`uv\`](https://github.com/astral-sh/uv) | MIT / Apache-2.0 | development workflow tool |
-
-## Bundled Python distributions
-
-The [shared runtime lock](scripts/primary-runtime/lock.json) records each distribution version and the wheel download hashes. The table includes every entry in \`pythonPackages\`, including transitive dependencies. Wheel extraction preserves distribution metadata and the license and notice files supplied by each archive. Project licenses below do not enumerate the separate licenses of native libraries bundled inside wheels.
-
-| Distribution | Locked version | Project license |
-| --- | --- | --- |
-${bundledPython.map(dep => `| [\`${dep.name}\`](${dep.repo}) | ${dep.version} | ${dep.license} |`).join('\n')}
-
 ## First-party native packages
 
 \`@deepseek-ai/node-addon-system\` (and its platform packages) is built and released from this repository under BSD 3-Clause. It is listed here for completeness; it is first-party, not third-party.

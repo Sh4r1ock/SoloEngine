@@ -150,8 +150,8 @@ Read these pages when the package-level contract is not enough. They move from t
 - [historical Subagent capability seam](../../../.agents/notes/archived/feature/2026-06-21-subagent-capability-seam.md) — the design record for the delegation capability family.
 - [Continuable subagents](../../../.agents/notes/implemented/feature/2026-07-28-continuable-subagent-conversations.md) — durable children that accept follow-up turns.
 - [In-process spawn backend](../subagent-spawn-in-process/README.md) — the simplest provider to compose.
-- [Auto review](../../experimental/auto-review/README.md) — the current-session authorization mode inherited only by in-process DSH children.
-- [Out-of-process ACP backend](../subagent-acp/README.md) — children with their own runtime over the Agent Client Protocol.
+- [Auto review](../../../bat/removed-20261031/packages/experimental/auto-review/README.md) — the current-session authorization mode inherited only by in-process DSH children.
+- [Out-of-process ACP backend](../../../bat/removed-20261031/packages/subagent-acp/README.md) — children with their own runtime over the Agent Client Protocol.
 - [DeepSeek input conversion](../../llm/llm-deepseek/README.md#model-experience) — provider replay rules for saved settlement notices.
 - [tool-subagent-control README](../tool-subagent-control/README.md) — the follow-up, interrupt, and listing surface.
 

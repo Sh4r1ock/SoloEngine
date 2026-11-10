@@ -37,18 +37,26 @@ function assertSupportedTarget(target) {
 
 /**
  * Return the mutable preparation and artifact directories owned by one release target.
+ *
+ * `DSH_DESKTOP_ARTIFACT_ROOT` publishes the finished artifacts under another root: a packaging
+ * run uses it to keep its installer and portable directory beside its own profile, so repeated
+ * builds never have to replace a directory another process (a running portable app, an editor)
+ * may hold open. Preparation directories stay under this target either way.
  * @param {'mac-arm64' | 'mac-x64' | 'win-x64'} target - Supported Desktop target name.
+ * @param {NodeJS.ProcessEnv} [env] - Packaging environment carrying the optional artifact root.
  * @returns {{ root: string, artifacts: string, unsignedArtifacts: string, unnotarizedArtifacts: string, runtime: string, packageSet: string, dsh: string, dshPnpm: string, electron: string, packedDsh: string, packedVendor: string, packedLandlock: string, downloads: string }} Target paths plus the shared immutable download cache.
  */
-export function desktopTargetBuildPaths(target) {
+export function desktopTargetBuildPaths(target, env = process.env) {
   assertSupportedTarget(target)
   const root = join(BUILD_ROOT, 'targets', target)
   const packed = join(root, 'packed')
+  const artifactRoot = env.DSH_DESKTOP_ARTIFACT_ROOT?.trim()
+  const published = artifactRoot === undefined || artifactRoot === '' ? root : resolve(artifactRoot)
   return {
     root,
-    artifacts: join(root, 'artifacts'),
-    unsignedArtifacts: join(root, 'unsigned-artifacts'),
-    unnotarizedArtifacts: join(root, 'unnotarized-artifacts'),
+    artifacts: join(published, 'artifacts'),
+    unsignedArtifacts: join(published, 'unsigned-artifacts'),
+    unnotarizedArtifacts: join(published, 'unnotarized-artifacts'),
     runtime: join(root, 'runtime'),
     packageSet: join(root, 'package-set'),
     dsh: join(root, 'dsh'),
@@ -87,7 +95,7 @@ export function resolveDesktopTargetBuildPaths(
   hostPlatform = process.platform,
   hostArch = process.arch,
 ) {
-  return desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch))
+  return desktopTargetBuildPaths(resolveDesktopBuildTarget(env, hostPlatform, hostArch), env)
 }
 
 /**

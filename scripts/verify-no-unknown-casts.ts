@@ -88,7 +88,7 @@ export function scanUnknownCasts(repoRoot: string): UnknownCast[] {
     if (stat?.isSymbolicLink()) throw new Error(`verify-no-unknown-casts: source symlink is unsupported: ${file}`)
     return stat?.isFile() === true
   })
-  for (const area of ['packages/', 'apps/', 'scripts/', 'website/']) {
+  for (const area of ['packages/', 'apps/', 'scripts/', 'soloengine-framework/']) {
     if (!present.some(file => file.startsWith(area))) {
       throw new Error(`verify-no-unknown-casts: source discovery omitted ${area}`)
     }

@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
-  "description": "Interactive shell tabs for the right Sidebar",
+  "description": "Line-oriented agent terminal tabs for the right Sidebar: attaches to the Session's platform terminals",
   "version": "0.2.1-rc.2",
   "publishConfig": {
     "access": "public"
@@ -29,10 +29,10 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-api-terminal-controller",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-theme",
         "@deepseek-ai/dsh-client-shortcuts"
       ],
       "platform": "web"
@@ -49,6 +49,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
@@ -58,18 +60,12 @@
     "@deepseek-ai/dsh-client-ui-session": "workspace:*",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-client-shortcuts": "workspace:*",
     "@testing-library/react": "^16.3.3",
     "react": "^18.2.0",
-    "clsx": "^2.0.0",
-    "react-dom": "^18.2.0",
-    "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
-    "@xterm/xterm": "^6.0.0",
-    "@xterm/addon-fit": "^0.11.0",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-theme": "workspace:*",
-    "@deepseek-ai/dsh-client-shortcuts": "workspace:*"
+    "react-dom": "^18.2.0"
   },
   "files": [
     "locale/*.json",

@@ -1,9 +1,13 @@
 /**
  * 编辑器（PRD-08 FR-OPS-006 / FR-OPS-007）。
  *
- * 文本 / 代码 / Markdown 走本编辑器：查看 + **编辑**（官方 documentpreview 是只读预览，
- * 「预览而非编辑」是官方明示限制，编辑能力是本插件补的增量）；保存写回项目目录，
- * 经操作区桥 `/soloengine/workspace/file`（沙箱根 realpath + 前缀 + loopback + mtime 冲突）。
+ * **查看**仍归官方 `ui-sidebar-documentpreview`（文本 / Office / Excel 各按官方渲染器）；
+ * 本包只补「编辑」这一个原生没有的新增能力，并以**独立的 tab 类型**（kind
+ * `soloengine-editor`，不认领任何地址模式）经官方文档动作座位显式打开——
+ * 普通打开文件仍落到官方只读预览，编辑不会被自动接管。
+ *
+ * 正文经原生 `workspaceFiles.read` 分页读全，保存经 `workspaceFiles.write` 整文件写回
+ * （工作区限定 + 版本乐观锁），前端不拼路径、不做磁盘判定。
  *
  * 变更装饰：与变更面板、消息区汇总条**同一事实源**——台账表 `file_changes`（经操作区桥
  * `/soloengine/changes` 读取）。行级标记由台账记录的 hunk 区间派生；`soloengine.followIntent`
@@ -14,88 +18,142 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import styles from './EditorView.module.css'
 import type { SoloengineEditorKey } from './locales.ts'
+import type { EditorWorkspace } from './workspace.ts'
 
-/** 操作区桥前缀。 */
-const BRIDGE = '/soloengine/workspace'
-
-/** 编辑器 props（文档面板 owner + session 作用域标准座位 + 本地化）。 */
+/** 编辑器 props（tab 记录座位 + 本地化 + 原生读写面）。 */
 export type EditorViewProps =
-  PropsRuntime<'sidebar.right.tab.document'>
+  PropsRuntime<'sidebar.right.pane.tab'>
   & PropsLocale<'soloengineEditor'>
+  & EditorWorkspace
 
-/** 桥错误码 → 本面板文案键（只列编辑器和解译器在这块面板上真能触达的码）。 */
+/** 最多读多少页：再长就按「未读全」处理，保存禁用而不是静默截断。 */
+const MAX_PAGES = 10
+
+/** 写回失败码 → 本面板文案键（只列编辑器在这块面板上真能触达的码）。 */
 const REASON_KEYS: Record<string, SoloengineEditorKey> = {
-  PATH_EXISTS: 'editor.errorExists',
-  FILE_NOT_FOUND: 'editor.errorNotFound',
-  PARENT_MISSING: 'editor.errorParentMissing',
-  WRITE_TOO_LARGE: 'editor.errorTooLarge',
-  OUT_OF_SANDBOX_ROOT: 'editor.errorForbidden',
-  LOOPBACK_ONLY: 'editor.errorForbidden',
-  UNTRUSTED: 'editor.errorForbidden',
-  PROJECT_MISSING: 'editor.errorNoProject',
-  SANDBOX_ROOT_MISSING: 'editor.errorNoProject',
-  SANDBOX_ROOT_REQUIRED: 'editor.errorNoProject',
+  'workspace-file/already-exists': 'editor.errorExists',
+  'workspace-file/stale-version': 'editor.conflict',
+  'workspace-file/not-found': 'editor.errorNotFound',
+  'workspace-file/parent-missing': 'editor.errorParentMissing',
+  'workspace-file/too-large': 'editor.errorTooLarge',
+  'workspace-file/denied': 'editor.errorForbidden',
+  'workspace-file/outside-workspace': 'editor.errorForbidden',
+  'workspace-file/symlink-refused': 'editor.errorForbidden',
+  'workspace-file/not-text': 'editor.errorNotText',
+  'gateway/lookup-not-found': 'editor.errorNoProject',
 }
 
 /**
- * 保存/读取失败句子：已知码给本地化原因，未知码回落服务端诊断，诊断也空则通用句。
- * 机器码（`HTTP_409`、`WRITE_TOO_LARGE`）与面向开发者的英文诊断句都不进用户可见层。
+ * 失败句子：已知码给本地化原因，未知码回落服务端诊断，诊断也空则通用句。
+ * 机器码与服务端英文诊断都不进用户可见层。
  */
-function failureMessage(code: string, message: string, status: number, t: EditorViewProps['t']): string {
-  if (status === 409) return t('editor.conflict')
-  const key = REASON_KEYS[code]
+function failureMessage(failure: RemoteFailure, t: EditorViewProps['t']): string {
+  const key = REASON_KEYS[failure.code]
   if (key !== undefined) return t(key)
-  return message === '' ? t('editor.errorUnknown') : message
+  return failure.message === '' ? t('editor.errorUnknown') : failure.message
+}
+
+/** 一次读全的结果。 */
+type Loaded =
+  | { readonly kind: 'ready'; readonly text: string; readonly version: string; readonly complete: boolean }
+  | { readonly kind: 'failed'; readonly failure: RemoteFailure }
+
+/**
+ * 分页读全一个文本文件。
+ * @param read - 原生行窗口读取。
+ * @param sessionId - 所属会话。
+ * @param path - 会话工作区内的路径。
+ * @returns 全文与版本；超过页上限时 `complete` 为 false。
+ */
+async function readAll(
+  read: EditorWorkspace['read'],
+  sessionId: EditorViewProps['sessionId'],
+  path: string,
+): Promise<Loaded> {
+  const parts: string[] = []
+  let offset = 1
+  let version = ''
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const result = await read(sessionId, path, offset)
+    if (!result.ok) return { kind: 'failed', failure: result.error }
+    version = result.value.version
+    if (result.value.lines > 0) parts.push(result.value.text)
+    if (result.value.eof) return { kind: 'ready', text: parts.join('\n'), version, complete: true }
+    offset += result.value.lines
+  }
+  return { kind: 'ready', text: parts.join('\n'), version, complete: false }
 }
 
 /**
  * 渲染可编辑文本视图。
- * @param props - 文档 owner 座位、session 作用域标准座位与本地化座位。
+ * @param props - tab 记录座位、本地化座位与原生读写面。
  * @returns 编辑器。
  */
-export function EditorView({ resourceAddress, content, wrap, sessionId, useProjection, t }: EditorViewProps) {
-  const address = parseFileAddress(resourceAddress)
+export function EditorView({ useTabInfo, sessionId, useProjection, stat, read, readBytes, write, t }: EditorViewProps) {
+  const { tab } = useTabInfo()
+  const address = parseFileAddress(tab.navigation.address)
   const path = address?.scope === 'session' ? address.path : undefined
-  const loaded = content.kind === 'text' ? content.text : ''
-  /**
-   * 平台给文档渲染器的 `text` 是**截至当前的分页前缀**（`eof` 才表示读全）。
-   * 保存是整文件写回（`PUT /file` 覆盖全文），前缀未读全时保存会把文件截断——
-   * 故未 `eof` 一律禁保存并说明原因，而不是让用户以为存了。
-   */
-  const complete = content.kind !== 'text' || content.eof
-  const [text, setText] = useState(loaded)
-  /**
-   * 「已保存基线」：初始是平台读到的内容，保存成功后是当前缓冲。
-   * 只用 `loaded` 比对的错误在于保存后平台并不会重读资源，`loaded` 仍是旧内容——
-   * 于是刚写盘成功的一刻界面还挂着「有未保存的改动」，而成功提示永远不出现。
-   */
-  const [savedText, setSavedText] = useState(loaded)
-  const [mtimeMs, setMtimeMs] = useState<number | null>(null)
+  const [text, setText] = useState('')
+  /** 「已保存基线」：读到的内容，保存成功后是当前缓冲。 */
+  const [savedText, setSavedText] = useState('')
+  /** 读到内容时的原生化版本（保存时作为乐观锁回传，冲突由 Host 判定）。 */
+  const [version, setVersion] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  /** 分页是否读全；未读全时整文件写回会把文件截断，故禁用保存。 */
+  const [complete, setComplete] = useState(true)
+  /** 原文件以换行结尾：行窗口契约不携带该事实，保存时补回（否则「未修改也产生 diff」）。 */
+  const [trailingNewline, setTrailingNewline] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'conflict' | 'error'>('idle')
   const [message, setMessage] = useState<string | null>(null)
   const intent = useProjection('soloengine.followIntent')
+  const generation = useRef(0)
 
-  useEffect(() => { setText(loaded); setSavedText(loaded) }, [loaded])
-
-  // 取当前 mtime 作为乐观锁版本（保存时回传，冲突由 Host 判定）。cancelledRef 防文件切换后旧响应覆盖。
-  useEffect(() => {
+  const load = useCallback(async (): Promise<void> => {
     if (path === undefined) return
-    const cancelledRef = { current: false }
-    void (async () => {
-      try {
-        const response = await fetch(`${BRIDGE}/stat?sessionKey=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`, { credentials: 'same-origin' })
-        const body = await response.json() as { ok?: boolean; stat?: { mtimeMs?: number | null } }
-        if (!cancelledRef.current && body.ok === true) setMtimeMs(body.stat?.mtimeMs ?? null)
-      } catch {
-        // stat 失败不阻断编辑：保存时以缺省 mtime 走（Host 仍会做沙箱根与存在性校验）。
+    const current = generation.current + 1
+    generation.current = current
+    setStatus('idle')
+    setMessage(null)
+    try {
+      const result = await readAll(read, sessionId, path)
+      if (current !== generation.current) return
+      if (result.kind === 'failed') {
+        setLoaded(false)
+        setMessage(failureMessage(result.failure, t))
+        return
       }
-    })()
-    return () => { cancelledRef.current = true }
-  }, [path, sessionId])
+      setText(result.text)
+      setSavedText(result.text)
+      setVersion(result.version)
+      setComplete(result.complete)
+      // 行窗口把末尾换行当作「终止最后一行的终止符」丢掉；用最后一个字节补回这一事实。
+      let endsWithNewline = false
+      if (result.complete) {
+        const info = await stat(sessionId, path)
+        const bytes = info.ok ? info.value.bytes ?? 0 : 0
+        if (bytes > 0) {
+          const last = await readBytes(sessionId, path, bytes - 1, 1)
+          if (last.ok && last.value.data.length > 0) endsWithNewline = last.value.data[0] === 0x0a
+        }
+      }
+      if (current !== generation.current) return
+      setTrailingNewline(endsWithNewline)
+      setLoaded(true)
+    } catch (failure) {
+      if (current !== generation.current) return
+      setLoaded(false)
+      setMessage(failure instanceof TypeError
+        ? t('editor.errorNetwork')
+        : failure instanceof Error && failure.message !== '' ? failure.message : t('editor.errorUnknown'))
+    }
+  }, [path, read, readBytes, sessionId, stat, t])
+
+  useEffect(() => { void load() }, [load])
 
   /** agent 改过的行（变更装饰的同一事实源：台账 `file_changes` 的 hunk 区间）。 */
   const [decoratedLines, setDecoratedLines] = useState<ReadonlySet<number>>(new Set<number>())
@@ -141,24 +199,14 @@ export function EditorView({ resourceAddress, content, wrap, sessionId, useProje
     savingRef.current = true
     setStatus('saving')
     try {
-      const response = await fetch(`${BRIDGE}/file`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          sessionKey: sessionId,
-          path,
-          text,
-          ...mtimeMs === null ? {} : { expectedMtimeMs: mtimeMs },
-        }),
-        credentials: 'same-origin',
-      })
-      const body = await response.json() as { ok?: boolean; result?: { mtimeMs?: number }; error?: { code?: string; message?: string } }
-      if (response.status === 409 || body.ok !== true) {
-        setStatus(response.status === 409 ? 'conflict' : 'error')
-        setMessage(failureMessage(body.error?.code ?? '', body.error?.message ?? '', response.status, t))
+      const content = trailingNewline ? `${text}\n` : text
+      const result = await write(sessionId, path, content, version ?? undefined)
+      if (!result.ok) {
+        setStatus(result.error.code === 'workspace-file/stale-version' ? 'conflict' : 'error')
+        setMessage(failureMessage(result.error, t))
         return
       }
-      setMtimeMs(body.result?.mtimeMs ?? null)
+      setVersion(result.value.version)
       setSavedText(text)
       setStatus('saved')
       setMessage(null)
@@ -170,7 +218,7 @@ export function EditorView({ resourceAddress, content, wrap, sessionId, useProje
     } finally {
       savingRef.current = false
     }
-  }, [path, complete, sessionId, text, mtimeMs, t])
+  }, [path, complete, sessionId, text, trailingNewline, version, write, t])
 
   const lines = text.split('\n')
   const gutterRef = useRef<HTMLDivElement>(null)
@@ -179,15 +227,19 @@ export function EditorView({ resourceAddress, content, wrap, sessionId, useProje
     const gutter = gutterRef.current
     if (gutter !== null) gutter.scrollTop = event.currentTarget.scrollTop
   }, [])
+  const readonly = path === undefined || !loaded
   return (
     <div className={styles.root}>
       <div className={styles.toolbar}>
-        <span className={styles.path}>{path ?? resourceAddress}</span>
+        <span className={styles.path}>{path ?? tab.navigation.address}</span>
         {text !== savedText ? <span className={styles.dirty}>{t('editor.dirty')}</span> : null}
+        <Button size="sm" variant="ghost" onClick={() => { void load() }} disabled={readonly}>
+          {t('editor.reload')}
+        </Button>
         <Button
           size="sm"
           variant="outline"
-          disabled={status === 'saving' || path === undefined || !complete}
+          disabled={status === 'saving' || readonly || !complete}
           title={path === undefined ? t('editor.outsideWorkspace') : complete ? undefined : t('editor.incomplete')}
           onClick={() => { void save() }}
         >
@@ -203,7 +255,7 @@ export function EditorView({ resourceAddress, content, wrap, sessionId, useProje
            一条逻辑行撑成多个视觉行，实测两侧 top 完全不动（沟 116/137/158/179 恒定），行号与
            「本行被改过」标记会一起指错行。错号比无号更坏，故换行档直接收起本列（它是 aria-hidden
            的装饰列，改动信息在变更面板里仍是权威来源）。 */}
-        {wrap ? null : (
+        {readonly ? null : (
           <div ref={gutterRef} className={styles.gutter} aria-hidden="true">
             {lines.map((_line, index) => (
               <div key={index} className={decoratedLines.has(index + 1) ? `${styles.gutterLine} ${styles.gutterChanged}` : styles.gutterLine}>
@@ -214,9 +266,9 @@ export function EditorView({ resourceAddress, content, wrap, sessionId, useProje
         )}
         <textarea
           className={styles.editor}
-          data-wrap={String(wrap)}
+          data-wrap="false"
           aria-label={path === undefined ? t('editor.textAriaReadonly') : t('editor.textAria', { path })}
-          readOnly={path === undefined}
+          readOnly={readonly}
           value={text}
           spellCheck={false}
           onChange={(event) => { setText(event.target.value); setStatus('idle') }}

@@ -122,6 +122,25 @@ export interface WorkspaceDirectoryListing {
   readonly truncated: boolean
 }
 
+/** Guards for one human-driven file write inside the workspace. */
+export interface WorkspaceFileWriteOptions {
+  /** Refuse an existing target instead of replacing it. */
+  readonly createOnly?: boolean
+  /**
+   * Refuse the write unless the file is still at this version, as returned by
+   * {@link WorkspaceFileStat.version} or a previous write.
+   */
+  readonly expectedVersion?: string
+}
+
+/** One completed workspace mutation, named in both path vocabularies. */
+export interface WorkspaceMutationResult {
+  /** Absolute path of the target in the filesystem's execution world. */
+  readonly absolutePath: string
+  /** Whether the target is a directory after the mutation. */
+  readonly type: 'file' | 'directory'
+}
+
 /**
  * Current target metadata after a filesystem invalidation. File consumers may
  * ignore an already known version; directory consumers relist on every frame
@@ -172,5 +191,20 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly path: string
       readonly kind: 'file' | 'symlink' | 'other'
     }
+    /** A create was refused because the target already exists. */
+    'workspace-file/already-exists': { readonly path: string }
+    /** A guarded write found the file changed since the caller read it. */
+    'workspace-file/stale-version': { readonly path: string }
+    /** The mutation's parent directory is absent or is not a directory. */
+    'workspace-file/parent-missing': { readonly path: string }
+    /** The target is a symbolic link, which mutations refuse to follow. */
+    'workspace-file/symlink-refused': { readonly path: string }
+    /** The backend's policy or file permissions refused the mutation. */
+    'workspace-file/denied': {
+      readonly path: string
+      readonly reason: 'permission' | 'sandbox'
+    }
+    /** The backend failed the mutation for any other reason; the message carries its diagnosis. */
+    'workspace-file/write-failed': { readonly path: string }
   }
 }

@@ -1,0 +1,36 @@
+{
+  "name": "@soloengine/session-query-postgres",
+  "version": "0.1.0",
+  "description": "SoloEngine 的 PostgreSQL 会话检索后端：在同一个 PG 库的 search schema 里维护可丢弃派生索引，与 SQLite 检索后端同契约、可整组替换。",
+  "private": true,
+  "type": "module",
+  "main": "lib/types/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/types/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "pg": "8.13.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@types/node": "^22.20.0",
+    "@types/pg": "8.11.10"
+  }
+}

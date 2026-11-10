@@ -1,6 +1,6 @@
 /** Resolve public release identifiers supplied by the packaging environment. */
 
-/** Environment variable that supplies the Electron application identifier. */
+/** Environment variable that supplies the SoloEngine desktop application identifier. */
 export const DESKTOP_APP_ID_ENV = 'DSH_DESKTOP_APP_ID'
 
 /** Environment variable that supplies electron-builder's macOS certificate qualifier. */
@@ -56,9 +56,9 @@ export function resolveNpmRegistry(env) {
 }
 
 /**
- * Resolve and validate the application identifier shared by every platform target.
+ * Resolve and validate the SoloEngine application identifier shared by every platform target.
  * @param {NodeJS.ProcessEnv} env - Packaging environment.
- * @returns {string} Reverse-DNS application identifier.
+ * @returns {string} Reverse-DNS application identifier; the release examples use `com.soloengine.desktop`.
  */
 export function resolveDesktopAppId(env) {
   const appId = requireEnvironmentValue(env, DESKTOP_APP_ID_ENV)

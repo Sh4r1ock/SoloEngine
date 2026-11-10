@@ -27,7 +27,8 @@ import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
 import { ApiSessionList } from './list.ts'
-import { buildModelCatalog, hasProviderApiKey } from './catalog.ts'
+import { buildModelCatalog, filterModelCatalogRoutes, hasProviderApiKey } from './catalog.ts'
+import { sessionScopeOf } from './scope.ts'
 import { installModelSelectionProjection } from './model-selection-projection.ts'
 import { SessionSkillCatalog } from './skill-catalog.ts'
 import { SessionMediaReferences } from './media-references.ts'
@@ -275,21 +276,31 @@ export class SessionController extends TypertRemoteService {
   @Remote('list')
   async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     const items = await this.listState.list(signal)
-    return { items: items.filter(item => this.ctx.remoteAccess.allows({ kind: 'session', id: item.sessionId })) }
+    const scope = await sessionScopeOf(this.ctx)
+    return {
+      items: items.filter(item => (scope.owned === undefined || scope.owned.has(item.sessionId))
+        && this.ctx.remoteAccess.allows({ kind: 'session', id: item.sessionId })),
+    }
   }
 
   /**
    * Search visible Session content without resuming an Agent. A non-owner
    * receives only the hits whose Session `allows()` admits; `hasMore`
-   * describes the bounded result before that filtering.
+   * describes the bounded result before that filtering. A connection bound to
+   * a product account searches and returns only that account's Sessions.
    * @param request - literal message-content query.
    * @param signal - cancellation for list and search reads.
    * @returns authorized bounded Session search results.
    */
   @Remote('search')
   async search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue> {
-    const result = await this.listState.search(request.query, signal)
-    return { ...result, items: result.items.filter(item => this.ctx.remoteAccess.allows({ kind: 'session', id: item.sessionId })) }
+    const scope = await sessionScopeOf(this.ctx)
+    const result = await this.listState.search(request.query, signal, scope.owned)
+    return {
+      ...result,
+      items: result.items.filter(item => (scope.owned === undefined || scope.owned.has(item.sessionId))
+        && this.ctx.remoteAccess.allows({ kind: 'session', id: item.sessionId })),
+    }
   }
 
   /**
@@ -335,8 +346,10 @@ export class SessionController extends TypertRemoteService {
    * @returns provider-grouped models, the deployment default, and isolated provider failures.
    */
   @Remote('modelCatalog')
-  modelCatalog(): Promise<ModelCatalog> {
-    return buildModelCatalog(this.ctx)
+  async modelCatalog(): Promise<ModelCatalog> {
+    const catalog = await buildModelCatalog(this.ctx)
+    const scope = await sessionScopeOf(this.ctx)
+    return filterModelCatalogRoutes(catalog, scope.modelRoutes)
   }
 
   /**
@@ -592,12 +605,17 @@ export class SessionController extends TypertRemoteService {
 
   /**
    * Stream a complete live-control baseline followed by replacement frames.
+   * A connection bound to a product account receives only its own Sessions'
+   * projections.
    * @param signal - cancellation owned by the Remote stream carrier.
    * @returns one complete baseline followed by live replacement frames.
    */
   @Remote({ mode: 'stream' })
   async *control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
-    for await (const frame of this.controlState.control(signal)) {
+    const allowed = sessionScopeOf(this.ctx).then(scope => scope.owned === undefined
+      ? undefined
+      : (sessionId: SessionId): Promise<boolean> => scope.owns(sessionId))
+    for await (const frame of this.controlState.control(signal, allowed)) {
       switch (frame.type) {
         case 'baseline': {
           const projections = Object.fromEntries(Object.entries(frame.value.projections)

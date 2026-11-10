@@ -1,57 +1,149 @@
-/* 应用外壳：左侧栏导航 + 内容区 + 底部主题/语言切换。 */
+/* 应用外壳：左侧栏（280 / 折叠 56）+ 48px 顶栏 + 内容列（1120 / 1240）。
+ *
+ * 数值来自 `需求文档-20261018.md` §12.2 与设计参考 `design-spec.md` §3.1/§4：
+ * 侧栏 280、折叠轨 56、品牌区 56、导航项 36、顶栏 48、发丝线 0.5px。
+ */
 
 .shell {
   display: grid;
-  grid-template-columns: 216px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
+}
+
+.shell[data-collapsed] {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+/* 跳转链接：DOM 首个可聚焦元素，默认移出视口，键盘聚焦时落到左上角。 */
+.skip {
+  position: fixed;
+  top: var(--se-space-2);
+  left: var(--se-space-2);
+  z-index: var(--se-z-portal);
+  padding: var(--se-space-2) var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  transform: translateY(-150%);
+  transition: transform var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.skip:focus-visible {
+  transform: translateY(0);
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background-color: var(--dsw-specific-sidebar-fill);
-  border-right: 0.5px solid var(--dsw-alias-border-l2);
+  min-width: 0;
+  /* 原型：浅色侧栏与页面同底（layer-1 浅色即白），靠 0.5px 发丝线分界；深色
+     侧栏抬到 raised 面（#313236），当前项再用 subtle 面（#27292c）形成明度差（§12.2）。 */
+  background-color: var(--dsw-alias-bg-layer-1);
+  border-right: 0.5px solid var(--se-hairline);
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: var(--se-space-2);
-  padding: var(--se-space-4);
+  width: 100%;
+  min-height: 56px;
+  flex: 0 0 56px;
+  padding: 0 var(--se-space-4);
+  border: 0;
+  background-color: transparent;
   color: var(--dsw-alias-brand-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.brandWords {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
 }
 
 .brandText {
-  font: var(--dsw-font-base-strong-16);
+  /* Montserrat 只用于品牌与展示文字（设计参考 §4.2）。 */
+  font-family: var(--dsw-font-family-brand);
+  font-size: 14px;
+  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 品牌副行：原型 `sidebar__tag`，等宽 12/20 三级色（design-spec §4.2 最低字号）。 */
+.brandTag {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1);
-  padding: var(--se-space-2) var(--se-space-3);
+  padding: var(--se-space-2) var(--se-space-3) var(--se-space-4);
   overflow-y: auto;
   flex: 1 1 auto;
   min-height: 0;
 }
 
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  /* 原型 `shell.css` 的 `.nav-group` 行间无间隙（导航项 36px 相邻），故取阶梯 0；
+     此前的 2px 是阶梯外的散值。 */
+  gap: var(--se-space-0);
+}
+
+.navGroupDivided {
+  margin-top: var(--se-space-4);
+  padding-top: var(--se-space-3);
+  border-top: 0.5px solid var(--se-hairline-faint);
+}
+
+.groupLabel {
+  padding: var(--se-space-1) var(--se-space-3) var(--se-space-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .navItem {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--se-space-2);
-  padding: var(--se-space-2) var(--se-space-3);
+  min-height: 36px;
+  padding: 0 var(--se-space-3);
   border: 0;
   border-radius: var(--se-radius-sm);
   background-color: transparent;
   color: var(--dsw-alias-label-secondary);
-  font: var(--dsw-font-s-14);
-  font-size: var(--dsh-content-font-size, 14px);
+  font: var(--se-font-body);
+  font-size: 13px;
+  line-height: 22px;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out),
-    color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
 }
 
 .navItem:hover {
@@ -60,48 +152,222 @@
 }
 
 .navItemActive {
-  background-color: var(--dsw-specific-sidebar-nav-item-active);
+  /* 原型 `--bg-subtle`：与页面底形成一档表面明度差，深浅色都由平台 token 提供。 */
+  background-color: var(--dsw-alias-bg-module-platform);
   color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.navItemActive .navIcon {
+  color: var(--se-accent-text);
+}
+
+/* 当前项圆点位置与直径按原型 shell.css:136-146（right 10 / 5px）。 */
+.navItemActive::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+/* 折叠轨：圆点缩小并贴右 4px（原型 shell.css:288-292）。 */
+.shell[data-collapsed] .navItemActive::after {
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+}
+
+.navItem:focus-visible,
+.collapse:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.navIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: inherit;
+}
+
+/* 原型 `.nav-item .icon` 为 17px；DSH 图标按 1em 渲染，统一在此放大。 */
+.navIcon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.navLabel {
+  overflow: hidden;
 }
 
 .footer {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-3);
-  padding: var(--se-space-3);
-  border-top: 0.5px solid var(--dsw-alias-border-l2);
-}
-
-.footerGroup {
-  display: flex;
-  flex-direction: column;
   gap: var(--se-space-2);
+  padding: var(--se-space-3);
+  border-top: 0.5px solid var(--se-hairline);
 }
 
-.footerLabel {
-  font: var(--dsw-font-xxs-strong-12);
-  /* label-caption 在浅色侧栏上仅 2.04:1（WCAG 1.4.3 需 4.5:1）；label-secondary 浅 5.55 / 深 11.43 双模式达标。 */
-  color: var(--dsw-alias-label-secondary);
+/* 侧栏主题项：原型 `sidebar-theme`，整行 28px、图标 + 档位文案。 */
+.footerTheme {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--se-space-2);
+  padding: 0 var(--se-space-2);
+  border: 0;
 }
 
 .footerRow {
-  display: flex;
-  align-items: center;
-  gap: var(--se-space-1);
-  flex-wrap: wrap;
-}
-
-.userRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--se-space-2);
 }
 
-.userName {
-  font: var(--dsw-font-xs-strong-13);
+.footerHint {
+  font-size: 12px;
+  line-height: 20px;
   color: var(--dsw-alias-label-secondary);
-  overflow-wrap: anywhere;
+}
+
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  min-width: 0;
+  padding: var(--se-space-1) var(--se-space-1) var(--se-space-2);
+  border-radius: var(--se-radius-sm);
+}
+
+.userRow:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+}
+
+.userIdentity {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.userMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 原型 base.css 全局 border-box：28px 是含 0.5px 描边的总尺寸（实测缺省会到 30）。 */
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border-radius: var(--se-radius-full);
+  border: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-static-neutral-bluish-50);
+  /* 头像底是静态浅色（两主题都是 bluish-50），字母固定取墨色；跟随主题的主标签色
+     在深色会变白，与底同色（对比 1.00）。 */
+  color: var(--dsw-static-neutral-bluish-1000);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+  overflow: hidden;
+}
+
+/* 原型 `avatar--ink`：墨底反白，与页面头像（浅底）区分。 */
+.avatarInk {
+  border-color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+/* 顶栏头像是可点按钮（进入账户设置）。 */
+.avatarButton {
+  cursor: pointer;
+}
+
+.avatarButton:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 2px;
+}
+
+.userName {
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.userRole {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 原型 `sidebar-user__logout`：悬停/聚焦整行前透明，窄屏常显。 */
+.logout {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--se-radius-sm);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--se-duration-fast) var(--se-ease-standard),
+    background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.userRow:hover .logout,
+.userRow:focus-within .logout {
+  opacity: 1;
+}
+
+.logout:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.logout:focus-visible,
+.footerTheme:focus-visible,
+.userIdentity:focus-visible,
+.topbarLink:focus-visible,
+.brand:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
 }
 
 .main {
@@ -110,6 +376,133 @@
   min-width: 0;
   min-height: 0;
   background-color: var(--dsw-alias-bg-base);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--se-z-pane);
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0 var(--se-space-4);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  /* 原型 shell.css:345-347 的 -4px：图标与内容列左缘光学对齐。 */
+  margin-left: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--se-radius-sm);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.collapse:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.collapse:active {
+  background-color: var(--dsw-alias-interactive-bg-active);
+}
+
+.breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.breadcrumbRoot {
+  flex: none;
+}
+
+.breadcrumbSep {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.breadcrumbCurrent {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbarActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  margin-left: auto;
+  min-width: 0;
+}
+
+/* 原型 `topbar__link`：28px 行高、图标 + 12/20 文案，悬停才出现底色。 */
+.topbarLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  height: 28px;
+  padding: 0 var(--se-space-2);
+  border: 0;
+  border-radius: var(--se-radius-sm);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.topbarLink:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.previewBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  margin-right: var(--se-space-1);
+  padding: 0 var(--se-space-2);
+  height: 22px;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-full);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.previewDot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+  flex: none;
 }
 
 .mainScroll {
@@ -125,8 +518,152 @@
   min-height: 0;
 }
 
+/* 跳转目标是内容容器而非可操作控件：聚焦只负责把阅读位置移进来，不再画整块外环。 */
+.mainScroll:focus-visible,
+.mainBleed:focus-visible {
+  outline: none;
+}
+
+/* 内容列只负责限宽与高度；页面内边距归 `.page`（需求 §12.2：左右 32/移动端 16）。
+   `height: 100%` 让页面自身成为滚动容器，sticky 分区导航与滚动高亮才能绑定在真正
+   滚动的元素上（此前 `.content` 与 `.page` 各带一层横向 padding，正文列被压到 1056 以内）。
+   限宽是「内容列 + 两侧 32」：1120 与 1240 指 `.page` 的内宽，padding 在其外侧，
+   否则画布列表阅读列只剩 732，低于 §12.2 要求的 760–800。 */
+.content {
+  max-width: calc(1120px + var(--se-space-6) * 2);
+  margin: 0 auto;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.content[data-width='wide'] {
+  max-width: calc(1240px + var(--se-space-6) * 2);
+}
+
+/* 折叠态：只留图标与 tooltip；主题文案与用户元信息收起，仅保留头像。 */
+.shell[data-collapsed] .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.shell[data-collapsed] .brandWords,
+.shell[data-collapsed] .groupLabel,
+.shell[data-collapsed] .navLabel,
+.shell[data-collapsed] .footerHint,
+.shell[data-collapsed] .userMeta {
+  display: none;
+}
+
+.shell[data-collapsed] .nav {
+  padding: var(--se-space-2) var(--se-space-3) var(--se-space-4);
+}
+
+.shell[data-collapsed] .navGroupDivided {
+  margin-top: var(--se-space-3);
+  padding-top: var(--se-space-3);
+}
+
+.shell[data-collapsed] .navItem {
+  justify-content: center;
+  padding: 0;
+}
+
+/* 折叠轨当前项蓝点：只收右偏移，垂直仍按基线的 top 50% 居中（原型 is-rail 同样保留居中）。 */
+.shell[data-collapsed] .navItemActive::after {
+  right: 4px;
+}
+
+.shell[data-collapsed] .footer {
+  padding: var(--se-space-2) var(--se-space-3);
+  align-items: center;
+}
+
+/* 原型 `.app.is-rail .sidebar-theme` / `.sidebar-user`：折叠轨内整行居中、去掉行内边距，
+   用户行固定 36px（28px 头像在 24px 内宽里会溢出 4px）。 */
+.shell[data-collapsed] .footerTheme {
+  justify-content: center;
+  padding: 0;
+}
+
+.shell[data-collapsed] .footerRow {
+  display: none;
+}
+
+/* 折叠轨保留登出图标：桌面端折叠后这是唯一入口，不能再随文案一起隐藏。 */
+.shell[data-collapsed] .userRow {
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--se-space-1);
+  padding: 0;
+  height: auto;
+}
+
+.shell[data-collapsed] .logout {
+  opacity: 1;
+}
+
+.shell[data-collapsed] .userIdentity {
+  justify-content: center;
+}
+
+/* 窄屏（≤960）：侧栏从左侧滑出为抽屉，点击遮罩或 Esc 关闭（设计参考 docs/02 §3、§7）。 */
+.shell[data-narrow] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell[data-narrow] .sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 280px;
+  z-index: var(--se-z-overlay);
+  transform: translateX(-100%);
+  box-shadow: var(--se-shadow-drawer);
+  transition: transform var(--se-duration-base) var(--se-ease-out);
+}
+
+.shell[data-narrow] .sidebar[data-open] {
+  transform: none;
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--se-z-overlay) - 1);
+  padding: 0;
+  border: 0;
+  background-color: var(--se-scrim);
+  cursor: pointer;
+}
+
+@media (max-width: 960px) {
+  .previewBadge {
+    display: none;
+  }
+
+  /* 抽屉态没有悬停余地：登出常显（原型 §Responsive）。 */
+  .logout {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    padding: 0 var(--se-space-2);
+  }
+
+  .breadcrumbRoot,
+  .breadcrumbSep,
+  .topbarLink {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .navItem {
+  .navItem,
+  .collapse {
     transition: none;
   }
 }

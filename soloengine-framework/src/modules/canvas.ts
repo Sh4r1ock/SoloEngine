@@ -10,7 +10,7 @@
  */
 
 import { existsSync, mkdirSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, normalize, resolve, sep } from 'node:path'
+import { isAbsolute, basename, dirname, join, normalize, resolve, sep } from 'node:path'
 import type { BusinessDatabase } from '../db/port.ts'
 import { newId } from '../auth/index.ts'
 import type { FrameworkRuntime } from '../runtime.ts'
@@ -19,6 +19,14 @@ import { BUILTIN_ROLE_PRESETS } from '@soloengine/types'
 import type { AgentRolePreset, CanvasNodeKind } from '@soloengine/types'
 import { compileCanvas, CompileError } from '@soloengine/agent-compiler'
 import { FrameworkError } from './accounts.ts'
+
+/** 节点级采样参数：只保留有真实请求消费者的字段；undefined 表示未设置（JSON 不写键）。 */
+export interface NodeSampling {
+  temperature?: number
+  max_tokens?: number
+  /** 该节点每个回合允许的工具调用次数上限（与模型配置的工具轮次上限同一口径）。 */
+  max_tool_calls?: number
+}
 
 /** 画布节点（PRD-02 §9 数据契约）：只有 agent 与 note 两种，角色是模板引用。 */
 export interface CanvasNode {
@@ -35,6 +43,8 @@ export interface CanvasNode {
   mcp_servers?: string[]
   /** 节点级插件：只挂进该节点对应的 agent 作用域（流程级插件不在这里）。 */
   plugins?: NodePluginRow[]
+  /** 节点级采样参数（编译期写入该 agent 的请求配置）。 */
+  sampling?: NodeSampling
   position: { x: number; y: number }
 }
 
@@ -146,6 +156,29 @@ export interface CanvasView extends Omit<CanvasRow, 'canvas_data' | 'is_template
   canvas: CanvasData
   is_template: boolean
   is_active: boolean
+  /**
+   * 列表视图专用：该行 `canvas_data` 损坏时给出原因（此时 `canvas` 为空画布占位）。
+   * 单张读取仍按 422 `CANVAS_DATA_CORRUPT` 明确报错，不做静默降级。
+   */
+  canvas_error?: { code: string; message: string }
+}
+
+/**
+ * 解析一个可能不存在的目录：最近的存在祖先做 realpath，缺失后缀按字面拼回。
+ * @param target - 规范化后的绝对路径。
+ * @returns 真实落盘路径（缺失部分按字面拼接）。
+ */
+function resolveThroughExistingAncestor(target: string): string {
+  let ancestor = target
+  const suffix: string[] = []
+  while (!existsSync(ancestor)) {
+    const parent = dirname(ancestor)
+    if (parent === ancestor) break
+    suffix.unshift(basename(ancestor))
+    ancestor = parent
+  }
+  const real = realpathSync(ancestor)
+  return suffix.length === 0 ? real : join(real, ...suffix)
 }
 
 /** 画布与运行项目服务。 */
@@ -293,8 +326,13 @@ export class CanvasService {
     }
   }
 
-  /** 行 → 视图。 */
-  view(row: CanvasRow): CanvasView {
+  /**
+   * 行 → 视图。
+   * @param row - 画布行。
+   * @param options.tolerant - 列表场景：单行数据损坏不拖垮整页，改以 `canvas_error` 标出该行。
+   * @returns 画布视图。
+   */
+  view(row: CanvasRow, options?: { tolerant?: boolean }): CanvasView {
     const { canvas_data, is_template, is_active, tags, ...rest } = row
     let parsedTags: string[] = []
     if (tags !== null && tags !== '') {
@@ -305,10 +343,23 @@ export class CanvasService {
         parsedTags = []
       }
     }
+    let canvas: CanvasData
+    let canvasError: { code: string; message: string } | undefined
+    try {
+      canvas = CanvasService.parseCanvas(canvas_data, row.id)
+    } catch (error) {
+      if (options?.tolerant !== true) throw error
+      canvas = CanvasService.emptyCanvas()
+      canvasError = {
+        code: error instanceof FrameworkError ? error.code : 'CANVAS_DATA_CORRUPT',
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
     return {
       ...rest,
       tags: parsedTags,
-      canvas: CanvasService.parseCanvas(canvas_data, row.id),
+      canvas,
+      ...(canvasError === undefined ? {} : { canvas_error: canvasError }),
       is_template: is_template === 1,
       is_active: is_active === 1,
     }
@@ -424,6 +475,7 @@ export class CanvasService {
     tags?: string[]
     canvas?: CanvasData
     is_active?: boolean
+    is_template?: boolean
     version?: number
   }): Promise<CanvasView> {
     const row = await this.byId(userId, id)
@@ -451,10 +503,18 @@ export class CanvasService {
       set('canvas_data', JSON.stringify(canvas))
     }
     if (patch.is_active !== undefined) set('is_active', patch.is_active ? 1 : 0)
+    if (patch.is_template !== undefined) set('is_template', patch.is_template ? 1 : 0)
     set('updated_at', now)
     assignments.push('version = version + 1')
-    values.push(id, userId)
-    await this.db.prepare(`UPDATE agentic_flows SET ${assignments.join(', ')} WHERE id = ? AND user_id = ?`).run(...values)
+    values.push(id, userId, Number(patch.version))
+    // 版本条件必须进 UPDATE：预检与写入之间可能有并发提交（先查后写会双双通过）。
+    const updated = await this.db.prepare(
+      `UPDATE agentic_flows SET ${assignments.join(', ')} WHERE id = ? AND user_id = ? AND version = ?`,
+    ).run(...values)
+    if (updated.changes !== 1) {
+      throw new FrameworkError(409, 'VERSION_CONFLICT',
+        `canvas ${id} was modified concurrently; refresh and retry`)
+    }
     return this.view(await this.byId(userId, id) as CanvasRow)
   }
 
@@ -471,6 +531,15 @@ export class CanvasService {
     if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${id} not found`)
     if (row.user_id !== userId) throw new FrameworkError(403, 'CANVAS_READONLY', 'templates owned by others are read-only')
     const result = await this.runtime.db.transaction(async tx => {
+      // 其他用户用这张画布建过运行项目（模板场景）：删画布既违反外键（会话引用项目），
+      // 也会连带夺走别人的数据。明确拒绝，要求先由对方移除项目。
+      const foreign = await tx.prepare(
+        'SELECT COUNT(*) AS c FROM run_projects WHERE agentic_flow_id = ? AND user_id <> ?',
+      ).get<{ c: number }>(id, userId)
+      if ((foreign?.c ?? 0) > 0) {
+        throw new FrameworkError(409, 'CANVAS_IN_USE',
+          `canvas ${id} is used by ${String(foreign?.c)} run project(s) owned by other users; it cannot be deleted`)
+      }
       // 只级联删除**当前用户**的运行项目：模板画布可能被其他用户用作运行项目，
       // 删除模板不能连带删除别人的项目、会话与变更台账。
       const projects = await tx.prepare('SELECT id FROM run_projects WHERE agentic_flow_id = ? AND user_id = ?')
@@ -489,7 +558,7 @@ export class CanvasService {
         await tx.prepare('DELETE FROM file_changes WHERE session_id IN (SELECT session_key FROM sessions WHERE run_project_id = ?)').run(project.id)
         await tx.prepare('DELETE FROM sessions WHERE run_project_id = ?').run(project.id)
       }
-      await tx.prepare('DELETE FROM run_projects WHERE agentic_flow_id = ?').run(id)
+      await tx.prepare('DELETE FROM run_projects WHERE agentic_flow_id = ? AND user_id = ?').run(id, userId)
       await tx.prepare('DELETE FROM agentic_flows WHERE id = ? AND user_id = ?').run(id, userId)
       return { removedProjects: projects.length, removedSessions: sessionKeys.length, sessionKeys }
     })
@@ -570,21 +639,23 @@ export class CanvasService {
       throw new FrameworkError(400, 'FOLDER_NOT_ABSOLUTE', `folder_path must be absolute, got ${JSON.stringify(raw)}`)
     }
     const candidate = normalize(resolve(raw))
-    if (existsSync(candidate)) {
-      if (!statSync(candidate).isDirectory()) {
-        throw new FrameworkError(400, 'FOLDER_NOT_DIRECTORY', `folder_path ${candidate} is not a directory`)
-      }
-    } else {
-      // 沙箱根在首次使用时创建（与「先选目录再运行」同一结果；路径归属仍按下面同一套判据）。
-      mkdirSync(candidate, { recursive: true })
+    if (existsSync(candidate) && !statSync(candidate).isDirectory()) {
+      throw new FrameworkError(400, 'FOLDER_NOT_DIRECTORY', `folder_path ${candidate} is not a directory`)
     }
-    const real = normalize(realpathSync(candidate))
+    // 目标可能尚不存在：按最近的存在祖先解析真实路径，缺失后缀按字面拼回。
+    // 必须在建目录**之前**完成归属判定——先建再拒会在越界位置留下目录（写放大 + 可探测）。
+    const real = normalize(resolveThroughExistingAncestor(candidate))
     const user = await this.runtime.accounts.byId(userId)
     if (user === undefined) throw new FrameworkError(404, 'USER_NOT_FOUND', `user ${userId} not found`)
+    // Windows 盘符/目录大小写不参与路径含义：只在比较键上折叠大小写（返回值保持真实路径）。
+    const fold = process.platform === 'win32'
+      ? (value: string): string => value.toLowerCase()
+      : (value: string): string => value
     const contains = (root: string, target: string): boolean => {
-      const normalized = normalize(resolve(root))
+      const normalized = fold(normalize(resolve(root)))
+      const key = fold(target)
       const prefix = normalized.endsWith(sep) ? normalized : `${normalized}${sep}`
-      return target === normalized || target.startsWith(prefix)
+      return key === normalized || key.startsWith(prefix)
     }
     if (this.runtime.databaseForm === 'cloud') {
       const projectRoot = this.runtime.userDirs.sub(user.username, 'projects')
@@ -592,14 +663,16 @@ export class CanvasService {
         throw new FrameworkError(403, 'FOLDER_OUTSIDE_USER_ROOT',
           `folder_path ${real} is outside the user project root ${normalize(resolve(projectRoot))}`)
       }
-      return real
+    } else {
+      const usersRoot = this.runtime.userDirs.dir
+      const ownRoot = this.runtime.userDirs.sub(user.username, 'projects').replace(/[\\/]projects$/u, '')
+      if (contains(usersRoot, real) && !contains(ownRoot, real)) {
+        throw new FrameworkError(403, 'FOLDER_OUTSIDE_USER_ROOT',
+          `folder_path ${real} belongs to another user's isolated directory`)
+      }
     }
-    const usersRoot = this.runtime.userDirs.dir
-    const ownRoot = this.runtime.userDirs.sub(user.username, 'projects').replace(/[\\/]projects$/u, '')
-    if (contains(usersRoot, real) && !contains(ownRoot, real)) {
-      throw new FrameworkError(403, 'FOLDER_OUTSIDE_USER_ROOT',
-        `folder_path ${real} belongs to another user's isolated directory`)
-    }
+    // 沙箱根在首次使用时创建（与「先选目录再运行」同一结果）；到这里归属已经判定通过。
+    if (!existsSync(candidate)) mkdirSync(candidate, { recursive: true })
     return real
   }
 
@@ -613,10 +686,21 @@ export class CanvasService {
     return await this.projectById(userId, id) as RunProjectRow
   }
 
-  /** 删除运行项目。 */
+  /**
+   * 删除运行项目：仍有会话时结构化拒绝（Plan R034 的 `PROJECT_HAS_SESSIONS`），
+   * 不静默级联删除会话与事件；画布删除走自己的级联事务。
+   * @param userId - 归属用户。
+   * @param id - 运行项目 id。
+   */
   async removeProject(userId: string, id: string): Promise<void> {
     const row = await this.projectById(userId, id)
     if (row === undefined) throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${id} not found`)
+    const counted = await this.db.prepare('SELECT COUNT(*) AS c FROM sessions WHERE run_project_id = ?')
+      .get<{ c: number }>(id)
+    if ((counted?.c ?? 0) > 0) {
+      throw new FrameworkError(409, 'PROJECT_HAS_SESSIONS',
+        `run project ${id} still has ${String(counted?.c)} session(s); delete the canvas or its sessions first`)
+    }
     await this.db.prepare('DELETE FROM run_projects WHERE id = ? AND user_id = ?').run(id, userId)
   }
 
@@ -641,10 +725,14 @@ export class CanvasService {
     const row = await this.byId(userId, canvasId)
     if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} not found`)
     const canvas = CanvasService.parseCanvas(row.canvas_data, canvasId)
-    const skills = await this.runtime.skills.list(userId)
+    // 可用性必须与运行期同一判据：技能只链接「本人 + 系统」，MCP 只解析本人。
+    // 他人的公共资源可在管理面查看，但选进节点后运行期挂不上，这里判为缺失而不是可用。
+    const skills = await this.runtime.skills.listMountable(userId)
     const byId = new Map(skills.map(skill => [skill.id, skill]))
     const byName = new Map(skills.map(skill => [skill.name, skill]))
-    const servers = new Map((await this.runtime.mcp.list(userId)).map(server => [server.name, server]))
+    const servers = new Map((await this.runtime.mcp.list(userId))
+      .filter(server => server.user_id === null || server.user_id === userId)
+      .map(server => [server.name, server]))
     return {
       nodes: canvas.nodes.map(node => ({
         node_id: node.node_id,
@@ -680,7 +768,7 @@ export class CanvasService {
     // 节点未声明插件时回落到该用户的默认插件表（与运行编译、打包同一处规则）。
     canvas.nodes = await this.runtime.plugins.applyNodeDefaults(userId, canvas.nodes)
     // 画布节点存的是技能**行 id**；编译产物按技能**名**寻址（`skill` 工具与挂载守卫都用名字）。
-    const skillRows = await this.runtime.skills.list(userId)
+    const skillRows = await this.runtime.skills.listMountable(userId)
     const skillNameOf = new Map<string, string>()
     for (const skill of skillRows) skillNameOf.set(skill.id, skill.name)
     for (const node of canvas.nodes) {

@@ -1,122 +1,575 @@
-/* 登录/注册页。 */
+/* 登录：桌面 52/48 双栏（左墨色品牌面板、右 360 表单）；≤900px 品牌面板收为顶部字标条。
+ *
+ * 数值对齐设计基准 `文档备份-20261026/DeepSeek Harness 102902/assets/css/pages.css` 登录段：
+ * 面板内边距 48、面板主体 96/0/48、终端 440/32、表单列 64/32、页脚 margin-top 48、
+ * 字段间距 8、输入框 36（水平内边距 12）、控件圆角 8。
+ */
 
 .root {
+  display: grid;
+  /* 原型 `.login`：1.04fr / 0.96fr（≈52% / 48%）；minmax(0, …) 让长文案先被压缩，不撑破视口。 */
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+  min-height: 100vh;
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.themeSlot {
+  position: fixed;
+  top: var(--se-space-4);
+  right: var(--se-space-4);
+  z-index: var(--se-z-overlay);
+}
+
+/* 跳转链接：DOM 首个可聚焦元素，默认移出视口，键盘聚焦时落到左上角。 */
+.skip {
+  position: fixed;
+  top: var(--se-space-2);
+  left: var(--se-space-2);
+  z-index: var(--se-z-portal);
+  padding: var(--se-space-2) var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  transform: translateY(-150%);
+  transition: transform var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.skip:focus-visible {
+  transform: translateY(0);
+}
+
+/* ── 左侧品牌面板 ─────────────────────────────────────── */
+
+.brandPanel {
+  display: flex;
+  flex-direction: column;
+  padding: var(--se-space-7);
+  background-color: var(--dsw-static-neutral-bluish-1000);
+  color: var(--dsw-static-neutral-bluish-50);
+  border-right: 0.5px solid color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 18%, transparent);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.brandPanelTop {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+}
+
+/* 品牌标返回产品首页：键盘可达，聚焦时给可见焦点环。 */
+.brandLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  border-radius: var(--se-radius-xs);
+  color: inherit;
+  text-decoration: none;
+}
+
+.brandLink:hover .brandWordmark {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.brandLink:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 3px;
+}
+
+.brandWordmark {
+  font-family: var(--dsw-font-family-brand);
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brandTag {
+  margin-left: auto;
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 56%, var(--dsw-static-neutral-bluish-1000));
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.brandCopy {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  margin-top: auto;
+  margin-bottom: auto;
+  padding: calc(var(--se-space-7) * 2) 0 var(--se-space-7);
+}
+
+.brandKicker {
+  margin: 0;
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 54%, var(--dsw-static-neutral-bluish-1000));
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.08em;
+}
+
+.brandTitle {
+  margin: var(--se-space-5) 0 0;
+  font-family: var(--dsw-font-family-brand);
+  font-size: clamp(38px, 4vw, 56px);
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+}
+
+.brandDesc {
+  margin: var(--se-space-5) 0 0;
+  max-width: 46ch;
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 68%, var(--dsw-static-neutral-bluish-1000));
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.brandTerminal {
+  max-width: 440px;
+  margin-bottom: var(--se-space-7);
+  border: 0.5px solid color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 18%, transparent);
+  border-radius: var(--se-radius-sm);
+  background-color: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 88%, var(--dsw-static-neutral-bluish-50));
+  overflow: hidden;
+}
+
+.brandTerminalHead {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  height: 32px;
+  padding: 0 var(--se-space-3);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 18%, transparent);
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 58%, var(--dsw-static-neutral-bluish-1000));
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.brandDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+  flex: none;
+}
+
+.brandTerminalState {
+  margin-left: auto;
+}
+
+.brandTerminalBody {
+  margin: 0;
+  padding: var(--se-space-3);
+  color: var(--dsw-static-neutral-bluish-50);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 11px;
+  line-height: 18px;
+  overflow-x: auto;
+}
+
+.termCmd {
+  color: var(--dsw-static-neutral-bluish-50);
+}
+
+.termCmd::before {
+  content: "$ ";
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 52%, var(--dsw-static-neutral-bluish-1000));
+}
+
+.termOk {
+  color: var(--dsw-static-neutral-bluish-50);
+}
+
+.termOk::before {
+  content: "✓ ";
+  color: var(--dsw-static-deepseek-500);
+}
+
+.termDim {
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 52%, var(--dsw-static-neutral-bluish-1000));
+}
+
+.brandFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-4);
+  padding-top: var(--se-space-4);
+  border-top: 0.5px solid color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 18%, transparent);
+  color: color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 56%, var(--dsw-static-neutral-bluish-1000));
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ── 右侧表单 ─────────────────────────────────────────── */
+
+.formPane {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100%;
-  padding: var(--se-space-6);
-  box-sizing: border-box;
-  background-color: var(--dsw-alias-bg-base);
+  padding: calc(var(--se-space-6) * 2) var(--se-space-6);
+  min-width: 0;
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-4);
   width: 100%;
-  max-width: 380px;
-  padding: var(--se-space-6);
-  border-radius: var(--se-radius-lg);
-  background-color: var(--dsw-alias-bg-layer-1);
-  box-shadow: var(--dsw-elevation-panel);
-  border: 0;
+  max-width: 360px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: var(--se-space-3);
-  color: var(--dsw-alias-brand-text);
-}
-
-.brandText {
-  display: flex;
-  flex-direction: column;
-  gap: var(--se-space-1);
-}
-
-.brandTitle {
-  font: var(--dsw-font-l-20);
-}
-
-.brandTagline {
-  font: var(--dsw-font-xs-13);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  /* label-tertiary 浅色白底仅 3.71:1（WCAG 1.4.3 需 4.5:1）；label-secondary 浅 5.80 / 暗更高，双模式达标。 */
-  color: var(--dsw-alias-label-secondary);
+.eyebrow {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  letter-spacing: 0.06em;
 }
 
 .title {
-  margin: 0;
-  /* 全站页面主标题同一规则（common `.title` / 手册 §二 PageHeader）：16px 时字号轴 17 档
-     副标题（17px）会大过本页 h1，标题层级倒置。 */
-  font: var(--dsw-font-l-20);
+  margin: var(--se-space-3) 0 0;
+  font-size: 28px;
+  line-height: 36px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
   color: var(--dsw-alias-label-primary);
 }
 
 .subtitle {
-  margin: 0;
-  font: var(--dsw-font-s-14);
-  font-size: var(--dsh-content-font-size, 14px);
-  /* 同上：tertiary→secondary 对比度修复。 */
+  margin: var(--se-space-2) 0 0;
   color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-3);
+  gap: var(--se-space-4);
+  margin-top: var(--se-space-6);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: var(--se-space-1);
+  gap: var(--se-space-2);
+  min-width: 0;
 }
 
 .label {
-  font: var(--dsw-font-xs-strong-13);
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
 }
 
-.actions {
+.labelRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--se-space-2);
-  flex-wrap: wrap;
 }
 
-.hint {
-  /* 与同文件 .title/.subtitle 同规则：段落 UA 默认 margin 会叠在 flex gap 上，
-     使节奏变成 24px（非阶梯值）、卡片底比顶多 12px。 */
-  margin: 0;
-  font: var(--dsw-font-xxs-12);
-  /* label-caption 浅色白底仅 2.13:1（WCAG 1.4.3 需 4.5:1）；label-secondary 双模式达标。 */
-  color: var(--dsw-alias-label-secondary);
+/* 原生 Input 是 32px 高 / 8px 内边距（`Input.module.css`），原型是 36 / 12：仅本页覆写。
+   选择器带 `.field` 提高特异性，压过原语单类，且不依赖样式注入顺序。 */
+.field > .input {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  border-color: var(--se-hairline);
+  border-radius: var(--se-radius-sm);
 }
 
-.linkButton {
-  border: 0;
+.field > .input:hover {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.field > .input:focus-within {
+  border-color: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, transparent);
+}
+
+/* 原语的内层 input 会再吃一次全局 `:focus-visible` 2px 外环；本页已用容器的
+   3px 焦点环表达原型焦点态，内层不再叠第二圈。 */
+.field > .input input:focus-visible {
+  outline: none;
+}
+
+.field > .input input::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 原型 `.input`：13/22（components.css:296-316）。原语内层 input 固定 14/22，字号必须
+   落在内层元素上才会生效。 */
+.field > .input input {
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.reveal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  /* WCAG 2.5.8（R11）：纯文本按钮的行盒只有 22px 高，命中区不足 24×24；用阶梯撑到 24。 */
-  min-height: var(--se-space-5);
+  border: 0;
+  border-radius: var(--se-radius-xs);
   background-color: transparent;
-  color: var(--dsw-alias-link);
-  font: var(--dsw-font-s-14);
-  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
-  text-align: left;
-  transition: color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 }
 
-.linkButton:hover {
-  /* 与 common `.noticeAction` 同一规则（手册红线 6）：链接悬浮 = 点状下划线，不只变色。 */
-  text-decoration: underline dotted;
+.reveal:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.reveal:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.revealIcon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 错误块：原型 `#login-error` 在字段之后、提交键之前，中性发丝线 + 墨色「!」圆标。 */
+.error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--se-space-2);
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.error::before {
+  content: "!";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border: 1px solid var(--dsw-alias-label-primary);
+  border-radius: var(--se-radius-full);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* 主按钮：36px 墨色由原语 md/primary 提供；圆角与字号按原型控件档（8 / 13）。 */
+button.submitBlock {
+  width: 100%;
+  border-radius: var(--se-radius-sm);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+/* 提交中的可见指示：13px 圆环，与设计系统对照页的忙碌按钮同形。 */
+.spinner {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--se-radius-full);
+  animation: spin 700ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .linkButton {
-    transition: none;
+  .spinner {
+    animation: none;
+  }
+}
+
+.demoHint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.demoCode {
+  padding: 1px var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  padding-top: var(--se-space-3);
+  border-top: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.linkButton {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  text-decoration: underline;
+  text-decoration-color: var(--dsw-alias-border-l4);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linkButton:hover {
+  text-decoration-color: var(--dsw-alias-label-primary);
+}
+
+.linkButton:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 2px;
+  border-radius: var(--se-radius-xs);
+}
+
+/* 演示账号「填入」：原型 `.link-btn--muted`——次级色、无下划线、12/20。 */
+.demoFill {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-decoration: none;
+}
+
+.demoFill:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.hint {
+  margin: 0;
+  padding: var(--se-space-2) var(--se-space-3);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.panelFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-3);
+  margin-top: var(--se-space-7);
+  padding-top: var(--se-space-4);
+  border-top: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.footLink {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.footLink:hover {
+  color: var(--dsw-alias-label-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footLink:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: 2px;
+}
+
+/* ── 移动端：品牌面板压缩为顶部字标条（正文/终端/脚注全部隐藏） ─────── */
+
+@media (max-width: 900px) {
+  .root {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .brandPanel {
+    padding: var(--se-space-4) var(--se-space-5);
+    border-right: 0;
+    border-bottom: 0.5px solid color-mix(in srgb, var(--dsw-static-neutral-bluish-50) 18%, transparent);
+  }
+
+  .brandTag,
+  .brandCopy,
+  .brandTerminal,
+  .brandFoot {
+    display: none;
+  }
+
+  .formPane {
+    align-items: flex-start;
+    padding: var(--se-space-7) var(--se-space-5) calc(var(--se-space-7) * 2);
+  }
+
+  .card {
+    max-width: 400px;
+    margin-inline: auto;
+  }
+
+  .themeSlot {
+    top: 14px;
+    right: var(--se-space-3);
+  }
+}
+
+@media (max-width: 480px) {
+  .panelFoot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--se-space-1);
   }
 }

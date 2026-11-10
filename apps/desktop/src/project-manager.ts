@@ -1,14 +1,16 @@
 /** Desktop profile initialization and native recovery. */
 
 import {
+  closeSync,
+  cpSync,
   existsSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
-  realpathSync,
-  closeSync,
   readFileSync,
+  realpathSync,
+  renameSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -85,6 +87,7 @@ export class DesktopProjectManager {
       // Validation only: an unreadable or mismatched runtime descriptor stops preparation before the Host starts.
       readDesktopRuntime(this.runtime.dsh)
       migrateProfileSettings(this.paths.profile)
+      seedDesktopProfile(this.paths.profile)
       createPluginProfile(this.paths.profile)
       removeLinkProjections(this.paths.profile)
     })
@@ -173,4 +176,31 @@ export function createDevelopmentProjectMetadata(projectDir: string, release: De
 /** Create the first external plugin profile without running a package manager. */
 export function createPluginProfile(projectDir: string): void {
   initProfile(projectDir, WEB_PROFILE.bundles)
+}
+
+/**
+ * Seed the reserved desktop profile from the application's packaged profile payload on first launch.
+ *
+ * The payload is an ordinary profile directory (`package.json` + `cordis.patch.yml` + bundled
+ * plugins), shipped as an extra resource. Bundled packages travel as `plugins/` because
+ * electron-builder never copies a root `node_modules` into resources; they become `node_modules/`
+ * here, before the harness loads the profile. An existing profile always wins, so user-installed
+ * plugins and profile edits are never overwritten.
+ * @param projectDir - reserved desktop profile directory.
+ * @param resourcesPath - Electron resources root; defaults to `process.resourcesPath`.
+ * @returns true when a seed payload was copied.
+ */
+export function seedDesktopProfile(projectDir: string, resourcesPath = process.resourcesPath): boolean {
+  if (existsSync(join(projectDir, 'package.json'))) return false
+  // process.resourcesPath 只在 Electron 主进程存在；纯 Node / 测试下是 undefined（类型声明不建模该事实）。
+  // oxlint-disable-next-line typescript/no-unnecessary-condition
+  if (resourcesPath === undefined || resourcesPath === '') return false
+  const seed = join(resourcesPath, 'profile-seed')
+  if (!existsSync(join(seed, 'package.json'))) return false
+  mkdirSync(projectDir, { recursive: true, mode: 0o700 })
+  cpSync(seed, projectDir, { recursive: true })
+  const plugins = join(projectDir, 'plugins')
+  const modules = join(projectDir, 'node_modules')
+  if (existsSync(plugins) && !existsSync(modules)) renameSync(plugins, modules)
+  return true
 }

@@ -10,6 +10,12 @@ export const SESSION_QUERY_SQLITE_SCHEMA_VERSION = 8
 /** SQLite application id protecting unrelated databases from derived resets. */
 export const SESSION_QUERY_SQLITE_APPLICATION_ID = 0x44534851
 
+/** 共享 `schema_versions` 里检索组件占用的行（colocated 模式）。 */
+export const SESSION_QUERY_SQLITE_COMPONENT = 'session-search'
+
+/** 本组件拥有的派生表（colocated 版本不符时只删这些）。 */
+const COLOCATED_DERIVED_TABLES = ['search_state', 'persisted_sessions', 'persisted_docs'] as const
+
 /** Supported SQLite journal modes. */
 export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
@@ -38,19 +44,28 @@ async function createDatabaseFile(path: string): Promise<void> {
 }
 
 /**
- * Open, validate, and initialize persistent and connection-local schemas.
- * @param path - dedicated derived-index path or `:memory:`; missing filesystem paths are created owner-only.
- * @param journalMode - validated SQLite journal mode.
- * @returns initialized database handle owned by the search service.
+ * Resolve the index path, create its parent and owner-only file, and open the database.
+ * @param path - dedicated derived-index path or `:memory:`.
+ * @returns the resolved path and its opened database handle.
  */
-export async function openSearchDatabase(path: string, journalMode: JournalMode): Promise<DatabaseSync> {
+async function openDatabaseFile(path: string): Promise<{ actual: string; db: DatabaseSync }> {
   const actual = path === ':memory:' ? path : resolve(path)
   if (actual !== ':memory:') {
     await mkdir(dirname(actual), { recursive: true, mode: 0o700 })
     await createDatabaseFile(actual)
   }
   const { DatabaseSync } = await import('node:sqlite')
-  const db = new DatabaseSync(actual)
+  return { actual, db: new DatabaseSync(actual) }
+}
+
+/**
+ * Open, validate, and initialize persistent and connection-local schemas.
+ * @param path - dedicated derived-index path or `:memory:`; missing filesystem paths are created owner-only.
+ * @param journalMode - validated SQLite journal mode.
+ * @returns initialized database handle owned by the search service.
+ */
+export async function openSearchDatabase(path: string, journalMode: JournalMode): Promise<DatabaseSync> {
+  const { actual, db } = await openDatabaseFile(path)
   try {
     const { application_id: applicationId } = db.prepare('PRAGMA application_id').get() as { application_id: number }
     const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
@@ -70,6 +85,46 @@ export async function openSearchDatabase(path: string, journalMode: JournalMode)
     db.exec(`PRAGMA journal_mode = ${journalMode.toUpperCase()}`)
     ensurePersistentSchema(db)
     ensureTemporarySchema(db)
+    return db
+  } catch (error: unknown) {
+    db.close()
+    throw error
+  }
+}
+
+/**
+ * Open the derived index **inside a shared business database** (colocated mode).
+ *
+ * The shared file already owns business tables, so this mode does not write
+ * `PRAGMA application_id` / `user_version`; the index version is recorded in a
+ * shared `schema_versions` table under {@link SESSION_QUERY_SQLITE_COMPONENT}.
+ * A version mismatch drops only this component's derived tables.
+ * @param path - shared database file path.
+ * @param journalMode - validated SQLite journal mode.
+ * @returns initialized database handle owned by the search service.
+ */
+export async function openColocatedSearchDatabase(path: string, journalMode: JournalMode): Promise<DatabaseSync> {
+  const { db } = await openDatabaseFile(path)
+  try {
+    db.exec('PRAGMA busy_timeout = 5000')
+    db.exec(`PRAGMA journal_mode = ${journalMode.toUpperCase()}`)
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_versions (
+        component TEXT PRIMARY KEY,
+        version   INTEGER NOT NULL
+      ) STRICT
+    `)
+    const recorded = db.prepare('SELECT version FROM schema_versions WHERE component = ?')
+      .get(SESSION_QUERY_SQLITE_COMPONENT) as { version: number } | undefined
+    if (recorded !== undefined && recorded.version !== SESSION_QUERY_SQLITE_SCHEMA_VERSION) {
+      for (const name of COLOCATED_DERIVED_TABLES) db.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(name)}`)
+    }
+    ensurePersistentSchema(db, false)
+    ensureTemporarySchema(db)
+    db.prepare(
+      `INSERT INTO schema_versions (component, version) VALUES (?, ?)
+       ON CONFLICT (component) DO UPDATE SET version = excluded.version`,
+    ).run(SESSION_QUERY_SQLITE_COMPONENT, SESSION_QUERY_SQLITE_SCHEMA_VERSION)
     return db
   } catch (error: unknown) {
     db.close()
@@ -100,8 +155,8 @@ function resetDerivedSchema(db: DatabaseSync, userTables: readonly string[]): vo
   db.exec('PRAGMA user_version = 0')
 }
 
-function ensurePersistentSchema(db: DatabaseSync): void {
-  db.exec(`PRAGMA application_id = ${SESSION_QUERY_SQLITE_APPLICATION_ID}`)
+function ensurePersistentSchema(db: DatabaseSync, sign: boolean = true): void {
+  if (sign) db.exec(`PRAGMA application_id = ${SESSION_QUERY_SQLITE_APPLICATION_ID}`)
   db.exec(`
     CREATE TABLE IF NOT EXISTS search_state (
       singleton         INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -135,7 +190,7 @@ function ensurePersistentSchema(db: DatabaseSync): void {
       tokenize = 'unicode61'
     )
   `)
-  db.exec(`PRAGMA user_version = ${SESSION_QUERY_SQLITE_SCHEMA_VERSION}`)
+  if (sign) db.exec(`PRAGMA user_version = ${SESSION_QUERY_SQLITE_SCHEMA_VERSION}`)
 }
 
 function ensureTemporarySchema(db: DatabaseSync): void {

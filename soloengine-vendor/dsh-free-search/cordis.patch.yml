@@ -1,0 +1,34 @@
+# dsh-free-search — free web search providers (no API key needed)
+# Registers the plugin into ctx.web + a settings bridge served at
+# /api/dsh-free-search-settings.
+# The engine is chosen from the sidebar Plugins page -> Free Search row config
+# (plugins.row.config, DSH 0.1.7-rc.1+), from the /free-search-engine command,
+# or directly via this entry's config, e.g.:
+#   provider: bing        # engine id: ddg / bing / baidu / kimi / aliyun / doubao / openai / gemini / claude / auto / multi / ...
+#   (openai/gemini/claude are model-based and bill per search; they run only when selected explicitly)
+#   region: cn-zh         # DuckDuckGo region
+#   bingMarket: zh-CN     # Bing market
+# A legacy ~/.dsh/settings.yaml "free-search:" section is migrated into this
+# entry's config once at startup (see README).
+# Failed/empty engines automatically fall back to the next free engine.
+#
+# NOTE (2026-10, issue #51): this bundle does NOT touch `web.searchProvider`.
+# The plugin takes the search provider over at runtime instead — when the field
+# is unset or still the shipped default (`deepseek-official`) it points it at its
+# own provider id (`ddg`); when another provider was chosen explicitly it leaves
+# it alone and only warns.
+#
+# A static `- id: web  config: searchProvider: ddg` used to live here. It was
+# removed because it created a dangling reference: a patch replaces the whole
+# row config, so rows that came from a *disabled* or skipped plugin left
+# `searchProvider: ddg` behind while nothing registered `ddg` — every web search
+# then failed with `configured web provider "ddg" is not registered`. Leaving the
+# base default (`deepseek-official`) in place means a disabled plugin degrades to
+# the official provider instead of breaking search outright.
+- insert:
+    - id: web-search-free
+      name: dsh-free-search
+      config:
+        provider: bing
+        disabledEngines: []
+        bingMarket: zh-CN

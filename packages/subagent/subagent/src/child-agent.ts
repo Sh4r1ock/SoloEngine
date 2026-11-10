@@ -9,6 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentOptions, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import { bindScopeParent, scopeOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
@@ -157,6 +158,8 @@ export function childSessionMeta(
 export interface ChildComposition {
   /** Independently mounted preset; omission shares the parent's standing generation. */
   readonly agentPreset?: string | undefined
+  /** Product-owned enclosing scope the child attaches to instead of the preset generation directly. */
+  readonly scopeParent?: ScopeKey | undefined
   /** Historical descriptor persona reapplied only during cold resume. */
   readonly persona?: string | undefined
   /** Historical descriptor tool restriction reapplied only during cold resume. */
@@ -196,6 +199,15 @@ export function applyChildComposition(
     return presets.mount(childCtx, composition.agentPreset).then(() => {
       applyChildOverrides(childCtx, composition)
     })
+  }
+  if (composition.scopeParent !== undefined) {
+    // The product's instance scope already inherits the composition, so the child
+    // joins it directly: instance services and preset services are both reachable.
+    const key = scopeOf(childCtx)
+    if (key === undefined) throw new SubagentError('child scope is unavailable', 'PRESET_UNAVAILABLE')
+    bindScopeParent(key, composition.scopeParent)
+    applyChildOverrides(childCtx, composition)
+    return
   }
   childCtx.get('agentPresets')?.composeFrom(childCtx, parent.ctx)
   applyChildOverrides(childCtx, composition)

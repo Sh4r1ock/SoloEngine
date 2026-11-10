@@ -1,5 +1,5 @@
 /** Source-line helpers shared by the plain renderer and the document scroller. */
-import type { DocumentTextPage } from '../document/contract.ts'
+import type { DocumentTextPage } from '../contract/document/contract.ts'
 import type { TextPage } from '../store.ts'
 
 /**

@@ -9,6 +9,10 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.wrap:has(> input:not(:disabled)):hover:not(:focus-within) {
+  border-color: var(--dsw-alias-border-l4);
+}
+
 .wrap:focus-within {
   border-color: var(--dsw-alias-state-business-primary);
 }

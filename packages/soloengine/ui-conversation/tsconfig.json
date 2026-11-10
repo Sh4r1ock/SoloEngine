@@ -30,6 +30,9 @@
       "path": "../../client/ui-session"
     },
     {
+      "path": "../../client/ui-sidebar-browser/tsconfig.client.json"
+    },
+    {
       "path": "../../client/ui-sidebar-right"
     },
     {

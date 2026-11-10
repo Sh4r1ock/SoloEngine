@@ -114,7 +114,7 @@ function outboundHeaders(headers: IncomingMessage['headers'], target: URL): Reco
 function rewriteSetCookie(values: string[], prefix: string): string[] {
   return values.map(value => value
     .split(';')
-    .filter(part => {
+    .filter((part) => {
       const lower = part.trim().toLowerCase()
       return !lower.startsWith('domain=') && !lower.startsWith('path=')
     })
@@ -127,11 +127,12 @@ function rewriteSetCookie(values: string[], prefix: string): string[] {
  * @param html - 上游 HTML 文本。
  * @param prefix - 代理前缀（含 origin 段）。
  * @param origin - 目标 origin（同源绝对地址改写用）。
+ * @param upgradePath - WebSocket upgrade 的注册路径（垫片必须指向它）。
  * @returns 改写后的 HTML。
  */
-function rewriteHtml(html: string, prefix: string, origin: string): string {
+function rewriteHtml(html: string, prefix: string, origin: string, upgradePath: string): string {
   const base = `${prefix}/`
-  const shim = `<script>${isolationShim(prefix, origin)}</script>`
+  const shim = `<script>${isolationShim(prefix, origin, upgradePath)}</script>`
   const head = `<base href="${base}">${shim}`
   let out = html
   for (const attr of REWRITE_ATTRS) {
@@ -174,11 +175,12 @@ function rewriteUrl(value: string, prefix: string, origin: string): string {
  * 并改写 `WebSocket`/`fetch`/`XMLHttpRequest`/`history` 的目标，使页面自身仍能正常工作。
  * @param prefix - 代理前缀（含 origin 段）。
  * @param origin - 目标 origin。
+ * @param upgradePath - WebSocket upgrade 的注册路径。
  * @returns 内联脚本正文。
  */
-function isolationShim(prefix: string, origin: string): string {
+function isolationShim(prefix: string, origin: string, upgradePath: string): string {
   return `(function(){
-var SELF=window,PREFIX=${JSON.stringify(prefix)},ORIGIN=${JSON.stringify(origin)};
+var SELF=window,PREFIX=${JSON.stringify(prefix)},ORIGIN=${JSON.stringify(origin)},UPGRADE=${JSON.stringify(upgradePath)};
 function hide(name,value){try{Object.defineProperty(SELF,name,{get:function(){return value},configurable:false})}catch(e){}}
 hide('parent',SELF);hide('top',SELF);hide('frames',SELF);hide('frameElement',null);hide('opener',null);
 function abs(u){try{return new URL(String(u),ORIGIN).href}catch(e){return null}}
@@ -187,7 +189,7 @@ var WS=SELF.WebSocket;
 if(WS){var Wrapped=function(url,protocols){
   var a=abs(url);if(a&&(a.indexOf('http://')===0||a.indexOf('https://')===0)){
     var wsUrl=a.replace(/^http/,'ws');
-    var target=PREFIX+'-ws?target='+encodeURIComponent(wsUrl);
+    var target=UPGRADE+'?target='+encodeURIComponent(wsUrl);
     return protocols===undefined?new WS(target):new WS(target,protocols);
   }
   return protocols===undefined?new WS(url):new WS(url,protocols);
@@ -242,7 +244,7 @@ function upstreamRequest(
         return
       }
       // 全部地址已通过公网校验：这里只把已校验地址交回给连接层。
-      if (lookupOptions.all === true) callback(null, addresses.map(entry => ({ address: entry.address, family: entry.family })) as never)
+      if (lookupOptions.all === true) callback(null, addresses.map(entry => ({ address: entry.address, family: entry.family })))
       else callback(null, chosen.address, chosen.family)
     },
   })
@@ -330,7 +332,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         currentPrefix = `${prefix}/${encodeOrigin(nextOrigin)}`
         continue
       }
-      const contentType = String(response.headers['content-type'] ?? '')
+      const contentType = response.headers['content-type'] ?? ''
       const isHtml = contentType.toLowerCase().includes('text/html')
       const outHeaders: Record<string, string | string[]> = {}
       for (const [key, value] of Object.entries(response.headers)) {
@@ -340,14 +342,14 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (lower === 'content-security-policy' || lower === 'content-security-policy-report-only') continue
         if (lower === 'x-frame-options') continue
         if (lower === 'location') { outHeaders.location = rewriteUrl(String(value), currentPrefix, target.origin); continue }
-        if (lower === 'set-cookie') { outHeaders['set-cookie'] = rewriteSetCookie(Array.isArray(value) ? value : [String(value)], prefix); continue }
+        if (lower === 'set-cookie') { outHeaders['set-cookie'] = rewriteSetCookie(Array.isArray(value) ? value : [value], prefix); continue }
         if (isHtml && (lower === 'content-length' || lower === 'content-encoding')) continue
         outHeaders[key] = value
       }
       if (isHtml) {
         const chunks: Buffer[] = []
         for await (const chunk of response) chunks.push(chunk as Buffer)
-        const html = rewriteHtml(Buffer.concat(chunks).toString('utf8'), currentPrefix, target.origin)
+        const html = rewriteHtml(Buffer.concat(chunks).toString('utf8'), currentPrefix, target.origin, upgradePath)
         outHeaders['content-type'] = 'text/html; charset=utf-8'
         res.writeHead(status, outHeaders)
         res.end(html)
@@ -442,7 +444,7 @@ export function apply(ctx: Context, config: Config = {}): void {
             socket.pipe(upstream)
             upstream.pipe(socket)
           })
-          upstream.on('error', error => {
+          upstream.on('error', (error) => {
             socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n')
             socket.destroy(error instanceof Error ? error : undefined)
           })

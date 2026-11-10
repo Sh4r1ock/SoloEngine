@@ -4,8 +4,8 @@ import type { RefObject } from 'react'
 import { Button, FileTypeIcon, IconCheckOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { OnboardingPurpose } from '../onboarding-settings.ts'
 import type { DesktopOnboardingProps } from './onboarding-contract.ts'
-import officeIcon from './assets/onboarding-office.svg'
-import codeIcon from './assets/onboarding-code.svg'
+import officeIcon from './onboarding-office.svg'
+import codeIcon from './onboarding-code.svg'
 import css from './DesktopOnboarding.module.css'
 
 /** @param props - selected purposes, localized copy and persistence callbacks. @returns the purpose step. */

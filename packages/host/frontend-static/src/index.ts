@@ -101,7 +101,13 @@ export async function serveStatic(
     res.end()
     return
   }
-  res.writeHead(200, { 'content-type': type })
+  res.writeHead(200, {
+    'content-type': type,
+    // The index document names the content-hashed entry bundles; a heuristically
+    // cached copy keeps pointing at a bundle a later build replaced. Assets keep
+    // their default caching because their names change with their content.
+    ...(type === HTML_MIME ? { 'cache-control': 'no-store' } : {}),
+  })
   res.end(body)
 }
 

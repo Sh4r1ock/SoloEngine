@@ -20,23 +20,24 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-files/remote'
 import type { WorkspaceFileParams } from '@deepseek-ai/dsh-api-workspace-files/client'
-import { TextPreview } from './TextPreview.tsx'
-import type { TextPreviewInjected } from './TextPreview.tsx'
+import { TextPreview } from './text/TextPreview.tsx'
+import type { TextPreviewInjected } from './text/TextPreview.tsx'
 import { TextTitle } from './TextTitle.tsx'
 import { TEXTPREVIEW_ID, textDefinition } from './definition.ts'
 import { textFace } from './face.ts'
 import { createReadPage } from './rpc.ts'
 import { createTextStore } from './store.ts'
 import { en, zh } from './locales.ts'
-import { DocumentPreviewRegistry } from './document/registry.ts'
-import { documentTabInfoFactory } from './document/contract.ts'
+import { DocumentPreviewRegistry } from './contract/document/registry.ts'
+import { documentTabInfoFactory } from './contract/document/contract.ts'
 import { apply as registerText } from './text/index.ts'
 import { apply as registerMarkdown } from './markdown/index.ts'
 import { apply as registerHtml } from './html/index.ts'
 import { apply as registerImage } from './image/index.ts'
-import { apply as registerPdf } from './pdf/index.ts'
+import { apply as registerPdf, pdfBodyRegistration } from './pdf/index.ts'
+import { LazyPdfBody } from './pdf/LazyPdfBody.tsx'
 import { apply as registerCode } from './code/index.ts'
-import { apply as registerOffice } from './office/index.ts'
+import { OFFICE_BODY_ID, apply as registerOffice } from './office/index.ts'
 import { apply as registerExcel } from './excel/index.ts'
 import { Config } from '../config.ts'
 
@@ -44,12 +45,12 @@ import { Config } from '../config.ts'
 // surface is `apply`, `inject`, and the store factory another registration may
 // share, plus the types a consumer of the seat or the store names.
 export type { SidebarDocumentPreviewKey } from './locales.ts'
-export type { TextPreviewProps } from './TextPreview.tsx'
+export type { TextPreviewProps } from './text/TextPreview.tsx'
 export type { TextInjected } from './face.ts'
 export type { ReadDocumentBytes, DocumentFileBytes, ReadWorkspaceFilePage, SessionFile, WorkspaceFilesReadRemote } from './rpc.ts'
 export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
-export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
-export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
+export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './contract/document/contract.ts'
+export type { DocumentLoadMode, DocumentPreviewDefinition } from './contract/document/registry.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -125,6 +126,11 @@ export function apply(ctx: ClientContext): void {
   registerImage(ctx)
   registerPdf(ctx)
   registerOffice(ctx, config.office)
+  // Office presents converted files through the PDF body; only this assembly joins the two domains.
+  const officePdf = pdfBodyRegistration(ctx)
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.office.pdf', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document.office.pdf', key: OFFICE_BODY_ID, locale: 'sidebarPdf', ...officePdf,
+  }, LazyPdfBody)))
   registerExcel(ctx, config.excel)
   registerCode(ctx)
 }

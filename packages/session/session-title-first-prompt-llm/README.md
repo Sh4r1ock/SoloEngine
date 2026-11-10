@@ -73,7 +73,7 @@ The title service schedules automatic work: for the `first-prompt` cadence it st
 Read these pages when the provider contract is not enough. They move from the shared execution module to the alternative cadence and the service it plugs into.
 
 - [Shared LLM execution module](../session-title-llm/README.md) — the execution module this provider uses.
-- [All-messages title provider](../../experimental/session-title-all-prompts-llm/README.md) — the cadence that retitles after every new prompt.
+- [All-messages title provider](../../../bat/removed-20261031/packages/experimental/session-title-all-prompts-llm/README.md) — the cadence that retitles after every new prompt.
 - [Session title service](../session-title/README.md) — fallback behavior, rename, refresh, and provider registration.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 

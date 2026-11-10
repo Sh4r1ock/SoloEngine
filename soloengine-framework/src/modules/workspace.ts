@@ -10,7 +10,7 @@
  * @module @soloengine/framework/modules/workspace
  */
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, normalize, relative, resolve, sep } from 'node:path'
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
@@ -170,11 +170,11 @@ export class WorkspaceService {
    * @param projectId - 运行项目 id。
    * @returns 沙箱根与项目行。
    */
-  private rootOf(userId: string, projectId: string): { root: string; folder: string } {
+  private async rootOf(userId: string, projectId: string): Promise<{ root: string; folder: string }> {
     if (projectId.trim() === '') {
       throw new FrameworkError(400, 'PROJECT_REQUIRED', 'projectId is required: the run project folder is the sandbox root')
     }
-    const project = this.runtime.canvas.projectById(userId, projectId)
+    const project = await this.runtime.canvas.projectById(userId, projectId)
     if (project === undefined) {
       throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${projectId} not found for this user`)
     }
@@ -196,13 +196,13 @@ export class WorkspaceService {
    * @param options - 来源地址、期望 mtime、是否必须存在。
    * @returns 沙箱根、规范化绝对路径与门禁结果。
    */
-  private gate(
+  private async gate(
     userId: string,
     projectId: string,
     target: string,
     options: { remoteAddress?: string | undefined; expectedMtimeMs?: number | undefined; mustExist?: boolean | undefined },
-  ): { root: string; path: string; exists: boolean; mtimeMs: number | null } {
-    const { root } = this.rootOf(userId, projectId)
+  ): Promise<{ root: string; path: string; exists: boolean; mtimeMs: number | null }> {
+    const { root } = await this.rootOf(userId, projectId)
     const result = gateWorkspacePath({
       root,
       target,
@@ -221,8 +221,8 @@ export class WorkspaceService {
    * @param remoteAddress - 请求来源。
    * @returns 目录列举结果。
    */
-  list(userId: string, projectId: string, target: string, remoteAddress?: string): WorkspaceListing {
-    const gated = this.gate(userId, projectId, target === '' ? '.' : target, { remoteAddress, mustExist: true })
+  async list(userId: string, projectId: string, target: string, remoteAddress?: string): Promise<WorkspaceListing> {
+    const gated = await this.gate(userId, projectId, target === '' ? '.' : target, { remoteAddress, mustExist: true })
     const stat = statSync(gated.path)
     if (!stat.isDirectory()) {
       throw new FrameworkError(400, 'NOT_A_DIRECTORY', `${target} is not a directory`)
@@ -264,8 +264,8 @@ export class WorkspaceService {
    * @param remoteAddress - 请求来源。
    * @returns stat 结果。
    */
-  stat(userId: string, projectId: string, target: string, remoteAddress?: string): WorkspaceStat {
-    const gated = this.gate(userId, projectId, target, { remoteAddress })
+  async stat(userId: string, projectId: string, target: string, remoteAddress?: string): Promise<WorkspaceStat> {
+    const gated = await this.gate(userId, projectId, target, { remoteAddress })
     const kind: WorkspaceStat['kind'] = gated.exists ? (statSync(gated.path).isDirectory() ? 'directory' : 'file') : null
     return {
       path: toWorkspacePath(gated.root, gated.path),
@@ -285,13 +285,13 @@ export class WorkspaceService {
    * @param options - 起点行与行数、来源地址。
    * @returns 行窗口结果。
    */
-  read(
+  async read(
     userId: string,
     projectId: string,
     target: string,
     options: { offset?: number | undefined; limit?: number | undefined; remoteAddress?: string | undefined },
-  ): WorkspaceText {
-    const gated = this.gate(userId, projectId, target, {
+  ): Promise<WorkspaceText> {
+    const gated = await this.gate(userId, projectId, target, {
       ...options.remoteAddress === undefined ? {} : { remoteAddress: options.remoteAddress },
       mustExist: true,
     })
@@ -326,18 +326,18 @@ export class WorkspaceService {
    * @param options - 期望 mtime、是否仅允许新建、来源地址。
    * @returns 写入结果。
    */
-  write(
+  async write(
     userId: string,
     projectId: string,
     target: string,
     text: string,
     options: { expectedMtimeMs?: number | undefined; createOnly?: boolean | undefined; sessionKey?: string | undefined; remoteAddress?: string | undefined },
-  ): WorkspaceWriteResult {
+  ): Promise<WorkspaceWriteResult> {
     const bytes = Buffer.byteLength(text, 'utf8')
     if (bytes > MAX_WRITE_BYTES) {
       throw new FrameworkError(413, 'WRITE_TOO_LARGE', `write of ${String(bytes)} bytes exceeds the ${String(MAX_WRITE_BYTES)} byte limit`)
     }
-    const gated = this.gate(userId, projectId, target, {
+    const gated = await this.gate(userId, projectId, target, {
       ...options.remoteAddress === undefined ? {} : { remoteAddress: options.remoteAddress },
       ...options.expectedMtimeMs === undefined ? {} : { expectedMtimeMs: options.expectedMtimeMs },
     })
@@ -349,6 +349,10 @@ export class WorkspaceService {
     // mtime 乐观锁表达不了「必须不存在」（判据 4 只在目标存在时校验），故单列判据。
     if (options.createOnly === true && gated.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${target} already exists; a create refuses to overwrite it`)
+    }
+    // 目标是目录时 `readFileSync`/`writeFileSync` 会抛 EISDIR（裸 500）：明确报业务错误。
+    if (gated.exists && statSync(gated.path).isDirectory()) {
+      throw new FrameworkError(409, 'PATH_IS_DIRECTORY', `${target} is a directory; writes target files only`)
     }
     // 变更前内容（供变更台账记 origin='user' 的抓拍；读失败按不存在处理）。
     const before = gated.exists ? readFileSync(gated.path, 'utf8') : null
@@ -372,9 +376,9 @@ export class WorkspaceService {
    * @param remoteAddress - 请求来源。
    * @returns 新建目录的相对路径。
    */
-  mkdir(userId: string, projectId: string, target: string, confirm: boolean, remoteAddress?: string): { path: string } {
+  async mkdir(userId: string, projectId: string, target: string, confirm: boolean, remoteAddress?: string): Promise<{ path: string }> {
     requireConfirm(confirm, 'mkdir', target)
-    const gated = this.gate(userId, projectId, target, { remoteAddress })
+    const gated = await this.gate(userId, projectId, target, { remoteAddress })
     if (gated.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${target} already exists; refusing to merge into it`)
     }
@@ -392,21 +396,21 @@ export class WorkspaceService {
    * @param options - 期望 mtime 与来源地址。
    * @returns 源与目标相对路径。
    */
-  rename(
+  async rename(
     userId: string,
     projectId: string,
     from: string,
     to: string,
     confirm: boolean,
     options: { expectedMtimeMs?: number | undefined; remoteAddress?: string | undefined },
-  ): { from: string; to: string } {
+  ): Promise<{ from: string; to: string }> {
     requireConfirm(confirm, 'rename', `${from} -> ${to}`)
-    const source = this.gate(userId, projectId, from, {
+    const source = await this.gate(userId, projectId, from, {
       ...options.remoteAddress === undefined ? {} : { remoteAddress: options.remoteAddress },
       ...options.expectedMtimeMs === undefined ? {} : { expectedMtimeMs: options.expectedMtimeMs },
       mustExist: true,
     })
-    const destination = this.gate(userId, projectId, to, { remoteAddress: options.remoteAddress })
+    const destination = await this.gate(userId, projectId, to, { remoteAddress: options.remoteAddress })
     if (destination.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${to} already exists; refusing to overwrite it`)
     }
@@ -424,16 +428,16 @@ export class WorkspaceService {
    * @param sessionKey - 归属会话键（供台账按会话可查；产品层无会话上下文时省略）。
    * @returns 被删除的相对路径与类型。
    */
-  remove(
+  async remove(
     userId: string,
     projectId: string,
     target: string,
     confirm: boolean,
     remoteAddress?: string,
     sessionKey?: string,
-  ): { path: string; kind: 'file' | 'directory' } {
+  ): Promise<{ path: string; kind: 'file' | 'directory' }> {
     requireConfirm(confirm, 'delete', target)
-    const gated = this.gate(userId, projectId, target, { remoteAddress, mustExist: true })
+    const gated = await this.gate(userId, projectId, target, { remoteAddress, mustExist: true })
     const kind: 'file' | 'directory' = statSync(gated.path).isDirectory() ? 'directory' : 'file'
     const before = kind === 'file' ? readFileSync(gated.path, 'utf8') : null
     rmSync(gated.path, { recursive: kind === 'directory', force: false })
@@ -449,16 +453,16 @@ export class WorkspaceService {
    * @param remoteAddress - 请求来源。
    * @returns 命中的条目（含目录优先排序）与截断标志。
    */
-  search(
+  async search(
     userId: string,
     projectId: string,
     query: string,
     remoteAddress?: string,
-  ): { query: string; entries: WorkspaceEntry[]; truncated: boolean } {
+  ): Promise<{ query: string; entries: WorkspaceEntry[]; truncated: boolean }> {
     if (query.trim() === '') {
       throw new FrameworkError(400, 'QUERY_REQUIRED', 'q is required for a workspace search')
     }
-    const gated = this.gate(userId, projectId, '.', { remoteAddress, mustExist: true })
+    const gated = await this.gate(userId, projectId, '.', { remoteAddress, mustExist: true })
     const needle = query.toLowerCase()
     const entries: WorkspaceEntry[] = []
     let truncated = false
@@ -473,12 +477,15 @@ export class WorkspaceService {
       for (const name of names) {
         if (truncated) return
         const absolute = join(directory, name)
-        let child: ReturnType<typeof statSync>
+        let child: ReturnType<typeof lstatSync>
         try {
-          child = statSync(absolute)
+          // 搜索不得跟随符号链接：根内一个指向根外的链接会把整盘枚举进来，
+          // 同时制造链接环。目录列举/读取仍可访问链接本身，搜索只认真实条目。
+          child = lstatSync(absolute)
         } catch {
           continue
         }
+        if (child.isSymbolicLink()) continue
         const isDirectory = child.isDirectory()
         if (isDirectory && SEARCH_SKIP_DIRS.has(name)) continue
         if (name.toLowerCase().includes(needle)) {

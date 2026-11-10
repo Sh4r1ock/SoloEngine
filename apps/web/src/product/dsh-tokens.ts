@@ -19,4 +19,6 @@ import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/scrollbar.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
 import '@deepseek-ai/dsh-client-ui-theme/src/styles/shiki.css'
-import '@soloengine/ui-theme/src/styles/tokens.css'
+// 品牌/展示字体按 D22 使用系统回退（不加载外部字体）：`--dsw-font-family-brand`
+// 已包含 Montserrat 优先链，目标机未安装时回落系统 UI 字体，不引入字体资产。
+import '@soloengine/ui-theme/styles/tokens.css'

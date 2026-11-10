@@ -10,7 +10,7 @@ import {
   IconPinFillRegular, IconPinOutlineRegular, MenuItemButton, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PinSessionInjected, SessionMenuItemProps, SessionRowActionProps } from '../contract/slots.ts'
-import css from '../rows/Rows.module.css'
+import css from '../Rows.module.css'
 
 type PinState = Pick<SessionMenuItemProps<PinSessionInjected>, 'sessionId' | 'usePinned' | 'useArchived'>
 

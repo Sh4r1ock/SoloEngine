@@ -1,11 +1,17 @@
 -- SoloEngine 业务库 DDL（单一数据库 data/database/soloengine.db）
 -- 依据《SoloEngine 持久化存储完整设计》§5、§6 与 PRD-12 FR-STO-004~007。
 -- 会话运行时数据（消息正文 / 用量 / 工具调用流）不落本库：由 dsh JSONL 事件流承载。
--- 本库只承载「会话归属 2 表 + 资产 11 表」；dsh storage 机制表（u_<unit>_<table> / units /
+-- 本库只承载「会话归属 2 表 + 资产 12 表」；dsh storage 机制表（u_<unit>_<table> / units /
 -- unit_globals）与 session-query-sqlite 的 FTS 表由 dsh 插件同库创建（表分割）。
 -- 建表顺序按外键依赖：users → agentic_flows → run_projects → llm_configs → 其余。
 
 PRAGMA foreign_keys = ON;
+
+-- 共享版本表：按组件记录版本（不再各自写 user_version）。
+CREATE TABLE IF NOT EXISTS schema_versions (
+  component TEXT PRIMARY KEY,
+  version   INTEGER NOT NULL
+);
 
 -- ── 资产：账号与认证根 ───────────────────────────────────────────────────────
 
@@ -19,10 +25,25 @@ CREATE TABLE IF NOT EXISTS users (
   created_at      TEXT,
   updated_at      TEXT,
   last_login      TEXT,
-  version         INTEGER NOT NULL DEFAULT 1
+  version         INTEGER NOT NULL DEFAULT 1,
+  -- 令牌版本（W11.1 / R007）：超管重置口令后自增，已签发的访问/刷新令牌因版本不匹配立即失效。
+  -- 与 `version` 分开：资料/启停变更不应连带踢掉会话，只有口令重置需要撤销令牌。
+  token_version   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- ── 资产：用户级默认插件表（需求 §0.1.4）──────────────────────────────────────
+-- 每个用户一套默认插件表：新建 agent 节点按它初始化节点插件行，节点未声明插件时编译/打包回落到它。
+-- `plugins` 存组合差异 JSON（与画布实例差异同格式）；`version` 是乐观锁（没有行时视作 0）。
+
+CREATE TABLE IF NOT EXISTS user_default_plugins (
+  user_id    TEXT    PRIMARY KEY REFERENCES users(id),
+  plugins    TEXT    NOT NULL DEFAULT '{}',
+  version    INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT,
+  updated_at TEXT
+);
 
 -- ── 资产：agenticflow（画布）定义 ────────────────────────────────────────────
 
@@ -150,6 +171,8 @@ CREATE TABLE IF NOT EXISTS skills_packages (
   version     INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_skills_packages_user_id ON skills_packages(user_id);
+-- 同一用户下技能名唯一：目录名就是技能名，重名会让两次导入共用一个目录（互相覆盖）。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_skills_packages_user_name ON skills_packages(user_id, name);
 
 -- ── 资产：MCP 服务器与两类传输子表 ───────────────────────────────────────────
 
@@ -173,21 +196,36 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   -- 单工具启停（PRD-05 FR-MCP-008）：被停用的工具名列表（JSON 数组）。
   -- **放在末尾是刻意的**：老库靠 `ALTER TABLE ADD COLUMN` 补列，SQLite 把新列追加在末尾，
   -- 故新建库的列序要与升级库对齐，否则「DDL 与活库逐列一致」这条不变式只对新库成立。
-  disabled_tools TEXT
+  disabled_tools TEXT,
+  -- 能力枚举缓存（PRD-05 FR-MCP-003）：resources / prompts 与 tools 同形态（JSON 数组文本）。
+  resources      TEXT,
+  prompts        TEXT,
+  -- 最近一次连接测试结论（诊断列；NULL = 从未测试）。
+  last_test_ok   INTEGER,
+  last_test_kind TEXT,
+  last_tested_at TEXT,
+  -- 最近一次连接测试耗时（毫秒；NULL = 未记录）。列表与详情按「相对时间 · N ms」展示。
+  last_test_ms   INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_servers_user_id ON mcp_servers(user_id);
+-- 服务名是全实例唯一的模型可见工具前缀；并发建行只有数据库能裁决（PRD-05 FR-MCP-002）。
+-- 老库由 db/index.ts 的增量索引补建（重名行存在时不阻断启动，只报出）。
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mcp_servers_name ON mcp_servers(name);
 
 CREATE TABLE IF NOT EXISTS mcp_stdio_configs (
-  mcp_server_id TEXT PRIMARY KEY REFERENCES mcp_servers(id),
+  mcp_server_id TEXT PRIMARY KEY REFERENCES mcp_servers(id) ON DELETE CASCADE,
   command       TEXT,
   args          TEXT,
   env           TEXT,
   folder_path   TEXT,
-  working_dir   TEXT
+  working_dir   TEXT,
+  -- 连接/请求超时（秒，NULL 表示按默认 30 秒）：与 http 子表同口径。
+  -- 放在末尾是刻意的：老库靠 `ALTER TABLE ADD COLUMN` 补列，SQLite 把新列追加在末尾。
+  timeout       INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS mcp_http_configs (
-  mcp_server_id TEXT PRIMARY KEY REFERENCES mcp_servers(id),
+  mcp_server_id TEXT PRIMARY KEY REFERENCES mcp_servers(id) ON DELETE CASCADE,
   url           TEXT,
   headers       TEXT,
   timeout       INTEGER,

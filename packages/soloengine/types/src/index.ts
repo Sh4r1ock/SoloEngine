@@ -17,6 +17,9 @@ export type {
   FollowProjectionState, FollowProjectionView,
 } from './follow-intent.ts'
 
+// 委派子会话的画布节点归属事件（冷恢复重放节点组合所需；声明合并必须随包加载）。
+export type { NodeAttributionEventEntry, NodeAttributionRecord } from './node-attribution.ts'
+
 // 产品页面 URL 契约（宿主注册、面板深链、前端路由三面共用的唯一名单；根路径 `/` = 产品首页）。
 export {
   HOME_ROUTE_ROOT, isProductPagePathname, matchProductRouteRoot, productPageRoute,
@@ -49,6 +52,14 @@ export interface NodePluginRow {
   version?: string
 }
 
+/** 节点级采样参数（编译产物；只保留有真实请求消费者的字段）。 */
+export interface AgentSampling {
+  temperature?: number
+  max_tokens?: number
+  /** 该节点每个回合允许的工具调用次数上限（与模型配置的工具轮次上限同一口径）。 */
+  max_tool_calls?: number
+}
+
 /** 单个 agent 的编译配置（每画布节点一个）。 */
 export interface AgentSpec {
   /** 画布 node_id。 */
@@ -61,6 +72,8 @@ export interface AgentSpec {
   modelRoute: string
   /** 该 agent 的 persona 文本（注入子会话创建窗口）。 */
   persona?: string
+  /** 节点级采样参数（temperature / max_tokens / max_tool_calls）。 */
+  sampling?: AgentSampling
   /** 运行项目目录（沙箱根）。 */
   cwd: string
   /** tool-map 映射后的真实工具名（未映射项在编译期 fail loud）。 */
@@ -104,7 +117,7 @@ export interface CompileResult {
 export type CompileFailureCode =
   | 'NO_ENTRY' | 'MULTIPLE_ENTRY_AMBIGUOUS' | 'MISSING_MODEL' | 'MISSING_REQUIRED'
   | 'UNKNOWN_TOOL' | 'CYCLIC_DELEGATION' | 'DUPLICATE_NODE' | 'EMPTY_CANVAS'
-  | 'NODE_NAME_REQUIRED' | 'NODE_PLUGIN_INVALID' | 'CONFLICTING_PLUGIN_VERSION'
+  | 'NODE_NAME_REQUIRED' | 'NODE_PLUGIN_INVALID' | 'CONFLICTING_PLUGIN_VERSION' | 'EDGE_INVALID'
 
 /** 编译失败的结构化错误。 */
 export interface CompileFailure {

@@ -7,6 +7,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { constants as bufferConstants } from 'node:buffer'
 import { once } from 'node:events'
+import { mkdir as mkdirPath, rename as renamePath, rm as removePath } from 'node:fs/promises'
 import { watch } from 'chokidar'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -199,6 +200,42 @@ export class LocalFileSystem extends FileSystem {
     }))
   }
 
+  override async mkdir(target: FsTarget, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new FsError('mkdir aborted', 'FS_ABORTED')
+    try {
+      await mkdirPath(this.processPath(target))
+    } catch (error) {
+      throw mutationError('create directory', target.displayPath, error)
+    }
+  }
+
+  override async rename(from: FsTarget, to: FsTarget, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new FsError('rename aborted', 'FS_ABORTED')
+    await this.withLock(from.targetKey, async () => {
+      // Refuse an existing destination explicitly: POSIX `rename` would replace
+      // it silently, which no caller of this seam can undo.
+      if (await probe(to.targetKey) !== null) {
+        throw new FsError(`cannot rename to "${to.displayPath}": it already exists`, 'FS_ALREADY_EXISTS')
+      }
+      try {
+        await renamePath(this.processPath(from), this.processPath(to))
+      } catch (error) {
+        throw mutationError('rename', from.displayPath, error)
+      }
+    })
+  }
+
+  override async remove(target: FsTarget, recursive: boolean, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new FsError('remove aborted', 'FS_ABORTED')
+    await this.withLock(target.targetKey, async () => {
+      try {
+        await removePath(this.processPath(target), { recursive, force: false })
+      } catch (error) {
+        throw mutationError('remove', target.displayPath, error)
+      }
+    })
+  }
+
   override async writeText(
     target: FsTarget,
     content: string,
@@ -296,6 +333,27 @@ export class LocalFileSystem extends FileSystem {
     if (after) return after.version
     return FsVersion(`missing:${target.targetKey}`)
   }
+}
+
+/**
+ * The structured failure for one directory mutation, keyed by the Node error
+ * code so callers branch on {@link FsErrorCode} instead of message text.
+ * @param action - the verb the message names.
+ * @param displayPath - the path as the caller supplied it.
+ * @param error - the filesystem error.
+ * @returns the typed error to throw.
+ */
+function mutationError(action: string, displayPath: string, error: unknown): FsError {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
+  const message = error instanceof Error ? error.message : String(error)
+  const mapped = code === 'EEXIST'
+    ? 'FS_ALREADY_EXISTS'
+    : code === 'ENOENT'
+      ? 'FS_NOT_FOUND'
+      : code === 'EACCES' || code === 'EPERM'
+        ? 'FS_PERMISSION_DENIED'
+        : 'FS_IO_ERROR'
+  return new FsError(`cannot ${action} "${displayPath}": ${message}`, mapped, { cause: error })
 }
 
 export default LocalFileSystem

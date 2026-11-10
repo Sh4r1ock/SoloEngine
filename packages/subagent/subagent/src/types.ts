@@ -12,6 +12,7 @@
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
+import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
@@ -180,6 +181,49 @@ export interface SubagentStartRequest {
    * start otherwise.
    */
   readonly maxDepth?: number
+  /**
+   * Product-owned composition applied to a local child before its first turn,
+   * after the selected preset (if any) is mounted. The exact live child is
+   * supplied; use `child.ctx` for scoped registrations and `child.session` for
+   * durable facts. Rejecting fails creation and rolls the child back.
+   *
+   * Local backends only: an external provider owns its own process and rejects
+   * a request carrying this field.
+   */
+  readonly setup?: (child: Agent) => void | Promise<void>
+  /**
+   * Attach the local child's scope beneath this product-owned scope instead of
+   * joining the parent's preset generation directly. The product uses it when
+   * its own instance scope already inherits the composition: the child then
+   * resolves the instance's services as well as the preset's.
+   *
+   * Local backends only; ignored when {@link agentPreset} selects an
+   * independent composition.
+   */
+  readonly scopeParent?: ScopeKey
+}
+
+/**
+ * Product-owned composition replayed when an already-persisted continuable
+ * child is cold-resumed. The durable descriptor supplies the harness-level
+ * composition; this hook adds what only the owning product can reconstruct —
+ * its own scoped registrations and the enclosing product scope.
+ */
+export interface SubagentResumeComposition {
+  /**
+   * Applied to the resumed local child before its first resumed turn, after the
+   * descriptor's composition. Rejecting fails the resume and releases the
+   * partially materialized child.
+   * @param child - the exact resumed child.
+   * @param parent - the exact live parent that authorized delivery.
+   */
+  readonly setup?: (child: Agent, parent: Agent) => void | Promise<void>
+  /**
+   * Attach the resumed child's scope beneath this product-owned scope instead
+   * of joining the parent's preset generation directly. Ignored when the child
+   * selected an independent preset.
+   */
+  readonly scopeParent?: ScopeKey
 }
 
 /** Provider-facing request with an absolute directory selected before startup. */

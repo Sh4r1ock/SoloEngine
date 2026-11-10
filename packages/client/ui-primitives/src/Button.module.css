@@ -17,7 +17,9 @@
 
 .button:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-caption);
 }
 
 .md {
@@ -42,6 +44,10 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
+.primary:active:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-button-primary-fill) 76%, var(--dsw-alias-bg-base));
+}
+
 .ghost:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
@@ -60,12 +66,20 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.outline:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
 .toolbar {
   background: var(--dsw-alias-button-tool-bar-fill);
 }
 
 .toolbar:hover:not(:disabled) {
   background: var(--dsw-alias-button-tool-bar-hover);
+}
+
+.toolbar:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
 }
 
 .icon {

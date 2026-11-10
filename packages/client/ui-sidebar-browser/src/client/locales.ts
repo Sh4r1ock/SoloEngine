@@ -25,6 +25,7 @@ export const zh = {
   'error.application-origin': '不能在嵌入浏览器中打开 DSH 应用自身。',
   'load.failed': '页面加载失败；请刷新重试或在系统浏览器中打开。',
   'load.failed.detail': '页面加载失败 ({code}): {description}',
+  'proxy.rejected': '同源代理拒绝了该地址 ({code})：{message}',
   'address.unknown': '页面已跳转；当前载体无法读取新的 URL。',
 } satisfies Record<string, string>
 
@@ -58,6 +59,7 @@ export const en = {
   'error.application-origin': 'The embedded browser cannot open the DSH application itself.',
   'load.failed': 'The page could not load; reload or open it in the system browser.',
   'load.failed.detail': 'Page load failed ({code}): {description}',
+  'proxy.rejected': 'The same-origin proxy refused this address ({code}): {message}',
   'address.unknown': 'The page navigated; this carrier cannot read its new URL.',
 } satisfies Record<SidebarBrowserKey, string>
 

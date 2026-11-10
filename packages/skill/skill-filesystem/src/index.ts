@@ -244,7 +244,17 @@ export class FileSystemSkillProvider implements SkillProvider {
   private async roots(cwd: string | undefined): Promise<SkillRoot[]> {
     const roots: SkillRoot[] = []
     if (this.includeDefaultRoots && cwd !== undefined) {
-      const projectRoot = await findProjectRoot(resolve(cwd), optionalFileSystem(this.ctx))
+      const resolved = resolve(cwd)
+      const projectRoot = await findProjectRoot(resolved, optionalFileSystem(this.ctx))
+      // 运行目录自身也是一层项目根：`findProjectRoot` 只认 `.git`，而 SoloEngine 把该用户启用中的
+      // 技能物化在 `<运行项目>/.dsh/skills`。运行项目是仓库子目录时两者分叉，技能会静默不可见；
+      // 更近的一层优先（rank 更小），仓库根的 `.agents/skills` 等既有项目层仍然保留。
+      if (projectRoot !== resolved) {
+        roots.push(
+          { path: join(resolved, '.dsh/skills'), source: 'project-dsh', rank: PROJECT_DSH_RANK - 1, projectRoot: resolved },
+          { path: join(resolved, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK - 1, projectRoot: resolved },
+        )
+      }
       roots.push(
         { path: join(projectRoot, '.dsh/skills'), source: 'project-dsh', rank: PROJECT_DSH_RANK, projectRoot },
         { path: join(projectRoot, '.agents/skills'), source: 'project-agents', rank: PROJECT_AGENTS_RANK, projectRoot },

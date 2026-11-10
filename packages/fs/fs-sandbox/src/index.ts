@@ -109,6 +109,58 @@ export class SandboxedFileSystem extends LocalFileSystem {
   }
 
   /**
+   * Fence one directory creation by the per-call policy, then delegate. See
+   * {@link checkedTarget}.
+   * @param target - the resolved directory target to create.
+   * @param signal - aborts before the directory is created.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use the deployment fallback.
+   * @returns once the directory exists.
+   */
+  override async mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
+    await super.mkdir(await this.checkedTarget(target, sandboxPolicy), signal)
+  }
+
+  /**
+   * Fence both sides of one move by the per-call policy, then delegate. See
+   * {@link checkedTarget}.
+   * @param from - the resolved source target.
+   * @param to - the resolved destination target.
+   * @param signal - aborts before the move takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use the deployment fallback.
+   * @returns once the move completed.
+   */
+  override async rename(
+    from: FsTarget,
+    to: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    await super.rename(
+      await this.checkedTarget(from, sandboxPolicy),
+      await this.checkedTarget(to, sandboxPolicy),
+      signal,
+    )
+  }
+
+  /**
+   * Fence one removal by the per-call policy, then delegate. See
+   * {@link checkedTarget}.
+   * @param target - the resolved target to remove.
+   * @param recursive - remove a directory's contents as well.
+   * @param signal - aborts before the removal takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root; omit to use the deployment fallback.
+   * @returns once the target is gone.
+   */
+  override async remove(
+    target: FsTarget,
+    recursive: boolean,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    await super.remove(await this.checkedTarget(target, sandboxPolicy), recursive, signal)
+  }
+
+  /**
    * Enforce the per-call policy against `target` and return the EXACT target the
    * mutation must use, so the checked identity is the mutated one (no
    * check-here-write-there TOCTOU). `read-only` denies; `workspace-write`

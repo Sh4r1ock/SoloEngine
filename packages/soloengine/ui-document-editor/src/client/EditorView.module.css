@@ -1,4 +1,4 @@
-﻿.root {
+.root {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -56,6 +56,8 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* 视口画在 layer-2 上，滚动条按提升面整对重绑（ui-theme scrollbar.css 的约定），
+   否则浅底仍是 l1 深条。 */
 .editor {
   flex: 1;
   min-width: 0;
@@ -64,6 +66,8 @@
   border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: var(--se-radius-sm);
   background: var(--dsw-alias-bg-layer-2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   color: var(--dsw-alias-label-primary);
   font-family: var(--dsw-font-family);
   font-size: var(--dsh-content-font-size, 14px);

@@ -12,7 +12,8 @@
  * @module @soloengine/framework/modules/packaging
  */
 
-import { spawn, spawnSync } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve, sep, basename } from 'node:path'
@@ -29,6 +30,9 @@ import { materializeDependencies, measureNodeModules, rootPackageName, workspace
 
 // 状态词表的单一真源在 `@soloengine/types`；框架这里原样再导出，产品页从同一个包取。
 export { isTerminalStage, type PackagingRunStatus, type PackagingStageStatus } from '@soloengine/types'
+
+/** 异步子进程：打包链路里不能再出现阻塞事件循环的同步调用。 */
+const execFileAsync = promisify(execFile)
 
 /** 组合层栈的一层（一个 patch 文件；组合行本身由实例净组合承载）。 */
 export interface PackagingLayer {
@@ -219,11 +223,27 @@ const SECRET_KEY_PATTERN = /^(?:api[_-]?key|api[_-]?secret|client[_-]?secret|sec
  */
 function scanSecretKeys(text: string): string[] {
   const found = new Set<string>()
+  /**
+   * 当前是否位于 YAML 块标量（`|` / `>`）内：值为父键缩进，`-1` 表示不在块内。
+   * 块标量内容是**提示词等自由文本**，其中的 `password: ...` 不是配置键，不能算凭据命中。
+   */
+  let blockIndent = -1
   for (const rawLine of text.split(/\r?\n/u)) {
-    const line = rawLine.trim()
+    if (rawLine.trim() === '') continue
+    const indent = rawLine.length - rawLine.trimStart().length
+    if (blockIndent >= 0) {
+      if (indent > blockIndent) continue
+      blockIndent = -1
+    }
+    const line = rawLine.trim().replace(/^-\s+/u, '')
     if (line === '' || line.startsWith('#')) continue
     const match = /^(?:"|')?([A-Za-z0-9_.-]+)(?:"|')?\s*:\s*(.*)$/u.exec(line)
     if (match === null) continue
+    // 块标量起始行：本行不是可判定的值，后续缩进内容一律按文本跳过。
+    if (/^[|>][+-]?\d*$/u.test((match[2] ?? '').trim())) {
+      blockIndent = indent
+      continue
+    }
     const key = match[1]
     if (key === undefined || !SECRET_KEY_PATTERN.test(key)) continue
     const value = (match[2] ?? '').trim()
@@ -882,7 +902,7 @@ export class PackagingService {
     const verifyStage = this.verifyArtifact(id, artifactPath, { requireClosure: true })
     // 桌面形态：发行流水线的前置检查 + `prepare-profile` 暂存（PRD-11 FR-DEP-006）。
     // 发行封装本身（打包 exe/安装包）由发行流水线执行，本请求只做到暂存。
-    const desktop = desktopRequest === undefined ? undefined : this.stageDesktop(published.dir, artifactPath, desktopRequest)
+    const desktop = desktopRequest === undefined ? undefined : await this.stageDesktop(published.dir, artifactPath, desktopRequest)
     const desktopStage: PackagingStage | undefined = desktop === undefined ? undefined : {
       id: 'desktop',
       label: '桌面发行暂存',
@@ -952,11 +972,11 @@ export class PackagingService {
    * @param options - 已校验的 profile 名与 app id。
    * @returns 暂存结果。
    */
-  private stageDesktop(
+  private async stageDesktop(
     profileDir: string,
     artifactPath: string,
     options: { profileName: string; appId: string },
-  ): PackagingDesktop {
+  ): Promise<PackagingDesktop> {
     const desktopDir = join(this.runtime.root, 'packaging', 'desktop')
     const prepare = join(desktopDir, 'prepare-profile.mjs')
     const build = join(this.runtime.root, DESKTOP_RELEASE_SCRIPT)
@@ -965,28 +985,43 @@ export class PackagingService {
         `the desktop release orchestration is missing under ${desktopDir} (prepare-profile.mjs/build-windows.mjs)`)
     }
     const appId = options.appId
-    const checked = spawnSync(process.execPath, [build, '--check'], {
-      cwd: this.runtime.root,
-      env: { ...process.env, DSH_DESKTOP_APP_ID: appId },
-      encoding: 'utf8',
-      timeout: 60_000,
-    })
-    const blockers = checked.status === 0
-      ? []
-      : [String(checked.stderr ?? '').trim() || String(checked.stdout ?? '').trim()]
+    // 子进程用异步 execFile：spawnSync 会阻塞整个实例的事件循环（最长 240 秒），
+    // 期间所有用户的所有请求都停摆。
+    let checkedStdout = ''
+    let blockers: string[] = []
+    try {
+      const checked = await execFileAsync(process.execPath, [build, '--check'], {
+        cwd: this.runtime.root,
+        env: { ...process.env, DSH_DESKTOP_APP_ID: appId },
+        encoding: 'utf8',
+        timeout: 60_000,
+        maxBuffer: 10 * 1024 * 1024,
+      })
+      checkedStdout = String(checked.stdout ?? '')
+    } catch (error) {
+      const failure = error as { stdout?: unknown; stderr?: unknown }
+      blockers = [String(failure.stderr ?? '').trim() || String(failure.stdout ?? '').trim() || String(error)]
+    }
     // 每个运行一份私有 home：桌面 profile 只由本次产物的组合层与依赖生成，不串用上一次运行
     // （`$DSH_HOME/profiles/desktop` 是发行流水线的默认落点，多个画布共用会互相覆盖）。
     const home = this.desktopHome(artifactPath)
-    const staged = spawnSync(process.execPath, [prepare, '--from', profileDir, '--home', home,
-      '--profile', options.profileName,
-      '--runtime', join(this.runtime.dataDir, 'dsh-home', 'runtime')], {
-      cwd: this.runtime.root,
-      encoding: 'utf8',
-      timeout: 180_000,
-    })
-    if (staged.status !== 0) {
+    let stagedStdout = ''
+    try {
+      const staged = await execFileAsync(process.execPath, [prepare, '--from', profileDir, '--home', home,
+        '--profile', options.profileName,
+        '--runtime', join(this.runtime.dataDir, 'dsh-home', 'runtime')], {
+        cwd: this.runtime.root,
+        encoding: 'utf8',
+        timeout: 180_000,
+        maxBuffer: 10 * 1024 * 1024,
+      })
+      stagedStdout = String(staged.stdout ?? '')
+    } catch (error) {
+      const failure = error as { code?: unknown; stdout?: unknown; stderr?: unknown; killed?: unknown }
+      const detail = String(failure.stderr ?? '').trim() || String(failure.stdout ?? '').trim() || String(error)
+      const exit = failure.killed === true ? 'timeout' : String(failure.code ?? 'unknown')
       throw new FrameworkError(500, 'PACKAGING_DESKTOP_STAGE_FAILED',
-        `prepare-profile refused the artifact (exit ${String(staged.status)}):\n${String(staged.stderr ?? '').trim() || String(staged.stdout ?? '').trim()}`)
+        `prepare-profile refused the artifact (exit ${exit}):\n${detail}`)
     }
     const desktopProfileDir = join(home, 'profiles', options.profileName)
     const desktop: PackagingDesktop = {
@@ -1003,9 +1038,9 @@ export class PackagingService {
         DESKTOP_RELEASE_COMMAND,
       ].join('; '),
       output: [
-        String(staged.stdout ?? '').trimEnd(),
+        stagedStdout.trimEnd(),
         ...blockers.length === 0
-          ? [`release pipeline preflight: ready (${String(checked?.stdout ?? '').trim()})`]
+          ? [`release pipeline preflight: ready (${checkedStdout.trim()})`]
           : ['release pipeline preflight: not ready', ...blockers.map(blocker => `  - ${blocker}`)],
       ].filter(Boolean).join('\n'),
     }
@@ -1298,16 +1333,26 @@ export class PackagingService {
       }
     }
     const build = desktop === undefined ? undefined : this.readDesktopBuild(id)
+    // 进程崩溃/重启会留下 `running` 状态文件，而 close 回调永远不会再执行：
+    // 按 pid 存活判定成失败，避免页面永久轮询一个不存在的构建。
+    const stale = build !== undefined && build.status === 'running'
+      && (build.pid === undefined || !processAlive(build.pid))
+    const buildStatus = build === undefined ? undefined : stale ? 'failed' : build.status
+    const buildOutput = build === undefined
+      ? ''
+      : stale
+        ? `${build.output}\nbuild process ${String(build.pid ?? '(unknown pid)')} is no longer running; the persisted status was left at "running"`
+        : build.output
     const desktopStage: PackagingStage | undefined = desktop === undefined ? undefined : {
       id: 'desktop',
       label: '桌面发行封装',
-      status: build === undefined ? 'ok' : build.status === 'completed' ? 'ok' : build.status,
-      output: [desktop.output, ...build === undefined ? [] : [build.output]].filter(output => output !== '').join('\n'),
+      status: buildStatus === undefined ? 'ok' : buildStatus === 'completed' ? 'ok' : buildStatus,
+      output: [desktop.output, ...buildStatus === undefined ? [] : [buildOutput]].filter(output => output !== '').join('\n'),
     }
     // 运行状态覆盖封装进度：封装失败即整次运行的失败（安装包没有产出），运行中则继续轮询。
-    const status: PackagingRunStatus = build === undefined || build.status === 'completed'
+    const status: PackagingRunStatus = buildStatus === undefined || buildStatus === 'completed'
       ? 'completed'
-      : build.status === 'failed' ? 'failed' : 'running'
+      : buildStatus === 'failed' ? 'failed' : 'running'
     return {
       id,
       status,
@@ -1318,7 +1363,12 @@ export class PackagingService {
       profilePath: profile.dir,
       presetIds: profile.presetIds,
       entryPresetId: profile.entryPresetId,
-      ...desktop === undefined ? {} : { desktop: { ...desktop, ...build === undefined ? {} : { build } } },
+      ...desktop === undefined ? {} : {
+        desktop: {
+          ...desktop,
+          ...build === undefined ? {} : { build: { ...build, status: stale ? 'failed' : build.status, output: buildOutput } },
+        },
+      },
     }
   }
 
@@ -1662,7 +1712,8 @@ export class PackagingService {
     }
 
     // 契约校验（fail loud）：节点引用的技能与 MCP 必须在实例里存在且启用。
-    const skillsByName = new Map((await this.runtime.skills.list(userId)).map(row => [row.name, row]))
+    // 技能与挂载同源：只有本人与系统技能会被链接进运行项目，他人的公共技能按缺失拒绝。
+    const skillsByName = new Map((await this.runtime.skills.listMountable(userId)).map(row => [row.name, row]))
     // 与挂载同源：`byNameScoped`（自己的 + 系统行）；启用的才可能被挂上，停用的按缺失拒绝。
     const serversByName = new Map((await this.runtime.mcp.list(userId))
       .filter(row => row.is_active === 1)

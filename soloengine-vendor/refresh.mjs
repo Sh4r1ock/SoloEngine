@@ -21,51 +21,29 @@ import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..')
-const LAUNCHER = join(REPO_ROOT, 'soloengine-launch', 'bin.mjs')
+const PLUGIN_MANIFEST = join(REPO_ROOT, 'profiles-templates', 'plugins.json')
 const INSTANCE_MODULES = join(REPO_ROOT, 'data', 'dsh-home', 'profiles', 'soloengine', 'node_modules')
 
 /**
- * 第三方包的上游与许可标识（许可标识取自包内 LICENSE 的正文判定，见 `detectLicense`）。
+ * 读插件清单（唯一真源 `profiles-templates/plugins.json`）：第三方版本与固化元数据。
  *
- * 这里只写**事实**：包名、上游地址、档位、以及 SoloEngine 对它的消费方式。`modifications`
- * 记录是否改过源码——本产品对这三个包一律**不改源码**，只经组合层（bundle + patch/config）使用；
- * 若将来真的改了源码，必须在这一栏写清改了哪几处。
+ * 不再从启动器源码正则回读常量：清单是结构化 JSON，启动器与固化脚本读同一份，
+ * 新增/升级插件只改这一处。
+ * @returns 包名到版本号的映射与每包的上游/档位/消费方式。
  */
-const UPSTREAM = {
-  '@anionex/dsh-turn-rewind': {
-    upstream: 'https://github.com/anionex/dsh-turn-rewind',
-    tier: '第三方复用（实现主干）',
-    consumption: 'bundle 层 + 组合层 config（turnCheckpointMode 由本产品按工作区边界切 auto）',
-    modifications: '无源码改动',
-  },
-  'dsh-permission-rules': {
-    upstream: 'https://www.npmjs.com/package/dsh-permission-rules',
-    tier: '第三方复用（白名单三缝隙之一）',
-    consumption: 'bundle 层；四档预设表由组合层整行重述覆写',
-    modifications: '无源码改动',
-  },
-  'dsh-approve-for-me': {
-    upstream: 'https://www.npmjs.com/package/dsh-approve-for-me',
-    tier: '第三方复用（审批应答器）',
-    consumption: 'bundle 层 + 组合层 config（sandbox/approval/名称与说明）',
-    modifications: '无源码改动',
-  },
-}
-
-/**
- * 从包清单里读出被固化的第三方依赖（真源＝启动器的 `PLUGIN_DEPENDENCIES`）。
- *
- * 不在这里另写一份包版本：启动器的那份是安装时真正用的版本，写两份必然分叉。
- * @returns 包名到版本号的映射。
- */
-function readPinnedVersions() {
-  const source = readFileSync(LAUNCHER, 'utf8')
-  const block = /const PLUGIN_DEPENDENCIES = \{([\s\S]*?)\n\}/u.exec(source)?.[1]
-  if (block === undefined) throw new Error(`cannot read PLUGIN_DEPENDENCIES from ${LAUNCHER}`)
-  const pinned = {}
-  for (const match of block.matchAll(/'([^']+)':\s*'([^']+)'/gu)) pinned[match[1]] = match[2]
-  if (Object.keys(pinned).length === 0) throw new Error(`PLUGIN_DEPENDENCIES in ${LAUNCHER} is empty`)
-  return pinned
+function readPluginManifestFile() {
+  let parsed
+  try {
+    parsed = JSON.parse(readFileSync(PLUGIN_MANIFEST, 'utf8'))
+  } catch (error) {
+    throw new Error(`cannot read plugin manifest ${PLUGIN_MANIFEST}: ${String(error)}`)
+  }
+  const dependencies = parsed?.dependencies
+  if (dependencies === null || typeof dependencies !== 'object' || Array.isArray(dependencies)
+    || Object.keys(dependencies).length === 0) {
+    throw new Error(`${PLUGIN_MANIFEST} declares no dependencies`)
+  }
+  return { pinned: dependencies, vendor: parsed?.vendor ?? {} }
 }
 
 /**
@@ -112,8 +90,8 @@ function fingerprint(dir) {
   }
 }
 
-const pinned = readPinnedVersions()
-const manifest = { generatedFrom: 'soloengine-launch/bin.mjs PLUGIN_DEPENDENCIES', packages: [] }
+const { pinned, vendor } = readPluginManifestFile()
+const manifest = { generatedFrom: 'profiles-templates/plugins.json', packages: [] }
 
 for (const [name, version] of Object.entries(pinned)) {
   const source = join(INSTANCE_MODULES, name)
@@ -128,7 +106,7 @@ for (const [name, version] of Object.entries(pinned)) {
   cpSync(source, target, { recursive: true, dereference: true })
   const license = detectLicense(target)
   const prints = fingerprint(target)
-  const meta = UPSTREAM[name] ?? { upstream: '', tier: '第三方复用', consumption: '', modifications: '未记录' }
+  const meta = vendor[name] ?? { upstream: '', tier: '第三方复用', consumption: '', modifications: '未记录' }
   manifest.packages.push({
     name,
     version,

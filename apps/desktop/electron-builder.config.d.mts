@@ -4,7 +4,8 @@ import type { AfterPackContext, BeforePackContext } from 'app-builder-lib'
 export interface DesktopElectronBuilderConfig {
   readonly appId: string
   readonly artifactName: string
-  readonly protocols: readonly [{ readonly name: 'DeepSeek Harness'; readonly schemes: readonly ['dsh'] }]
+  readonly productName: 'SoloEngine'
+  readonly protocols: readonly [{ readonly name: 'SoloEngine'; readonly schemes: readonly ['dsh'] }]
   readonly directories: {
     readonly output: string
   }

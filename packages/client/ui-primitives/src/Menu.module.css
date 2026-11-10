@@ -30,7 +30,8 @@
   top: calc(100% + 4px);
   left: 0;
   z-index: 100;
-  min-width: 144px;
+  /* Prototype `.menu`: min-width 180px (design reference §5.1). */
+  min-width: 180px;
   max-width: 360px;
 }
 
@@ -95,12 +96,13 @@
 .item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  min-height: 34px;
-  padding: 6px 8px;
+  /* Prototype `.menu__item`: 32px row, 8px gap/inline padding, 4px radius, 13/20. */
+  min-height: 32px;
+  padding: 0 8px;
   border: none;
-  border-radius: var(--dsw-radius-md);
+  border-radius: var(--dsw-radius-xs);
   background: transparent;
   cursor: pointer;
   font-size: 13px;
@@ -113,12 +115,11 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Arrow navigation moves real focus, so the row the keyboard is on carries the
-   same fill the pointer gets: the fill is the row's focus indication, and the
-   browser's default ring would double it. */
+/* Arrow navigation moves real focus; the row keeps the pointer fill and adds
+   the keyboard ring so focus and hover stay distinguishable. */
 .item:focus-visible:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
-  outline: none;
+  outline-offset: -2px;
 }
 
 .denseList .item {
@@ -161,15 +162,16 @@
 }
 
 .item:disabled {
-  opacity: 0.4;
+  color: var(--dsw-alias-label-caption);
   cursor: not-allowed;
 }
 
 .itemIcon {
   display: inline-flex;
   flex: none;
-  width: 14px;
-  height: 14px;
+  /* Prototype `.menu__item .icon`: 15px (design reference §5.1). */
+  width: 15px;
+  height: 15px;
   align-items: center;
   justify-content: center;
   color: var(--dsw-alias-menu-icon);
@@ -177,8 +179,8 @@
 
 .itemIcon svg,
 .check {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
 .compactList .itemIcon svg,
@@ -237,7 +239,7 @@
 
 .danger:focus-visible:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover-danger);
-  outline: none;
+  outline-offset: -2px;
 }
 
 /* Heading row: non-interactive small grey text, padding aligned with items. */

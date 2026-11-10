@@ -7,7 +7,7 @@
  *
  * | 缺口（PRD-09 要求） | 本模块的补齐方式 |
  * |---|---|
- * | 写前后**逐次抓拍**（FR-FC-001） | prepend 监听原生 `fs/write-intent`/`fs/edit-intent` 抓拍变更前内容，`fs/observed` 到达后抓拍变更后内容——**不另埋钩子**（正常 next() 透传，不抢占用单一决策槽的策略） |
+ * | 写前后**逐次抓拍**（FR-FC-001） | prepend 原生 `fs/write-intent`/`fs/edit-intent` 抓拍写前内容，`fs/observed` 抓拍写后内容——**不另埋钩子**（正常 next() 透传，不抢决策槽） |
  * | 逐文件/逐 hunk 审阅（FR-FC-005） | 落 `file_changes`（含逐 hunk 结构与状态），审阅只标记不动磁盘 |
  * | `origin` 三值归属（FR-FC-001/003） | `agent`（工具写入）/`user`（人写入接口）/`revert`（撤回写回自身） |
  * | 按轮次撤回的最小还原（FR-FC-007） | 还原目标 = 记录内文件的「变更前内容 + 被丢弃 hunk 的新侧」；**只动记录内的文件** |
@@ -18,6 +18,12 @@
  * 写回原语：dsh 原生 `ctx.fs` 的写入守卫只有 `createIfAbsent`/`replaceIfVersion`，**无删除原语**；
  * 本模块补齐「按记录还原」与「删除」两条写入路径（`restoreTo`），并经原生 `fs/observed` 补发写后观测。
  *
+ * 事件承载（Plan W2/R140）：`fs/write-intent` 与 `fs/observed` 是 dsh 原生的**全局文件观测总线**
+ * ——全局订阅者（观测门禁、变更面板）按 `target` + actor 过滤，未标 scope，必须收到全部写回；
+ * 原生 fs 工具也按同一约定裸发。因此本模块的**写回**改经 `scopeTarget(base, flowKey)` 载体派发：
+ * 全局订阅者行为不变，flow/agent 作用域的订阅者只收到本 flow 的写回，不串其他 flow 与其他用户。
+ * 原生工具发射端的全局语义属于完全复用基线，不在本模块改写。
+ *
  * @module @soloengine/host/file-changes
  */
 
@@ -26,6 +32,7 @@ import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { rm } from 'node:fs/promises'
+import { scopeTarget, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { FsTarget, FsWriteIntent, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-session'
 import type { FrameworkRuntime } from '@soloengine/framework'
@@ -57,7 +64,9 @@ interface PendingCapture {
 /** `ctx.changeLedger` 的最小可用面（主干插件提供；宿主侧只用这些面）。 */
 interface ChangeLedgerFace {
   /** 取某一回合的检查点（提示词锚定）。 */
-  findTurnCheckpoint: (options: { cwd: string; sessionId: string; turn: number; signal?: AbortSignal }) => Promise<{ id: string } | undefined>
+  findTurnCheckpoint: (
+    options: { cwd: string; sessionId: string; turn: number; signal?: AbortSignal },
+  ) => Promise<{ id: string } | undefined>
   /** 把一个恢复点与当前工作树比对（内容寻址清单 + 漂移结论）。 */
   inspect: (options: { cwd: string; restorePointId: string; signal?: AbortSignal }) => Promise<TrunkInspection>
   /** 运行期可调配置（存储根除外）：本层用它在越界风险的工作区活跃时关掉自动回合检查点。 */
@@ -83,13 +92,26 @@ interface SessionEventsFace {
   snapshotEvents?: () => readonly { type: string; seq: number; data?: unknown }[]
 }
 
+/** 挂载文件变更记录时的宿主接线项。 */
+export interface FileChangesOptions {
+  /**
+   * 会话所属 flow 的作用域键（撤回写回派发 fs 事件时使用）。
+   *
+   * 文件观测总线的全局订阅者（观测门禁、变更面板）未标 scope，照旧收到全部写回；
+   * flow/agent 作用域的订阅者只收到本 flow 的写回——不串其他 flow、也不串其他用户。
+   * 缺省或返回 undefined 时按「无归属」派发：只有全局订阅者收到（fail-closed）。
+   */
+  readonly scopeKeyOfSession?: (sessionKey: string) => ScopeKey | undefined
+}
+
 /**
  * 挂载文件变更记录与撤回。
  *
  * @param ctx - 已注入 `fs` 的上下文。
  * @param runtime - 框架层运行时（台账域与归属解析）。
+ * @param options - 宿主接线项（flow 作用域解析等）。
  */
-export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void {
+export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, options: FileChangesOptions = {}): void {
   const ledger: ChangeLedgerService = runtime.changes
   /** 会话 → (callId → 归属)。 */
   const calls = new Map<string, Map<string, CallAttribution>>()
@@ -118,7 +140,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
       const key = String(session.id)
       if (event.type === 'turn/start') {
         // 回合起点先于主干的 `agent/pre-step` 抓拍分派：此刻按本回合作业的工作区判边界。
-        enterWorkspace(session as SessionEventsFace, key)
+        enterWorkspace(session, key)
         return
       }
       if (event.type === 'turn/end') {
@@ -129,7 +151,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
       if (event.type !== 'tool/call') return
       const table = calls.get(key) ?? new Map<string, CallAttribution>()
       calls.set(key, table)
-      table.set(String(event.data.callId), { turn: Number(event.data.turn), step: Number(event.data.step) })
+      table.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
       // 自愈：本回合在越界工作区里跑期间逐次重申关闭（防止设置层把模式改回自动）。
       syncTrunkCheckpointMode()
     } catch (error) {
@@ -209,7 +231,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
     next: () => Promise<unknown>,
   ): Promise<unknown> => {
     try {
-      const attribution = attributeOf(actor, runtime, calls)
+      const attribution = await attributeOf(actor, runtime, calls)
       const before = await readTarget(ctx, target)
       pending.set(target.targetKey, {
         targetKey: target.targetKey,
@@ -225,7 +247,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
       })
     } catch (error) {
       // 抓拍失败不得影响写入路径（记录是观测能力，非门禁）：结构化告警 + 放行。
-      console.log(`soloengine: file-change capture failed for ${String(target.displayPath)} (${String(error)}); the write proceeds unrecorded`)
+      console.log(`soloengine: file-change capture failed for ${target.displayPath} (${String(error)}); the write proceeds unrecorded`)
     }
     return next()
   }
@@ -247,7 +269,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
       try {
         const after = observation.kind === 'present' ? await readTarget(ctx, target) : null
         const origin = revertContext === undefined ? capture.origin : 'revert'
-        const recorded = ledger.record({
+        const recorded = await ledger.record({
           userId: revertContext?.userId ?? capture.userId,
           origin,
           sessionKey: revertContext?.sessionKey ?? capture.sessionKey,
@@ -287,12 +309,12 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
     changeIds: readonly string[] | undefined,
     actor: object,
   ): Promise<RevertExecutionResult> => {
-    const plan = ledger.revertPlan(userId, sessionKey, turn, changeIds)
+    const plan = await ledger.revertPlan(userId, sessionKey, turn, changeIds)
     const restored: string[] = []
     const revertedChangeIds: string[] = []
     const failures: { filePath: string; reason: string }[] = []
-    const row = runtime.runs.ledger.byKey(sessionKey)
-    const project = row === undefined ? undefined : runtime.canvas.projectById(row.user_id, row.run_project_id)
+    const row = await runtime.runs.ledger.byKey(sessionKey)
+    const project = row === undefined ? undefined : await runtime.canvas.projectById(row.user_id, row.run_project_id)
     if (project === undefined) {
       throw new Error(`session ${sessionKey} has no run project; cannot resolve the sandbox root for the revert`)
     }
@@ -305,6 +327,9 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
         `session ${sessionKey} has no live session in this process: the read-before-write gate cannot be satisfied, so the revert fails closed (reopen the run and retry)`)
     }
     const writeActor: object = { ...actor, agent: { session } }
+    // 写回事件一律经 flow 载体派发（Plan W2/R140）：全局观测者未标 scope 照旧收到，
+    // flow/agent 作用域的监听者只收到本 flow 的写回，不串其他 flow 与其他用户。
+    const carrier = scopeTarget(ctx, options.scopeKeyOfSession?.(sessionKey))
     // 主干预设插件的交叉核对（改造复用的取证面）：只在该工作区**是 Git 工作树根**时进行——
     // 否则主干会按 cwd 向上解析到沙箱**之外**的外层仓库并整树遍历（PRD-10 FR-SEC-001），
     // 与自动检查点用同一条边界判据；这种工作区的撤回完全由本层台账承担。
@@ -330,11 +355,11 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
         // 撤回写回也走「先读后写」门禁：先读一次并把观测记到会话归属上，再申请写入意图（CAS）。
         await readTarget(ctx, target)
         const stat = await ctx.fs.stat(target)
-        if (stat !== undefined) ctx.emit('fs/observed', target, { kind: 'present', version: stat.version }, writeActor)
-        else ctx.emit('fs/observed', target, { kind: 'absent' }, writeActor)
+        if (stat !== undefined) ctx.emit(carrier, 'fs/observed', target, { kind: 'present', version: stat.version }, writeActor)
+        else ctx.emit(carrier, 'fs/observed', target, { kind: 'absent' }, writeActor)
         revertTargets.set(target.targetKey, { sessionKey, userId, agentId: null, of: item.changeIds })
         // 触发一次意图瀑布（本模块的 prepend 抓拍器因此拿到撤回写前的真实内容）。
-        const intent = await ctx.waterfall('fs/write-intent', target, writeActor, () => undefined)
+        const intent = await ctx.waterfall(carrier, 'fs/write-intent', target, writeActor, () => undefined)
         if (item.delete) {
           // 还原到一个「该轮开始前不存在」的记录点 = 删除该文件（补齐 dsh 缺失的删除写入原语）。
           await deleteTarget(ctx, target)
@@ -349,8 +374,8 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
           }
         }
         const after = await ctx.fs.stat(target)
-        if (after !== undefined) ctx.emit('fs/observed', target, { kind: 'present', version: after.version }, writeActor)
-        else ctx.emit('fs/observed', target, { kind: 'absent' }, writeActor)
+        if (after !== undefined) ctx.emit(carrier, 'fs/observed', target, { kind: 'present', version: after.version }, writeActor)
+        else ctx.emit(carrier, 'fs/observed', target, { kind: 'absent' }, writeActor)
         restored.push(item.filePath)
         revertedChangeIds.push(...item.changeIds)
       } catch (error) {
@@ -358,11 +383,11 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
         failures.push({ filePath: item.filePath, reason: error instanceof Error ? error.message : String(error) })
       }
     }
-    ledger.markReverted(userId, revertedChangeIds)
+    await ledger.markReverted(userId, revertedChangeIds)
     return { plan, restored, revertedChangeIds, failures, restorePoint }
   }
 
-  runtime.changes.attachRevertExecutor(async (input) => executeRevert(
+  runtime.changes.attachRevertExecutor(async input => executeRevert(
     input.userId, input.sessionKey, input.turn, input.changeIds, input.actor,
   ))
 
@@ -370,22 +395,28 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime): void 
   // 因此天然不入 agent 回合视图、不参与按轮次撤回（PRD-09 FR-FC-001 边界）。
   // 会话键随观察带上：台账查询按 session_id 过滤，不带就会记了也无人可见。
   runtime.workspace.attachWriteObserver((observation) => {
-    const recorded = ledger.record({
-      userId: observation.userId,
-      origin: 'user',
-      sessionKey: observation.sessionKey,
-      turn: null,
-      agentId: null,
-      filePath: observation.filePath,
-      toolCallId: null,
-      before: observation.before,
-      after: observation.after,
-    })
-    if (recorded !== null) {
-      console.log(
-        `soloengine: file-change recorded (${recorded.operation}, origin=user, file=${recorded.filePath}, +${String(recorded.linesAdded ?? 0)}/-${String(recorded.linesRemoved ?? 0)})`,
-      )
-    }
+    void (async () => {
+      try {
+        const recorded = await ledger.record({
+          userId: observation.userId,
+          origin: 'user',
+          sessionKey: observation.sessionKey,
+          turn: null,
+          agentId: null,
+          filePath: observation.filePath,
+          toolCallId: null,
+          before: observation.before,
+          after: observation.after,
+        })
+        if (recorded !== null) {
+          console.log(
+            `soloengine: file-change recorded (${recorded.operation}, origin=user, file=${recorded.filePath}, +${String(recorded.linesAdded ?? 0)}/-${String(recorded.linesRemoved ?? 0)})`,
+          )
+        }
+      } catch (error) {
+        console.log(`soloengine: file-change ledger write failed for ${observation.filePath} (${String(error)})`)
+      }
+    })()
   })
 
   console.log(
@@ -518,11 +549,11 @@ function absoluteOf(root: string, path: string): string {
 }
 
 /** 归属派生：actor（工具执行对象）→ 会话/回合/画布节点/用户/来源。 */
-function attributeOf(
+async function attributeOf(
   actor: object | undefined,
   runtime: FrameworkRuntime,
   calls: Map<string, Map<string, CallAttribution>>,
-): {
+): Promise<{
   sessionKey: string | null
   agentId: string | null
   userId: string | null
@@ -530,17 +561,18 @@ function attributeOf(
   callId: string | null
   origin: 'agent' | 'revert' | 'user'
   revertOf?: readonly string[]
-} {
+}> {
+  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- `object` has no properties; the cast supplies them
   const exec = actor as { callId?: string; agent?: { session?: { id?: unknown }; ctx?: unknown } } | undefined
   const sessionId = exec?.agent?.session?.id
-  const sessionKey = sessionId === undefined ? null : String(sessionId)
+  const sessionKey = typeof sessionId === 'string' ? sessionId : null
   if (sessionKey === null) {
     // 无会话上下文（例如人经产品写路由直接写盘）：归属用户、来源 user。
     return { sessionKey: null, agentId: null, userId: null, turn: null, callId: null, origin: 'user' }
   }
-  const callId = exec?.callId === undefined ? null : String(exec.callId)
+  const callId = exec?.callId === undefined ? null : exec.callId
   const turn = callId === null ? null : calls.get(sessionKey)?.get(callId)?.turn ?? null
-  const owner = runtime.runs.ledger.byKey(sessionKey)?.user_id ?? null
+  const owner = (await runtime.runs.ledger.byKey(sessionKey))?.user_id ?? null
   const nodeId = runtime.runs.agentIdOf(sessionKey)
   const isToolWrite = callId !== null
   return {

@@ -103,7 +103,14 @@ export function matchProductRouteRoot(pathname: string): ProductRouteMatch | und
   const root = PRODUCT_ROUTE_ROOTS.find(candidate => candidate.segment === first)
   if (root === undefined) return undefined
   const second = segments[1]
-  return second === undefined ? { root } : { root, param: decodeURIComponent(second) }
+  if (second === undefined) return { root }
+  try {
+    return { root, param: decodeURIComponent(second) }
+  } catch {
+    // 非法百分号编码（如 `/canvas/%E0%A4%A`）不能把路由解析抛成 URIError 让 SPA 白屏：
+    // 按「不是已知产品路径」处理，由调用方回落到默认页。
+    return undefined
+  }
 }
 
 /**

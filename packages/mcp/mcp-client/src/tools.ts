@@ -30,6 +30,14 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
+  /**
+   * Raw tool names this instance must not register.
+   *
+   * Omission registers the server's full list. A deployment narrows the model-visible
+   * set here, before registration, so a disabled tool is absent from `ctx.tools.list()`
+   * rather than merely rejected at call time.
+   */
+  disabledTools?: readonly string[]
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
@@ -121,7 +129,9 @@ export async function syncTools(
   const response = client.getServerCapabilities()?.tools === undefined
     ? { tools: [] }
     : await client.listTools(undefined, { cacheMode: 'refresh' })
+  const disabled = new Set(opts.disabledTools ?? [])
   for (const tool of response.tools) {
+    if (disabled.has(tool.name)) continue
     const publicName = publicToolName(opts.serverName, tool.name)
     if (definitions.has(publicName)) {
       throw new Error(

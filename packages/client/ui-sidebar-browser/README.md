@@ -33,12 +33,16 @@ Choose Browser for a Web page that should remain beside the current Session. Cho
 
 ### Minimal configuration
 
-The package has no plugin configuration. A Web profile enables the shipped entry through its profile patch:
+The package's one setting is `proxyPrefix`, which defaults to empty. A Web profile enables the shipped entry through its profile patch:
 
 ```yaml
 - id: ui-sidebar-browser
   disabled: false
+  config:
+    proxyPrefix: /soloengine/proxy
 ```
+
+A non-empty `proxyPrefix` names a same-origin route that serves pages for this tab; the frame loads `prefix/__open?url=<target>`, and the carrier reads the target back from the frame's own address, so in-page links stay visible in the address bar and history. A refusal answered as `{"ok":false,"error":{"code","message"}}` is reported with its code and message instead of showing the JSON body. The route, its target policy, and every rewrite belong to the mounted proxy, not to this package; empty keeps direct loading, where a cross-origin frame reveals nothing and a later load only marks the address unknown.
 
 Client plugins can open a tab through `ctx.sidebarRight.openTab('browser', { params: { url } })`. The optional URL passes the same validation as address-bar input before navigation.
 
@@ -60,9 +64,9 @@ The address parser accepts HTTP and HTTPS, including loopback targets. It reject
 
 ### Iframe carrier
 
-Web uses `sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"` by default. The frame has no direct download or top-navigation flag. Popups leave the sandbox; in Web, an escaped popup retains its opener and can navigate the top-level application. The visited origin can use its own cookies and Web storage but a cross-origin target cannot read DSH DOM, storage, or API responses. The iframe sends no referrer and adds no package-owned Permissions Policy, so browser defaults and user grants apply. The toolbar can remove the sandbox for the current tab occurrence; the choice is not persisted. An unsandboxed page can navigate the top-level application under browser activation rules and use downloads, modal dialogs, and input locks. The package does not proxy or probe remote pages.
+Web uses `sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"` by default. The frame has no direct download or top-navigation flag. Popups leave the sandbox; in Web, an escaped popup retains its opener and can navigate the top-level application. The visited origin can use its own cookies and Web storage but a cross-origin target cannot read DSH DOM, storage, or API responses. The iframe sends no referrer and adds no package-owned Permissions Policy, so browser defaults and user grants apply. The toolbar can remove the sandbox for the current tab occurrence; the choice is not persisted. An unsandboxed page can navigate the top-level application under browser activation rules and use downloads, modal dialogs, and input locks. Without a configured `proxyPrefix`, the package does not proxy or probe remote pages.
 
-Web records toolbar submissions and typed tab opens. A navigation state machine treats the first iframe load for each controlled revision as known and a later load as proof that the page changed to an unreadable URL. In that unknown state the address is marked, Back, Forward, and external-open are disabled, and Reload returns to the last controlled URL. A remounted body reloads the latest application-known URL and uses its optional initial URL only before the first controlled target. History API and fragment changes that emit no iframe load remain invisible. An iframe `error` event displays a transient load-failure notice until the next controlled load without changing URL history.
+Web records toolbar submissions and typed tab opens. A navigation state machine treats the first iframe load for each controlled revision as known and a later load as proof that the page changed to an unreadable URL. In that unknown state the address is marked, Back, Forward, and external-open are disabled, and Reload returns to the last controlled URL. With a same-origin `proxyPrefix` the first load reports the frame's own address instead, which replaces the requested one and becomes the newest history entry. A remounted body reloads the latest application-known URL and uses its optional initial URL only before the first controlled target. History API and fragment changes that emit no iframe load remain invisible unless the proxy serves them as loads. An iframe `error` event displays a transient load-failure notice until the next controlled load without changing URL history.
 
 ### Controller
 

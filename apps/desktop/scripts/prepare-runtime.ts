@@ -1,7 +1,7 @@
 /** Prepare Desktop resources and publish their versions after every preparation stage succeeds. */
 
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
@@ -19,18 +19,46 @@ const RUNTIME_ROOT = BUILD_PATHS.runtime
 
 type DesktopTarget = ReturnType<typeof desktopTargetPlatform>
 
+/** Node version reported by an Electron executable running in Node mode. */
+function electronNodeVersion(executable: string): string {
+  return execFileSync(executable, ['-p', 'process.versions.node'], {
+    encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  }).trim()
+}
+
+/**
+ * Node version of an extraction this target already holds, when it is the requested
+ * Electron build and its executable still runs. Extraction is destructive over the
+ * whole directory, so reusing a matching distribution keeps a build reproducible on a
+ * host where a scanner or editor briefly holds one of the extracted files open.
+ * @param executable - Electron executable inside the target's extraction directory.
+ * @param version - Electron version this build requires.
+ * @returns The embedded Node version, or undefined when the directory must be extracted.
+ */
+function reusableElectron(executable: string, version: string): string | undefined {
+  const versionFile = join(BUILD_PATHS.electron, 'version')
+  if (!existsSync(executable) || !existsSync(versionFile)) return undefined
+  if (readFileSync(versionFile, 'utf8').trim() !== version) return undefined
+  try {
+    return electronNodeVersion(executable)
+  } catch {
+    // A half-written or damaged extraction is not reusable; fall through to extraction.
+    return undefined
+  }
+}
+
 /** Extract the target Electron distribution and return its embedded Node version. */
 async function prepareElectron({ platform, arch }: DesktopTarget): Promise<string> {
   const require = createRequire(import.meta.url)
   const { version } = require('electron/package.json') as { version: string }
+  const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
+  const existing = reusableElectron(executable, version)
+  if (existing !== undefined) return existing
   const archive = await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'download:electron',
     () => downloadArtifact({ version, platform, arch, artifactName: 'electron', cacheRoot: BUILD_PATHS.downloads }))
   rmSync(BUILD_PATHS.electron, { recursive: true, force: true })
   await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'extract:electron', () => extractZip(archive, { dir: BUILD_PATHS.electron }))
-  const executable = join(BUILD_PATHS.electron, platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
-  return execFileSync(executable, ['-p', 'process.versions.node'], {
-    encoding: 'utf8', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  }).trim()
+  return electronNodeVersion(executable)
 }
 
 function prepareCli({ platform, arch }: DesktopTarget): void {

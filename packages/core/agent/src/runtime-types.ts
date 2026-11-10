@@ -32,6 +32,8 @@ export interface AgentOptions {
   reasoningEffort?: ReasoningEffortId
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /** Sampling temperature for each conversation-model request. */
+  temperature?: number
 }
 
 /** Options for {@link Agent.cancel}. */

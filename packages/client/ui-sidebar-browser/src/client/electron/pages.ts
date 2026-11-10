@@ -1,6 +1,6 @@
 /** Assemble Electron navigation and presentation behind the shared BrowserPage interface. */
 import type { DesktopBrowserBridge } from '../../types.ts'
-import type { BrowserPage, BrowserPageOptions } from '../browser/BrowserPage.ts'
+import type { BrowserPage, BrowserPageOptions } from '../contract/BrowserPage.ts'
 import { ElectronWebViewImpl } from './ElectronWebViewImpl.ts'
 import { ElectronWebviewPresentation } from './ElectronWebviewPresentation.ts'
 

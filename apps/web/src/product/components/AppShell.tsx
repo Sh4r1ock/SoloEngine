@@ -1,4 +1,4 @@
-/** 应用外壳：四组侧栏导航 + 48px 顶栏 + 三档内容列 + 底部主题/用户。 */
+/** 应用外壳：三组侧栏导航 + 48px 顶栏 + 三档内容列 + 底部主题/用户。 */
 import { useEffect, useState, type ReactNode } from 'react'
 import {
   Button,

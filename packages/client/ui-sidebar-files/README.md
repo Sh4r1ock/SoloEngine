@@ -1,5 +1,5 @@
 ---
-description: "The right Sidebar's file-tree tab type for the dsh web client: the session workspace root listed one level at a time over the wire, opening files into the Sidebar by resource address."
+description: "The right Sidebar's file-tree tab type for the web client: the session workspace root listed one level at a time over the wire, opening files into the Sidebar by resource address, with workspace-scoped create/rename/delete, name search, and a highlight for the entry a tool presentation last named."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Browse a Session's workspace tree and open files in Sidebar previews. The root and expanded directories refresh automatically from direct-entry watches; manual reload remains available. The tab is reached from the guide and claims no resource address.
+Browse a Session's workspace tree and open files in Sidebar previews. The root and expanded directories refresh automatically from direct-entry watches; manual reload remains available. This build also creates, renames, and removes entries through the workspace-scoped `workspaceFiles` mutations, searches entry names under the root, and highlights the row the Session's last tool presentation named. The tab is reached from the guide and claims no resource address.
 
 ## Table of Contents
 
@@ -49,6 +49,14 @@ State lives in the type's own store, bucketed by tab id: `root`, `levels` (loadi
 
 Each open `DirectoryNode` owns its target watch for the Tab lifetime; collapse closes that node and its hidden descendants. Expansion changes during ancestor restoration update the store and pending nodes, so restored descendants follow the latest expansion preferences. Automatic refresh defaults to enabled; its separate toggle is hidden while state, labels, styles, and toggle logic remain. Changes received during a directory read or its completion remain pending for another refresh.
 
+### Mutations, search, and highlight
+
+The header carries a search toggle, new-file and new-directory controls, and the reload control. Each row carries rename and delete controls that appear on hover or keyboard focus; every mutation opens a confirmation bar that also carries the name field and the settled failure.
+
+- **Mutations** — `remote.workspaceFiles.write` (with `createOnly`), `mkdir`, `rename`, and `removeEntry` on the same namespace. A new file is created empty; a directory is removed with its contents; a rename refuses an existing destination. Every failure code the Host can settle is localized by `mutationLine`, and the tree rereads its expanded levels afterwards.
+- **Search** — a debounced, breadth-first walk over `remote.workspaceFiles.list` from the tree's root, skipping `.git`, `node_modules`, and the usual build-output directories, bounded by a directory-visit cap and a result cap. Only the latest query may publish; a directory match exits the search and expands its ancestors in place.
+- **Highlight** — rows whose absolute path is (or ends with) the first location of the Session's `soloengine.followIntent` projection show the selected-row fill, so the tree marks what the agent last touched.
+
 <a id="model-experience"></a>
 ## Model Experience
 
@@ -61,8 +69,9 @@ None; directory listings travel over the Remote and assemble no model request.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-- **Listing only.** No search, artifact filter, drag-and-drop, rename, context menu, or current-file highlight.
+- **No drag-and-drop or artifact filter.** Entries move only through rename.
 - **One root.** The tree is rooted at the session's working directory; there is no way to browse above it, and the Host refuses paths outside the workspace root anyway.
+- **Search is bounded by name only.** It matches entry names under the root, not file contents, and stops at the visit and result caps rather than reporting every match.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -17,7 +17,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
-import type { FrameworkRuntime } from '@soloengine/framework'
+import { FrameworkError, type FrameworkRuntime } from '@soloengine/framework'
 
 /** 重建报告（如实报出每一类结果，含 skipped 与 errors）。 */
 export interface LedgerRebuildReport {
@@ -69,18 +69,18 @@ async function rebuildOne(
 ): Promise<RebuildOneOutcome> {
   const ledger = runtime.runs.ledger
   const key = String(snapshot.header.id)
-  const before = ledger.byKey(key)
+  const before = await ledger.byKey(key)
   let row = before
   if (row === undefined) {
     // 归属恢复：日志头的 cwd 是唯一可匹配的归属事实（运行项目目录注册表）。
     const cwd = snapshot.header.cwd
     if (cwd === undefined) throw new Error('session has no cwd in its header; attribution cannot be recovered')
-    const match = runtime.db.raw.prepare(
+    const match = await runtime.db.prepare(
       'SELECT id, user_id, agentic_flow_id FROM run_projects WHERE folder_path = ?',
-    ).get(cwd) as { id: string; user_id: string; agentic_flow_id: string } | undefined
+    ).get<{ id: string; user_id: string; agentic_flow_id: string }>(cwd)
     if (match === undefined) throw new Error(`cwd "${cwd}" matches no run_projects row; attribution cannot be recovered`)
     const createdAt = typeof snapshot.header.createdAt === 'number' ? snapshot.header.createdAt : Date.now()
-    row = ledger.recover({
+    row = await ledger.recover({
       session_key: key,
       user_id: match.user_id,
       agentic_flow_id: match.agentic_flow_id,
@@ -97,7 +97,7 @@ async function rebuildOne(
   const agentId = parent ?? key
   const events = await readAllEvents(ctx, snapshot.header.id)
   let lastAssistantSeq: number | undefined
-  const rows = events.map(event => {
+  const rows = events.map((event) => {
     if (event.type === 'assistant/message') lastAssistantSeq = Number(event.seq)
     return {
       seq: Number(event.seq),
@@ -106,7 +106,7 @@ async function rebuildOne(
       parent_message_id: event.type === 'tool/result' && lastAssistantSeq !== undefined ? lastAssistantSeq : null,
     }
   })
-  ledger.replaceEvents(row.id, rows)
+  await ledger.replaceEvents(row.id, rows)
 
   // 折叠状态：最后一条 turn/end 决定 completed/stopped；无 turn/end 视为 stopped（fail-closed 方向）。
   const lastTurnEnd = [...events].reverse().find(event => event.type === 'turn/end') as
@@ -115,11 +115,11 @@ async function rebuildOne(
   const startedAt = events.length > 0 ? Number(events[0]?.time) : null
   const completedAt = events.length > 0 ? Number(events[events.length - 1]?.time) : null
   const reason = lastTurnEnd === undefined ? '' : String(
-    typeof lastTurnEnd.data.reason === 'object' && lastTurnEnd.data.reason !== null
+    typeof lastTurnEnd.data.reason === 'object'
       ? lastTurnEnd.data.reason.kind
       : lastTurnEnd.data.reason,
   )
-  ledger.setStatus(row.id, reason === 'completed' ? 'completed' : 'stopped', {
+  await ledger.setStatus(row.id, reason === 'completed' ? 'completed' : 'stopped', {
     ...(startedAt === null || Number.isNaN(startedAt) ? {} : { startedAt }),
     ...(completedAt === null || Number.isNaN(completedAt) ? {} : { completedAt }),
   })
@@ -152,6 +152,9 @@ export async function rebuildLedgerFromLogs(ctx: Context, runtime: FrameworkRunt
 
 /**
  * 挂载重建路由（POST /api/solo/sessions/rebuild；同一 REST 前缀、同一鉴权）。
+ *
+ * 重建是全实例范围的操作（扫描所有用户的持久会话，报告里会出现他人会话键），
+ * 因此只对超管开放；普通账号调用以 403 拒绝，不返回任何他人会话信息。
  * @param ctx - 注入 `sessionPersistence` 的上下文。
  * @param runtime - 框架层运行时（mountAuthenticated 注入点）。
  */
@@ -161,8 +164,14 @@ export function mountLedgerRebuild(ctx: Context, runtime: FrameworkRuntime): voi
       id: 'sessions-rebuild',
       method: 'post',
       path: '/sessions/rebuild',
-      summary: '归属台账重建（FR-ARCH-012）：从持久 JSONL 重放 sessions/events 折叠索引',
+      summary: '归属台账重建（FR-ARCH-012）：从持久日志重放 sessions/events 折叠索引（超管）',
     },
-    async () => ({ body: { ok: true, report: await rebuildLedgerFromLogs(ctx, runtime) } }),
+    async ({ user }) => {
+      if (user.is_superuser !== 1) {
+        throw new FrameworkError(403, 'SUPERUSER_REQUIRED',
+          'rebuilding the session ledger scans every user\'s durable sessions; only a superuser may run it')
+      }
+      return { body: { ok: true, report: await rebuildLedgerFromLogs(ctx, runtime) } }
+    },
   )
 }

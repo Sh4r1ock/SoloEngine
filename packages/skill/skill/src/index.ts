@@ -366,6 +366,8 @@ export class SkillRegistry extends Service {
   private readonly collectCache = new Map<string, Map<string, IndexedCandidate>>()
   private revision = 0
   private nextProviderOrder = 0
+  /** Per-scope model-visible allow lists; an absent entry means unrestricted. */
+  private readonly scopeRestrictions = new WeakMap<ScopeKey, ReadonlySet<string>>()
   /** Stable identities for cache keys; scope keys are opaque identity-compared objects. */
   private readonly scopeIds = new WeakMap<ScopeKey, number>()
   private nextScopeId = 1
@@ -472,6 +474,33 @@ export class SkillRegistry extends Service {
   }
 
   /**
+   * Restrict the calling context's scope to the given skill names.
+   *
+   * The restriction is the agent's declared skill set: `snapshot()`/`list()`
+   * omit every other name from the model-visible catalog and `get()` refuses
+   * them, so an unselected skill is neither advertised nor loadable. A scope
+   * without a restriction keeps the complete catalog. Duplicate calls replace
+   * the previous set; disposal restores the unrestricted view.
+   * @param names - kebab-case skill names visible to this scope.
+   * @returns the Cordis effect disposer that removes this scope's restriction.
+   */
+  restrict(names: readonly string[]): () => void {
+    const scope = scopeOf(this.ctx)
+    if (scope === undefined) {
+      throw new Error('skills.restrict() requires a scoped context (mount it inside an agent scope)')
+    }
+    const allow = new Set(names)
+    const dispose = this.ctx.effect(() => {
+      this.scopeRestrictions.set(scope, allow)
+      return () => {
+        if (this.scopeRestrictions.get(scope) === allow) this.scopeRestrictions.delete(scope)
+      }
+    }, 'skills.restrict()')
+    // 返回的契约是 `() => void`：effect 的异步卸载在此契约下本就被忽略，显式丢弃。
+    return () => { void dispose() }
+  }
+
+  /**
    * Observe the current invocation-neutral catalog and whether discovery completed within a stable revision.
    * Incomplete observations are never cached, allowing consumers to retain last-good state and
    * retry on their next request boundary.
@@ -482,6 +511,7 @@ export class SkillRegistry extends Service {
     const collected = await this.collect(options)
     return {
       skills: [...collected.entries.values()]
+        .filter(entry => this.isAllowed(options.scope, entry.candidate.name))
         .map(entry => toSummary(entry.candidate))
         .sort(compareSkillSummary),
       complete: collected.cacheable,
@@ -499,6 +529,7 @@ export class SkillRegistry extends Service {
    */
   async get(name: string, options: SkillViewOptions = {}): Promise<SkillDefinition | undefined> {
     if (!isSkillName(name)) return undefined
+    if (!this.isAllowed(options.scope, name)) return undefined
     const collected = await this.collect(options)
     throwIfAborted(options.signal)
     const match = collected.entries.get(name)
@@ -514,6 +545,13 @@ export class SkillRegistry extends Service {
       return undefined
     }
     return definition
+  }
+
+  /** Whether the viewing scope's restriction admits a skill name. */
+  private isAllowed(scope: ScopeKey | undefined, name: string): boolean {
+    if (scope === undefined) return true
+    const allow = this.scopeRestrictions.get(scope)
+    return allow === undefined || allow.has(name)
   }
 
   private async collect(options: SkillViewOptions): Promise<CollectResult> {

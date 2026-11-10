@@ -1,0 +1,53 @@
+/* 主题循环控件：28px 命中区、发丝线描边（色值只用语义 token）。 */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.button:hover {
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.button:active {
+  background-color: var(--dsw-alias-interactive-bg-active);
+}
+
+/* 侧栏主题行：整行 28px、图标 + 档位文案（原型 `sidebar-theme`）。 */
+.withLabel {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--se-space-2);
+  padding: 0 var(--se-space-2);
+  border: 0;
+}
+
+.label {
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+}

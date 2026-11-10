@@ -24,6 +24,14 @@ import {
 } from '@soloengine/types'
 import { TOOL_MAP } from '@soloengine/types'
 
+/** 节点级采样参数（只保留有真实请求消费者的字段）。 */
+export interface NodeSamplingInput {
+  temperature?: number
+  max_tokens?: number
+  /** 该节点每个回合允许的工具调用次数上限（与模型配置的工具轮次上限同一口径）。 */
+  max_tool_calls?: number
+}
+
 /** 画布节点（编译输入，由框架层画布域提供）。 */
 export interface CanvasNodeInput {
   node_id: string
@@ -40,6 +48,8 @@ export interface CanvasNodeInput {
   mcp_servers?: string[]
   /** 节点级插件行：只挂进该节点对应的 agent 作用域。 */
   plugins?: NodePluginRow[]
+  /** 节点级采样参数（只接受有请求消费者的子集）。 */
+  sampling?: NodeSamplingInput
   position: { x: number; y: number }
 }
 
@@ -117,6 +127,35 @@ export function compileCanvas(params: CompileParams): CompileResult {
     seen.add(node.node_id)
     if (node.name.trim() === '') {
       throw new CompileError({ code: 'NODE_NAME_REQUIRED', nodeId: node.node_id, message: `node ${node.node_id} has no name` })
+    }
+  }
+
+  // 委派边必须连接两个真实 agent 节点：指向注释节点或不存在节点的边既不会生成 Task 工具，
+  // 还会把目标节点从入口候选里错误排除（`incoming` 直接按原始边计算）。画布保存不拦这类
+  // 残留边，编译期必须 fail loud，不能让「团队与画布不一致」静默通过。
+  const noteIds = new Set(canvas.nodes.filter(node => node.kind === 'note').map(node => node.node_id))
+  for (const edge of canvas.edges) {
+    if (edge.from === edge.to) {
+      throw new CompileError({
+        code: 'EDGE_INVALID',
+        nodeId: edge.from,
+        message: `delegation edge ${edge.edge_id} points at itself (${edge.from}); an agent cannot delegate to itself`,
+      })
+    }
+    if (noteIds.has(edge.from) || noteIds.has(edge.to)) {
+      throw new CompileError({
+        code: 'EDGE_INVALID',
+        nodeId: noteIds.has(edge.from) ? edge.from : edge.to,
+        message: `delegation edge ${edge.edge_id} (${edge.from} -> ${edge.to}) touches a note node; notes cannot delegate or be delegated to`,
+      })
+    }
+    if (!seen.has(edge.from) || !seen.has(edge.to)) {
+      const missing = seen.has(edge.from) ? edge.to : edge.from
+      throw new CompileError({
+        code: 'EDGE_INVALID',
+        nodeId: missing,
+        message: `delegation edge ${edge.edge_id} (${edge.from} -> ${edge.to}) references node ${missing}, which is not an agent node on this canvas`,
+      })
     }
   }
 
@@ -246,6 +285,7 @@ export function compileCanvas(params: CompileParams): CompileResult {
       role: node.role ?? 'custom',
       modelRoute: model.route,
       ...(node.system_prompt === undefined ? {} : { persona: node.system_prompt }),
+      ...(node.sampling === undefined ? {} : { sampling: { ...node.sampling } }),
       cwd: params.cwd,
       tools: [...node.resolvedTools, ...outgoing],
       skills: [...(node.skills ?? [])],

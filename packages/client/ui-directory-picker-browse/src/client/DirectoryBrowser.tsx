@@ -81,6 +81,28 @@ function failureText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/** Stable code of an injected directory operation's Remote failure. */
+function failureCode(error: unknown): string | undefined {
+  if (error === null || typeof error !== 'object' || !('rpcError' in error)) return undefined
+  const rpcError = error.rpcError
+  if (rpcError === null || typeof rpcError !== 'object' || !('code' in rpcError)) return undefined
+  return typeof rpcError.code === 'string' ? rpcError.code : undefined
+}
+
+/**
+ * Create-folder failure text: the two refusals a person can act on get localized
+ * copy instead of the Host's machine message; other failures keep their text.
+ * @param error - injected createDirectory rejection.
+ * @param t - dialog locale seat.
+ * @returns the sentence shown under the name field.
+ */
+function createFailureText(error: unknown, t: Translate): string {
+  const code = failureCode(error)
+  if (code === 'gateway/bad-request') return t('browser.createInvalid')
+  if (code === 'directory-picker/exists') return t('browser.createExists')
+  return failureText(error)
+}
+
 /**
  * How long a scan may stay visually silent before the floating "Loading…"
  * pill appears. The stale view keeps rendering while a scan is in flight, so
@@ -644,7 +666,7 @@ export function DirectoryBrowser({ open, listDirectory, createDirectory, onOpen,
     }, (reason: unknown) => {
       if (generation !== openGeneration.current) return
       setCreatingFolder(false)
-      setCreateError(failureText(reason))
+      setCreateError(createFailureText(reason, t))
     })
   }
 

@@ -2,8 +2,8 @@
  * 会话头「工具」座位上的预览记录入口（PRD-07 FR-UI-020；PRD-08 FR-OPS-008）。
  *
  * 数据来自宿主权威投影 `soloengine.openPreview`（新到旧、同链接去重置顶、上限 50），
- * 客户端只读、不自算。**点击一条预览即经同源代理的浏览器面板打开该地址**：
- * 以 `{ url }` 调 `ctx.sidebarRight.openTab('soloengine-browser')`，参数到达面板体后
+ * 客户端只读、不自算。**点击一条预览即经同源代理的浏览器页签打开该地址**：
+ * 以 `{ url }` 调 `ctx.sidebarRight.openTab('browser')`，参数到达页签体后
  * 在当前标签导航（地址栏同步）——页面加载与安全判定全部由 Host 侧代理承担。
  *
  * @module @soloengine/ui-conversation/PreviewList

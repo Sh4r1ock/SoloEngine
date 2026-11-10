@@ -1,0 +1,377 @@
+/* 市场：类型标签 + 过滤条 + 注册表式发丝线列表（不是卡片）。 */
+
+/* 标签栏、过滤条与列表同属一个零间距容器：原型里三者首尾相接——标签栏下边框到
+   过滤条控件 12px（过滤条自带的上内边距），过滤条下边框到首行 0px（行自带 16px 上
+   内边距）。通用 `.page` 的 24px 分节间距只保留在页头之后。 */
+.content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  height: 40px;
+  padding: 0 var(--se-space-3);
+  border: 0;
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.tab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabActive {
+  color: var(--dsw-alias-label-primary);
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  left: var(--se-space-2);
+  right: var(--se-space-2);
+  bottom: 0;
+  height: 2px;
+  /* 2px 高的指示条上，圆角被裁到半高（1px），阶梯 xs 与 2px 渲染完全一致。 */
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.tabCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+  padding: var(--se-space-3) 0;
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.search {
+  flex: 1 1 240px;
+  max-width: 360px;
+  min-width: 0;
+}
+
+/* 搜索框 36px（原型 `.search .input` / --control-md），与分类、排序选择器同高同圆角。
+   元素选择器（0,1,1）压过原语 `.wrap` 的 32px（0,1,0），不依赖样式注入顺序。 */
+span.search {
+  box-sizing: border-box;
+  height: 36px;
+  gap: var(--se-space-2);
+  padding: 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+}
+
+span.search:focus-within {
+  border-color: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-alias-bg-base));
+}
+
+/* 原生 select：36px / 8px 圆角 / 发丝线 / 自绘箭头（原型 `.select`）。 */
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--se-space-6) 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dsw-alias-label-secondary) 50%),
+    linear-gradient(135deg, var(--dsw-alias-label-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) calc(50% + 1px),
+    calc(100% - 11px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  appearance: none;
+  cursor: pointer;
+}
+
+/* 原型 `.filterbar .select`：宽度按内容、最小 120px。 */
+.filterSelect {
+  width: auto;
+  min-width: 120px;
+}
+
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--dsw-static-deepseek-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-alias-bg-base));
+}
+
+/* 提示行与筛选栏之间留 12px：列表紧贴筛选栏，提示行不能压在发丝线上。 */
+.notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+  padding-top: var(--se-space-3);
+}
+
+.switchLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 「只看精选」文字：外观与标签一致，点击与开关同效（承接原型 label 包裹整行的行为）。 */
+.switchText {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.count {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: var(--se-space-3);
+  align-items: center;
+  padding: var(--se-space-4) var(--se-space-2);
+  border-bottom: 0.5px solid var(--se-hairline);
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.row:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.titleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+}
+
+/* 精选标记（原型 `.badge--accent`）：几何由原语 Tag 提供（20px / 12 字号 / 4px 圆角），
+   这里只补蓝点与点字间距；文字色由 common.statusTag 拉回 label-primary 保对比度。 */
+.featuredBadge {
+  flex: none;
+  gap: var(--se-space-1);
+}
+
+.featuredDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.rowName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.rowDesc {
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+  margin-top: var(--se-space-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.tags {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  flex-wrap: wrap;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--se-space-2);
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.side {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-4);
+}
+
+.installs {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.installs strong {
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+button.installedButton {
+  border-color: var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 已安装是状态而非不可用动作：禁用态仍保持次级正文色，不能落进通用 disabled 灰字。 */
+button.installedButton:disabled {
+  border-color: var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .side {
+    grid-column: 2;
+    justify-content: space-between;
+    margin-top: var(--se-space-1);
+  }
+
+  .rowDesc {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  /* 原型 `.filterbar .search`：窄视口下搜索框独占一行（flex 1 / 最小 180px）。 */
+  .search {
+    flex: 1 1 180px;
+    max-width: none;
+  }
+
+  /* 原型 `.filterbar .select`：窄视口下最小宽度收到 112px。 */
+  .filterSelect {
+    min-width: 112px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .tab {
+    transition: none;
+  }
+}

@@ -9,6 +9,11 @@
  * 不另存一份副本（PRD-12 FR-STO-008）。因此它天然只覆盖本进程存活期间发生的事件——
  * 进程重启后的历史不在预览里，那属于完整运行面板的职责。
  *
+ * **与原生投影的分工**：原生 `sessionStats` 只统计回合/步骤与耗时的数值，不承载助手文本流与
+ * 工具阶段；画布编辑器要的是「设计期随手试一下」的轻量日志，故本模块是原生事件广播的明确
+ * 轻量消费端（读一条原生事件、折一条预览条目），既不是第二事件通道，也不与运行面板的卡片
+ * 体系重复。
+ *
  * @module @soloengine/host/preview-stream
  */
 
@@ -36,6 +41,8 @@ export interface PreviewEntry {
   phase?: PreviewToolPhase
   /** 回合号（便于把日志按回合分段）。 */
   turn?: number
+  /** 会话事件的写入时刻（epoch 毫秒；日志视图的时间列）。 */
+  at?: number
 }
 
 /** 单个会话保留的条目上限（超出丢弃最早的，预览不需要长历史）。 */
@@ -76,7 +83,7 @@ export class PreviewStream {
     const buffer = this.buffers.get(sessionKey) ?? { entries: [], status: 'pending', calls: new Map<string, string>() }
     const entry = this.fold(event, buffer)
     if (entry !== undefined) {
-      buffer.entries.push(entry)
+      buffer.entries.push({ ...entry, at: event.time })
       if (buffer.entries.length > ENTRY_LIMIT) buffer.entries.splice(0, buffer.entries.length - ENTRY_LIMIT)
     }
     buffer.status = this.statusOf(event, buffer.status)
@@ -99,28 +106,28 @@ export class PreviewStream {
     }
     if (event.type === 'tool/call') {
       const data = event.data as { name?: unknown; callId?: unknown }
-      const name = String(data.name ?? '')
+      const name = typeof data.name === 'string' ? data.name : ''
       if (name === '') return undefined
-      const callId = String(data.callId ?? '')
+      const callId = typeof data.callId === 'string' ? data.callId : ''
       if (callId !== '') buffer.calls.set(callId, name)
       return { seq, kind: 'tool', toolName: name, phase: 'start', ...this.turnOf(event) }
     }
     if (event.type === 'tool/result') {
-      const message = (event.data as { message?: { source?: { callId?: unknown }; content?: unknown } }).message
-      const callId = String(message?.source?.callId ?? '')
-      const blocks = Array.isArray(message?.content) ? message.content : []
-      const block = blocks.find(item =>
-        typeof item === 'object' && item !== null && (item as { type?: unknown }).type === 'tool-result') as
-        | { content?: unknown; isError?: unknown }
-        | undefined
+      // 结果事件的形状与原生工具卡同源：`message.content` 是内容块数组、失败位在
+      // `message.isError`（不在内容块上）；`source.callId` 与此前 `tool/call` 配对。
+      const message = (event.data as {
+        message?: { source?: { callId?: unknown }; content?: unknown; isError?: unknown }
+      }).message
+      const sourceCallId = message?.source?.callId
+      const callId = typeof sourceCallId === 'string' ? sourceCallId : ''
       const name = buffer.calls.get(callId)
       if (name === undefined && callId === '') return undefined
-      const text = this.textsOf(block?.content)
+      const text = this.textsOf(message?.content)
       return {
         seq,
         kind: 'tool',
         ...name === undefined ? {} : { toolName: name },
-        phase: block?.isError === true ? 'error' : 'result',
+        phase: message?.isError === true ? 'error' : 'result',
         ...text === '' ? {} : { text: text.slice(0, RESULT_TEXT_LIMIT) },
         ...this.turnOf(event),
       }
@@ -130,7 +137,8 @@ export class PreviewStream {
     }
     if (event.type === 'turn/end') {
       const reason = (event.data as { reason?: { kind?: unknown } | string }).reason
-      const label = typeof reason === 'string' ? reason : String(reason?.kind ?? 'unknown')
+      const kind = typeof reason === 'string' ? reason : reason?.kind
+      const label = typeof kind === 'string' ? kind : 'unknown'
       // 失败回合以「错误」条目呈现，把停止原因直接摆在日志里（不静默、不含糊）。
       const failed = label === 'error' || label === 'failed'
       return {
@@ -156,7 +164,7 @@ export class PreviewStream {
     return content
       .filter((block): block is { type: 'text'; text: string } =>
         typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'text')
-      .map(block => String(block.text))
+      .map(block => block.text)
       .join('')
   }
 
@@ -165,8 +173,10 @@ export class PreviewStream {
     if (event.type === 'turn/start') return 'running'
     if (event.type === 'turn/end') {
       const reason = (event.data as { reason?: { kind?: unknown } | string }).reason
-      const label = typeof reason === 'string' ? reason : String(reason?.kind ?? 'unknown')
-      if (label === 'completed') return 'idle'
+      const kind = typeof reason === 'string' ? reason : reason?.kind
+      const label = typeof kind === 'string' ? kind : 'unknown'
+      // 正常完成与「还没跑过」必须分开：画布预览面板要显示「已完成」而不是「未运行」。
+      if (label === 'completed') return 'completed'
       // 失败与「已停止」分开报：预览要能区分「我说停的」与「它自己挂的」。
       return label === 'error' || label === 'failed' ? 'failed' : 'stopped'
     }
@@ -208,9 +218,15 @@ export class PreviewStream {
  */
 export function mountPreviewStream(ctx: Context, runtime: FrameworkRuntime, stream: PreviewStream): void {
   ctx.on('session/event', (session: Session, event: SessionEvent) => {
-    // 只为本实例发起的会话记账：归属台账是唯一判据，避免为无关会话白攒内存。
-    if (runtime.runs.ledger.byKey(String(session.id)) === undefined) return
-    stream.record(String(session.id), event)
+    void (async () => {
+      // 只为本实例发起的会话记账：归属台账是唯一判据，避免为无关会话白攒内存。
+      if (await runtime.runs.ledger.byKey(String(session.id)) === undefined) return
+      stream.record(String(session.id), event)
+    })()
+  })
+  // 会话销毁即丢弃缓冲：否则每个跑过的会话都永久留下最多 500 条文本条目（内存单调增长）。
+  ctx.on('session/disposed', (session: Session) => {
+    stream.drop(String(session.id))
   })
 
   runtime.mountAuthenticated(
@@ -222,7 +238,7 @@ export function mountPreviewStream(ctx: Context, runtime: FrameworkRuntime, stre
     },
     async (req) => {
       const key = req.params.key ?? ''
-      const row = runtime.runs.ledger.byKey(key)
+      const row = await runtime.runs.ledger.byKey(key)
       if (row === undefined) {
         return {
           status: 404,

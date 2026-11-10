@@ -1,0 +1,653 @@
+/* 模型页：用量面板 + 表格（表头 36、行高随两行名称内容撑开，原型实测 79）+ 抽屉表单。 */
+
+.panel {
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-3);
+  flex-wrap: wrap;
+  padding: var(--se-space-3) var(--se-space-4);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.panelHint {
+  margin: var(--se-space-1) 0 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.panelBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+  padding: var(--se-space-4);
+}
+
+.count {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+}
+
+.chartRow {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chartTop {
+  display: flex;
+  align-items: baseline;
+  gap: var(--se-space-3);
+  min-width: 0;
+}
+
+.chartName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 130px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-label-secondary);
+}
+
+.dotAccent {
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.chartModel {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chartValue {
+  margin-left: auto;
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.chartBar {
+  height: 4px;
+  margin-top: var(--se-space-2);
+  overflow: hidden;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.chartBarFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background-color: var(--dsw-alias-label-primary);
+  transition: width var(--se-duration-slow) var(--se-ease-standard);
+}
+
+.chartBarFillAccent {
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.chartMeta {
+  margin-top: var(--se-space-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.chartNote {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-4);
+  min-width: 0;
+  /* 同级章节之间 0.5px 分隔线 + 24px 上间距（原型 .section、设计参考 §6「节奏」）。 */
+  padding-top: var(--se-space-5);
+  border-top: 0.5px solid var(--se-hairline);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--se-space-4);
+  flex-wrap: wrap;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.sectionMeta {
+  margin: var(--se-space-1) 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+}
+
+.search {
+  width: 200px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+/* 原型 `.table`：auto 布局 + 760px 下限，列宽随容器收缩，装不下才横向滚动。 */
+.table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.table th {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--se-space-4);
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--se-space-4);
+  text-align: right;
+}
+
+.table td {
+  box-sizing: border-box;
+  height: 44px;
+  padding: var(--se-space-2) var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* 列宽只给可收缩的下限（原型 1280 实测 154/86/113/136/75/64/61/116）：
+   合计低于表格 760 下限，列先收缩、最后才出现横向滚动。 */
+.colName {
+  min-width: 140px;
+  max-width: 170px;
+}
+
+.colNowrap {
+  max-width: 95px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colWide {
+  min-width: 100px;
+}
+
+.colUsage {
+  white-space: nowrap;
+}
+
+/* 地址列：短形式单行显示，装不下就省略号收口；完整地址在 title 里回读。 */
+.urlText {
+  display: block;
+  max-width: 100px;
+  overflow: hidden;
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colActions {
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.nameCell {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.nameText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nameTitle {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 名称列第二行（温度 / max_tokens）：按原型 `.cell-sub` 换行，并保留原型两行内容的高度
+   （2 × 20 = 40）。产品数据为 null 时文案只有一行，仍占同一块两行高度，行高保持原型
+   实测的 79（22 + 40 + 8×2 + 0.5）；截断成一行会把行高压回 59。 */
+.nameSub {
+  min-height: calc(var(--se-space-6) + var(--se-space-2));
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  height: 28px;
+  padding: 0 var(--se-space-2);
+  border: 0;
+  border-radius: var(--se-radius-xs);
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toggle:hover:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle:disabled {
+  color: var(--dsw-alias-label-caption);
+  cursor: not-allowed;
+}
+
+.toggleDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-border-l3);
+}
+
+.toggleDotOn {
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.usageMini {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.usageSub {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--se-space-1);
+}
+
+/* 原语 Button 的 ghost/sm 类与产品类同特异性：选择器带元素名稳定压过，不依赖样式注入顺序。 */
+button.testButton {
+  padding: 0 var(--se-space-2);
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary);
+}
+
+button.testButton:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 行内图标键 28×28（原型 .icon-btn）；Button 原语默认 10px 横内边距会撑到 36 宽。 */
+button.moreButton {
+  width: 28px;
+  padding: 0;
+}
+
+button.moreButton:active:not(:disabled) {
+  background-color: var(--dsw-alias-interactive-bg-active);
+}
+
+button.moreButton:disabled {
+  border-color: transparent;
+  background-color: transparent;
+  color: var(--dsw-alias-label-caption);
+}
+
+/* 默认徽标：accent 语气（原型 .badge--accent —— 蓝点 + accent 描边，文字仍用主标签色）。 */
+.badgeAccent {
+  gap: var(--se-space-1);
+  border: 0.5px solid var(--se-accent-line);
+}
+
+.badgeDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  /* 原型 .empty 上下内边距 96（--s-9）；se 阶梯止于 48，用同一阶梯翻倍表达。 */
+  padding: calc(var(--se-space-7) * 2) var(--se-space-5);
+  text-align: center;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  /* 正文 14/24（规范 §2）：14px 文本一律 24 行高，不用 22。 */
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.emptyDesc {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* 空状态动作组：新建模型与清除搜索并排，窄视口换行。 */
+.emptyActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+}
+
+/* 抽屉表单：两列栅格（原型 .form-grid）；名称 / 地址 / 密钥 / 布尔项整行。 */
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--se-space-4);
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+/* 抽屉分节：基本 / 连接 / 密钥 / 采样参数 / 默认开关（发丝线分隔）。 */
+.formSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+}
+
+.formSection + .formSection {
+  padding-top: var(--se-space-4);
+  border-top: 0.5px solid var(--se-hairline);
+}
+
+.formSectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.advancedGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-2);
+}
+
+.advancedGroupTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* 提供方下拉：与原生 Input 同高同底（36px、0.5px 发丝线），箭头用双线性渐变画。 */
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--se-space-6) 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dsw-alias-label-secondary) 50%),
+    linear-gradient(135deg, var(--dsw-alias-label-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) calc(50% + 1px),
+    calc(100% - 11px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: var(--dsh-content-font-size, 14px);
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:hover:not(:disabled):not(:focus) {
+  border-color: var(--dsw-alias-border-l4);
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+/* ── 抽屉（原型 .drawer / .field / .input / .btn）────────────────────────────
+ * 抽屉是共享组件，这里以面板类限定作用域，只改模型表单的度量，不影响其他抽屉。 */
+
+/* 原型 .drawer__head：24 内边距 → 头部 99（标题 26 + 说明 4 + 20 + 48 + 0.5 描边）。 */
+.drawer > header {
+  padding: var(--se-space-5);
+}
+
+/* 原型 .drawer__body：24 内边距。 */
+.drawer > div {
+  padding: var(--se-space-5);
+}
+
+/* 原型 .field：标签与控件间距 8（通用 .field 为 4）。 */
+.drawer label[class*="_field_"] {
+  gap: var(--se-space-2);
+}
+
+/* 原型 .field-label：12/20、500，行内标签行（标签与右侧元信息同一行，间距 8）。 */
+.drawer label[class*="_field_"] > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* 原型 .input：36 高（含 0.5 描边）、8 圆角、0 12 内边距（原语壳 32 + 描边、12 圆角、0 8）。 */
+.drawer span[class*="_wrap_"] {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  border-radius: var(--se-radius-sm);
+}
+
+/* 原型 .btn：13/22、500、8 圆角、0 16 内边距、8 间距；透明 0.5 描边保留原型边框占位。 */
+.drawer > footer button {
+  height: 36px;
+  padding: 0 var(--se-space-4);
+  border: 0.5px solid transparent;
+  border-radius: var(--se-radius-sm);
+  gap: var(--se-space-2);
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .formGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .search {
+    width: 160px;
+  }
+
+  .chartName {
+    min-width: 96px;
+  }
+
+  .chartModel {
+    display: none;
+  }
+
+  .sectionHead {
+    align-items: stretch;
+  }
+}

@@ -1,0 +1,32 @@
+# 容器执行覆盖（SOLOENGINE_EXECUTOR=container|microvm）：每会话一个加固容器（默认拒网、只读根、
+# 丢弃 capability、非 root），会话命令经子进程接缝改写成 `docker exec` 进该容器。
+# `microvm` 复用同一装配，由 OCI 运行时（SOLOENGINE_CONTAINER_RUNTIME）提供独立 guest 内核。
+#
+# 两个座位同时换：
+# 1. `subprocess`：本机提供方换成按会话路由的容器提供方，工作区映射到 `/workspace`；
+#    带会话标识却没有容器的调用直接拒绝，绝不落回宿主机。
+# 2. `sandbox`：宿主进程沙箱换成容器沙箱提供方。容器就是执行边界（完整强制力），
+#    因此沙箱消费者（bash/pwsh 执行器）与权限预设保持原组合不变；包装在子进程接缝完成，
+#    因为只有子进程请求同时携带会话标识、工作目录与标准输入。
+#
+# 命令方言（bash/pwsh）不在这里选：执行世界是容器镜像（Linux），这一事实由
+# `SOLOENGINE_EXECUTOR` 唯一给出——shell 执行器在组合层、命令工具在 agent 预设、画布把
+# `run_command` 映射为 bash，三处读同一个事实，故本覆盖不再重复启停这些行。
+#
+# 单机形态不受影响：本覆盖只在 SOLOENGINE_EXECUTOR=container|microvm 时叠加。
+
+- id: subprocess
+  disabled: true
+
+- id: sandbox
+  disabled: true
+
+- insert:
+    - id: subprocess-container
+      name: '@soloengine/subprocess-container'
+      config:
+        docker: !!js process.env.SOLOENGINE_DOCKER ?? 'docker'
+        requireSessionRoute: true
+
+    - id: sandbox-container
+      name: '@soloengine/sandbox-container'

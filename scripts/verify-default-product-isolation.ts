@@ -65,7 +65,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
   const display = (path: string): string => relative(root, path).replaceAll('\\', '/')
   for (const path of globSync([
     'apps/*/package.json', 'packages/*/*/package.json', 'vendor/*/package.json',
-    'native/system/packages/*/package.json', 'python/sdk-runtime/package.json',
+    'native/system/packages/*/package.json',
   ], { cwd: root }).sort()) {
     const manifest = JSON.parse(readFileSync(resolve(root, path), 'utf8')) as Manifest
     if (typeof manifest.name !== 'string' || manifest.name === '') throw new Error(`${path}: missing package name`)
@@ -74,7 +74,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
     packages.set(manifest.name, pkg)
     directories.set(pkg.directory, pkg)
   }
-  for (const path of ['apps/cli/package.json', 'apps/web/package.json', 'python/sdk-runtime/package.json']) {
+  for (const path of ['apps/cli/package.json', 'apps/web/package.json']) {
     if (!existsSync(resolve(root, path))) failures.push(`missing default product root ${path}`)
   }
   const cli = directories.get(resolve(root, 'apps/cli'))
@@ -238,7 +238,7 @@ export function verifyDefaultProductIsolation(root: string): ProductIsolationRes
 
   for (const pkg of packages.values()) {
     const path = display(pkg.directory)
-    if (path.startsWith('apps/') || path === 'python/sdk-runtime') add(pkg, path)
+    if (path.startsWith('apps/')) add(pkg, path)
   }
   if (selection !== undefined) {
     for (const name of selection.packages) {

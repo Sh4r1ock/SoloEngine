@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, IconArchiveOutlineMedium, IconBrowseOutlineRegular,
-  IconCopyOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconPlayOutlineRegular, IconPlusOutlineRegular,
+  IconCopyOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconPinOutlineRegular,
+  IconPlayOutlineRegular, IconPlusOutlineRegular,
   IconSearchOutlineRegular, IconTrashOutlineRegular,
   Input, Menu, Modal, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -18,16 +19,18 @@ import { IconPicker } from '../components/IconPicker.tsx'
 import { useSearchShortcut } from '../components/useSearchShortcut.ts'
 import { useToastHost } from '../components/Toaster.tsx'
 import { PackagingDrawer } from './PackagingPage.tsx'
-import type { CanvasView, RunProjectView, RunSessionView } from '../types.ts'
+import type { CanvasView, RunProjectView, RunSessionView, UserView } from '../types.ts'
 import common from '../styles/common.module.css'
 import css from '../styles/canvases.module.css'
 
-/** 会话状态 → 文案键。 */
+/** 会话状态 → 文案键（含台账的 pending / stopped，未知值才回落「未知」）。 */
 function sessionStatusKey(status: string): string {
+  if (status === 'pending') return 'sessionPending'
   if (status === 'running') return 'sessionRunning'
   if (status === 'completed') return 'sessionCompleted'
   if (status === 'failed') return 'sessionFailed'
   if (status === 'cancelled') return 'sessionCancelled'
+  if (status === 'stopped') return 'sessionStopped'
   return 'sessionUnknown'
 }
 
@@ -65,17 +68,20 @@ function monogram(canvas: CanvasView): string {
 
 /**
  * 渲染画布列表。
+ * @param props.user - 当前用户（决定他人模板是否只读）。
  */
-export function CanvasesPage() {
+export function CanvasesPage({ user }: { user: UserView }) {
   useLocale()
   const toast = useToastHost()
   const [canvases, setCanvases] = useState<CanvasView[]>([])
   const [projects, setProjects] = useState<RunProjectView[]>([])
   const [sessions, setSessions] = useState<RunSessionView[]>([])
   const [sessionsError, setSessionsError] = useState<string | null>(null)
+  /** 运行项目列表失败：只在项目相关区域呈现，不阻断画布列表。 */
+  const [projectsError, setProjectsError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<{ text: string; retry: () => void } | null>(null)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -83,6 +89,8 @@ export function CanvasesPage() {
   const [editTarget, setEditTarget] = useState<CanvasView | null>(null)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CanvasView | null>(null)
+  /** 删除失败原因：必须显示在确认弹窗内，页面层的错误会被遮罩挡住。 */
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   /** 打包抽屉的来源画布（null = 关闭）；打包不是页面，只在画布上下文里打开。 */
   const [packageTarget, setPackageTarget] = useState<CanvasView | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
@@ -93,19 +101,25 @@ export function CanvasesPage() {
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
-    try {
-      const [canvasResult, projectResult] = await Promise.all([
-        request<{ ok: true; canvases: CanvasView[] }>('/canvases'),
-        request<{ ok: true; projects: RunProjectView[] }>('/projects'),
-      ])
-      setCanvases(canvasResult.canvases)
-      setProjects(projectResult.projects)
+    // 画布列表与运行项目彼此独立：项目失败不能把画布列表一起判失败（allSettled）。
+    const [canvasResult, projectResult] = await Promise.allSettled([
+      request<{ ok: true; canvases: CanvasView[] }>('/canvases'),
+      request<{ ok: true; projects: RunProjectView[] }>('/projects'),
+    ])
+    if (canvasResult.status === 'fulfilled') {
+      setCanvases(canvasResult.value.canvases)
       setError(null)
-    } catch (failure) {
-      setError(`${t('canvases', 'errorLoad')} — ${describeError(failure)}`)
-    } finally {
-      setLoading(false)
+    } else {
+      // 重试必须重跑失败的那个动作：列表加载失败时重试 load，删除/复制失败时重试原动作。
+      setError({ text: `${t('canvases', 'errorLoad')} — ${describeError(canvasResult.reason)}`, retry: () => { void load() } })
     }
+    if (projectResult.status === 'fulfilled') {
+      setProjects(projectResult.value.projects)
+      setProjectsError(null)
+    } else {
+      setProjectsError(`${t('canvases', 'errorLoadProjects')} — ${describeError(projectResult.reason)}`)
+    }
+    setLoading(false)
   }, [])
 
   const loadSessions = useCallback(async (): Promise<void> => {
@@ -157,13 +171,13 @@ export function CanvasesPage() {
     return names
   }, [projects])
 
-  // 级联事实只按台账计数陈述；没有运行项目时给出「还没有运行项目」，
-  // 而不是对不存在的级联作断言（原型 canvases.js:262-264 同文案）。
+  // 级联事实只按台账计数陈述；项目列表不可用时不能断言「没有运行项目」，改为提示无法确认。
   const deleteProjectCount = deleteTarget === null
     ? 0
     : projects.filter(project => project.agentic_flow_id === deleteTarget.id).length
   let deleteDetail = t('canvases', 'deleteNoProjects')
-  if (deleteProjectCount === 1) deleteDetail = t('canvases', 'deleteOwnProjectsOne')
+  if (projectsError !== null) deleteDetail = t('canvases', 'deleteProjectsUnknown')
+  else if (deleteProjectCount === 1) deleteDetail = t('canvases', 'deleteOwnProjectsOne')
   else if (deleteProjectCount > 1) deleteDetail = t('canvases', 'deleteOwnProjects', { count: deleteProjectCount })
   const deleteDescription = deleteTarget === null
     ? undefined
@@ -177,7 +191,10 @@ export function CanvasesPage() {
         await action()
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
-        setError(`${t('canvases', failureKey)} — ${describeError(failure)}`)
+        setError({
+          text: `${t('canvases', failureKey)} — ${describeError(failure)}`,
+          retry: () => { runAction(id, action, failureKey, successText) },
+        })
       } finally {
         setBusyId(null)
       }
@@ -191,6 +208,17 @@ export function CanvasesPage() {
       if (openAfter) navigate(`/canvas/${result.canvas.id}`)
       else toast.show(t('canvases', 'duplicateDone', { name: result.canvas.name }), 'success')
     }, 'errorDuplicate')
+  }
+
+  /** 设为/取消模板：模板是「从模板开始」的数据源，必须由用户真实写入（不再是恒空的选择器）。 */
+  const setTemplate = (canvas: CanvasView, next: boolean): void => {
+    runAction(canvas.id, async () => {
+      const result = await request<{ ok: true; canvas: CanvasView }>(`/canvases/${canvas.id}`, {
+        method: 'PATCH',
+        body: { is_template: next, version: canvas.version },
+      })
+      setCanvases(previous => previous.map(item => item.id === result.canvas.id ? result.canvas : item))
+    }, 'errorUpdate', t('canvases', next ? 'toastTemplateSet' : 'toastTemplateUnset'))
   }
 
   return (
@@ -247,11 +275,15 @@ export function CanvasesPage() {
             <span className={css.count}>{t('canvases', 'countCanvases', { count: visible.length })}</span>
           </div>
 
-          <NoticeLine tone="error" text={error} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
+          <NoticeLine
+            tone="error"
+            text={error === null ? null : error.text}
+            {...(error === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: error.retry } })}
+          />
 
           {loading && <div className={common.empty}>{t('common', 'stateLoading')}</div>}
 
-          {!loading && canvases.length === 0 && (
+          {!loading && error === null && canvases.length === 0 && (
             <div className={css.emptyState}>
               <span className={css.emptyIcon} aria-hidden="true">
                 <svg viewBox="0 0 20 20"><rect x="3" y="3" width="5.5" height="5.5" rx="1" /><rect x="11.5" y="3" width="5.5" height="5.5" rx="1" /><rect x="3" y="11.5" width="5.5" height="5.5" rx="1" /><path d="M11.5 14.25h5.5M14.25 11.5v5.5" /></svg>
@@ -262,7 +294,7 @@ export function CanvasesPage() {
             </div>
           )}
 
-          {!loading && canvases.length > 0 && visible.length === 0 && (
+          {!loading && error === null && canvases.length > 0 && visible.length === 0 && (
             <div className={css.emptyState}>
               <span className={css.emptyIcon} aria-hidden="true">
                 <svg viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="4.5" /><path d="m12 12 4 4" /></svg>
@@ -279,6 +311,8 @@ export function CanvasesPage() {
             <div className={css.rows}>
               {visible.map((canvas) => {
                 const updated = relativeTime(canvas.updated_at)
+                // 他人模板只读：编辑信息会 PATCH 到 403，菜单项必须先禁用并标明原因。
+                const readOnlyTemplate = canvas.is_template && canvas.user_id !== user.id
                 return (
                   <div
                     key={canvas.id}
@@ -296,6 +330,8 @@ export function CanvasesPage() {
                           {canvas.name}
                         </button>
                         {canvas.is_template && <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>}
+                        {readOnlyTemplate && <Tag tone="quiet">{t('canvases', 'publicTemplate')}</Tag>}
+                        {canvas.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
                       </div>
                       <p className={css.rowDesc}>
                         {canvas.description !== null && canvas.description !== ''
@@ -328,7 +364,7 @@ export function CanvasesPage() {
                         icon={<IconPlayOutlineRegular size={14} />}
                         aria-label={t('canvases', 'runAria', { name: canvas.name })}
                         title={t('canvases', 'run')}
-                        disabled={busyId === canvas.id}
+                        disabled={busyId === canvas.id || canvas.canvas_error !== undefined}
                         onClick={() => { openPage(`/run/${canvas.id}`) }}
                       />
                       <Button
@@ -338,7 +374,7 @@ export function CanvasesPage() {
                         icon={<IconArchiveOutlineMedium size={14} />}
                         aria-label={t('canvases', 'packageAria', { name: canvas.name })}
                         title={t('canvases', 'packagingAction')}
-                        disabled={busyId === canvas.id}
+                        disabled={busyId === canvas.id || canvas.canvas_error !== undefined}
                         onClick={() => { setPackageTarget(canvas) }}
                       />
                       <Menu
@@ -354,24 +390,31 @@ export function CanvasesPage() {
                             id: 'edit',
                             label: t('canvases', 'menuEdit'),
                             icon: <IconEditOutlineRegular size={14} />,
-                            disabled: busyId === canvas.id,
+                            disabled: busyId === canvas.id || readOnlyTemplate,
                           },
                           {
                             id: 'duplicate',
                             label: canvas.is_template ? t('canvases', 'copyAsMine') : t('canvases', 'duplicate'),
                             icon: <IconCopyOutlineRegular size={14} />,
-                            disabled: busyId === canvas.id,
+                            disabled: busyId === canvas.id || canvas.canvas_error !== undefined,
                           },
                           {
                             id: 'run',
                             label: t('canvases', 'menuRun'),
                             icon: <IconPlayOutlineRegular size={14} />,
-                            disabled: busyId === canvas.id,
+                            disabled: busyId === canvas.id || canvas.canvas_error !== undefined,
                           },
                           {
                             id: 'package',
                             label: t('canvases', 'packagingAction'),
                             icon: <IconArchiveOutlineMedium size={14} />,
+                            disabled: busyId === canvas.id || canvas.canvas_error !== undefined,
+                          },
+                          {
+                            id: 'template',
+                            label: canvas.is_template ? t('canvases', 'menuUnsetTemplate') : t('canvases', 'menuSetTemplate'),
+                            icon: <IconPinOutlineRegular size={14} />,
+                            disabled: busyId === canvas.id || readOnlyTemplate,
                           },
                           { type: 'separator', id: 'separator' },
                           {
@@ -389,7 +432,8 @@ export function CanvasesPage() {
                           if (id === 'duplicate') duplicate(canvas, false)
                           if (id === 'run') openPage(`/run/${canvas.id}`)
                           if (id === 'package') setPackageTarget(canvas)
-                          if (id === 'delete') setDeleteTarget(canvas)
+                          if (id === 'template') setTemplate(canvas, !canvas.is_template)
+                          if (id === 'delete') { setDeleteError(null); setDeleteTarget(canvas) }
                         }}
                         onClose={() => { setMenuId(null) }}
                         anchor={(
@@ -419,6 +463,12 @@ export function CanvasesPage() {
               <h2 className={css.recentTitle}>{t('canvases', 'recentTitle')}</h2>
               <span className={css.count}>{sessions.length}</span>
             </div>
+            {/* 运行项目失败只影响本栏的项目名与删除级联提示，列表照常可用。 */}
+            {projectsError !== null && (
+              <div className={css.panelNotice}>
+                <NoticeLine tone="error" text={projectsError} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
+              </div>
+            )}
             {sessionsError !== null && (
               <div className={css.panelNotice}>
                 <NoticeLine tone="error" text={sessionsError} action={{ label: t('common', 'actionRetry'), onClick: () => { void loadSessions() } }} />
@@ -458,27 +508,31 @@ export function CanvasesPage() {
         </aside>
       </div>
 
-      <CanvasMetaDialog
-        open={createOpen}
-        canvas={null}
-        onClose={() => { setCreateOpen(false) }}
-        onSaved={(created) => {
-          setCreateOpen(false)
-          void load().then(() => { navigate(`/canvas/${created.id}`) })
-        }}
-      />
+      {createOpen && (
+        <CanvasMetaDialog
+          open
+          canvas={null}
+          onClose={() => { setCreateOpen(false) }}
+          onSaved={(created) => {
+            setCreateOpen(false)
+            void load().then(() => { navigate(`/canvas/${created.id}`) })
+          }}
+        />
+      )}
 
       {/* 列表行的元信息编辑（功能清单序号 181）：与编辑器同一份数据，保存后就地刷新该行。 */}
-      <CanvasMetaDialog
-        open={editTarget !== null}
-        canvas={editTarget}
-        onClose={() => { setEditTarget(null) }}
-        onSaved={(updated) => {
-          setEditTarget(null)
-          setCanvases(previous => previous.map(item => item.id === updated.id ? updated : item))
-          toast.show(t('canvases', 'toastUpdated'), 'success')
-        }}
-      />
+      {editTarget !== null && (
+        <CanvasMetaDialog
+          open
+          canvas={editTarget}
+          onClose={() => { setEditTarget(null) }}
+          onSaved={(updated) => {
+            setEditTarget(null)
+            setCanvases(previous => previous.map(item => item.id === updated.id ? updated : item))
+            toast.show(t('canvases', 'toastUpdated'), 'success')
+          }}
+        />
+      )}
 
       <Modal
         open={templateOpen}
@@ -498,6 +552,7 @@ export function CanvasesPage() {
                     <div className={css.rowTitleLine}>
                       <span className={css.rowName}>{template.name}</span>
                       <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>
+                      {template.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
                     </div>
                     {template.description !== null && template.description !== '' && (
                       <p className={css.rowDesc}>{template.description}</p>
@@ -506,7 +561,7 @@ export function CanvasesPage() {
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busyId === template.id}
+                    disabled={busyId === template.id || template.canvas_error !== undefined}
                     onClick={() => { setTemplateOpen(false); duplicate(template, true) }}
                   >
                     {t('canvases', 'templateUse')}
@@ -519,13 +574,25 @@ export function CanvasesPage() {
 
       <Modal
         open={deleteTarget !== null}
-        onClose={() => { setDeleteTarget(null) }}
+        onClose={() => { setDeleteTarget(null); setDeleteError(null) }}
         title={deleteTarget === null ? '' : t('canvases', 'deleteTitle', { name: deleteTarget.name })}
         closeLabel={t('common', 'actionClose')}
         description={deleteDescription ?? ''}
+        {...((deleteError === null && projectsError === null) ? {} : {
+          children: (
+            <>
+              <NoticeLine tone="error" text={deleteError} />
+              <NoticeLine
+                tone="error"
+                text={projectsError}
+                action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
+              />
+            </>
+          ),
+        })}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteError(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
               variant="ghost"
               className={common.dangerButton}
@@ -533,11 +600,22 @@ export function CanvasesPage() {
               onClick={() => {
                 const target = deleteTarget
                 if (target === null) return
-                runAction(target.id, async () => {
-                  await request(`/canvases/${target.id}`, { method: 'DELETE' })
-                  setDeleteTarget(null)
-                  await load()
-                }, 'errorDelete', t('canvases', 'toastDeleted'))
+                setBusyId(target.id)
+                setDeleteError(null)
+                void (async () => {
+                  try {
+                    await request(`/canvases/${target.id}`, { method: 'DELETE' })
+                    // 只有删除成功才关闭弹窗；失败时弹窗保持打开并在下方就地说明原因。
+                    setDeleteTarget(null)
+                    // 删除级联清掉项目与会话；右栏与计数必须跟着刷新，否则还指着已删的画布。
+                    await Promise.all([load(), loadSessions()])
+                    toast.show(t('canvases', 'toastDeleted'), 'success')
+                  } catch (failure) {
+                    setDeleteError(`${t('canvases', 'errorDelete')} — ${describeError(failure)}`)
+                  } finally {
+                    setBusyId(null)
+                  }
+                })()
               }}
             >
               {t('common', 'actionDelete')}
@@ -569,24 +647,15 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
   onSaved: (canvas: CanvasView) => void
 }) {
   const editing = canvas !== null
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [icon, setIcon] = useState('')
-  const [tags, setTags] = useState('')
+  // 初始值直接取自本次打开的画布：对话框按 open 条件挂载，首帧就有正确值，
+  // 不会先渲染空字段再由 effect 回填（那会让「编辑信息」短暂显示空名称甚至读到空值）。
+  const [name, setName] = useState(canvas?.name ?? '')
+  const [description, setDescription] = useState(canvas?.description ?? '')
+  const [icon, setIcon] = useState(canvas?.icon ?? '')
+  const [tags, setTags] = useState((canvas?.tags ?? []).join(', '))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
-
-  // 每次打开都从当前画布回填（新建则清空）：上一次的字段值与错误不能残留到下一次。
-  useEffect(() => {
-    if (!open) return
-    setName(canvas?.name ?? '')
-    setDescription(canvas?.description ?? '')
-    setIcon(canvas?.icon ?? '')
-    setTags((canvas?.tags ?? []).join(', '))
-    setError(null)
-    setNameError(null)
-  }, [open, canvas])
 
   const submit = (): void => {
     if (busy) return

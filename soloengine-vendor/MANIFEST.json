@@ -3,45 +3,31 @@
   "packages": [
     {
       "name": "@anionex/dsh-turn-rewind",
-      "version": "0.3.8",
+      "version": "0.3.10",
       "license": "BSD-3-Clause",
       "licenseFile": "LICENSE",
       "upstream": "https://github.com/anionex/dsh-turn-rewind",
-      "tier": "第三方复用（实现主干）",
+      "tier": "完全自研·第三方复用（实现主干）",
       "consumption": "bundle 层 + 组合层 config（turnCheckpointMode 由本产品按工作区边界切 auto）",
       "modifications": "无源码改动",
       "vendoredPath": "soloengine-vendor/dsh-turn-rewind",
-      "files": 66,
-      "bytes": 1106424,
-      "sha256": "47f725ad10e8466cb2f637414a55999f7ddb9a186889f1df0b3592a991739700"
+      "files": 67,
+      "bytes": 1183526,
+      "sha256": "bfbb95335e88924b4e1b2ecefd4b8d685d7dc072bbcad8a527df4a001f86cb36"
     },
     {
-      "name": "dsh-permission-rules",
-      "version": "0.7.4",
-      "license": "Apache-2.0",
-      "licenseFile": "LICENSE",
-      "upstream": "https://www.npmjs.com/package/dsh-permission-rules",
-      "tier": "第三方复用（白名单三缝隙之一）",
-      "consumption": "bundle 层；四档预设表由组合层整行重述覆写",
-      "modifications": "无源码改动",
-      "vendoredPath": "soloengine-vendor/dsh-permission-rules",
-      "files": 86,
-      "bytes": 1819618,
-      "sha256": "db418445778cf3d607cd28942060ffbf75771e73d74c62bc533b2ea124b41f7a"
-    },
-    {
-      "name": "dsh-approve-for-me",
-      "version": "0.2.4",
+      "name": "dsh-free-search",
+      "version": "0.9.13",
       "license": "MIT",
       "licenseFile": "LICENSE",
-      "upstream": "https://www.npmjs.com/package/dsh-approve-for-me",
-      "tier": "第三方复用（审批应答器）",
-      "consumption": "bundle 层 + 组合层 config（sandbox/approval/名称与说明）",
+      "upstream": "https://www.npmjs.com/package/dsh-free-search",
+      "tier": "完全自研·第三方复用（免密钥搜索/抓取 provider）",
+      "consumption": "bundle 层（多引擎回退链；search/fetch provider 经官方 ctx.web seam 注册）",
       "modifications": "无源码改动",
-      "vendoredPath": "soloengine-vendor/dsh-approve-for-me",
-      "files": 29,
-      "bytes": 213228,
-      "sha256": "3bc7232338d384047df368784fb2cd4bfff09bd794fac6e3c5a562c030bec010"
+      "vendoredPath": "soloengine-vendor/dsh-free-search",
+      "files": 17,
+      "bytes": 700260,
+      "sha256": "6683f86e48ddf87107936e3e6a572ca0628939e00f0bec9e1b249cb806356417"
     }
   ]
 }

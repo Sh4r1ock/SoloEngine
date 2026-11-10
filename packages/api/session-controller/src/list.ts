@@ -22,6 +22,13 @@ import type {
 
 const SEARCH_PROVIDER_CALL_LIMIT = 100
 const SESSION_SEARCH_QUERY_MAX_CHARS = 500
+/**
+ * Largest Session identity set pushed into the provider's own filter. A
+ * connection account owns a bounded number of Sessions; beyond this bound the
+ * query stays unfiltered and the Host keeps filtering result pages, so a large
+ * set never becomes an oversized SQL binding list.
+ */
+const SESSION_FILTER_ID_LIMIT = 512
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
 const sessionListMetadataSchema: z.ZodType<SessionListMetadata> = z.object({
@@ -184,9 +191,14 @@ export class ApiSessionList {
    * Search current visible message content without activating any matching Session.
    * @param query - literal message-content query.
    * @param signal - cancellation for list and search reads.
+   * @param owned - Session identities the calling connection account owns; omitted without an account scope.
    * @returns authorized bounded Session search results.
    */
-  async search(query: string, signal: AbortSignal): Promise<SessionSearchValue> {
+  async search(
+    query: string,
+    signal: AbortSignal,
+    owned?: ReadonlySet<string>,
+  ): Promise<SessionSearchValue> {
     const normalizedQuery = normalizeSearchQuery(query)
     signal.throwIfAborted()
     const provider = this.ctx.get('sessionQuery')
@@ -203,7 +215,16 @@ export class ApiSessionList {
       const visibleIds = new Set(visible
         .filter(record => record.header.cwd !== undefined)
         .map(record => record.header.id))
-      if (visibleIds.size === 0) return { items: [], hasMore: false }
+      const permittedIds = owned === undefined
+        ? visibleIds
+        : new Set([...visibleIds].filter(id => owned.has(id)))
+      if (permittedIds.size === 0) return { items: [], hasMore: false }
+      // The account's own Sessions narrow the provider query itself, so other
+      // accounts' documents are never ranked at all; the result check below
+      // stays as the guard for a provider that ignores its filters.
+      const sessionFilters = owned !== undefined && permittedIds.size <= SESSION_FILTER_ID_LIMIT
+        ? [{ kind: 'id' as const, values: [...permittedIds] }]
+        : []
       const authorized: SessionSearchItem[] = []
       const acceptedIds = new Set<SessionId>()
       const seenCursors = new Set<SessionSearchCursor>()
@@ -222,6 +243,7 @@ export class ApiSessionList {
         try {
           page = await provider.searchSessions({
             query: normalizedQuery,
+            ...sessionFilters.length === 0 ? {} : { sessionFilters },
             eventFilters: [
               { kind: 'type', values: ['user/message', 'assistant/message'] },
               { kind: 'surface', values: ['current'] },
@@ -255,7 +277,7 @@ export class ApiSessionList {
         }
         for (const hit of page.items) {
           if (authorized.length > SESSION_SEARCH_RESULT_LIMIT) continue
-          if (!visibleIds.has(hit.header.id)
+          if (!permittedIds.has(hit.header.id)
             || hit.bestMatch.sessionId !== hit.header.id
             || hit.bestMatch.surface !== 'current'
             || !MESSAGE_TYPES.has(hit.bestMatch.type)

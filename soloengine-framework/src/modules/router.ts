@@ -15,6 +15,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
 import { FrameworkError, toView, type UserRow } from './accounts.ts'
+import { FRAMEWORK_VERSION } from '../version.ts'
 import { BUILTIN_ROLE_PRESETS } from '@soloengine/types'
 import type { InstancePluginDiff } from './canvas.ts'
 import { CHANGES_OPS, WORKSPACE_OPS, type OpsInput, type OpsRoute } from './ops.ts'
@@ -107,6 +108,21 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.status(500).json({ ok: false, error: { code: 'INTERNAL', message: String(error) } })
   }
 
+  /**
+   * 查询参数里的分页上限：只接受正安全整数，越界/非法按缺省值处理。
+   *
+   * SQLite 的 `LIMIT -1` 表示不限量，直接透传负值等于让调用方绕过分页上限。
+   * @param req - 请求（读 `limit` 查询参数）。
+   * @param fallback - 缺省值。
+   * @param max - 允许的最大值。
+   * @returns 生效的分页上限。
+   */
+  const pageLimit = (req: Request, fallback: number, max: number): number => {
+    const raw = Number(req.query.limit ?? fallback)
+    if (!Number.isSafeInteger(raw) || raw < 1) return fallback
+    return Math.min(raw, max)
+  }
+
   /** 鉴权：Bearer 访问令牌 → 请求级身份。 */
   const authenticate = async (req: AuthedRequest, res: Response, next: NextFunction): Promise<void> => {
     const header = req.header('authorization') ?? ''
@@ -180,7 +196,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     res.json({
       ok: environment.missingTables.length === 0,
       service: 'soloengine-framework',
-      version: '0.1.0',
+      version: FRAMEWORK_VERSION,
       database: {
         engine: environment.engine,
         journalMode: environment.journalMode,
@@ -281,7 +297,8 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     try {
       const actor = req.soloUser as UserRow
       const body = req.body as { active?: boolean }
-      res.json({ ok: true, user: await accounts.setActive(actor.id, String(req.params.id), body.active !== false) })
+      if (typeof body.active !== 'boolean') throw new FrameworkError(400, 'INVALID_ACTIVE', 'active must be a boolean')
+      res.json({ ok: true, user: await accounts.setActive(actor.id, String(req.params.id), body.active) })
     } catch (error) {
       failure(res, error)
     }
@@ -301,7 +318,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     try {
       const actor = req.soloUser as UserRow
       const body = req.body as { superuser?: boolean }
-      res.json({ ok: true, user: await accounts.setSuperuser(actor.id, String(req.params.id), body.superuser !== false) })
+      if (typeof body.superuser !== 'boolean') {
+        throw new FrameworkError(400, 'INVALID_SUPERUSER', 'superuser must be a boolean')
+      }
+      res.json({ ok: true, user: await accounts.setSuperuser(actor.id, String(req.params.id), body.superuser) })
     } catch (error) {
       failure(res, error)
     }
@@ -531,10 +551,15 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     }
   })
 
-  route('skills-files', 'get', '/skills/:id/files', '列出技能包内文件树', [authenticate], async (req, res) => {
+  route('skills-files', 'get', '/skills/:id/files', '列出技能包内文件树与目录（含空目录）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, files: await runtime.skills.listFiles(user.id, String(req.params.id)) })
+      const id = String(req.params.id)
+      const [files, directories] = await Promise.all([
+        runtime.skills.listFiles(user.id, id),
+        runtime.skills.listDirectories(user.id, id),
+      ])
+      res.json({ ok: true, files, directories })
     } catch (error) {
       failure(res, error)
     }
@@ -684,10 +709,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('mcp-upload', 'post', '/mcp/upload', '上传建服务（PRD-05 FR-MCP-007：代码/包落用户隔离目录并物化为可运行 stdio 服务器）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const body = req.body as { name?: string; kind?: string; code?: string; archiveBase64?: string; description?: string; runtime?: string }
+      const body = req.body as { name?: string; kind?: string; code?: string; archiveBase64?: string; description?: string; runtime?: string; timeout?: number }
       const row = await runtime.mcp.createUploaded(user.id, user.username, {
         name: body.name, kind: body.kind, code: body.code, archiveBase64: body.archiveBase64, description: body.description,
-        runtime: body.runtime,
+        runtime: body.runtime, timeout: body.timeout,
       })
       res.status(201).json({ ok: true, server: await runtime.mcp.view(row) })
     } catch (error) {
@@ -738,7 +763,8 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   route('canvases-list', 'get', '/canvases', '列当前用户画布（含公共模板）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, canvases: (await runtime.canvas.list(user.id)).map(row => runtime.canvas.view(row)) })
+    // 单行 canvas_data 损坏不拖垮整页：该行以空画布占位并带 `canvas_error`，单张读取仍明确 422。
+    res.json({ ok: true, canvases: (await runtime.canvas.list(user.id)).map(row => runtime.canvas.view(row, { tolerant: true })) })
   })
 
   // 内置角色模板（预填模板，PRD-02 FR-CANVAS-011「预设即预填」）：唯一真源在
@@ -874,6 +900,16 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     try {
       const user = req.soloUser as UserRow
       res.json({ ok: true, project: await runtime.canvas.touchProject(user.id, String(req.params.id)) })
+    } catch (error) {
+      failure(res, error)
+    }
+  })
+
+  route('projects-delete', 'delete', '/projects/:id', '删除运行项目（仍有会话时结构化拒绝）', [authenticate], async (req, res) => {
+    try {
+      const user = req.soloUser as UserRow
+      await runtime.canvas.removeProject(user.id, String(req.params.id))
+      res.json({ ok: true, deleted: String(req.params.id) })
     } catch (error) {
       failure(res, error)
     }
@@ -1022,8 +1058,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   route('sessions-list', 'get', '/sessions', '列当前用户的运行会话（归属行 + 活状态）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    const limit = Number(req.query.limit ?? 50)
-    res.json({ ok: true, sessions: await runtime.runs.listSessions(user.id, Number.isFinite(limit) ? limit : 50) })
+    res.json({ ok: true, sessions: await runtime.runs.listSessions(user.id, pageLimit(req, 50, 1000)) })
   })
 
   route('sessions-get', 'get', '/sessions/:key', '读取单个会话（归属校验）', [authenticate], async (req, res) => {
@@ -1038,10 +1073,9 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('sessions-events', 'get', '/sessions/:key/events', '读取会话的事件归属行（分页走 (session_id, seq) 主键顺序）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const limit = Number(req.query.limit ?? 200)
       res.json({
         ok: true,
-        events: await runtime.runs.events(user.id, String(req.params.key), Number.isFinite(limit) ? limit : 200),
+        events: await runtime.runs.events(user.id, String(req.params.key), pageLimit(req, 200, 2000)),
       })
     } catch (error) {
       failure(res, error)
@@ -1097,14 +1131,14 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
           'byModel', row.llm_config_id, '', '', String(row.requests), String(row.inputTokens),
           String(row.outputTokens), String(row.totalTokens), String(row.durationMs),
           String(row.avgMs), String(row.p50Ms), String(row.p95Ms),
-        ].join(','))
+        ].map(csvField).join(','))
       }
       for (const row of sessions) {
         lines.push([
           'bySession', row.llm_config_id ?? '', row.agentic_flow_id, row.sessionKey, String(row.requests),
           String(row.inputTokens), String(row.outputTokens), String(row.totalTokens), String(row.durationMs),
           String(row.requests === 0 ? 0 : Math.round(row.durationMs / row.requests)), '', '',
-        ].join(','))
+        ].map(csvField).join(','))
       }
       res.setHeader('content-type', 'text/csv; charset=utf-8')
       res.setHeader('content-disposition', 'attachment; filename="soloengine-usage.csv"')
@@ -1118,21 +1152,10 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   route('audit-creator-list', 'get', '/audit/creator', '创造模式审计清单（按用户过滤）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    const limit = Number(req.query.limit ?? 100)
-    res.json({ ok: true, audit: await runtime.runs.listCreatorAudit(user.id, Number.isFinite(limit) ? limit : 100) })
+    res.json({ ok: true, audit: await runtime.runs.listCreatorAudit(user.id, pageLimit(req, 100, 1000)) })
   })
 
-  route('audit-creator-record', 'post', '/audit/creator', '记录一条创造模式审计（动作即落库，含失败）', [authenticate], async (req, res) => {
-    const user = req.soloUser as UserRow
-    const body = req.body as { kind?: string; ok?: boolean; detail?: string }
-    const id = await runtime.runs.recordCreatorAudit({
-      kind: String(body.kind ?? 'unknown'),
-      userId: user.id,
-      ok: body.ok === true,
-      detail: String(body.detail ?? ''),
-    })
-    res.status(201).json({ ok: true, id })
-  })
+  // 审计只由宿主监听官方 `cordis/*` 事件写入（`attachCreatorAudit`）：不接受客户端自报事实。
 
   // ── 市场（技能/MCP 目录与安装）────────────────────────────────────────────
 
@@ -1165,11 +1188,17 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('packaging-preview', 'get', '/packaging/preview', '打包预览（现场编译 + 真实 bundle 层与组合层）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      const preview = await runtime.packaging.preview(
-        user.id,
-        String(req.query.canvasId ?? ''),
-        String(req.query.projectId ?? ''),
-      )
+      const canvasId = String(req.query.canvasId ?? '')
+      const projectId = String(req.query.projectId ?? '')
+      // 缺字段是请求问题（400），不是「找不到」：把两者混成 404 会让调用方去查不存在的资源。
+      if (canvasId === '') {
+        throw new FrameworkError(400, 'CANVAS_REQUIRED', 'canvasId is required: the preview compiles one canvas')
+      }
+      if (projectId === '') {
+        throw new FrameworkError(400, 'PROJECT_REQUIRED',
+          'projectId is required: the run project folder becomes the packaged workspace root')
+      }
+      const preview = await runtime.packaging.preview(user.id, canvasId, projectId)
       res.json({ ok: true, preview })
     } catch (error) {
       failure(res, error)
@@ -1187,10 +1216,19 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
         desktopProfile?: unknown
         appId?: unknown
       }
+      const canvasId = String(body.canvasId ?? '')
+      const projectId = String(body.projectId ?? '')
+      if (canvasId === '') {
+        throw new FrameworkError(400, 'CANVAS_REQUIRED', 'canvasId is required: one packaging run builds one canvas')
+      }
+      if (projectId === '') {
+        throw new FrameworkError(400, 'PROJECT_REQUIRED',
+          'projectId is required: the run project folder becomes the packaged workspace root')
+      }
       const run = await runtime.packaging.run(
         user.id,
-        String(body.canvasId ?? ''),
-        String(body.projectId ?? ''),
+        canvasId,
+        projectId,
         body.confirm,
         body.form,
         { profile: body.desktopProfile, appId: body.appId },
@@ -1376,15 +1414,24 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   app.use('/api/solo', api)
 
   // 未处理错误（处理器里逃逸的异常、写响应过程中的异常）：先落一行可定位日志（方法 + 原始 URL +
-  // 完整栈）再收尾——失败可见、错误可定位（PRD-13 NFR-REL-006/007），不静默、不降级。
-  app.use((error: unknown, req: Request, res: Response, next: NextFunction): void => {
+  // 完整栈）再按业务错误格式收尾——失败可见、错误可定位（PRD-13 NFR-REL-006/007），不静默、不降级。
+  // 不能交给 Express 默认处理器：它按 `Accept` 协商返回 HTML，客户端 `request()` 解析 JSON 时会
+  // 退化成「网络错误」，把 4xx 语义与错误码全部丢掉。
+  app.use((error: unknown, req: Request, res: Response, _next: NextFunction): void => {
     const detail = error instanceof Error ? error.stack ?? error.message : JSON.stringify(error)
     console.log(`soloengine: ${req.method} ${req.originalUrl} failed: ${String(detail)}`)
     if (res.headersSent) {
       res.destroy()
       return
     }
-    next(error)
+    // 请求体解析等中间件错误带 `status`（如非法 JSON = 400）：保留 4xx 语义。
+    const status = typeof error === 'object' && error !== null ? (error as { status?: unknown }).status : undefined
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      const message = error instanceof Error ? error.message : String(error)
+      res.status(status).json({ ok: false, error: { code: 'INVALID_REQUEST', message } })
+      return
+    }
+    failure(res, error)
   })
 
   // 兜底收敛在 **app 级**（api 内不设终结中间件）：`mountAuthenticated` 在 createRouter
@@ -1404,9 +1451,13 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
 /**
  * CSV 字段编码：含逗号、引号或换行的值加双引号（引号自身成对转义）。
+ *
+ * 以 `= + - @` 或制表符/回车开头的单元格会被表格软件当公式执行（CSV 公式注入），
+ * 前置单引号使其按文本处理。
  * @param value - 原始字段值。
  * @returns 可直接参与 `join(',')` 的字段文本。
  */
 function csvField(value: string): string {
-  return /[",\r\n]/u.test(value) ? `"${value.replace(/"/gu, '""')}"` : value
+  const guarded = /^[=+\-@\t\r]/u.test(value) ? `'${value}` : value
+  return /[",\r\n]/u.test(guarded) ? `"${guarded.replace(/"/gu, '""')}"` : guarded
 }

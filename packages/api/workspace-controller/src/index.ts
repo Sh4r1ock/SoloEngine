@@ -214,13 +214,26 @@ export class WorkspaceController extends TypertRemoteService {
     // agenticflow) owns a fixed Session set. Workspaces are attributable only
     // through their Sessions, so a Workspace with no owned Session is outside
     // this panel's world even though the registry itself is process-wide.
-    const owned = await ownedSessionsOf(this.ctx)
-    const sessions = (sessionIds: readonly SessionId[]): SessionId[] =>
-      sessionIds.filter(sessionId => (owned === undefined || owned.has(sessionId))
+    // The set can grow while this generation streams (a fork or a blank
+    // Session created in the panel gains ownership when it first attaches), so
+    // a frame naming an unknown Session re-reads it before filtering.
+    let owned = await ownedSessionsOf(this.ctx)
+    const refreshOwnership = async (sessionIds: readonly SessionId[]): Promise<void> => {
+      if (owned === undefined) return
+      const current = owned
+      if (sessionIds.every(sessionId => current.has(sessionId))) return
+      owned = await ownedSessionsOf(this.ctx)
+    }
+    const sessions = (sessionIds: readonly SessionId[]): SessionId[] => {
+      const ownedNow = owned
+      return sessionIds.filter(sessionId => (ownedNow === undefined || ownedNow.has(sessionId))
         && access.allows({ kind: 'session', id: sessionId }))
+    }
     const admitted = (workspaceId: WorkspaceId): boolean => access.allows({ kind: 'workspace', id: workspaceId })
-    const visible = (workspaceId: WorkspaceId, sessionIds: readonly SessionId[]): boolean =>
-      admitted(workspaceId) && (owned === undefined || sessionIds.some(sessionId => owned.has(sessionId)))
+    const visible = (workspaceId: WorkspaceId, sessionIds: readonly SessionId[]): boolean => {
+      const ownedNow = owned
+      return admitted(workspaceId) && (ownedNow === undefined || sessionIds.some(sessionId => ownedNow.has(sessionId)))
+    }
     /** Workspaces this generation has delivered and not yet removed. */
     const delivered = new Set<WorkspaceId>()
     /** The admitted part of `value`; it becomes the delivered set. */
@@ -239,9 +252,11 @@ export class WorkspaceController extends TypertRemoteService {
     for await (const frame of this.feed.follow(signal)) {
       switch (frame.type) {
         case 'baseline':
+          await refreshOwnership(frame.value.items.flatMap(item => item.sessionIds))
           yield { type: 'baseline', value: filtered(frame.value) }
           break
         case 'upsert': {
+          await refreshOwnership(frame.workspace.sessionIds)
           const workspaceId = frame.workspace.workspaceId
           const sessionIds = sessions(frame.workspace.sessionIds)
           if (visible(workspaceId, sessionIds)) {
@@ -263,9 +278,11 @@ export class WorkspaceController extends TypertRemoteService {
           }
           break
         case 'archived':
+          await refreshOwnership(frame.archivedSessionIds)
           yield { type: 'archived', archivedSessionIds: sessions(frame.archivedSessionIds) }
           break
         case 'pinned':
+          await refreshOwnership(frame.pinnedSessionIds)
           yield { type: 'pinned', pinnedSessionIds: sessions(frame.pinnedSessionIds) }
           break
         /* v8 ignore next -- closed follow-frame union. */

@@ -12,11 +12,11 @@ import {
   ICON_REGULAR_STROKE,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { BrowserInjected } from '../browser/BrowserController.ts'
-import { emptyBrowserFrame } from '../browser/BrowserFrame.ts'
-import { currentBrowserTarget } from '../browser/BrowserPersistence.ts'
-import type { BrowserStore } from '../browser/store.ts'
-import css from './Browser.module.css'
+import type { BrowserInjected } from '../contract/BrowserController.ts'
+import { emptyBrowserFrame } from '../contract/BrowserFrame.ts'
+import { currentBrowserTarget } from '../contract/BrowserPersistence.ts'
+import type { BrowserStore } from '../contract/store.ts'
+import css from '../Browser.module.css'
 
 const EMPTY_FRAME = emptyBrowserFrame()
 
@@ -74,6 +74,7 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
   const sandboxed = frame.sandboxEnabled
   const failure = state?.addressFailure
   const error = frame.error
+  const rejection = frame.rejection
   const submit = (event: FormEvent): void => { event.preventDefault(); loadUrl(tab.id, draft) }
 
   return (
@@ -113,8 +114,11 @@ export function BrowserBody(props: BrowserBodyProps): ReactNode {
         ? t('load.failed.detail', { code: String(error.code), description: error.description })
         : t('load.failed')}</div>}
       {failure !== undefined && <div className={css.failure} role="alert">{t(`error.${failure}`)}</div>}
+      {rejection !== undefined && <div className={css.failure} role="status">
+        {t('proxy.rejected', { code: rejection.code, message: rejection.message })}
+      </div>}
       <div className={css.content} aria-busy={frame.loading}>
-        <div id={viewportId} className={css.viewport} aria-label={t('type.label')} />
+        <div id={viewportId} className={rejection === undefined ? css.viewport : css.viewportRefused} aria-label={t('type.label')} />
         {restoreTarget !== undefined && <section className={css.restore} aria-label={t('restore.previous')}>
           <p className={css.restoreLabel}>{t('restore.previous')}</p>
           <p className={css.restoreTitle}>{restoreTarget.title}</p>

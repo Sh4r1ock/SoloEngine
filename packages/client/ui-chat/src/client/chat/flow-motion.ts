@@ -5,7 +5,10 @@
  * and clears temporary styles.
  */
 import { useCallback, useLayoutEffect, useRef, type RefObject } from 'react'
+import type { FlowMotionRows } from '../contract/flow-motion.ts'
 import { useSearchableHidden, type HiddenTransition } from './searchable-hidden.ts'
+
+export type { FlowMotionRows }
 
 const FADE_OUT_MS = 70
 /** The box starts closing while the fade finishes; by then the row is nearly transparent. */
@@ -14,16 +17,6 @@ const CLOSE_MS = 110
 const SETTLE_SLACK_MS = 80
 const MOTION_SCOPE = '[data-chat-motion]'
 const EASING = 'cubic-bezier(0.4, 0, 0.2, 1)'
-
-/** Row-local operations supplied by the containing viewport. */
-export interface FlowMotionRows {
-  /** @param element - visible row. @param done - commits hidden state before idle callbacks run. */
-  collapse(element: HTMLElement, done: () => void): void
-  /** @param element - newly visible row to grow to its natural size. */
-  reveal(element: HTMLElement): void
-  /** @param element - row whose active transition should be cancelled without hiding it. */
-  cancelMotion(element: HTMLElement): void
-}
 
 /** Geometry captured before one fold batch changes its boxes. */
 export interface InputFoldBox {

@@ -39,6 +39,7 @@ import type {
 } from '@deepseek-ai/dsh-session-query'
 import {
   type JournalMode,
+  openColocatedSearchDatabase,
   openSearchDatabase,
 } from './schema.ts'
 import {
@@ -61,7 +62,9 @@ import {
 
 export {
   SESSION_QUERY_SQLITE_APPLICATION_ID,
+  SESSION_QUERY_SQLITE_COMPONENT,
   SESSION_QUERY_SQLITE_SCHEMA_VERSION,
+  openColocatedSearchDatabase,
   type JournalMode,
 } from './schema.ts'
 
@@ -106,6 +109,12 @@ export interface Config extends SessionQueryConfig {
   openAt?: OpenAt
   /** SQLite journal mode. Defaults to `wal`. */
   journalMode?: JournalMode
+  /**
+   * Keep the derived index inside the database at `path` instead of owning a
+   * dedicated file: skip the application-id signature and record the index
+   * version in the shared `schema_versions` table. Defaults to `false`.
+   */
+  colocated?: boolean
   /** Page size when a request omits `limit`. At most `Number.MAX_SAFE_INTEGER - 1`; defaults to 20. */
   defaultLimit?: number
   /** Largest accepted page size. At most `Number.MAX_SAFE_INTEGER - 1`; defaults to 100. */
@@ -122,6 +131,7 @@ interface ResolvedConfig {
   path: string
   openAt: OpenAt
   journalMode: JournalMode
+  colocated: boolean
   defaultLimit: number
   maxLimit: number
   snippetChars: number
@@ -207,6 +217,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     path: z.string().required(),
     openAt: z.union(['startup', 'first-search', 'never'] as const).default('startup'),
     journalMode: z.union(['wal', 'delete', 'truncate', 'persist'] as const).default('wal'),
+    colocated: z.boolean().default(false),
     defaultLimit: z.number().step(1).min(1).max(SQLITE_MAX_PAGE_LIMIT).default(SESSION_QUERY_SQLITE_DEFAULT_LIMIT),
     maxLimit: z.number().step(1).min(1).max(SQLITE_MAX_PAGE_LIMIT).default(SESSION_QUERY_SQLITE_MAX_LIMIT),
     snippetChars: z.number().step(1).min(1).default(SESSION_QUERY_SQLITE_SNIPPET_CHARS),
@@ -357,8 +368,22 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     this._db = undefined
   }
 
+  /**
+   * Open the SQLite handle backing this engine.
+   *
+   * Backends that keep the derived index beside other tables in a shared
+   * database override this hook; the default owns a dedicated derived-index
+   * file with its application-id signature.
+   * @returns the initialized database handle owned by this engine.
+   */
+  protected async openDatabase(): Promise<DatabaseSync> {
+    return this.config.colocated
+      ? openColocatedSearchDatabase(this.config.path, this.config.journalMode)
+      : openSearchDatabase(this.config.path, this.config.journalMode)
+  }
+
   private async _open(): Promise<void> {
-    this._db = await openSearchDatabase(this.config.path, this.config.journalMode)
+    this._db = await this.openDatabase()
     const state = this._db.prepare(
       'SELECT global_generation FROM search_state WHERE singleton = 1',
     ).get() as { global_generation: number }
@@ -1022,6 +1047,7 @@ function resolveConfig(config: Config): ResolvedConfig {
     path: config.path,
     openAt: config.openAt ?? 'startup',
     journalMode: config.journalMode ?? 'wal',
+    colocated: config.colocated ?? false,
     defaultLimit: config.defaultLimit ?? SESSION_QUERY_SQLITE_DEFAULT_LIMIT,
     maxLimit: config.maxLimit ?? SESSION_QUERY_SQLITE_MAX_LIMIT,
     snippetChars: config.snippetChars ?? SESSION_QUERY_SQLITE_SNIPPET_CHARS,

@@ -39,14 +39,15 @@
             config:
               - id: pty
                 name: '@deepseek-ai/dsh-terminal'
+              # Execution world, not host OS: SOLOENGINE_EXECUTOR=container runs a Linux image.
               - id: terminal-bash
                 name: '@deepseek-ai/dsh-terminal-bash'
-                disabled: !!js process.platform === 'win32'
+                disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) === 'win32'"
                 config:
                   timeoutMs: 300000
               - id: persistent-bash
                 name: '@deepseek-ai/dsh-tool-bash-persistent'
-                disabled: !!js process.platform === 'win32'
+                disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) === 'win32'"
                 config:
                   timeoutMs: 300000
                   description: |-
@@ -59,13 +60,13 @@
                     * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
               - id: terminal-pwsh
                 name: '@deepseek-ai/dsh-terminal-bash'
-                disabled: !!js process.platform !== 'win32'
+                disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) !== 'win32'"
                 config:
                   shellDialect: pwsh
                   timeoutMs: 300000
               - id: persistent-pwsh
                 name: '@deepseek-ai/dsh-tool-pwsh-persistent'
-                disabled: !!js process.platform !== 'win32'
+                disabled: !!js "((process.env.SOLOENGINE_EXECUTOR ?? 'local') !== 'local' ? 'linux' : process.platform) !== 'win32'"
                 config:
                   timeoutMs: 300000
                   description: |-

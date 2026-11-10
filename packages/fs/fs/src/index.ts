@@ -252,6 +252,71 @@ export abstract class FileSystem extends Service {
   abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
 
   /**
+   * Create one directory. Its parent must already exist, and an existing
+   * target is refused with `FS_ALREADY_EXISTS` rather than merged into.
+   *
+   * A provider without directory mutations rejects with `FS_IO_ERROR`, so a
+   * read-only backend refuses at call time instead of pretending success.
+   * @param target - the resolved directory target to create.
+   * @param signal - aborts before the directory is created.
+   * @param sandboxPolicy - the per-call mode and workspace root this creation
+   *   runs under; a sandboxing backend fences it by that policy, the bare
+   *   backend ignores it. Omit to leave the backend its own default.
+   * @returns once the directory exists.
+   */
+  mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
+    void signal
+    void sandboxPolicy
+    return Promise.reject(new FsError(`cannot create directory "${target.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
+  }
+
+  /**
+   * Move one target to a destination that must not exist. The destination is
+   * refused with `FS_ALREADY_EXISTS` instead of being overwritten.
+   * @param from - the resolved source target.
+   * @param to - the resolved destination target.
+   * @param signal - aborts before the move takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root this move runs
+   *   under; a sandboxing backend fences both sides by it. Omit to leave the
+   *   backend its own default.
+   * @returns once the move completed.
+   */
+  rename(
+    from: FsTarget,
+    to: FsTarget,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    void to
+    void signal
+    void sandboxPolicy
+    return Promise.reject(new FsError(`cannot rename "${from.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
+  }
+
+  /**
+   * Remove one file or directory. A directory is removed with its contents only
+   * when `recursive` is true; otherwise a non-empty directory fails.
+   * @param target - the resolved target to remove.
+   * @param recursive - remove a directory's contents as well.
+   * @param signal - aborts before the removal takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root this removal
+   *   runs under; a sandboxing backend fences it by that policy. Omit to leave
+   *   the backend its own default.
+   * @returns once the target is gone.
+   */
+  remove(
+    target: FsTarget,
+    recursive: boolean,
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<void> {
+    void recursive
+    void signal
+    void sandboxPolicy
+    return Promise.reject(new FsError(`cannot remove "${target.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
+  }
+
+  /**
    * Atomically create or replace UTF-8 text. `expected` guards intent and
    * staleness; omission allows unconditional overwrite.
    * @param target - the resolved target to write.

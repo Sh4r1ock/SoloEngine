@@ -49,8 +49,10 @@ export function registerOpenPreviewTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'open_preview',
     description:
-      'Record a preview link (for example a local service or artifact page you just started) so the run panel shows a '
-      + 'clickable preview card. This records the intent only — it does not open a browser. Use it once per distinct link; '
+      'Record a preview link (an absolute http(s) URL such as a deployed page or artifact URL) so the run panel shows a '
+      + 'clickable preview card. The panel loads pages through the same-origin proxy, which rejects loopback, private, '
+      + 'link-local and reserved addresses — such links can be recorded but will be refused when opened. '
+      + 'This records the intent only — it does not open a browser. Use it once per distinct link; '
       + 'recording the same link again refreshes it to the top of the list.',
     parameters: {
       url: {

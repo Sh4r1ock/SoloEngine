@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-提供具名权限模式，同时设置沙箱与审批，但各执行服务仍保留自己的值。配置预设提供未来会话默认值；显式加载的 Auto review integration 可以增加一个仅限当前会话的选项。客户端从进程目录读取可选项，从 Session 投影读取当前选择。不匹配任何预设的旋钮组合显示为 `custom`，用户可以离开该状态，但不能选择它。本包拥有选择与默认值；沙箱、审批和 Auto integration 拥有执行行为。
+提供具名权限模式，同时设置沙箱与审批，但各执行服务仍保留自己的值。配置预设提供未来会话默认值；显式加载的 Auto review integration 可以增加一个仅限当前会话的选项。客户端从进程目录读取可选项，从 Session 投影读取当前选择。不匹配任何预设的旋钮组合显示为 `custom`，用户可以离开该状态，但不能选择它。本包拥有选择与默认值；沙箱、审批和 Auto integration 拥有执行行为。随包提供的 `approve-for-me` 预设增加一道确定性准入：名单内工具的 shell 命令逐段匹配已配置的字面前缀、且不命中任何固定高风险检查时，才授予一次放行；可选复核只能收窄该集合，其余请求一律回到原生审批瀑布。
 
 ## 目录
 
@@ -38,18 +38,39 @@ kind: "package-reference"
       workspace-write:
         sandbox: workspace-write
         approval: ask
+      approve-for-me:
+        sandbox: workspace-write
+        approval: ask
       danger-full-access:
         sandbox: danger-full-access
         approval: never
     defaultPreset: workspace-write
+    approveForMe:
+      tools: []
+      commandPrefixes: []
+      review: false
 ```
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `presets` | `workspace-write`、`danger-full-access` | 预设名称 → 沙箱／审批捆绑的表 |
+| `presets` | `workspace-write`、`approve-for-me`、`danger-full-access` | 预设名称 → 沙箱／审批捆绑的表 |
 | `defaultPreset` | 推断 | 固定到新会话的预设；组合默认值不匹配任何预设时必填 |
+| `approveForMe.tools` | `[]` | 可自动放行的工具名；为空则不放行任何调用 |
+| `approveForMe.commandPrefixes` | `[]` | 字面 token 前缀；复合 shell 命令的每一段都必须匹配其中之一 |
+| `approveForMe.review` | `false` | 命中规则后请当前会话模型确认；它只能收窄 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-permission-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 保留给推导出的非预设状态，`auto` 则保留给 Auto review integration。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-permission-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 保留给推导出的非预设状态，`auto` 则保留给 Auto review integration。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。畸形的命令前缀会让挂载失败，而不是在一个无人能解析的前缀上放行。
+
+### approve-for-me 准入
+
+`approve-for-me` 以同一组两个旋钮把工作区可写沙箱与 `ask` 策略捆绑为第四档。它的准入门只会在以下条件全部成立时，对一次审批请求授予恰好一次 `allowed-once`：
+
+- 请求的工具在 `approveForMe.tools` 中；
+- 对 `bash` 与 `pwsh`，命令可被无歧义解析（保留引号语义；命令替换、重定向、子 shell、后台运行与不配对引号一律不放行），复合命令的每一段都以已配置的字面前缀开头，且不命中任何固定高风险检查——抹除文件系统根、写裸设备、设置 setuid/setgid、递归改归属、关闭主机、强制推送或改写历史、把远程抓取直接接入 shell、或凭据路径；
+- 任何字符串参数都不指向凭据或密钥路径；且
+- 启用 `review` 时，当前会话模型返回的正是 `{"decision":"allow"}`。
+
+其余请求一律交给原生审批瀑布。`tools` 为空时不放行任何调用；没有应答者时瀑布以 `unavailable` 收尾（fail-closed）。准入按会话生效，每次放行都是一次性的。
 
 ### 切换预设
 
@@ -77,7 +98,8 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PermissionPresetService`：配置表、固定 Auto 注册、写入路径、设置命名空间、会话固定、子功能 |
+| [`src/index.ts`](src/index.ts) | `PermissionPresetService`：配置表、固定 Auto 注册、写入路径、设置命名空间、会话固定、准入门接线、子功能 |
+| [`src/approve-for-me.ts`](src/approve-for-me.ts) | `approve-for-me` 的确定性规则：命令分词、字面前缀、固定高风险检查、凭据路径、复核协议 |
 | [`src/types.ts`](src/types.ts) | 进程级目录、目录变化事件与 `permissions` 当前选择类型 |
 
 ### 写入路径
@@ -135,6 +157,8 @@ kind: "package-reference"
 - **配置预设表在插件生命周期内固定**：只有固定的 Auto contribution 可以在不重新加载本服务的情况下改变实时进程目录。
 - **Auto 不能成为默认值**：它只在 integration effect 存活期间存在，并且有意不进入 `permission` 设置 schema。
 - **配置的默认值必须指向已配置预设**——移除被引用预设时，必须在同一次 Config 编辑中修改 `defaultPreset`。
+- **准入规则随包为空**——在运维列出工具与命令前缀之前，`approve-for-me` 的行为与 `workspace-write` 相同。
+- **复核只能收窄**——它不能放行规则未命中的调用；缺少 LLM 服务或路由时，请求回到人工审批。
 
 <a id="dev-note"></a>
 ### 开发备注

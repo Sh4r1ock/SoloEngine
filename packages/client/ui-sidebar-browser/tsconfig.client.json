@@ -7,6 +7,7 @@
   },
   "include": [
     "src/client",
+    "src/config.ts",
     "src/types.ts",
     "src/css-modules.d.ts"
   ],

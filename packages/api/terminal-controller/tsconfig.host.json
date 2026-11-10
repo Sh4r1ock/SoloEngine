@@ -45,6 +45,9 @@
       "path": "../../subprocess/subprocess"
     },
     {
+      "path": "../../terminal/terminal"
+    },
+    {
       "path": "../../typert/protocol"
     },
     {

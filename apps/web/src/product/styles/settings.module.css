@@ -19,7 +19,6 @@
   flex: none;
   align-items: center;
   gap: var(--se-space-1);
-  margin-bottom: var(--se-space-2);
   border-bottom: 0.5px solid var(--se-hairline);
   background-color: var(--dsw-alias-bg-base);
   overflow-x: auto;

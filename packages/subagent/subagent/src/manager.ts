@@ -34,8 +34,8 @@ import { isAdjacentAgentSendMessageTool } from './internal.ts'
 import type { ActivationObserver } from './lifecycle.ts'
 import type {
   ContinuableCreateRequest, ContinuableCreateSpec, SubagentInterruptAuthority,
-  SubagentActivationSpec, SubagentActivation, SubagentStartRequest, SubagentRun,
-  SubagentSendMessageOptions, SubagentResult, ResolvedSubagentStartRequest,
+  SubagentActivationSpec, SubagentActivation, SubagentResumeComposition, SubagentStartRequest,
+  SubagentRun, SubagentSendMessageOptions, SubagentResult, ResolvedSubagentStartRequest,
 } from './types.ts'
 import { attachStructuredRuntime } from './structured.ts'
 import type { StructuredAttachment } from './structured.ts'
@@ -63,6 +63,8 @@ interface SubagentHost {
   prepareContinuable(name: string, request: ContinuableCreateRequest): Promise<ContinuableCreateSpec>
   /** Build the lifecycle observer for one Activation residency epoch. */
   observeActivation(provider: string, childId: SessionId, parent: Agent): ActivationObserver
+  /** Product-owned composition to replay for this parent's cold-resumed children. */
+  resumeComposition(parent: Agent): SubagentResumeComposition | undefined
 }
 
 /** Inputs shared by fresh and resumed Activation materialization. */
@@ -97,6 +99,8 @@ type MaterializeInputs = MaterializeBase & (
     }
     agentOptions: AgentOptions
     composition: ChildComposition
+    /** Product-owned composition applied after the preset and before the first turn. */
+    setup?: ((child: Agent) => void | Promise<void>) | undefined
     outputSchema?: ObjectJsonSchema | undefined
   }
   | { kind: 'external'; start: (signal: AbortSignal) => Promise<SubagentRun> }
@@ -448,7 +452,8 @@ export class SubagentManager {
             descriptor,
           },
           agentOptions,
-          composition: { agentPreset: request.agentPreset },
+          composition: { agentPreset: request.agentPreset, scopeParent: request.scopeParent },
+          setup: request.setup,
           signal: spec.signal,
           delivery: spec.delivery,
           outputSchema: spec.request.outputSchema,
@@ -894,6 +899,8 @@ export class SubagentManager {
           await workingDirectory.set(child, create.cwd, inputs.signal)
         }
         if (inputs.composition.agentPreset === undefined) await applyChildComposition(childCtx, parent, inputs.composition)
+        // 产品侧组合：预设挂载完成、描述符与策略落盘之后执行，注册随子代理作用域撤销。
+        if (inputs.setup !== undefined) await inputs.setup(child)
         if (inputs.outputSchema !== undefined) {
           structured = attachStructuredRuntime(childCtx, inputs.outputSchema, () =>
             this.resident.get(childId)?.ownedChildren.size === 0
@@ -1360,6 +1367,11 @@ export class SubagentManager {
       if (independentlySelected && typeof agentPreset !== 'string') {
         throw new SubagentError(`subagent "${childId}" has no agent preset projection for restoration`, 'NOT_RESUMABLE')
       }
+      // A start request carries the product composition only for creation. A
+      // resume reconstructs it from the product's registration on the exact
+      // live parent, so a multi-node product keeps its per-node registrations.
+      const resume = this.host.resumeComposition(parent)
+      const resumeSetup = resume?.setup
       activation = await this.materialize({
         kind: 'local',
         childId,
@@ -1372,7 +1384,13 @@ export class SubagentManager {
             ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
             : {},
         },
-        composition: { agentPreset: agentPreset ?? undefined, persona: descriptor.persona, toolFilter: descriptor.toolFilter },
+        composition: {
+          agentPreset: agentPreset ?? undefined,
+          persona: descriptor.persona,
+          toolFilter: descriptor.toolFilter,
+          scopeParent: resume?.scopeParent,
+        },
+        ...resumeSetup === undefined ? {} : { setup: (child: Agent) => resumeSetup(child, parent) },
         signal: options.signal,
       })
     } catch (error: unknown) {

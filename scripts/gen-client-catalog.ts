@@ -428,7 +428,12 @@ function firstSentence(doc: string): string {
 
 /** Render one value as a single-quoted TypeScript literal. */
 function quote(value: string): string {
-  return `'${value.replaceAll('\\', '\\\\').replaceAll("'", "\\'").replaceAll('\n', '\\n')}'`
+  return `'${value
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '\n')
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'")
+    .replaceAll('\n', '\\n')}'`
 }
 
 /** Render a readonly string-array literal. */

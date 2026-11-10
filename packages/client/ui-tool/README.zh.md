@@ -110,7 +110,7 @@ terminal model 使用浏览器安全入口 `@deepseek-ai/dsh-spill-policy/notice
 - [ui-primitives](../ui-primitives/README.zh.md)——内置视图所拼装的输出卡片原子组件。
 - [ui-skill](../ui-skill/README.zh.md)——`skill` 工具的业务自有注册。
 - [ui-user-questions](../ui-user-questions/README.zh.md)——`ask_user_question` 行重新打开的提问面板。
-- [Auto review](../../experimental/auto-review/README.zh.md)——结构化拒绝身份与用户可见原因的 owner。
+- [Auto review](../../../bat/removed-20261031/packages/experimental/auto-review/README.md)——结构化拒绝身份与用户可见原因的 owner。
 - [Conversation 子系统](../../../docs/subsystems/conversation.zh.md)——业务自有功能如何注册 Conversation node。
 - [slot 系统标准](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.zh.md)——keyed slot 背后的组合模型。
 

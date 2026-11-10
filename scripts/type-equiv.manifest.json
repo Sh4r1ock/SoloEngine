@@ -128,16 +128,6 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
-      "symbol": "LlmCallControls",
-      "source": "packages/llm/llm/src/call-config.ts"
-    },
-    {
-      "doc": "docs/subsystems/llm-streaming.md",
-      "symbol": "ConfigureCall",
-      "source": "packages/llm/llm/src/call-config.ts"
-    },
-    {
-      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "LlmCallConfigAdapterDefaults",
       "source": "packages/llm/llm/src/call-config.ts"
     },
@@ -433,41 +423,6 @@
       "source": "packages/schedule/schedule/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamMemberProjection",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamTaskView",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamProjection",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamMemberSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamMessageSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamMessageSource",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/agent-team.md",
-      "symbol": "TeamTaskSnapshot",
-      "source": "packages/experimental/agent-team/src/types.ts"
-    },
-    {
       "doc": "docs/subsystems/commands.md",
       "symbol": "CommandInputDescriptor",
       "source": "packages/interaction/commands/src/types.ts"
@@ -632,21 +587,6 @@
     {
       "doc": "docs/subsystems/session.md",
       "symbol": "SessionEvent",
-      "source": "packages/core/session/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/session.md",
-      "symbol": "PluginRecordType",
-      "source": "packages/core/session/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/session.md",
-      "symbol": "PluginRecordMap",
-      "source": "packages/core/session/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/session.md",
-      "symbol": "PluginRecord",
       "source": "packages/core/session/src/types.ts"
     },
     {
@@ -1588,6 +1528,11 @@
     },
     {
       "doc": "docs/subsystems/subagent.md",
+      "symbol": "SubagentResumeComposition",
+      "source": "packages/subagent/subagent/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/subagent.md",
       "symbol": "AgentMessageSource",
       "source": "packages/subagent/subagent/src/continuation-messages.ts"
     },
@@ -1902,11 +1847,6 @@
       "source": "packages/llm/llm/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/llm-streaming.md",
-      "symbol": "LlmNativeAuth",
-      "source": "packages/llm/llm/src/types.ts"
-    },
-    {
       "doc": "docs/subsystems/permission-presets.md",
       "symbol": "Config",
       "source": "packages/interaction/permission-presets/src/index.ts"
@@ -2008,11 +1948,6 @@
     },
     {
       "doc": "docs/subsystems/client-modules.md",
-      "symbol": "WebBootRelease",
-      "source": "packages/client/modules/src/client/manifest.ts"
-    },
-    {
-      "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootGraph",
       "source": "packages/client/modules/src/client/manifest.ts"
     },
@@ -2093,53 +2028,13 @@
     },
     {
       "doc": "docs/subsystems/typert.md",
-      "symbol": "PrincipalMap",
-      "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "Principal",
-      "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
       "symbol": "PeerScope",
-      "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "RemoteUplinkWindow",
       "source": "packages/typert/protocol/src/types.ts"
     },
     {
       "doc": "docs/subsystems/typert.md",
       "symbol": "RemoteInvocation",
       "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "TypertResourceMap",
-      "source": "packages/typert/protocol/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "RemoteAccessResourceKind",
-      "source": "packages/typert/protocol/src/remote-access.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "RemoteAccessResource",
-      "source": "packages/typert/protocol/src/remote-access.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "RemoteScopeOptions",
-      "source": "packages/typert/protocol/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/typert.md",
-      "symbol": "RemoteMethodOptions",
-      "source": "packages/typert/protocol/src/index.ts"
     },
     {
       "doc": "docs/subsystems/typert.md",
@@ -2377,22 +2272,6 @@
       "source": "packages/ptc-runtime/ptc-runtime/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/ssh.md",
-      "symbol": "HelperLaunch",
-      "source": "packages/ssh/ssh/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/ssh.md",
-      "symbol": "Config",
-      "source": "packages/ssh/ssh/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/ssh.md",
-      "symbol": "SshConnection",
-      "source": "packages/ssh/ssh/src/index.ts",
-      "projection": "public-api"
-    },
-    {
       "doc": "docs/subsystems/mcp.md",
       "symbol": "McpResourceRequest",
       "source": "packages/mcp/mcp-resources/src/index.ts"
@@ -2456,21 +2335,6 @@
       "doc": "docs/subsystems/subagent.md",
       "symbol": "SubagentDescendantListEntry",
       "source": "packages/subagent/subagent/src/list-children.ts"
-    },
-    {
-      "doc": "docs/subsystems/system-prompt.md",
-      "symbol": "AssembledContext",
-      "source": "packages/core/system-prompt/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/worktrees.md",
-      "symbol": "CreateWorktreeRequest",
-      "source": "packages/experimental/worktree/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/worktrees.md",
-      "symbol": "CreatedWorktree",
-      "source": "packages/experimental/worktree/src/types.ts"
     },
     {
       "doc": "docs/subsystems/boot.md",

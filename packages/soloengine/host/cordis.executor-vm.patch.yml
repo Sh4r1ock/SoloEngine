@@ -1,0 +1,31 @@
+# 全 VM 执行覆盖（SOLOENGINE_EXECUTOR=full-vm）：每会话一台 QEMU 全 VM（基础镜像只读 +
+# qcow2 覆盖盘），宿主工作区经 virtio-9p 共享到 guest 的 `/workspace`，会话命令经子进程接缝
+# 改写成 `ssh` 进入 guest。与容器覆盖同构：两个座位同时换。
+#
+# 1. `subprocess`：本机提供方换成按会话路由的远程提供方（全 VM 形态走 SSH）；带会话标识
+#    却没有路由事实的调用直接拒绝，绝不落回宿主机。
+# 2. `sandbox`：宿主进程沙箱换成同一执行边界提供方（容器/VM 都声明完全强制力）。
+#
+# 终端只带 `DSH_SESSION_ID`：提供方按同一会话命名约定从 `vmStateDir` 的状态文件读 SSH
+# 端口与宿主工作区。镜像、状态目录与私钥是部署值，缺一即启动失败（host 解析处 fail loud）。
+#
+# 单机与容器形态不受影响：本覆盖只在 SOLOENGINE_EXECUTOR=full-vm 时叠加。
+
+- id: subprocess
+  disabled: true
+
+- id: sandbox
+  disabled: true
+
+- insert:
+    - id: subprocess-container
+      name: '@soloengine/subprocess-container'
+      config:
+        ssh: !!js process.env.SOLOENGINE_SSH ?? 'ssh'
+        requireSessionRoute: true
+        vmStateDir: !!js process.env.SOLOENGINE_VM_STATE_DIR ?? ''
+        vmSshKey: !!js process.env.SOLOENGINE_VM_SSH_KEY ?? ''
+        vmSshUser: !!js process.env.SOLOENGINE_VM_SSH_USER ?? 'root'
+
+    - id: sandbox-container
+      name: '@soloengine/sandbox-container'

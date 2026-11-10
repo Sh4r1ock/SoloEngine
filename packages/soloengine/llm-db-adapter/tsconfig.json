@@ -18,6 +18,9 @@
       "path": "../../llm/llm-deepseek"
     },
     {
+      "path": "../../llm/llm-pi-ai"
+    },
+    {
       "path": "../../llm/deepseek-llm-api-extensions"
     },
     {

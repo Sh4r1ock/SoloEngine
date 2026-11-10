@@ -1,0 +1,51 @@
+# 单机形态覆盖（SOLOENGINE_DB_FORM=single，缺省）：整个 SoloEngine 一个 SQLite 文件。
+#
+# 由启动器按形态以 `--patch` 叠加在本层之后；打包产物恒取本文件（云形态的三个 PG
+# 流程级插件因此整组被替换为这里的三个 SQLite 插件，节点从不引用它们）。
+#
+# 三件套都指向同一个业务库文件（`SOLOENGINE_DB`），以表分割：键值后端
+# （storage-sqlite）、会话日志（session-persistence-sqlite）、会话检索
+# （官方 session-query-sqlite 的 colocated 模式，可丢弃的派生只读索引）。服务名、
+# 契约、上层调用完全一致。会话日志的介质由 `SOLOENGINE_SESSION_MEDIA` 显式选择：
+# 缺省 SQLite、`jsonl` 切回官方 JSONL Provider；版本统一记入共享 `schema_versions`，
+# 不写 `PRAGMA user_version`。
+
+# 键值后端：dsh storage 机制（单元表/元数据表）与业务表同库共存，以表分割。
+- insert:
+    - id: storage-sqlite
+      name: '@deepseek-ai/dsh-storage-sqlite'
+      config:
+        path: !!js process.env.SOLOENGINE_DB
+        journalMode: wal
+
+    # 会话日志：单机形态默认写进业务库的 session_logs / session_log_events 两表。
+    # 两个 Provider 实现同一个官方 Service Definition（`ctx.sessionPersistence`），
+    # 由 `SOLOENGINE_SESSION_MEDIA` 显式二选一，加载期只挂一个：
+    # - 缺省 / sqlite：本行（业务库同库，云形态与单机形态介质一致）；
+    # - jsonl：官方 @deepseek-ai/dsh-session-persistence-jsonl（完全复用原版介质）。
+    - id: session-persistence-sqlite
+      name: '@soloengine/session-persistence-sqlite'
+      disabled: !!js process.env.SOLOENGINE_SESSION_MEDIA === 'jsonl'
+      config:
+        path: !!js process.env.SOLOENGINE_DB
+
+    # 会话检索：官方包原地开启 colocated 模式（派生索引建在业务库内，版本记入
+    # 共享 schema_versions）。同一份实现，不再有第二个检索包。
+
+# dsh 的非会话 KV（workspace 注册、投影缓存）走 SQLite 后端，与业务表同库。
+- id: storage-domain
+  config:
+    backend: sqlite
+
+# 会话检索：改造复用官方 @deepseek-ai/dsh-session-query-sqlite 的 colocated 配置
+# （同一包、同一行 id、同一契约；不写 application_id/user_version）。
+- id: session-query-sqlite
+  config:
+    path: !!js process.env.SOLOENGINE_DB
+    openAt: first-search
+    colocated: true
+
+# 会话日志的原版 JSONL Provider：仅在 SOLOENGINE_SESSION_MEDIA=jsonl 时启用
+# （与上一行同一个 Service Definition，互斥、加载期只挂一个）。
+- id: session-persistence-jsonl
+  disabled: !!js process.env.SOLOENGINE_SESSION_MEDIA !== 'jsonl'

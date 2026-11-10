@@ -1,66 +1,67 @@
 /**
- * 权限三档的会话档位写入（PRD-10 FR-SEC-003/004/006）。
+ * 运行档位的会话写入（PRD-10 FR-SEC-003/004/006）。
  *
- * **四类档位（PRD-01 纪律）**：审批三档整体以第三方 DSH 插件为**实现主干**，SoloEngine 只做两件事：
+ * **一个功能一个实现**：权限预设表由平台的 `permission-presets` 拥有（原生四档），第四档
+ * `approve-for-me` 的规则/复核判定也在同一个原生实现体内；本产品**不重述预设表**、
+ * 不另建平行权限服务、不注册第二个应答器。
  *
- * 1. **组合层**把「沙箱档位 + 审批策略」打包的预设表重述为四档（`read-only` / `workspace-write`
- *    / `approve-for-me` / `danger-full-access`，见 `cordis.patch.yml` 的 `permission` 行）——第三档
- *    由主干 `dsh-approve-for-me` 提供并在其 patch 层声明，本层整行重述以固定出厂取值；
- * 2. **会话档位**由画布运行模式经 `ctx.permissionPresets.set(session, name)` 写入（本模块）——
- *    落持久权限事件（`permission/preset` + 两个旋钮事件），因此重放可见、投影可读，
- *    `/permission` 切换与设置默认行走同一张预设表（FR-SEC-006）。
+ * 本模块只做一件事：把画布选定的**原生预设名**经 `ctx.permissionPresets.set(session, name)` 写入
+ * 该会话——落持久权限事件（`permission/preset` + 两个旋钮事件），因此重放可见、投影可读，会话内
+ * 用平台自己的权限选择器切换走同一张表（FR-SEC-006）。
  *
- * **不另建平行权限服务**（FR-SEC-005）：白名单档的放行判定完全由主干在 `approval/request` 上完成
- * （确定性规则 + 可选审查模型 + 人类兜底），本层不注册第二个应答器；无应答者时由原生审批服务
- * 归一化为不可用并拒绝执行（fail-closed）。
+ * 写入失败的语义是 fail loud：缺失服务或未知预设名在**创建运行前**抛错（`assertRunModeWritable`），
+ * `set` 本身抛错也向上抛出——运行模式与权限档位不允许静默不一致。
  *
  * @module @soloengine/host/permission-allowlist
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 
-/** 白名单档的预设名（由主干 `dsh-approve-for-me` 的 patch 层声明；主干按此名判定是否接管）。 */
-export const ALLOWLIST_PRESET = 'approve-for-me'
-/** 每次询问档的预设名（官方出厂表项）。 */
-export const ASK_PRESET = 'workspace-write'
-/** 自动档的预设名（官方出厂表项：全权沙箱 + 永不询问）。 */
-export const AUTO_PRESET = 'danger-full-access'
-
-/**
- * 画布运行模式（PRD-02 §9）→ 权限预设名（PRD-10 FR-SEC-003 三档对齐）。
- * @param runMode - `ask` / `allowlist` / `auto`。
- * @returns 预设名。
- */
-export function presetForRunMode(runMode: string): string {
-  if (runMode === 'auto') return AUTO_PRESET
-  if (runMode === 'allowlist') return ALLOWLIST_PRESET
-  return ASK_PRESET
-}
-
 /** `ctx.permissionPresets` 的最小可用面。 */
 interface PermissionPresetFace {
   set?: (session: object, name: string) => void
+  resolve?: (name: string) => unknown
+}
+
+/** 取平台权限预设服务（缺失即 undefined）。 */
+function presetFace(ctx: Context): PermissionPresetFace | undefined {
+  return ctx.get('permissionPresets') as PermissionPresetFace | undefined
 }
 
 /**
- * 把画布运行模式写入会话的权限预设（PRD-10 FR-SEC-006：预设选择是仅入日志的用户意图）。
+ * 创建运行前检查档位可写（fail loud）：服务缺失或预设名未注册时直接抛错。
  * @param ctx - 插件上下文。
- * @param session - 原生会话（事件归属者）。
- * @param runMode - 画布运行模式（`ask` / `allowlist` / `auto`）。
- * @returns 实际写入的预设名。
+ * @param preset - 画布选定的原生预设名。
+ * @throws 权限预设服务缺失，或该名称不在预设表内。
  */
-export function applyRunModePreset(ctx: Context, session: object, runMode: string): string {
-  const preset = presetForRunMode(runMode)
-  const face = ctx.get('permissionPresets') as PermissionPresetFace | undefined
-  if (face?.set === undefined) {
-    console.log(`soloengine: permission preset ${preset} for run mode ${runMode} was not written: the permission-presets service is absent in this composition`)
-    return preset
+export function assertRunModeWritable(ctx: Context, preset: string): void {
+  const face = presetFace(ctx)
+  if (face?.set === undefined || face.resolve === undefined) {
+    throw new Error(`soloengine: run mode "${preset}" cannot be written: the permission-presets service is absent in this composition`)
   }
   try {
-    face.set(session, preset)
-    console.log(`soloengine: permission preset written (run mode ${runMode} → ${preset})`)
+    face.resolve(preset)
   } catch (error) {
-    console.log(`soloengine: writing the permission preset ${preset} failed (${String(error)})`)
+    throw new Error(`soloengine: run mode "${preset}" is not a configured permission preset (${error instanceof Error ? error.message : String(error)})`)
   }
+}
+
+/**
+ * 把画布档位（原生预设名）写入会话的权限预设。
+ *
+ * 预设名原样透传：可选项与呈现都归平台，产品只在运行发起时选一次默认档。
+ * @param ctx - 插件上下文。
+ * @param session - 原生会话（事件归属者）。
+ * @param preset - 原生权限预设名（`workspace-write` / `approve-for-me` / `danger-full-access`）。
+ * @returns 实际写入的预设名。
+ * @throws 权限预设服务缺失或写入失败——调用方负责清理半创建的运行并向上抛出。
+ */
+export function applyRunModePreset(ctx: Context, session: object, preset: string): string {
+  const face = presetFace(ctx)
+  if (face?.set === undefined) {
+    throw new Error(`soloengine: run mode "${preset}" cannot be written: the permission-presets service is absent in this composition`)
+  }
+  face.set(session, preset)
+  console.log(`soloengine: permission preset written (${preset})`)
   return preset
 }

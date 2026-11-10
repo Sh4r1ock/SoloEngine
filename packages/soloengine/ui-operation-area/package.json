@@ -1,7 +1,7 @@
 {
   "name": "@soloengine/ui-operation-area",
   "version": "0.1.0",
-  "description": "SoloEngine 操作区联动层与浏览器/变更面板（自研客户端）：呈现意图 → openResource/openTab 自动跟随，同源代理浏览器面板，变更台账面板。",
+  "description": "SoloEngine 操作区联动层与变更面板（自研客户端）：呈现意图 → openResource/openTab 自动跟随，变更台账面板。",
   "private": true,
   "type": "module",
   "main": "lib/index.js",

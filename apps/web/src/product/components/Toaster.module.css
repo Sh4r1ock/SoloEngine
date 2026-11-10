@@ -1,0 +1,16 @@
+/*
+ * 原型 `.toast-region`（设计参考 §5.4、`components.css:1386`）：底部居中 32、
+ * 纵向 8px 间距、列向堆叠。原语只提供行；列的位置由宿主决定。
+ */
+.region {
+  position: fixed;
+  left: 50%;
+  bottom: var(--se-space-6);
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--se-space-2);
+  transform: translateX(-50%);
+  pointer-events: none;
+}

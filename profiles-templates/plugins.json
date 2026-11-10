@@ -1,0 +1,43 @@
+{
+  "$comment": "插件清单唯一真源：第三方依赖版本 + 工作区包在 profile node_modules 的链接 + 第三方固化元数据。启动器 `soloengine-launch/bin.mjs`、`soloengine-vendor/refresh.mjs` 与文档计数都读这一份；新增/升级插件只改这里（bundle 层序仍归 bundles.json）。",
+  "dependencies": {
+    "@anionex/dsh-turn-rewind": "0.3.10",
+    "dsh-free-search": "0.9.13"
+  },
+  "links": [
+    { "name": "@soloengine/host", "path": "packages/soloengine/host" },
+    { "name": "@soloengine/framework", "path": "soloengine-framework" },
+    { "name": "@soloengine/llm-db-adapter", "path": "packages/soloengine/llm-db-adapter" },
+    { "name": "@soloengine/tools", "path": "packages/soloengine/tools" },
+    { "name": "@soloengine/open-preview", "path": "packages/soloengine/open-preview" },
+    { "name": "@soloengine/types", "path": "packages/soloengine/types" },
+    { "name": "@soloengine/ui-theme", "path": "packages/soloengine/ui-theme" },
+    { "name": "@soloengine/ui-conversation", "path": "packages/soloengine/ui-conversation" },
+    { "name": "@soloengine/client-bootstrap", "path": "packages/soloengine/client-bootstrap" },
+    { "name": "@soloengine/browser-proxy", "path": "packages/soloengine/browser-proxy" },
+    { "name": "@soloengine/ui-document-editor", "path": "packages/soloengine/ui-document-editor" },
+    { "name": "@soloengine/ui-operation-area", "path": "packages/soloengine/ui-operation-area" },
+    { "name": "@soloengine/storage-postgres", "path": "packages/soloengine/storage-postgres" },
+    { "name": "@soloengine/session-persistence-postgres", "path": "packages/soloengine/session-persistence-postgres" },
+    { "name": "@soloengine/session-query-postgres", "path": "packages/soloengine/session-query-postgres" },
+    { "name": "@soloengine/session-persistence-sqlite", "path": "packages/soloengine/session-persistence-sqlite" },
+    { "name": "@soloengine/executor-container", "path": "packages/soloengine/executor-container" },
+    { "name": "@soloengine/executor-vm", "path": "packages/soloengine/executor-vm" },
+    { "name": "@soloengine/subprocess-container", "path": "packages/soloengine/subprocess-container" },
+    { "name": "@soloengine/sandbox-container", "path": "packages/soloengine/sandbox-container" }
+  ],
+  "vendor": {
+    "@anionex/dsh-turn-rewind": {
+      "upstream": "https://github.com/anionex/dsh-turn-rewind",
+      "tier": "完全自研·第三方复用（实现主干）",
+      "consumption": "bundle 层 + 组合层 config（turnCheckpointMode 由本产品按工作区边界切 auto）",
+      "modifications": "无源码改动"
+    },
+    "dsh-free-search": {
+      "upstream": "https://www.npmjs.com/package/dsh-free-search",
+      "tier": "完全自研·第三方复用（免密钥搜索/抓取 provider）",
+      "consumption": "bundle 层（多引擎回退链；search/fetch provider 经官方 ctx.web seam 注册）",
+      "modifications": "无源码改动"
+    }
+  }
+}

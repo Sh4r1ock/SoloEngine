@@ -1,35 +1,21 @@
 ---
-description: "The experimental group map: publicly installable pre-stable prototypes."
+description: "Pre-stable prototypes for session retrieval and persistent terminal tools."
 kind: "package-group"
 ---
 
-# packages/experimental
+# experimental/ — pre-stable prototypes
 
 English | [中文](README.zh.md)
 
 ## Summary
 
-Install and compose experimental capabilities explicitly, without a product-support commitment. Package naming and publication follow the [experimental package policy](../../scripts/experimental-package-policy.ts). The [optional-bundle rule](../../.agents/notes/implemented/architecture/2026-09-21-experimental-capabilities-as-optional-bundles.md) determines which capabilities ship switched off with the installation for explicit selection in the GUI plugin manager’s Official group.
+Packages in this group carry complete public contracts that remain under evaluation: behavior or APIs may change, and a capability may be withdrawn. Engineering, security, documentation, testing, and released-data obligations still apply. Release packages and apps outside this group must not depend on them ([policy](../../scripts/experimental-package-policy.ts)).
 
 ## Table of Contents
 
-- [Experimental, optional, and Official](#status)
 - [Packages](#packages)
 - [Related documentation](#related-documentation)
 - [Dev Note](#dev-note)
-
------
-
-<a id="status"></a>
-## Experimental, optional, and Official
-
-**Experimental** means the complete public capability remains under evaluation and is not a product-support commitment. Its behavior or API may change, and the capability may be withdrawn; engineering, security, documentation, testing, and released-data obligations still apply. A package belongs here only when its entire public contract is experimental or internal-only; an experimental option inside a product package stays with that product role.
-
-**Optional** means a user explicitly selects the capability. **Official** means the project maintains and lists the package in the Plugins page. Neither describes maturity; publication, default installation, and GUI visibility do not determine maturity either. Product packages outside this group have maintained product roles, while their public APIs still follow the repository's pre-stable policy.
-
-Promotion requires a named product role, documented public behavior and limitations, current consumers, release contents, and test evidence. Move the package to its product group, apply that group's naming rules, and update affected consumers together. The [subtree rules](AGENTS.md) govern dependency isolation and publication.
-
------
 
 <a id="packages"></a>
 ## Packages
@@ -37,51 +23,16 @@ Promotion requires a named product role, documented public behavior and limitati
 | Package | Role | ctx key |
 |---|---|---|
 | [`tool-session-query`](tool-session-query/README.md) | Workspace-authorized model session search, trace, and event reads | — |
-| [`session-title-all-prompts-llm`](session-title-all-prompts-llm/README.md) | Session titles from all human prompts | — |
 | [`tool-terminal`](tool-terminal/README.md) | Persistent terminal tools | — |
-| [`tool-ralph`](tool-ralph/README.md) | Bounded repeated delegated tasks | — |
-| [`skill-badge`](skill-badge/README.md) | The powered-by-dsh badge skill | — |
-| [`speech-to-text`](speech-to-text/README.md) | Named speech recognition providers | `ctx.speechToText` |
-| [`speech-to-text-sensevoice`](speech-to-text-sensevoice/README.md) | Managed local SenseVoice inference | — |
-| [`api-speech-to-text`](api-speech-to-text/README.md) | Authenticated transient transcription Remote | `ctx.speechController` |
-| [`client-ui-voice-input`](client-ui-voice-input/README.md) | Microphone capture and guarded draft insertion | — |
-| [`voice-input-bundle`](voice-input-bundle/README.md) | Default-disabled optional voice input composition | — |
-| [`agent-team-profile`](agent-team-profile/README.md) | Agent Teams collaboration, tools, and Web UI bundle | — |
-| [`agent-team`](agent-team/README.md) | Named teammates with direct messages and a durable shared task board | `ctx.agentTeams` |
-| [`client-ui-agent-team`](client-ui-agent-team/README.md) | Team roster, task board, and teammate navigation for Web | — |
-| [`auto-review`](auto-review/README.md) | Explicit Web layer for same-model review before each native or PTC inner tool call | — |
-| [`claude-code-mods`](claude-code-mods/README.md) | Run Claude Code mods as plugins: their hook chains on harness extension points and a band above the prompt | `ctx.claudeCodeMods` |
-| [`client-ui-claude-code-mods`](client-ui-claude-code-mods/README.md) | The Web band that draws a mod's tree above the prompt and sends button clicks back | — |
-| [`ptc-runtime-python`](ptc-runtime-python/README.md) | CPython subprocess backend for the PTC execution seam | `ctx.ptcRuntime` |
-| [`inspector`](inspector/README.md) | Cross-realm CDP hub for Host debugging, Client Runtime inspection, network capture, and Cordis trees | `ctx.inspector` |
-| [`session-inspector`](session-inspector/README.md) | Sidebar tables for raw Session logs and Chat nodes | — |
-| [`inspector-profile`](inspector-profile/README.md) | Optional Web bundle for Session log and Chat node inspection | — |
-| [`tool-agent-team`](tool-agent-team/README.md) | Nine tools that let the model create, message, and coordinate teammates | registers scoped tools on `ctx.tools` |
-| [`tool-worktree`](tool-worktree/README.md) | Optional bundle and model tool for creating and entering worktrees | `ctx.tools` |
-| [`webworker-packer`](webworker-packer/README.md) | Builds the gzip-compressed VFS image consumed by the browser worker preview | library and CLI — no ctx key |
-| [`webworker-runtime`](webworker-runtime/README.md) | Runs the harness plugin tree inside a dedicated browser worker | library and worker entry — no ctx key |
-| [`worktree`](worktree/README.md) | Creates a named Git worktree and changes the calling Session directory | `ctx.worktrees` |
-
------
 
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Experimental publication reference](../../scripts/experimental-package-policy.ts) — public defaults and private exceptions.
-- [Worktrees](../../docs/subsystems/worktrees.md) — explicit branch and checkout creation.
-- [Computer use](../../docs/subsystems/computer-use.md) — desktop provider choices.
-- [Browser use](../../docs/subsystems/browser-use.md) — browser provider choices and Session ownership.
-- [Agent Teams subsystem](../../docs/subsystems/agent-team.md) — durable Team types and the `ctx.agentTeams` service API.
-- [Experimental subtree rules](AGENTS.md) — what experimental status does and does not relax.
-
------
+- [Session query subsystem](../../docs/subsystems/session-query.md) — the retrieval services these tools project.
+- [Terminal subsystem](../../docs/subsystems/terminal.md) — owner-scoped persistent PTY sessions.
+- [Experimental package policy](../../scripts/experimental-package-policy.ts) — publication defaults and private exceptions.
 
 <a id="dev-note"></a>
 ## Dev Note
 
-<details>
-<summary>Working context for maintainers — click to expand</summary>
-
 None.
-
-</details>

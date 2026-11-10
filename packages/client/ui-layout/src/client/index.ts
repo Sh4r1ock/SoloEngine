@@ -28,6 +28,10 @@ import { ThemePresenter } from './theme-presenter.ts'
 // against; the frame components and the store factory are package-internal.
 export { LayoutController } from './service.ts'
 export type { ILayout, MainPanelId, PanelInfo } from './service.ts'
+// Theme DOM projection: the same presenter this plugin seats, exported for
+// statically linked consumers (the product shell) that own a theme preference
+// but no plugin tree. Pure DOM writes; no Cordis or React dependency.
+export { ThemePresenter } from './theme-presenter.ts'
 
 /** Selector hook over root-scoped panel selection. */
 export type UsePanelInfo = SnapshotSelectorHook<PanelInfo>

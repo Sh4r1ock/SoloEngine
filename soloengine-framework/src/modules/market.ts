@@ -11,11 +11,14 @@
  * @module @soloengine/framework/modules/market
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
 import { zipSync } from 'fflate'
+import Schema from '@deepseek-ai/schemastery'
+import type { BusinessDatabase } from '../db/port.ts'
 import type { FrameworkRuntime } from '../runtime.ts'
 import { FrameworkError, type UserRow } from './accounts.ts'
+import type { SkillPackageView } from './skills.ts'
 
 /** 市场条目类别。 */
 export type MarketKind = 'skill' | 'mcp'
@@ -35,7 +38,7 @@ export interface MarketHttpTransport {
   timeout?: number
 }
 
-/** 市场条目（目录文件的行形态）。 */
+/** 市场条目（目录文件的行形态 + 派生安装数）。 */
 export interface MarketEntry {
   id: string
   kind: MarketKind
@@ -46,7 +49,10 @@ export interface MarketEntry {
   tags: string[]
   categories: string[]
   featured: boolean
+  /** 本实例的真实安装数：由 `skills_packages`/`mcp_servers` 的同名行数派生，不读目录文件。 */
   installs: number
+  /** 当前用户是否已安装（按落库名匹配；未给出用户时恒为 false）。 */
+  installed: boolean
   /** 安装来源：技能为 data 根下的相对目录/zip；MCP 为传输配置来源串。 */
   source: string
   /** MCP stdio 传输参数（kind==='mcp' 且 stdio 传输时必填）。 */
@@ -54,6 +60,9 @@ export interface MarketEntry {
   /** MCP http 传输参数（kind==='mcp' 且 http 传输时必填）。 */
   http?: MarketHttpTransport
 }
+
+/** 目录文件里的条目行（安装数与安装状态是从业务库派生的展示值，文件不存）。 */
+type MarketCatalogRow = Omit<MarketEntry, 'installs' | 'installed'>
 
 /** 目录查询参数（全部为原始 query 字符串，由本模块校验）。 */
 export interface MarketQuery {
@@ -77,6 +86,62 @@ export interface MarketInstallResult {
 /** 目录文件在 data 根下的相对位置。 */
 const CATALOG_RELATIVE = join('market', 'catalog.json')
 
+/** 目录条目的必填文本列（非空字符串；类型不被静默强转）。 */
+const MarketText = () => Schema.string().required().min(1)
+
+/** MCP stdio 传输块：args/env 只接受字符串，缺省分别归一为 `[]`/`{}`。 */
+const MarketStdioSchema = Schema.object({
+  command: MarketText(),
+  args: Schema.array(Schema.string()).default([]),
+  env: Schema.dict(Schema.string()).default({}),
+  working_dir: Schema.union([Schema.string().min(1), Schema.const(null)]).default(null),
+})
+
+/** MCP http 传输块：headers 只接受字符串；timeout 与 MCP 子表的 1–600 秒一致。 */
+const MarketHttpSchema = Schema.object({
+  url: MarketText(),
+  headers: Schema.dict(Schema.string()).default({}),
+  timeout: Schema.union([Schema.natural().min(1).max(600), Schema.const(null)]).default(null),
+})
+
+/** 目录条目的标量列；stdio/http 块按 kind 单独校验（两者互斥）。 */
+const MarketEntrySchema = Schema.object({
+  id: MarketText(),
+  kind: Schema.union(['skill', 'mcp'] as const),
+  name: MarketText(),
+  version: MarketText(),
+  author: MarketText(),
+  description: MarketText(),
+  tags: Schema.array(Schema.string()).default([]),
+  categories: Schema.array(Schema.string()).default([]),
+  featured: Schema.boolean().default(false),
+  source: MarketText(),
+  stdio: Schema.any(),
+  http: Schema.any(),
+})
+
+/**
+ * 按声明式 schema 解析一段目录数据，失败统一包成 MARKET_CATALOG_INVALID。
+ *
+ * 第一类型参数是 schema 的输入侧：目录来自磁盘 JSON，调用点只有 `unknown`，
+ * 由 schema 自身完成校验与收窄，输出类型由第二参数 T 保证。
+ *
+ * @param schema - 目标 schema。
+ * @param raw - 待解析的原始值。
+ * @param index - 条目序号（错误信息定位）。
+ * @param label - 数据位置（条目本身或子块名）。
+ * @returns 解析后的值。
+ */
+function parseCatalog<T>(schema: Schema<any, T>, raw: unknown, index: number, label: string): T {
+  try {
+    return schema(raw)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new FrameworkError(500, 'MARKET_CATALOG_INVALID',
+      `market catalog entry #${String(index)} ${label} is invalid: ${detail}`)
+  }
+}
+
 /** 内置技能条目（4 条）+ 各自的 SKILL.md 正文。 */
 const BUILTIN_SKILLS: {
   id: string
@@ -85,7 +150,6 @@ const BUILTIN_SKILLS: {
   tags: string[]
   categories: string[]
   featured: boolean
-  installs: number
   body: string
 }[] = [
   {
@@ -95,7 +159,6 @@ const BUILTIN_SKILLS: {
     tags: ['review', 'quality', 'diff'],
     categories: ['engineering'],
     featured: true,
-    installs: 128,
     body: 'Review the requested change set. For each finding give file, line, the concrete risk and the smallest fix. Never invent code you did not read.',
   },
   {
@@ -105,7 +168,6 @@ const BUILTIN_SKILLS: {
     tags: ['git', 'commit', 'workflow'],
     categories: ['engineering'],
     featured: true,
-    installs: 96,
     body: 'Read the staged diff and the recent log, then write a commit message that follows the repository style and explains why the change exists.',
   },
   {
@@ -115,7 +177,6 @@ const BUILTIN_SKILLS: {
     tags: ['test', 'ci', 'verification'],
     categories: ['engineering'],
     featured: false,
-    installs: 64,
     body: 'Pick the smallest test set that covers the outgoing change, run it, and report the real output. Do not claim success without observed output.',
   },
   {
@@ -125,13 +186,12 @@ const BUILTIN_SKILLS: {
     tags: ['docs', 'writing'],
     categories: ['documentation'],
     featured: false,
-    installs: 41,
     body: 'Document behaviour that exists in the code you read. Do not document imagined features or planned work.',
   },
 ]
 
 /** 内置 MCP 条目（3 条）。 */
-const BUILTIN_MCPS: MarketEntry[] = [
+const BUILTIN_MCPS: MarketCatalogRow[] = [
   {
     id: 'mcp-filesystem',
     kind: 'mcp',
@@ -142,7 +202,6 @@ const BUILTIN_MCPS: MarketEntry[] = [
     tags: ['filesystem', 'official'],
     categories: ['tools'],
     featured: true,
-    installs: 210,
     source: 'npx -y @modelcontextprotocol/server-filesystem',
     stdio: {
       command: 'npx',
@@ -159,7 +218,6 @@ const BUILTIN_MCPS: MarketEntry[] = [
     tags: ['github', 'official', 'vcs'],
     categories: ['tools'],
     featured: false,
-    installs: 157,
     source: 'npx -y @modelcontextprotocol/server-github',
     stdio: {
       command: 'npx',
@@ -168,19 +226,18 @@ const BUILTIN_MCPS: MarketEntry[] = [
     },
   },
   {
-    id: 'mcp-remote-http',
+    id: 'mcp-deepwiki',
     kind: 'mcp',
-    name: 'remote-http',
+    name: 'deepwiki',
     version: '1.0.0',
-    author: 'soloengine',
-    description: 'HTTP 传输的远端 MCP 服务器（Streamable HTTP，JSON-RPC initialize 握手）。',
-    tags: ['http', 'remote'],
+    author: 'deepwiki',
+    description: '公开的 DeepWiki MCP 服务器（Streamable HTTP）：查询 GitHub 仓库的文档与问答。',
+    tags: ['http', 'remote', 'docs'],
     categories: ['tools'],
     featured: false,
-    installs: 23,
-    source: 'https://mcp.example.com/mcp',
+    source: 'https://mcp.deepwiki.com/mcp',
     http: {
-      url: 'https://mcp.example.com/mcp',
+      url: 'https://mcp.deepwiki.com/mcp',
       timeout: 30,
     },
   },
@@ -189,12 +246,14 @@ const BUILTIN_MCPS: MarketEntry[] = [
 /** 市场域服务。 */
 export class MarketService {
   private readonly runtime: FrameworkRuntime
+  private readonly db: BusinessDatabase
 
   /**
    * @param runtime - 框架层运行时（技能/MCP 服务与数据根）。
    */
   constructor(runtime: FrameworkRuntime) {
     this.runtime = runtime
+    this.db = runtime.db
   }
 
   /** 目录文件绝对路径（data 根下 `market/catalog.json`）。 */
@@ -208,8 +267,8 @@ export class MarketService {
   }
 
   /** 条目 → 目录文件行（技能 source 为 data 根下的相对目录）。 */
-  private builtinEntries(): MarketEntry[] {
-    const skills: MarketEntry[] = BUILTIN_SKILLS.map(skill => ({
+  private builtinEntries(): MarketCatalogRow[] {
+    const skills: MarketCatalogRow[] = BUILTIN_SKILLS.map(skill => ({
       id: skill.id,
       kind: 'skill',
       name: skill.name,
@@ -219,7 +278,6 @@ export class MarketService {
       tags: skill.tags,
       categories: skill.categories,
       featured: skill.featured,
-      installs: skill.installs,
       source: join('market', 'skills', skill.name),
     }))
     return [...skills, ...BUILTIN_MCPS]
@@ -232,6 +290,8 @@ export class MarketService {
     for (const skill of BUILTIN_SKILLS) {
       const dir = this.skillSourceDir(skill.name)
       mkdirSync(dir, { recursive: true })
+      const skillPath = join(dir, 'SKILL.md')
+      if (existsSync(skillPath)) continue
       const frontmatter = [
         '---',
         `name: ${skill.name}`,
@@ -246,14 +306,25 @@ export class MarketService {
         skill.body,
         '',
       ].join('\n')
-      writeFileSync(join(dir, 'SKILL.md'), frontmatter, 'utf8')
+      writeFileSync(skillPath, frontmatter, 'utf8')
     }
-    mkdirSync(join(this.runtime.dataDir, 'market'), { recursive: true })
-    writeFileSync(catalogPath, `${JSON.stringify({ entries: this.builtinEntries() }, undefined, 2)}\n`, 'utf8')
+    this.writeCatalogAtomic({ entries: this.builtinEntries() })
+  }
+
+  /**
+   * 原子写目录文件（临时文件 + rename）：中断只留临时文件，真源不会半写。
+   * @param parsed - 待写入的完整目录对象。
+   */
+  private writeCatalogAtomic(parsed: unknown): void {
+    const catalogPath = this.catalogPath()
+    mkdirSync(dirname(catalogPath), { recursive: true })
+    const temporary = `${catalogPath}.tmp`
+    writeFileSync(temporary, `${JSON.stringify(parsed, undefined, 2)}\n`, 'utf8')
+    renameSync(temporary, catalogPath)
   }
 
   /** 读取并校验目录（缺失即创建；损坏即报错，不静默清空）。 */
-  private loadEntries(): MarketEntry[] {
+  private loadEntries(): MarketCatalogRow[] {
     this.ensureCatalog()
     const text = readFileSync(this.catalogPath(), 'utf8')
     let parsed: unknown
@@ -272,84 +343,67 @@ export class MarketService {
     return entries.map((raw, index) => this.assertEntry(raw, index))
   }
 
-  /** 逐列校验一条目录条目（非法即报错）。 */
-  private assertEntry(raw: unknown, index: number): MarketEntry {
+  /** 按声明式 schema 校验一条目录条目（非法即报错，不静默强转）。 */
+  private assertEntry(raw: unknown, index: number): MarketCatalogRow {
     const fail = (detail: string): never => {
       throw new FrameworkError(500, 'MARKET_CATALOG_INVALID', `market catalog entry #${String(index)} ${detail}`)
     }
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) fail('must be an object')
-    const row = raw as Record<string, unknown>
-    const text = (key: string): string => {
-      const value = row[key]
-      if (typeof value !== 'string' || value === '') fail(`is missing a non-empty string ${key}`)
-      return value as string
+    const parsed = parseCatalog(MarketEntrySchema, raw, index, 'entry')
+    const entry: MarketCatalogRow = {
+      id: parsed.id,
+      kind: parsed.kind,
+      name: parsed.name,
+      version: parsed.version,
+      author: parsed.author,
+      description: parsed.description,
+      tags: parsed.tags,
+      categories: parsed.categories,
+      featured: parsed.featured,
+      source: parsed.source,
     }
-    const kind = row.kind
-    if (kind !== 'skill' && kind !== 'mcp') fail('must declare kind skill|mcp')
-    const strings = (key: string): string[] => {
-      const value = row[key]
-      if (!Array.isArray(value)) fail(`must declare a string array ${key}`)
-      return (value as unknown[]).map(item => {
-        if (typeof item !== 'string') fail(`has a non-string member in ${key}`)
-        return item as string
-      })
+    if (entry.kind !== 'mcp') return entry
+    const rawStdio: unknown = parsed.stdio
+    const rawHttp: unknown = parsed.http
+    const stdio = rawStdio === undefined || rawStdio === null
+      ? undefined
+      : parseCatalog(MarketStdioSchema, rawStdio, index, 'stdio block')
+    const http = rawHttp === undefined || rawHttp === null
+      ? undefined
+      : parseCatalog(MarketHttpSchema, rawHttp, index, 'http block')
+    if (stdio !== undefined && http !== undefined) {
+      fail('declares both stdio and http transport parameters; an mcp entry keeps exactly one')
     }
-    if (typeof row.featured !== 'boolean') fail('must declare a boolean featured')
-    if (typeof row.installs !== 'number') fail('must declare a numeric installs')
-    const entry: MarketEntry = {
-      id: text('id'),
-      kind: kind as MarketKind,
-      name: text('name'),
-      version: text('version'),
-      author: text('author'),
-      description: text('description'),
-      tags: strings('tags'),
-      categories: strings('categories'),
-      featured: row.featured as boolean,
-      installs: row.installs as number,
-      source: text('source'),
+    if (stdio !== undefined) {
+      entry.stdio = {
+        command: stdio.command,
+        args: stdio.args,
+        env: stdio.env,
+        ...stdio.working_dir === null ? {} : { working_dir: stdio.working_dir },
+      }
     }
-    if (entry.kind === 'mcp') {
-      const stdio = row.stdio
-      const http = row.http
-      if (stdio !== undefined && stdio !== null && typeof stdio === 'object' && !Array.isArray(stdio)) {
-        const config = stdio as Record<string, unknown>
-        if (typeof config.command !== 'string' || config.command === '') fail('has an mcp stdio block without a command')
-        const block: MarketStdioTransport = { command: config.command as string }
-        if (Array.isArray(config.args)) block.args = (config.args as unknown[]).map(item => String(item))
-        if (config.env !== undefined && config.env !== null && typeof config.env === 'object' && !Array.isArray(config.env)) {
-          const env: Record<string, string> = {}
-          for (const [key, value] of Object.entries(config.env as Record<string, unknown>)) env[key] = String(value)
-          block.env = env
-        }
-        if (typeof config.working_dir === 'string') block.working_dir = config.working_dir
-        entry.stdio = block
+    if (http !== undefined) {
+      entry.http = {
+        url: http.url,
+        headers: http.headers,
+        ...http.timeout === null ? {} : { timeout: http.timeout },
       }
-      if (http !== undefined && http !== null && typeof http === 'object' && !Array.isArray(http)) {
-        const config = http as Record<string, unknown>
-        if (typeof config.url !== 'string' || config.url === '') fail('has an mcp http block without a url')
-        const block: MarketHttpTransport = { url: config.url as string }
-        if (config.headers !== undefined && config.headers !== null && typeof config.headers === 'object' && !Array.isArray(config.headers)) {
-          const headers: Record<string, string> = {}
-          for (const [key, value] of Object.entries(config.headers as Record<string, unknown>)) headers[key] = String(value)
-          block.headers = headers
-        }
-        if (typeof config.timeout === 'number') block.timeout = config.timeout
-        entry.http = block
-      }
-      if (entry.stdio === undefined && entry.http === undefined) {
-        fail('is an mcp entry without stdio or http transport parameters')
-      }
+    }
+    if (entry.stdio === undefined && entry.http === undefined) {
+      fail('is an mcp entry without stdio or http transport parameters')
     }
     return entry
   }
 
   /**
    * 列目录（kind/q/category/sort/featured 过滤与排序）。
+   *
+   * `categories` 取自**该 kind 的完整目录**（不是本次筛选后的页），供首屏一次性给出全部筛选候选。
+   * `installs` 是业务库派生的真实安装数；`installed` 是当前用户本地清单里是否已有同名资产。
    * @param query - 原始 query 参数。
-   * @returns 条目与总数。
+   * @param userId - 当前用户（省略时不判定 installed）。
+   * @returns 条目与总数、该 kind 的全部类别（排序）。
    */
-  list(query: MarketQuery): { entries: MarketEntry[]; total: number } {
+  async list(query: MarketQuery, userId?: string): Promise<{ entries: MarketEntry[]; total: number; categories: string[] }> {
     const invalid = (detail: string): never => {
       throw new FrameworkError(400, 'MARKET_QUERY_INVALID', detail)
     }
@@ -368,13 +422,23 @@ export class MarketService {
     const keyword = (query.q ?? '').trim().toLowerCase()
     const category = (query.category ?? '').trim().toLowerCase()
 
-    const entries = this.loadEntries().filter(entry => {
+    const catalog = this.loadEntries()
+    const scoped = kind === undefined || kind === '' ? catalog : catalog.filter(entry => entry.kind === kind)
+    const categories = [...new Set(scoped.flatMap(entry => entry.categories))]
+      .sort((left, right) => left.localeCompare(right))
+    const counts = await this.installCounts()
+    const owned = await this.installedNames(userId)
+    const entries = catalog.map(entry => ({
+      ...entry,
+      installs: counts.get(entry.kind)?.get(entry.name) ?? 0,
+      installed: owned.get(entry.kind)?.has(entry.name) ?? false,
+    })).filter(entry => {
       if (kind !== undefined && kind !== '' && entry.kind !== kind) return false
       if (featuredRaw === 'true' && !entry.featured) return false
       if (featuredRaw === 'false' && entry.featured) return false
       if (category !== '' && !entry.categories.some(item => item.toLowerCase() === category)) return false
       if (keyword !== '') {
-        const haystack = [entry.name, entry.description, ...entry.tags].join(' ').toLowerCase()
+        const haystack = [entry.name, entry.description, entry.author, ...entry.tags].join(' ').toLowerCase()
         if (!haystack.includes(keyword)) return false
       }
       return true
@@ -386,7 +450,46 @@ export class MarketService {
       if (left.featured !== right.featured) return left.featured ? -1 : 1
       return right.installs - left.installs || left.name.localeCompare(right.name)
     })
-    return { entries, total: entries.length }
+    return { entries, total: entries.length, categories }
+  }
+
+  /**
+   * 统计真实安装数：目录条目按 `name` 对应已落库的技能包/MCP 服务器行数。
+   * @returns kind →（name → 行数）。
+   */
+  private async installCounts(): Promise<Map<MarketKind, Map<string, number>>> {
+    const counts = new Map<MarketKind, Map<string, number>>()
+    for (const [kind, table] of [['skill', 'skills_packages'], ['mcp', 'mcp_servers']] as const) {
+      const rows = await this.db.prepare(`SELECT name, COUNT(*) AS total FROM ${table} GROUP BY name`)
+        .all<{ name: string; total: number }>()
+      counts.set(kind, new Map(rows.map(row => [row.name, Number(row.total)])))
+    }
+    return counts
+  }
+
+  /**
+   * 当前用户本地清单里的资产名（与安装判重同一口径）。
+   *
+   * 技能只算**自有行**：系统/公共技能在列表里可见不等于已安装，市场安装会落一份自有副本；
+   * 把它算成「已安装」会让页面禁用安装按钮，而接口又能真的安装（两处口径分叉）。
+   * MCP 名称全实例唯一，任何可见同名行都会阻止注册，故按自有 + 系统行判定。
+   * @param userId - 当前用户；省略时返回空表。
+   * @returns kind →（已安装的名称集合）。
+   */
+  private async installedNames(userId: string | undefined): Promise<Map<MarketKind, Set<string>>> {
+    const owned = new Map<MarketKind, Set<string>>([
+      ['skill', new Set<string>()],
+      ['mcp', new Set<string>()],
+    ])
+    if (userId === undefined || userId === '') return owned
+    const skills = await this.db.prepare(
+      'SELECT name FROM skills_packages WHERE user_id = ?',
+    ).all<{ name: string }>(userId)
+    owned.set('skill', new Set(skills.map(row => row.name)))
+    const servers = await this.db.prepare('SELECT name FROM mcp_servers WHERE user_id = ? OR user_id IS NULL')
+      .all<{ name: string }>(userId)
+    owned.set('mcp', new Set(servers.map(row => row.name)))
+    return owned
   }
 
   /**
@@ -395,23 +498,32 @@ export class MarketService {
    * @param entryId - 条目 ID。
    * @returns 落库资产。
    */
-  install(user: UserRow, entryId: string): MarketInstallResult {
+  async install(user: UserRow, entryId: string): Promise<MarketInstallResult> {
     const entry = this.loadEntries().find(candidate => candidate.id === entryId)
     if (entry === undefined) {
       throw new FrameworkError(404, 'MARKET_ENTRY_NOT_FOUND', `market entry ${entryId} not found`)
     }
-    if (entry.kind === 'skill') return this.installSkill(user, entry)
-    return this.installMcp(user, entry)
+    return entry.kind === 'skill' ? await this.installSkill(user, entry) : await this.installMcp(user, entry)
+  }
+
+  /**
+   * 解析条目 source（必须落在市场数据根内，防止目录文件被改成任意路径）。
+   * @param source - 条目声明的相对路径。
+   * @returns 源绝对路径。
+   */
+  private resolveSource(source: string): string {
+    const root = resolve(this.runtime.dataDir)
+    const target = resolve(root, source)
+    const prefix = root.endsWith(sep) ? root : `${root}${sep}`
+    if (target !== root && !target.startsWith(prefix)) {
+      throw new FrameworkError(404, 'MARKET_SOURCE_MISSING', `market source ${source} escapes the data directory`)
+    }
+    return target
   }
 
   /** 技能安装：条目 source 指向的目录/zip → 技能两阶段导入的确认落盘。 */
-  private installSkill(user: UserRow, entry: MarketEntry): MarketInstallResult {
-    const existing = this.runtime.skills.list(user.id).find(row => row.name === entry.name)
-    if (existing !== undefined) {
-      throw new FrameworkError(409, 'MARKET_ALREADY_INSTALLED',
-        `skill ${entry.name} is already installed for user ${user.username} (skill ${existing.id})`)
-    }
-    const sourcePath = resolve(this.runtime.dataDir, entry.source)
+  private async installSkill(user: UserRow, entry: MarketCatalogRow): Promise<MarketInstallResult> {
+    const sourcePath = this.resolveSource(entry.source)
     if (!existsSync(sourcePath)) {
       throw new FrameworkError(404, 'MARKET_SOURCE_MISSING', `market entry ${entry.id} source ${entry.source} does not exist`)
     }
@@ -431,15 +543,57 @@ export class MarketService {
     } else {
       archive = new Uint8Array(readFileSync(sourcePath))
     }
-    const skill = this.runtime.skills.importConfirmed(user.id, user.username, archive)
+    // 落盘名以 SKILL.md frontmatter 为准：条目名与它不一致会出现「装了但列表里换了名字」。
+    const preview = this.runtime.skills.previewImport(user.username, archive)
+    if (preview.name !== entry.name) {
+      throw new FrameworkError(409, 'MARKET_NAME_MISMATCH',
+        `market entry ${entry.id} declares name ${entry.name}, but its SKILL.md declares ${preview.name}`)
+    }
+    // 判重也用落盘名（同一解析结果），并保留 importConfirmed 的存在性检查兜住并发。
+    // 只按**本人**的行判重：公共技能同名不代表已安装（安装后是本人目录下的一份副本）。
+    const existing = await this.db.prepare('SELECT id FROM skills_packages WHERE user_id = ? AND name = ?')
+      .get<{ id: string }>(user.id, preview.name)
+    if (existing !== undefined) {
+      throw new FrameworkError(409, 'MARKET_ALREADY_INSTALLED',
+        `skill ${preview.name} is already installed for user ${user.username} (skill ${existing.id})`)
+    }
+    const skill = await this.importSkillMapped(user, archive)
     return { id: entry.id, kind: 'skill', assetId: skill.id, name: skill.name }
   }
 
+  /**
+   * 走技能确认落盘，并把并发下的 `SKILL_EXISTS` 归一到市场语义。
+   * @param user - 请求级用户。
+   * @param archive - 技能包字节。
+   * @returns 落库技能包行。
+   */
+  private async importSkillMapped(user: UserRow, archive: Uint8Array): Promise<SkillPackageView> {
+    try {
+      return await this.runtime.skills.importConfirmed(user.id, user.username, archive)
+    } catch (error) {
+      if (error instanceof FrameworkError && error.code === 'SKILL_EXISTS') {
+        throw new FrameworkError(409, 'MARKET_ALREADY_INSTALLED',
+          `skill from market entry is already installed for user ${user.username}`)
+      }
+      // 残留目录是本地异常状态，不是「已安装」：保留独立错误码，界面按它给出处置说明。
+      if (error instanceof FrameworkError && error.code === 'SKILL_DIRECTORY_ORPHANED') {
+        throw new FrameworkError(409, 'MARKET_DIRECTORY_ORPHANED', error.message)
+      }
+      throw error
+    }
+  }
+
   /** MCP 安装：条目 source 即传输配置来源，stdio/http 参数由条目自带。 */
-  private installMcp(user: UserRow, entry: MarketEntry): MarketInstallResult {
-    const taken = this.runtime.db.raw.prepare('SELECT id FROM mcp_servers WHERE name = ?')
-      .get(entry.name) as { id: string } | undefined
+  private async installMcp(user: UserRow, entry: MarketCatalogRow): Promise<MarketInstallResult> {
+    const taken = await this.db.prepare('SELECT id, user_id FROM mcp_servers WHERE name = ?')
+      .get<{ id: string; user_id: string | null }>(entry.name)
     if (taken !== undefined) {
+      // 名称跨实例唯一（决定模型可见工具前缀），但「别人占用」不等于「你已安装」：
+      // 两种状态给不同错误码，界面才能给出正确处置。
+      if (taken.user_id !== user.id) {
+        throw new FrameworkError(409, 'MCP_NAME_TAKEN',
+          `mcp server name ${entry.name} is already registered by another user; pick a different name`)
+      }
       throw new FrameworkError(409, 'MARKET_ALREADY_INSTALLED',
         `mcp server ${entry.name} is already registered (mcp server ${taken.id})`)
     }
@@ -451,25 +605,37 @@ export class MarketService {
       source_type: entry.source,
     }
     let created
-    if (entry.http !== undefined) {
-      created = this.runtime.mcp.create(user.id, {
-        ...base,
-        transport_type: 'http',
-        url: entry.http.url,
-        ...entry.http.headers === undefined ? {} : { headers: JSON.stringify(entry.http.headers) },
-        ...entry.http.timeout === undefined ? {} : { timeout: entry.http.timeout },
-      })
-    } else if (entry.stdio !== undefined) {
-      created = this.runtime.mcp.create(user.id, {
-        ...base,
-        transport_type: 'stdio',
-        command: entry.stdio.command,
-        ...entry.stdio.args === undefined ? {} : { args: JSON.stringify(entry.stdio.args) },
-        ...entry.stdio.env === undefined ? {} : { env: JSON.stringify(entry.stdio.env) },
-        ...entry.stdio.working_dir === undefined ? {} : { working_dir: entry.stdio.working_dir },
-      })
-    } else {
-      throw new FrameworkError(422, 'MARKET_ENTRY_INVALID', `market entry ${entry.id} has no transport parameters`)
+    try {
+      if (entry.http !== undefined) {
+        created = await this.runtime.mcp.create(user.id, {
+          ...base,
+          transport_type: 'http',
+          url: entry.http.url,
+          ...entry.http.headers === undefined ? {} : { headers: JSON.stringify(entry.http.headers) },
+          ...entry.http.timeout === undefined ? {} : { timeout: entry.http.timeout },
+        })
+      } else if (entry.stdio !== undefined) {
+        created = await this.runtime.mcp.create(user.id, {
+          ...base,
+          transport_type: 'stdio',
+          command: entry.stdio.command,
+          ...entry.stdio.args === undefined ? {} : { args: JSON.stringify(entry.stdio.args) },
+          ...entry.stdio.env === undefined ? {} : { env: JSON.stringify(entry.stdio.env) },
+          ...entry.stdio.working_dir === undefined ? {} : { working_dir: entry.stdio.working_dir },
+        })
+      } else {
+        throw new FrameworkError(422, 'MARKET_ENTRY_INVALID', `market entry ${entry.id} has no transport parameters`)
+      }
+    } catch (error) {
+      // 并发安装同名 MCP：名称唯一约束的冲突归一到「已安装」；名称不合规是目录条目的问题。
+      if (error instanceof FrameworkError && error.code === 'MCP_NAME_TAKEN') {
+        throw new FrameworkError(409, 'MARKET_ALREADY_INSTALLED',
+          `mcp server ${entry.name} is already registered`)
+      }
+      if (error instanceof FrameworkError && error.code === 'INVALID_MCP_NAME') {
+        throw new FrameworkError(422, 'MARKET_ENTRY_INVALID', `market entry ${entry.id} name ${entry.name} is not a valid mcp server name`)
+      }
+      throw error
     }
     return { id: entry.id, kind: 'mcp', assetId: created.id, name: created.name }
   }

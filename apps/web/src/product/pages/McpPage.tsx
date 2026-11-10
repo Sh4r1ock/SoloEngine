@@ -2,9 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Button, CodeBlock, IconArchiveOutlineRegular, IconChecklistOutlineRegular, IconCodeOutlineRegular,
-  IconDatabaseOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular, IconGlobeOutlineRegular,
-  IconInfoOutlineRegular, IconPlayOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular,
-  IconSearchOutlineRegular, IconStopFillRegular, Input, Menu, Modal, Switch, Tag, TerminalBlock,
+  IconDatabaseOutlineRegular, IconEditOutlineRegular, IconEllipsisOutlineRegular, IconFolderOpenOutlineRegular,
+  IconGlobeOutlineRegular, IconInfoOutlineRegular, IconPlayOutlineRegular, IconPlusOutlineRegular,
+  IconRefreshOutlineRegular, IconSearchOutlineRegular, IconStopFillRegular, Input, Menu, Modal, Switch, Tag,
+  TerminalBlock,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ApiError, describeError, request } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
@@ -45,10 +46,11 @@ interface PageError {
 const MCP_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/u
 
 /**
- * 前置校验 JSON 文本字段的顶层形态与取值类型。
+ * 前置校验 JSON 文本字段的顶层形态。
  *
- * 后端 `assertJson` 只校验顶层是数组/对象；值不是字符串时会在传输层被
- * `String(value)` 拼进命令行或请求头，故在表单侧先把这一层挡住。
+ * 启动参数（`args`）与后端 `assertJson` 同一口径：只要求是 JSON 数组，元素在运行时由
+ * `String(value)` 转成命令行参数。环境变量与请求头仍要求对象且值全是字符串，因为值会
+ * 原样进入进程环境或 HTTP 请求头。
  * @param text - 表单文本。
  * @param expect - 期望的顶层类型。
  * @returns 是否可提交（空串视为未填写）。
@@ -62,18 +64,19 @@ function isValidJsonField(text: string, expect: 'array' | 'object'): boolean {
     return false
   }
   if (expect === 'array') {
-    return Array.isArray(parsed) && parsed.every(item => typeof item === 'string')
+    return Array.isArray(parsed)
   }
   return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
     && Object.values(parsed as Record<string, unknown>).every(value => typeof value === 'string')
 }
 
 /**
- * 创建失败的文案按后端错误码本地化（错误码是稳定契约，文案随语言切换）。
+ * 创建 / 保存失败的文案按后端错误码本地化（错误码是稳定契约，文案随语言切换）。
  * @param failure - 捕获的失败。
+ * @param fallbackKey - 未命中错误码时的前缀键（创建与编辑各用各的句子）。
  * @returns 展示文案。
  */
-function createFailureText(failure: unknown): string {
+function createFailureText(failure: unknown, fallbackKey = 'errorCreate'): string {
   if (failure instanceof ApiError) {
     switch (failure.code) {
       case 'NAME_REQUIRED': return t('mcp', 'errorNameRequired')
@@ -88,11 +91,14 @@ function createFailureText(failure: unknown): string {
       case 'INVALID_RUNTIME': return t('mcp', 'errorRuntimeInvalid')
       case 'ARCHIVE_PATH_REJECTED': return t('mcp', 'errorArchivePath')
       case 'ARCHIVE_TOO_LARGE': return t('mcp', 'errorArchiveTooLarge')
+      case 'ARCHIVE_INVALID': return t('mcp', 'errorArchiveInvalid')
       case 'ENTRY_NOT_FOUND': return t('mcp', 'errorEntryNotFound')
+      case 'MCP_INSTALL_FAILED': return t('mcp', 'errorInstallFailed')
+      case 'MCP_INSTALL_TIMEOUT': return t('mcp', 'errorInstallTimeout')
       default: break
     }
   }
-  return `${t('mcp', 'errorCreate')} — ${describeError(failure)}`
+  return `${t('mcp', fallbackKey)} — ${describeError(failure)}`
 }
 
 /** JSON schema 派生出的一个表单字段。 */
@@ -181,7 +187,11 @@ export function McpPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [capabilities, setCapabilities] = useState<Record<string, McpTestResult>>({})
   const [createVariant, setCreateVariant] = useState<CreateVariant | null>(null)
+  /** 编辑目标：与创建共用同一张表单，保存走 PATCH（乐观锁 version 取自该行）。 */
+  const [editTarget, setEditTarget] = useState<McpServerView | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<McpServerView | null>(null)
+  /** 删除确认框内的失败行：页面级错误行会被 Modal 遮住，失败原因必须就地可见。 */
+  const [deleteFailure, setDeleteFailure] = useState<{ text: string; retry: () => void } | null>(null)
   const [callTarget, setCallTarget] = useState<{ server: McpServerView; tool: McpToolInfo } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [tab, setTab] = useState<'overview' | 'tools' | 'files'>('overview')
@@ -216,12 +226,19 @@ export function McpPage() {
         await action()
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
-        setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey) } })
+        setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText) } })
       } finally {
         setBusyId(null)
       }
     })()
   }
+
+  /** 冲突后重新拉取列表并取回该服务器的最新行（编辑对话框的「刷新」动作）。 */
+  const reloadServer = useCallback(async (id: string): Promise<McpServerView | null> => {
+    const result = await request<{ ok: true; servers: McpServerView[] }>('/mcp')
+    setServers(result.servers)
+    return result.servers.find(server => server.id === id) ?? null
+  }, [])
 
   // busyId 形如 `<服务器 id>:<动作>`：单一 id 会让同一服务器的两个按钮同时显示「进行中」
   // （实测只点「连接测试」时，「能力枚举」也变成「枚举中…」）。禁用可按服务器收敛，
@@ -230,6 +247,8 @@ export function McpPage() {
   const busyAction = (id: string): string | null => (busyId !== null && busyId.startsWith(`${id}:`)
     ? busyId.slice(id.length + 1)
     : null)
+
+  const loadFailed = error?.key === 'errorLoad'
 
   const visible = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -246,6 +265,17 @@ export function McpPage() {
   useEffect(() => {
     if (selectedId === null && visible.length > 0) setSelectedId(visible[0]?.id ?? null)
   }, [visible, selectedId])
+
+  /**
+   * 失败行补充：命令不存在时点名真实命令并给出可执行写法。
+   * 只显示归因类别（「命令不存在」）会让用户以为按钮坏了；后端 message 是英文诊断，
+   * 产品文案必须本地化，故按行上的命令重建一句。
+   */
+  const failureHint = (server: McpServerView, kind: string | undefined): string | undefined => {
+    if (kind !== 'command_missing') return undefined
+    const command = server.stdio?.command ?? ''
+    return command.trim() === '' ? undefined : t('mcp', 'hintCommandMissing', { command })
+  }
 
   /** 连接测试（详情页与列表共用一处实现）。 */
   const runTest = (server: McpServerView): void => {
@@ -285,7 +315,13 @@ export function McpPage() {
         if (result.result.ok) {
           toast.show(t('mcp', 'toastTestOk', { name: server.name }), 'success')
         } else {
-          setError({ key: 'errorTest', kind: result.result.kind ?? 'unknown', retry: () => { runTest(server) } })
+          const detail = failureHint(server, result.result.kind)
+          setError({
+            key: 'errorTest',
+            kind: result.result.kind ?? 'unknown',
+            ...(detail === undefined ? {} : { detail }),
+            retry: () => { runTest(server) },
+          })
         }
       } catch (failure) {
         setError({ key: 'errorTest', detail: describeError(failure), retry: () => { runTest(server) } })
@@ -318,10 +354,64 @@ export function McpPage() {
             count: result.result.tools === undefined ? 0 : result.result.tools.length,
           }), 'success')
         } else {
-          setError({ key: 'errorEnumerate', kind: result.result.kind ?? 'unknown', retry: () => { runEnumerate(server) } })
+          const detail = failureHint(server, result.result.kind)
+          setError({
+            key: 'errorEnumerate',
+            kind: result.result.kind ?? 'unknown',
+            ...(detail === undefined ? {} : { detail }),
+            retry: () => { runEnumerate(server) },
+          })
         }
       } catch (failure) {
         setError({ key: 'errorEnumerate', detail: describeError(failure), retry: () => { runEnumerate(server) } })
+      } finally {
+        setBusyId(null)
+      }
+    })()
+  }
+
+  /** 单工具启停（列表与详情共用）：失败重试同一次切换，不只刷新列表。 */
+  const toggleTool = (server: McpServerView, toolName: string, next: boolean): void => {
+    setBusyId(`${server.id}:tool`)
+    setError(null)
+    void (async () => {
+      try {
+        const result = await request<{ ok: true; server: McpServerView }>(
+          `/mcp/${server.id}/tools/${encodeURIComponent(toolName)}/active`,
+          { method: 'POST', body: { active: next } },
+        )
+        setServers(previous => previous.map(item => (item.id === result.server.id ? result.server : item)))
+        toast.show(
+          t('mcp', next ? 'toastToolEnabled' : 'toastToolDisabled', { name: toolName }),
+          'success',
+        )
+      } catch (failure) {
+        setError({
+          key: 'errorToolToggle',
+          detail: describeError(failure),
+          retry: () => { toggleTool(server, toolName, next) },
+        })
+      } finally {
+        setBusyId(null)
+      }
+    })()
+  }
+
+  /** 删除服务器：失败时把原因与重试留在确认框内，成功后关闭并刷新列表。 */
+  const deleteServer = (server: McpServerView): void => {
+    setBusyId(`${server.id}:delete`)
+    setDeleteFailure(null)
+    void (async () => {
+      try {
+        await request(`/mcp/${server.id}`, { method: 'DELETE' })
+        setDeleteTarget(null)
+        toast.show(t('mcp', 'toastDeleted'), 'success')
+        await load()
+      } catch (failure) {
+        setDeleteFailure({
+          text: `${t('mcp', 'errorDelete')} — ${describeError(failure)}`,
+          retry: () => { deleteServer(server) },
+        })
       } finally {
         setBusyId(null)
       }
@@ -437,15 +527,25 @@ export function McpPage() {
             {selected === null ? (
               <div className={`${css.emptyState} ${mcpCss.detailEmpty}`}>
                 <span className={css.emptyIcon} aria-hidden="true"><IconDatabaseOutlineRegular size={22} /></span>
-                <p className={css.emptyTitle}>{t('mcp', servers.length === 0 ? 'empty' : 'noMatch')}</p>
-                <p className={css.emptyDesc}>{t('mcp', servers.length === 0 ? 'emptyDesc' : 'noMatchHint')}</p>
-                {servers.length === 0
-                  ? (
-                    <Button variant="primary" size="sm" onClick={() => { setCreateVariant('stdio') }}>
-                      {t('mcp', 'formTitleStdio')}
-                    </Button>
-                  )
-                  : <Button size="sm" variant="outline" onClick={() => { setSearch('') }}>{t('mcp', 'clearSearch')}</Button>}
+                <p className={css.emptyTitle}>{t('mcp', loadFailed ? 'loadFailedTitle' : servers.length === 0 ? 'empty' : 'noMatch')}</p>
+                <p className={css.emptyDesc}>{t('mcp', loadFailed ? 'loadFailedHint' : servers.length === 0 ? 'emptyDesc' : 'noMatchHint')}</p>
+                {(() => {
+                  if (loadFailed) {
+                    return (
+                      <Button size="sm" variant="outline" onClick={() => { void load() }}>
+                        {t('common', 'actionRetry')}
+                      </Button>
+                    )
+                  }
+                  if (servers.length === 0) {
+                    return (
+                      <Button variant="primary" size="sm" onClick={() => { setCreateVariant('stdio') }}>
+                        {t('mcp', 'formTitleStdio')}
+                      </Button>
+                    )
+                  }
+                  return <Button size="sm" variant="outline" onClick={() => { setSearch('') }}>{t('mcp', 'clearSearch')}</Button>
+                })()}
               </div>
             ) : (() => {
               const capability = capabilities[selected.id]
@@ -514,6 +614,12 @@ export function McpPage() {
                         align="end"
                         items={[
                           {
+                            id: 'edit',
+                            label: t('common', 'actionEdit'),
+                            icon: <IconEditOutlineRegular size={14} />,
+                            disabled: busyOn(selected.id),
+                          },
+                          {
                             id: 'toggle',
                             label: selected.is_active ? t('mcp', 'disableServer') : t('mcp', 'enableServer'),
                             icon: selected.is_active ? <IconStopFillRegular size={14} /> : <IconPlayOutlineRegular size={14} />,
@@ -525,6 +631,7 @@ export function McpPage() {
                         ]}
                         onSelect={(id) => {
                           setMenuId(null)
+                          if (id === 'edit') setEditTarget(selected)
                           if (id === 'toggle') {
                             act(`${selected.id}:active`, async () => {
                               await request(`/mcp/${selected.id}/active`, { method: 'POST', body: { active: !selected.is_active } })
@@ -532,7 +639,10 @@ export function McpPage() {
                             }, 'errorActive', selected.is_active ? t('mcp', 'toastDisabled') : t('mcp', 'toastEnabled'))
                           }
                           if (id === 'test') runTest(selected)
-                          if (id === 'delete') setDeleteTarget(selected)
+                          if (id === 'delete') {
+                            setDeleteFailure(null)
+                            setDeleteTarget(selected)
+                          }
                         }}
                         onClose={() => { setMenuId(null) }}
                         anchor={(
@@ -776,29 +886,7 @@ export function McpPage() {
                                       checked={!disabled}
                                       label={`${tool.name} ${disabled ? t('mcp', 'toolDisabled') : t('mcp', 'toolEnabled')}`}
                                       disabled={busyOn(selected.id)}
-                                      onChange={(next) => {
-                                        setBusyId(`${selected.id}:tool`)
-                                        setError(null)
-                                        void (async () => {
-                                          try {
-                                            const result = await request<{ ok: true; server: McpServerView }>(
-                                              `/mcp/${selected.id}/tools/${encodeURIComponent(tool.name)}/active`,
-                                              { method: 'POST', body: { active: next } },
-                                            )
-                                            setServers(previous => previous.map(item =>
-                                              item.id === result.server.id ? result.server : item,
-                                            ))
-                                            toast.show(
-                                              t('mcp', next ? 'toastToolEnabled' : 'toastToolDisabled', { name: tool.name }),
-                                              'success',
-                                            )
-                                          } catch (failure) {
-                                            setError({ key: 'errorToolToggle', detail: describeError(failure) })
-                                          } finally {
-                                            setBusyId(null)
-                                          }
-                                        })()
-                                      }}
+                                      onChange={(next) => { toggleTool(selected, tool.name, next) }}
                                     />
                                     <span className={mcpCss.toolState}>
                                       {disabled ? t('mcp', 'toolDisabled') : t('mcp', 'toolEnabled')}
@@ -865,13 +953,17 @@ export function McpPage() {
         </div>
       )}
 
-      <CreateServerDialog
-        variant={createVariant}
-        onClose={() => { setCreateVariant(null) }}
-        onCreated={(server) => {
+      <ServerFormDialog
+        variant={editTarget === null ? createVariant : (editTarget.transport_type === 'http' ? 'http' : 'stdio')}
+        target={editTarget}
+        onReload={reloadServer}
+        onClose={() => { setCreateVariant(null); setEditTarget(null) }}
+        onSaved={(server) => {
+          const edited = editTarget !== null
           setCreateVariant(null)
-          toast.show(t('mcp', 'toastCreated', { name: server.name }), 'success')
-          // 创建成功后直接落到新服务器的概览页签，而不是让用户自己在列表里再找一遍。
+          setEditTarget(null)
+          toast.show(t('mcp', edited ? 'toastUpdated' : 'toastCreated', { name: server.name }), 'success')
+          // 创建/保存后直接落到该服务器的概览页签，而不是让用户自己在列表里再找一遍。
           setSelectedId(server.id)
           setTab('overview')
           void load()
@@ -885,13 +977,13 @@ export function McpPage() {
 
       <Modal
         open={deleteTarget !== null}
-        onClose={() => { setDeleteTarget(null) }}
-        title={t('common', 'confirmDeleteTitle')}
+        onClose={() => { setDeleteTarget(null); setDeleteFailure(null) }}
+        title={t('common', 'deleteNamedTitle', { name: deleteTarget?.name ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={t('common', 'confirmDeleteDescription')}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteFailure(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
               variant="ghost"
               className={css.dangerButton}
@@ -899,11 +991,7 @@ export function McpPage() {
               onClick={() => {
                 const target = deleteTarget
                 if (target === null) return
-                act(`${target.id}:delete`, async () => {
-                  await request(`/mcp/${target.id}`, { method: 'DELETE' })
-                  setDeleteTarget(null)
-                  await load()
-                }, 'errorDelete', t('mcp', 'toastDeleted'))
+                deleteServer(target)
               }}
             >
               {t('common', 'actionDelete')}
@@ -911,6 +999,14 @@ export function McpPage() {
           </>
         )}
       >
+        {/* 失败原因就地呈现在确认框内：页面级错误行会被 Modal 遮住。 */}
+        <NoticeLine
+          tone="error"
+          text={deleteFailure === null ? null : deleteFailure.text}
+          {...(deleteFailure === null
+            ? {}
+            : { action: { label: t('common', 'actionRetry'), onClick: deleteFailure.retry } })}
+        />
         {deleteTarget !== null && (
           <p className={css.cardBody}>
             {deleteTarget.name}
@@ -1071,11 +1167,15 @@ function bytesLabel(bytes: number): string {
   return t('mcp', bytes === 1 ? 'fileBytesOne' : 'fileBytes', { count: bytes })
 }
 
-/** 四类创建入口的表单对话框。 */
-function CreateServerDialog({ variant, onClose, onCreated }: {
+/** 创建与编辑共用的服务器表单对话框。 */
+function ServerFormDialog({ variant, target, onReload, onClose, onSaved }: {
   variant: CreateVariant | null
+  /** 编辑目标；非 null 时表单预填现有配置并以 PATCH（乐观锁）提交。 */
+  target: McpServerView | null
+  /** 冲突后重新拉取该服务器的最新行；不存在时返回 null。 */
+  onReload: (id: string) => Promise<McpServerView | null>
   onClose: () => void
-  onCreated: (server: McpServerView) => void
+  onSaved: (server: McpServerView) => void
 }) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -1094,6 +1194,24 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
   const [transport, setTransport] = useState<'stdio' | 'http'>('stdio')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** 乐观锁基线：冲突后「刷新」会把本地草稿换成服务端最新行，版本也随之更新。 */
+  const [baseVersion, setBaseVersion] = useState(0)
+  /** 当前错误是否为版本冲突（只有冲突才提供「刷新」出路）。 */
+  const [conflict, setConflict] = useState(false)
+
+  /** 用一行服务端数据重填表单（编辑入口与冲突后的刷新共用）。 */
+  const fillFrom = useCallback((server: McpServerView): void => {
+    setName(server.name)
+    setDescription(server.description ?? '')
+    setCommand(server.stdio?.command ?? '')
+    setArgs(server.stdio?.args ?? '')
+    setEnv(server.stdio?.env ?? '')
+    setWorkingDir(server.stdio?.working_dir ?? '')
+    setUrl(server.http?.url ?? '')
+    setHeaders(server.http?.headers ?? '')
+    setTimeoutValue(String(server.stdio?.timeout ?? server.http?.timeout ?? DEFAULT_TIMEOUT_SECONDS))
+    setBaseVersion(server.version)
+  }, [])
 
   useEffect(() => {
     setName('')
@@ -1112,33 +1230,45 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
     setUploadBase64(null)
     setTransport(variant === 'http' ? 'http' : 'stdio')
     setError(null)
-  }, [variant])
+    setConflict(false)
+    if (target === null) return
+    // 编辑：预填该行现有配置；空值保持空串，提交时空串按「清除」处理。
+    fillFrom(target)
+  }, [variant, target, fillFrom])
+
+  /** 冲突后的刷新：重新拉取该行并用最新配置重填表单（版本号一并更新）。 */
+  const refreshFromServer = (): void => {
+    if (target === null) return
+    setBusy(true)
+    void (async () => {
+      try {
+        const fresh = await onReload(target.id)
+        if (fresh === null) {
+          setError(`${t('mcp', 'errorSave')} — ${t('mcp', 'errorServerGone')}`)
+          return
+        }
+        fillFrom(fresh)
+        setConflict(false)
+        setError(null)
+      } catch (failure) {
+        setError(`${t('mcp', 'errorLoad')} — ${describeError(failure)}`)
+      } finally {
+        setBusy(false)
+      }
+    })()
+  }
 
   const effectiveTransport: 'stdio' | 'http' = variant === 'stdio'
     ? 'stdio'
     : variant === 'http' ? 'http' : transport
 
-  const title = variant === 'http'
-    ? t('mcp', 'formTitleHttp')
-    : variant === 'code'
-      ? t('mcp', 'formTitleCode')
-      : variant === 'package' ? t('mcp', 'formTitlePackage') : t('mcp', 'formTitleStdio')
-
-  /**
-   * 上传管线只物化 stdio 配置（超时固定为默认值），请求体里没有超时字段；
-   * 用户显式选择的超时经更新端点写回，避免输入被静默丢弃。
-   * @param server - 上传返回的服务器。
-   * @param seconds - 用户选择的秒数；null 表示沿用默认值。
-   * @returns 应用超时后的服务器视图。
-   */
-  const applyTimeout = async (server: McpServerView, seconds: number | null): Promise<McpServerView> => {
-    if (seconds === null || seconds === DEFAULT_TIMEOUT_SECONDS) return server
-    const updated = await request<{ ok: true; server: McpServerView }>(`/mcp/${server.id}`, {
-      method: 'PATCH',
-      body: { version: server.version, timeout: seconds },
-    })
-    return updated.server
-  }
+  const title = target !== null
+    ? t('mcp', 'formTitleEdit')
+    : variant === 'http'
+      ? t('mcp', 'formTitleHttp')
+      : variant === 'code'
+        ? t('mcp', 'formTitleCode')
+        : variant === 'package' ? t('mcp', 'formTitlePackage') : t('mcp', 'formTitleStdio')
 
   const submit = (): void => {
     if (busy) return
@@ -1166,7 +1296,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
     // FR-MCP-007：code/package 走 /mcp/upload 专用管线（落用户隔离目录并物化为 stdio）。
     if (variant === 'code') {
       if (code.trim() === '') {
-        setError(t('mcp', 'errorConfigRequired'))
+        setError(t('mcp', 'errorCodeRequired'))
         return
       }
       setBusy(true)
@@ -1181,9 +1311,10 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
               code,
               ...(description.trim() === '' ? {} : { description: description.trim() }),
               ...(runtime.trim() === '' ? {} : { runtime: runtime.trim() }),
+              ...(seconds === null ? {} : { timeout: seconds }),
             },
           })
-          onCreated(await applyTimeout(result.server, seconds))
+          onSaved(result.server)
         } catch (failure) {
           // 错误就近呈现在对话框内（带本地化前缀）；不再向页面级重复投递（会被 Modal 遮挡）。
           setError(createFailureText(failure))
@@ -1195,7 +1326,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
     }
     if (variant === 'package') {
       if (uploadBase64 === null) {
-        setError(t('mcp', 'errorConfigRequired'))
+        setError(t('mcp', 'errorPackageRequired'))
         return
       }
       setBusy(true)
@@ -1210,9 +1341,10 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
               archiveBase64: uploadBase64,
               ...(description.trim() === '' ? {} : { description: description.trim() }),
               ...(runtime.trim() === '' ? {} : { runtime: runtime.trim() }),
+              ...(seconds === null ? {} : { timeout: seconds }),
             },
           })
-          onCreated(await applyTimeout(result.server, seconds))
+          onSaved(result.server)
         } catch (failure) {
           setError(createFailureText(failure))
         } finally {
@@ -1222,7 +1354,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
       return
     }
     if (effectiveTransport === 'stdio' && command.trim() === '') {
-      setError(t('mcp', 'errorConfigRequired'))
+      setError(t('mcp', 'errorCommandRequired'))
       return
     }
     if (effectiveTransport === 'stdio' && !isValidJsonField(args, 'array')) {
@@ -1234,7 +1366,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
       return
     }
     if (effectiveTransport === 'http' && url.trim() === '') {
-      setError(t('mcp', 'errorConfigRequired'))
+      setError(t('mcp', 'errorUrlRequired'))
       return
     }
     if (effectiveTransport === 'http' && !isValidJsonField(headers, 'object')) {
@@ -1243,6 +1375,43 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
     }
     setBusy(true)
     setError(null)
+    setConflict(false)
+    // 编辑：只提交本次表单能表达的字段；空串用于清除可选值，version 走乐观锁。
+    if (target !== null) {
+      const patch: Record<string, unknown> = {
+        version: baseVersion,
+        name: name.trim(),
+        description: description.trim(),
+        ...(seconds === null ? {} : { timeout: seconds }),
+        ...(effectiveTransport === 'stdio'
+          ? {
+            command: command.trim(),
+            args: args.trim() === '' ? '[]' : args.trim(),
+            env: env.trim() === '' ? '{}' : env.trim(),
+            working_dir: workingDir.trim() === '' ? null : workingDir.trim(),
+          }
+          : {
+            url: url.trim(),
+            headers: headers.trim() === '' ? '{}' : headers.trim(),
+          }),
+      }
+      void (async () => {
+        try {
+          const result = await request<{ ok: true; server: McpServerView }>(`/mcp/${target.id}`, { method: 'PATCH', body: patch })
+          onSaved(result.server)
+        } catch (failure) {
+          // 保存失败与创建失败分开成句；版本冲突另给「已被其他窗口修改」的说明与刷新出路。
+          const isConflict = failure instanceof ApiError && failure.code === 'VERSION_CONFLICT'
+          setConflict(isConflict)
+          setError(isConflict
+            ? t('mcp', 'errorSaveConflict')
+            : createFailureText(failure, 'errorSave'))
+        } finally {
+          setBusy(false)
+        }
+      })()
+      return
+    }
     const body: Record<string, unknown> = {
       name: name.trim(),
       transport_type: effectiveTransport,
@@ -1263,7 +1432,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
     void (async () => {
       try {
         const result = await request<{ ok: true; server: McpServerView }>('/mcp', { method: 'POST', body })
-        onCreated(result.server)
+        onSaved(result.server)
       } catch (failure) {
         setError(createFailureText(failure))
       } finally {
@@ -1274,7 +1443,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
 
   return (
     <Modal
-      open={variant !== null}
+      open={variant !== null || target !== null}
       onClose={onClose}
       title={title}
       closeLabel={t('common', 'actionClose')}
@@ -1289,7 +1458,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
             variant="primary"
             disabled={busy}
           >
-            {busy ? t('mcp', 'creating') : t('mcp', 'create')}
+            {busy ? t('mcp', 'creating') : target === null ? t('mcp', 'create') : t('common', 'actionSave')}
           </Button>
         </>
       )}
@@ -1298,10 +1467,19 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
         id="mcp-create-form"
         className={css.form}
         noValidate
+        // 字段编辑会让「缺字段 / 格式错」的提示过期：非版本冲突的错误在任意一次输入后清掉，
+        // 不留一条与当前表单状态矛盾的旧提示（冲突错误必须点「刷新」处理，故不在此清除）。
+        onChange={() => { if (!conflict && error !== null) setError(null) }}
         onSubmit={(event) => { event.preventDefault(); submit() }}
         onKeyDown={submitFormOnEnter}
       >
-        <NoticeLine tone="error" text={error} />
+        <NoticeLine
+          tone="error"
+          text={error}
+          {...(conflict && target !== null
+            ? { action: { label: t('common', 'actionRefresh'), onClick: refreshFromServer } }
+            : {})}
+        />
         <div className={css.formGrid}>
           <div>
             <Field label={t('mcp', 'nameLabel')} hint={t('mcp', 'nameHint')}>
@@ -1382,7 +1560,7 @@ function CreateServerDialog({ variant, onClose, onCreated }: {
           {(variant === 'stdio' || variant === 'http') && effectiveTransport === 'stdio' ? (
             <>
               <div className={mcpCss.fieldFull}>
-                <Field label={t('mcp', 'commandLabel')}>
+                <Field label={t('mcp', 'commandLabel')} hint={t('mcp', 'commandHint')}>
                   <Input value={command} onChange={(event) => { setCommand(event.currentTarget.value) }} />
                 </Field>
               </div>
@@ -1692,6 +1870,8 @@ function ServerFiles({ server, onError, onSaved }: {
   const [editing, setEditing] = useState<{ path: string; content: string; saved: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  /** 文件打开请求序号：快速连点两个文件时，只接受最后一次打开的响应。 */
+  const openSeq = useRef(0)
   const onErrorRef = useRef(onError)
   onErrorRef.current = onError
   const onSavedRef = useRef(onSaved)
@@ -1751,6 +1931,23 @@ function ServerFiles({ server, onError, onSaved }: {
     return addRouteBlocker(() => t('mcp', 'dirtyLeave'))
   }, [dirty])
 
+  // 切页签或换服务器会卸载本组件；700ms 自动保存窗口内的输入不能随之丢失。
+  // 卸载时补写一次（失败仍走页面级错误；此时父组件在页签切换场景下仍挂载）。
+  const pendingRef = useRef<{ path: string; content: string; dirty: boolean }>({ path: '', content: '', dirty: false })
+  useEffect(() => {
+    pendingRef.current = editing === null
+      ? { path: '', content: '', dirty: false }
+      : { path: editing.path, content: editing.content, dirty: editing.content !== editing.saved }
+  }, [editing])
+  useEffect(() => () => {
+    const pending = pendingRef.current
+    if (!pending.dirty) return
+    void request(`/mcp/${server.id}/file`, { method: 'PUT', body: { path: pending.path, content: pending.content } })
+      .catch((failure: unknown) => {
+        onErrorRef.current({ key: 'errorFileSave', detail: describeError(failure) })
+      })
+  }, [server.id])
+
   useEffect(() => {
     if (!dirty) return
     const handler = (event: BeforeUnloadEvent): void => {
@@ -1790,6 +1987,9 @@ function ServerFiles({ server, onError, onSaved }: {
 
   const openFile = (path: string): void => {
     if (dirty && !window.confirm(t('mcp', 'dirtyLeave'))) return
+    // 连点两个文件会并发两个 GET；慢响应后到会把编辑区切回旧文件，
+    // 自动保存随后可能把旧文件的内容写错地方。序号只放行最后一次打开。
+    const seq = ++openSeq.current
     setBusy(true)
     onError(null)
     void (async () => {
@@ -1797,12 +1997,14 @@ function ServerFiles({ server, onError, onSaved }: {
         const result = await request<{ ok: true; file: { path: string; content: string } }>(
           `/mcp/${server.id}/file?path=${encodeURIComponent(path)}`,
         )
+        if (seq !== openSeq.current) return
         setEditing({ path: result.file.path, content: result.file.content, saved: result.file.content })
         setSaveState('idle')
       } catch (failure) {
-        onError({ key: 'errorFiles', detail: describeError(failure) })
+        if (seq !== openSeq.current) return
+        onError({ key: 'errorFiles', detail: describeError(failure), retry: () => { openFile(path) } })
       } finally {
-        setBusy(false)
+        if (seq === openSeq.current) setBusy(false)
       }
     })()
   }
@@ -1925,7 +2127,7 @@ function ServerFiles({ server, onError, onSaved }: {
             key={file.path}
             type="button"
             className={editing?.path === file.path ? `${mcpCss.fileItem} ${mcpCss.fileItemActive}` : mcpCss.fileItem}
-            disabled={!file.text || !editable}
+            disabled={!file.text || !editable || busy}
             title={file.text ? file.path : t('mcp', 'binaryNotEditable')}
             onClick={() => { openFile(file.path) }}
           >

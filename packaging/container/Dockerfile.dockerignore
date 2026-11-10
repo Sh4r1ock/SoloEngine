@@ -28,3 +28,9 @@ test
 .workbuddy
 .claude
 .dsh-build
+
+# 只读参考池与设计草稿：产品运行不依赖它们（开发完成后参考池会被删除），
+# 复制进构建上下文只会把镜像构建拖慢数倍。
+deepseek_harness
+.tmp
+文档备份-*

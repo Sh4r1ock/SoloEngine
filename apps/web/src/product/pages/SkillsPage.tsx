@@ -6,7 +6,7 @@ import {
   IconSkillOutlineRegular, IconStopFillRegular, IconTrashOutlineRegular,
   Input, Menu, Modal, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { ApiError, describeError, request } from '../api.ts'
+import { ApiError, describeError, request, requestBlob } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { navigate } from '../router.ts'
 import { PageHeader } from '../components/PageHeader.tsx'
@@ -65,7 +65,7 @@ export function SkillsPage({ user }: { user: UserView }) {
   const [loading, setLoading] = useState(true)
   // 文案状态存「键 + 动态细节」，渲染时才翻译（S5-F9 同一规则）：存已翻译字符串会在
   // 用户切换语言后残留旧语种，而本页侧栏始终带着语言切换入口，该路径可达。
-  const [error, setError] = useState<{ key: string; detail: string } | null>(null)
+  const [error, setError] = useState<{ key: string; detail: string; retry: () => void } | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   // FR-SKILL-001：标签过滤 + 我的/公共过滤 + 系统级与自建分组。
@@ -89,7 +89,7 @@ export function SkillsPage({ user }: { user: UserView }) {
       setSkills(result.skills)
       setError(null)
     } catch (failure) {
-      setError({ key: 'errorLoad', detail: describeError(failure) })
+      setError({ key: 'errorLoad', detail: describeError(failure), retry: () => { void load() } })
     } finally {
       setLoading(false)
     }
@@ -137,7 +137,7 @@ export function SkillsPage({ user }: { user: UserView }) {
         await action()
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
-        setError({ key: failureKey, detail: describeError(failure) })
+        setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText) } })
       } finally {
         setBusyId(null)
       }
@@ -172,29 +172,32 @@ export function SkillsPage({ user }: { user: UserView }) {
           aria-label={t('skills', 'searchAria')}
           onChange={(event) => { setSearch(event.currentTarget.value) }}
         />
-        {/* 原型 .segmented：36px 外壳 + 30px 分段。选中态同时写 aria-pressed，
-            辅助技术读得到（WCAG 4.1.2），不只靠底色。 */}
-        <div className={skillCss.segmented} role="group" aria-label={t('skills', 'ownerFilterLabel')}>
+        {/* 原型 .segmented：36px 外壳 + 30px 分段。选中态写 aria-selected，
+            辅助技术按标签页读出当前归属分段，不只靠底色。 */}
+        <div className={skillCss.segmented} role="tablist" aria-label={t('skills', 'ownerFilterLabel')}>
           <button
             type="button"
+            role="tab"
+            aria-selected={ownerFilter === 'all'}
             className={ownerFilter === 'all' ? `${skillCss.segmentItem} ${skillCss.segmentActive}` : skillCss.segmentItem}
-            aria-pressed={ownerFilter === 'all'}
             onClick={() => { setOwnerFilter('all') }}
           >
             {t('skills', 'ownerAll')}
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={ownerFilter === 'mine'}
             className={ownerFilter === 'mine' ? `${skillCss.segmentItem} ${skillCss.segmentActive}` : skillCss.segmentItem}
-            aria-pressed={ownerFilter === 'mine'}
             onClick={() => { setOwnerFilter('mine') }}
           >
             {t('skills', 'ownerMine')}
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={ownerFilter === 'public'}
             className={ownerFilter === 'public' ? `${skillCss.segmentItem} ${skillCss.segmentActive}` : skillCss.segmentItem}
-            aria-pressed={ownerFilter === 'public'}
             onClick={() => { setOwnerFilter('public') }}
           >
             {t('skills', 'ownerPublic')}
@@ -223,12 +226,13 @@ export function SkillsPage({ user }: { user: UserView }) {
       <NoticeLine
         tone="error"
         text={error === null ? null : `${t('skills', error.key)} — ${error.detail}`}
-        action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
+        {...(error === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: error.retry } })}
       />
 
       {loading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
-      {/* 与画布列表页同一二分（R3/R8）：过滤后为零 ≠ 一个都没有，文案必须说明下一步做什么。 */}
-      {!loading && visible.length === 0 && (
+      {/* 与画布列表页同一二分（R3/R8）：过滤后为零 ≠ 一个都没有，文案必须说明下一步做什么。
+          加载失败也不是空：错误行已说明原因，空态会把它伪装成「还没有技能」。 */}
+      {!loading && error === null && visible.length === 0 && (
         <div className={skillCss.emptyState}>
           <span className={skillCss.emptyIcon} aria-hidden="true"><IconSkillOutlineRegular size={20} /></span>
           <p className={skillCss.emptyTitle}>{t('skills', skills.length === 0 ? 'empty' : 'noMatch')}</p>
@@ -307,7 +311,7 @@ export function SkillsPage({ user }: { user: UserView }) {
       <Modal
         open={deleteTarget !== null}
         onClose={() => { setDeleteTarget(null) }}
-        title={t('common', 'confirmDeleteTitle')}
+        title={t('common', 'deleteNamedTitle', { name: deleteTarget?.name ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={t('common', 'confirmDeleteDescription')}
         footer={(
@@ -344,6 +348,9 @@ export function SkillsPage({ user }: { user: UserView }) {
   )
 
   function renderSkillRow(skill: SkillView) {
+    // 可改写范围与后端 `mutableRow` 同一判定：自己的技能；系统技能仅超管；
+    // 其他用户的公共技能只读。不可写时菜单项直接禁用，不让用户点了才吃 403/404。
+    const writable = skill.user_id === user.id || (skill.user_id === null && user.is_superuser)
     return (
       <div
         key={skill.id}
@@ -356,6 +363,7 @@ export function SkillsPage({ user }: { user: UserView }) {
             {skill.is_public && <Tag tone="neutral">{t('skills', 'publicBadge')}</Tag>}
             {skill.source === 'factory' && <Tag tone="outline">{t('skills', 'templateBadge')}</Tag>}
             {!skill.is_active && <Tag tone="quiet">{t('skills', 'badgeDisabled')}</Tag>}
+            {!writable && <Tag tone="quiet">{t('skills', 'badgeReadonly')}</Tag>}
           </div>
           {skill.description !== null && skill.description !== '' && (
             <p className={skillCss.rowDesc}>{skill.description}</p>
@@ -377,12 +385,13 @@ export function SkillsPage({ user }: { user: UserView }) {
             open={menuId === skill.id}
             align="end"
             items={[
+              { id: 'export-package', label: t('skills', 'exportPackage'), icon: <IconDownloadOutlineRegular size={14} />, disabled: busyId === skill.id },
               { id: 'export', label: t('skills', 'exportAction'), icon: <IconDownloadOutlineRegular size={14} />, disabled: busyId === skill.id },
               {
                 id: 'toggle',
                 label: skill.is_active ? t('common', 'stateInactive') : t('common', 'stateActive'),
                 icon: skill.is_active ? <IconStopFillRegular size={14} /> : <IconPlayOutlineRegular size={14} />,
-                disabled: busyId === skill.id,
+                disabled: busyId === skill.id || !writable,
               },
               ...(skill.user_id === user.id
                 ? [{
@@ -398,11 +407,12 @@ export function SkillsPage({ user }: { user: UserView }) {
                 label: t('skills', 'deleteSkill'),
                 icon: <IconTrashOutlineRegular size={14} />,
                 danger: true,
-                disabled: busyId === skill.id,
+                disabled: busyId === skill.id || !writable,
               },
             ]}
             onSelect={(id) => {
               setMenuId(null)
+              if (id === 'export-package') exportSkillPackage(skill)
               if (id === 'export') exportSkillMd(skill)
               if (id === 'toggle') {
                 act(skill.id, async () => {
@@ -435,6 +445,20 @@ export function SkillsPage({ user }: { user: UserView }) {
         </div>
       </div>
     )
+  }
+
+  /** 导出技能包（zip，保持包内目录结构；与 `GET /skills/:id/export` 同源）。 */
+  function exportSkillPackage(skill: SkillView): void {
+    act(skill.id, async () => {
+      const blob = await requestBlob(`/skills/${skill.id}/export`)
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${skill.name}-${skill.pkg_version}.zip`
+      anchor.click()
+      // 立即 revoke 会在下载真正取流前撤掉 URL（部分浏览器直接得到空文件）；与用量导出同一处理。
+      window.setTimeout(() => { URL.revokeObjectURL(url) }, 10_000)
+    }, 'errorExport', t('skills', 'toastExportedPackage', { name: skill.name, version: skill.pkg_version }))
   }
 
   /** 导出 SKILL.md（单一文件；包内缺 SKILL.md 时按台账元数据生成一份）。 */
@@ -475,12 +499,26 @@ function CreateSkillDialog({ open, onClose, onCreated }: {
   const [error, setError] = useState<string | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
 
-  // 每次重新打开都从干净状态开始：上一次的字段错误不能残留到新一次创建。
-  useEffect(() => {
-    if (!open) return
+  const reset = useCallback((): void => {
+    setName('')
+    setVersion('')
+    setDescription('')
+    setTags('')
     setError(null)
     setNameError(null)
-  }, [open])
+  }, [])
+
+  // 每次重新打开都从干净状态开始：上一次的输入与错误不能残留到新一次创建。
+  useEffect(() => {
+    if (!open) return
+    reset()
+  }, [open, reset])
+
+  // 关闭时同样清空：残留的输入会在下次打开时被误用。
+  const close = (): void => {
+    reset()
+    onClose()
+  }
 
   const submit = (): void => {
     if (busy) return
@@ -523,13 +561,13 @@ function CreateSkillDialog({ open, onClose, onCreated }: {
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={close}
       title={t('skills', 'createTitle')}
       closeLabel={t('common', 'actionClose')}
       description={t('skills', 'createDescription')}
       footer={(
         <>
-          <Button variant="outline" onClick={onClose}>{t('common', 'actionCancel')}</Button>
+          <Button variant="outline" onClick={close}>{t('common', 'actionCancel')}</Button>
           <Button
             type="submit"
             form="create-skill-form"
@@ -606,11 +644,23 @@ function ImportSkillDialog({ open, onClose, onImported }: {
     return null
   }
 
-  // 关闭即回第一步：预览只对「这一次来源」有效，留着会让下次打开直接落在第二步、
-  // 而底部按钮又发不出与预览同一个来源的请求。
-  const close = (): void => {
+  const reset = useCallback((): void => {
+    setSourcePath('')
+    setArchiveBase64(null)
+    setArchiveName('')
     setPreview(null)
     setError(null)
+  }, [])
+
+  // 每次重新打开都从干净状态开始：上一次的来源、压缩包与预览不能残留到新一次导入。
+  useEffect(() => {
+    if (!open) return
+    reset()
+  }, [open, reset])
+
+  // 关闭即回第一步并清空来源：预览只对「这一次来源」有效，残留值会被下次打开误用。
+  const close = (): void => {
+    reset()
     onClose()
   }
 
@@ -663,7 +713,11 @@ function ImportSkillDialog({ open, onClose, onImported }: {
       } catch (failure) {
         setError(sourceErrorText(failure) ?? (failure instanceof ApiError && failure.code === 'SKILL_DIRECTORY_ORPHANED'
           ? t('skills', 'errorDirectoryOrphaned', { name: preview.name })
-          : `${t('skills', 'errorImport')} — ${describeError(failure)}`))
+          : failure instanceof ApiError && failure.code === 'SKILL_EXISTS'
+            ? t('skills', 'errorSkillExists')
+            : failure instanceof ApiError && failure.code === 'IMPORT_PREVIEW_STALE'
+              ? t('skills', 'errorImportStale')
+              : `${t('skills', 'errorImport')} — ${describeError(failure)}`))
       } finally {
         setBusy(false)
       }

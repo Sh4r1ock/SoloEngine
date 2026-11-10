@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to preview files readable through a Session's filesystem from the web client. It reads UTF-8 text by page, reads bounded byte windows or complete files, resolves related files from a base file's directory, and reports file metadata. Follow changes to a file or a directory's direct entries. File reads and watches may target paths outside the workspace; directory listing and watches remain workspace-scoped. The service exposes no mutation operation.
+Use this package to preview files readable through a Session's filesystem from the web client. It reads UTF-8 text by page, reads bounded byte windows or complete files, resolves related files from a base file's directory, and reports file metadata. Follow changes to a file or a directory's direct entries. File reads and watches may target paths outside the workspace; directory listing and watches remain workspace-scoped. Mutations are the four human-driven operations below and are always workspace-scoped.
 
 ## Table of Contents
 
@@ -34,6 +34,10 @@ Mount the package beside `dsh-fs`, `dsh-sandbox-policy`, the Session store, and 
 | `readBytes(path, { range?, baseFile? })` | `WorkspaceFileBytes` = stat + `{ offset, data, eof }` | Complete file or bounded byte range as `Uint8Array`; optionally resolve from another file's directory |
 | `list(path)` | `WorkspaceDirectoryListing { path, entries, truncated }` | Direct children of one directory |
 | `changes(path)` | stream of `WorkspaceFileWatchFrame` | Subscription readiness, then invalidations of one file or a directory's direct entries |
+| `write(path, text, options)` | `WorkspaceFileStat` | Create or replace one UTF-8 file; `createOnly` refuses an existing target, `expectedVersion` refuses a stale one |
+| `mkdir(path)` | `WorkspaceMutationResult { absolutePath, type }` | Create one directory whose parent already exists |
+| `rename(from, to)` | `WorkspaceMutationResult` | Move one entry to a destination that must not exist |
+| `removeEntry(path)` | `WorkspaceMutationResult` | Remove one file, or a directory with its contents |
 
 ### Addressing and paths
 
@@ -68,9 +72,13 @@ Every operation first uses `lstat` to reject a missing path or the wrong file ki
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-workspace-files) is the exhaustive source for every accepted field and its JSDoc.
 
+### Mutations
+
+`write`, `mkdir`, `rename`, and `remove` are the human-driven operations a file tree or editor performs. They are workspace-scoped: the target (and, for `rename`, the destination) must canonicalize inside the Session's workspace root, the root itself is refused, and a final symbolic link is refused rather than followed. `write` is capped by `maxFileBytes`. The sandbox policy a mutation runs under is the deployment's mode with the Session's workspace as its writable root — a Session's `read-only` preset governs the model, not the person at the keyboard, so it does not block these calls. `mkdir` and `write` require an existing parent directory.
+
 ### Failures
 
-Each failure is one `RemoteError` code with typed details, declared in [`src/types.ts`](src/types.ts): `workspace-file/not-found`, `workspace-file/outside-workspace` (directory listing or watching), `workspace-file/watch-unsupported` (watch initialization failed), `workspace-file/too-large` (with `limit`, the applicable page, window, or complete-file cap), `workspace-file/not-text`, `workspace-file/not-regular-file` (`kind`: `directory`, `symlink`, or `other`), and `workspace-file/not-directory` (`kind`: `file`, `symlink`, or `other`). Callers branch on the code, never on message text.
+Each failure is one `RemoteError` code with typed details, declared in [`src/types.ts`](src/types.ts): `workspace-file/not-found`, `workspace-file/outside-workspace` (directory listing, watching, or any mutation), `workspace-file/watch-unsupported` (watch initialization failed), `workspace-file/too-large` (with `limit`, the applicable page, window, complete-file, or write cap), `workspace-file/not-text`, `workspace-file/not-regular-file` (`kind`: `directory`, `symlink`, or `other`), `workspace-file/not-directory` (`kind`: `file`, `symlink`, or `other`), `workspace-file/already-exists`, `workspace-file/stale-version`, `workspace-file/parent-missing`, `workspace-file/symlink-refused`, `workspace-file/denied` (`reason`: `permission` or `sandbox`), and `workspace-file/write-failed`. Callers branch on the code, never on message text.
 
 ### Client file resources
 

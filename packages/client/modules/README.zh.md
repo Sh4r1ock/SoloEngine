@@ -41,6 +41,10 @@ application combo 脚本只携带每个插件的 `client.js` 入口，并在启�
 
 已打开的 Web 页面通过 HMR 传输跟随 Host 的完整模块图。启用普通插件会添加其 Loader 条目；停用会移除条目，并在其异步 effect 完成清理后回收未使用的模块与样式。再次启用会加载一个带样式的实例。其他 Loader 贡献方的条目及活动条目仍需使用的共享模块会保留。「设置 → 插件 → 插件列表」显示当前页面的同步失败，并提供不改变 Host 启用状态的重试。
 
+### 实例图
+
+`extendGraph(extraPackages, baseUrl)` 在已组合行之外，按调用方（例如某个 `/run` 页面）启用的客户端包组合出一份调用方作用域的图，返回 `{ graph, resolved, missing }`。实例包在全局表之外解析并快照，因此 `graph()` 与 HMR 各自保留自己的图；生成的每个 combo 都走同一条不可变 `/plugins` 路由，并登记在一张独立的 FIFO 有界表里，之后的全局重组不会清空它。解析不到浏览器包或构建产物缺失的包名进入 `missing`，由调用方整页报错；已在全局表中组合的包计为 `resolved`，不会产生第二行。调用方把返回的图作为该页面在全局图之后使用的启动图。
+
 <a id="host-release-changes"></a>
 ### Host release 变化
 

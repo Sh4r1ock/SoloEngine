@@ -336,6 +336,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
   }
 
+  /** The product account bound to a Peer's browser connection, when one is bound. */
+  accountIdOf(peer: PeerScope): string | undefined {
+    return this.userOfPeer.get(peer.id)
+  }
+
   /** How the registered account scope treats one Peer. */
   private accountOutcome(peer: PeerScope): AccountOutcome {
     const scope = this.accountScope

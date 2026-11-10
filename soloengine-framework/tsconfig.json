@@ -22,6 +22,12 @@
     },
     {
       "path": "../packages/soloengine/agent-compiler"
+    },
+    {
+      "path": "../packages/subprocess/subprocess"
+    },
+    {
+      "path": "../packages/core/tools"
     }
   ]
 }

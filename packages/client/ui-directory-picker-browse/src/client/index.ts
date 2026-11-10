@@ -49,6 +49,8 @@ export function apply(ctx: ClientContext): void {
         'browser.loading': '加载中…',
         'browser.truncated': '文件夹过多，仅显示开头部分。',
         'browser.showHidden': '显示隐藏文件',
+        'browser.createInvalid': '文件夹名称无效，不能包含路径分隔符或其他特殊字符',
+        'browser.createExists': '同名文件夹已存在',
       }],
       ['en', {
         'browser.title': 'Select Workspace Directory',
@@ -64,6 +66,8 @@ export function apply(ctx: ClientContext): void {
         'browser.loading': 'Loading…',
         'browser.truncated': 'Too many folders to list; only the beginning is shown.',
         'browser.showHidden': 'Show hidden files',
+        'browser.createInvalid': 'That folder name is not valid; it cannot contain path separators or other special characters',
+        'browser.createExists': 'A folder with that name already exists',
       }],
     ]
     try {

@@ -1,7 +1,7 @@
 {
   "name": "@soloengine/ui-document-editor",
   "version": "0.1.0",
-  "description": "SoloEngine 编辑器/文档面板（自研客户端）：在官方 documentpreviews 注册表上补编辑能力与 Office（docx/xlsx/pptx）浏览器内渲染，并落纯文本兜底说明。",
+  "description": "SoloEngine 编辑器/文档面板（自研客户端）：在官方 documentpreviews 注册表上补文本编辑能力（保存写回项目目录）；Office/表格文档交官方 office/excel 渲染器，不自建解析器。",
   "private": true,
   "type": "module",
   "main": "lib/index.js",
@@ -21,6 +21,7 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-renderer",
@@ -46,6 +47,8 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
@@ -54,6 +57,7 @@
     "@deepseek-ai/dsh-client-ui-sidebar-documentpreview": "workspace:*",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
     "@soloengine/types": "workspace:~",
     "react": "^18.2.0"

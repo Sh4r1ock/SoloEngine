@@ -9,7 +9,7 @@ import { Button, IconEditOutlineRegular, MenuItemButton, Modal } from '@deepseek
 import type {
   RenameSessionInjected, SessionMenuItemProps, SessionRenameDialogInjected, SessionRenameDialogProps, SessionRenameTarget,
 } from '../contract/slots.ts'
-import css from '../rows/WorkspaceBrowser.module.css'
+import css from '../WorkspaceBrowser.module.css'
 
 /**
  * Menu row (order 200): ask for the rename dialog, seeded with the row's current title.

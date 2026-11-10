@@ -11,6 +11,9 @@ import type {
   ModelSelection,
 } from './types.ts'
 
+/** Route-name prefix the SoloEngine model adapter derives from one configuration id. */
+const SOLOENGINE_ROUTE_PREFIX = 'soloengine-'
+
 /**
  * Build the browser model catalog without requiring a Session.
  * @param ctx - Host context carrying the live LLM registry.
@@ -68,6 +71,30 @@ export async function buildModelCatalog(
     routableProviders: groups.map(group => group.id),
     groups,
     failures: catalog.flatMap(item => item.kind === 'failure' ? [item.failure] : []),
+  }
+}
+
+/**
+ * Hide model routes a connection account may not use.
+ *
+ * Only routes the SoloEngine adapter owns (`soloengine-<config id>`) are
+ * account-scoped; every other provider belongs to the deployment and stays
+ * listed. Without an owned route set the catalog is returned unchanged.
+ * @param catalog - complete catalog built from the live LLM registry.
+ * @param owned - route names the calling account may use, or undefined without an account scope.
+ * @returns the catalog narrowed to the account's own routes.
+ */
+export function filterModelCatalogRoutes(
+  catalog: ModelCatalog,
+  owned: ReadonlySet<string> | undefined,
+): ModelCatalog {
+  if (owned === undefined) return catalog
+  const visible = catalog.groups.filter(group => !group.id.startsWith(SOLOENGINE_ROUTE_PREFIX) || owned.has(group.id))
+  return {
+    ...catalog,
+    groups: visible,
+    routableProviders: visible.map(group => group.id),
+    failures: catalog.failures.filter(failure => !failure.id.startsWith(SOLOENGINE_ROUTE_PREFIX) || owned.has(failure.id)),
   }
 }
 

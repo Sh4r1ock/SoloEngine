@@ -79,6 +79,8 @@ export const common = defineDictionary({
      不直出引擎原文（R8/R17）。各页只负责前缀（哪一份数据没拿到）。 */
   errorOffline: '设备当前处于离线状态，恢复网络后重试',
   errorServerUnreachable: '无法连接服务端，请确认服务仍在运行后重试',
+  /* 请求超时 / 浏览器原生中止：不直出 "signal timed out" 等英文原文（R8/R17）。 */
+  errorTimeout: '请求超时，请稍后重试',
   /* 渲染期错误边界的降级文案：不直出 error.message（机器码），只给状态与出路（R8/R17/R24）。 */
   panelRenderFailed: '这个页面渲染失败，侧边导航仍可继续使用。',
   actionReload: '重新加载',
@@ -90,7 +92,7 @@ export const common = defineDictionary({
   themeLight: '浅色',
   themeDark: '深色',
   themeSystem: '跟随系统',
-  confirmDeleteTitle: '确认删除',
+  deleteNamedTitle: '删除「{name}」？',
   confirmDeleteDescription: '该操作不可撤销，确认继续？',
   terminalSignal: '信号 {signal} 终止',
   terminalExitCode: '退出码 {code}',
@@ -181,6 +183,7 @@ export const common = defineDictionary({
   errorLocaleValueInvalid: 'The language preference stored on the server is invalid. Your current settings were kept. Re-select it in Settings → Language to fix this.',
   errorOffline: 'This device is offline — reconnect, then try again',
   errorServerUnreachable: 'The server could not be reached — make sure it is still running, then try again',
+  errorTimeout: 'The request timed out — try again later',
   panelRenderFailed: 'This section failed to render. The sidebar navigation still works.',
   actionReload: 'Reload',
   languageLabel: 'Language',
@@ -191,7 +194,7 @@ export const common = defineDictionary({
   themeLight: 'Light',
   themeDark: 'Dark',
   themeSystem: 'System',
-  confirmDeleteTitle: 'Confirm deletion',
+  deleteNamedTitle: 'Delete "{name}"?',
   confirmDeleteDescription: 'This cannot be undone. Continue?',
   terminalSignal: 'terminated by signal {signal}',
   terminalExitCode: 'exit code {code}',

@@ -18,7 +18,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { FlowInstanceRuntime, type FlowInstance } from '@soloengine/instance-runtime'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-subagent'
@@ -35,7 +35,7 @@ import { SessionContainers } from './cloud-containers.ts'
 import { SessionVms } from './cloud-vms.ts'
 import { WorkspaceSync } from './workspace-sync.ts'
 import { applyRunModePreset, assertRunModeWritable } from './permission-allowlist.ts'
-import type { AgentSpec, FollowIntentView, RunContextRecord, RunMode } from '@soloengine/types'
+import type { AgentSpec, FollowIntentView, NodeAttributionRecord, RunContextRecord, RunMode } from '@soloengine/types'
 import {
   DEFAULT_LIVE_FOLLOW,
   DEFAULT_RUN_MODE,
@@ -85,6 +85,19 @@ const followIntentSchema = zod.object({
 
 /** 呈现意图状态/线值同形（宿主权威、客户端只读；无调用即 null）。 */
 const followIntentValueSchema = followIntentSchema.nullable()
+
+/** 画布节点归属的 zod 校验（持久投影缓存先验）。 */
+const nodeAttributionSchema = zod.object({
+  canvasId: zod.string(),
+  agentId: zod.string(),
+  parentAgentId: zod.string(),
+})
+
+/** 归属状态：未写入即 null（旧版本会话没有该事件）。 */
+const nodeAttributionValueSchema = nodeAttributionSchema.nullable()
+
+/** 用量折叠缓存的条目上限：只是缓存，淘汰最旧项后按需重算即可。 */
+const USAGE_CACHE_LIMIT = 500
 
 /**
  * 会话投影单元 `soloengine.runContext`（PRD-07 FR-UI-006）。
@@ -145,6 +158,30 @@ export const followIntentProjectionDefinition = {
     view: state => state,
   },
 } satisfies ProjectionDefinition<'soloengine.followIntent', FollowIntentView | null>
+
+/**
+ * 会话投影单元 `soloengine.nodeAttribution`（宿主专用，无客户端线值）。
+ *
+ * 折叠子会话的 `soloengine/node-attribution`：**第一条即权威**（创建窗口只写一条，
+ * 与 `subagent/descriptor` 同规则），后续同类型事件不能改写归属。
+ * 冷恢复读该投影状态，不调用已废弃的同步事件历史读取（见
+ * `.agents/notes/implemented/architecture/2026-09-09-deprecate-synchronous-session-event-reads.md`）。
+ */
+export const nodeAttributionProjectionDefinition = {
+  key: 'soloengine.nodeAttribution',
+  stateVersion: 1,
+  stateSchema: nodeAttributionValueSchema,
+  init: () => null,
+  apply: (state: NodeAttributionRecord | null, event: SessionEvent) => {
+    if (state !== null || event.type !== 'soloengine/node-attribution') return state
+    const data = event.data
+    return {
+      canvasId: data.canvasId,
+      agentId: data.agentId,
+      parentAgentId: data.parentAgentId,
+    }
+  },
+} satisfies ProjectionDefinition<'soloengine.nodeAttribution', NodeAttributionRecord | null>
 
 /**
  * 解析画布全局运行档位：缺省取原生默认档；R186 之前的持久化档位名按等价关系迁移，
@@ -215,6 +252,18 @@ export function createRunDriver(
   /** 会话 → 本地工作区目录（工作区同步的本地副本；子代理子会话按根会话归属）。 */
   const workspaceOfSession = new Map<string, string>()
   /**
+   * 启动失败时回收本次已创建的执行世界（容器 / 全 VM / 工作区映射）。
+   *
+   * 失败路径此前只释放租约：容器与 VM 会留在运行态并永久占用 `entries` 与磁盘，
+   * 反复失败会耗尽节点资源；工作区映射残留还会让后续 `session/disposed` 误提交。
+   * @param sessionKey - 根会话键。
+   */
+  const rollbackWorld = async (sessionKey: string): Promise<void> => {
+    workspaceOfSession.delete(sessionKey)
+    if (sessionContainers !== undefined) await sessionContainers.destroy(sessionKey)
+    if (sessionVms !== undefined) await sessionVms.destroy(sessionKey)
+  }
+  /**
    * 用量折叠缓存：会话键 → 持久化 revision + 派生行。
    *
    * revision 是持久化服务自己的变更令牌（同一服务实例内可比）：相等即可复用，
@@ -251,6 +300,7 @@ export function createRunDriver(
   // 会话销毁即释放持有；最后一个持有者释放时实例整体卸载，实例内注册随作用域撤销。
   ctx.on('session/disposed', (session: Session) => {
     const key = String(session.id)
+    usageCache.delete(key)
     // 销毁前把工作区最终状态提交到对象存储（W10.12）；恢复时只补缺失文件。
     const workspaceDir = workspaceOfSession.get(key)
     if (workspaceSync !== undefined && workspaceDir !== undefined) {
@@ -356,17 +406,86 @@ export function createRunDriver(
    * 把一个编译产物节点挂进该 flow 实例下的 agent scope：实例组合 + persona 段 + 工具收紧 +
    * 出边委派工具（每条边一个 Task 工具，PRD-06 FR-ENG-026）+ **该节点引用的 MCP 服务器**
    * （PRD-05 FR-MCP-006：池外不入工具表）。
+   *
+   * 同时登记本节点的**冷恢复组合**：进程重启后 `send_message` 唤醒已持久化子会话时没有启动
+   * 请求可携带产品组合，管理器按此登记重放（子会话日志里的 `soloengine/node-attribution`
+   * 说明它属于哪个节点）。
+   *
+   * @param agentCtx - setup 回调收到的 agent 作用域。
+   * @param agent - 该作用域对应的 agent（冷恢复组合按这个对象登记）。
+   * @param spec - 该节点在编译产物里的完整声明。
+   * @param bindFlow - 是否把该作用域挂到 flow 实例之下。入口 agent 由 setup 绑定；被委派子代理
+   *   的 scope 已由子代理管理器绑到实例（`scopeParent`），重复绑定会抛错，故子代理传 false。
    */
   const composeNode = async (
     agentCtx: Context,
+    agent: Agent,
     spec: AgentSpec,
     compiled: RunStartInput['compiled'],
     owner: { sessionKey: string; userId: string },
     flow: FlowInstance,
+    bindFlow = true,
   ): Promise<void> => {
     // agent 作用域挂到本 flow 实例之下：实例层注册（工具/技能/提示词/MCP）对本次运行可见，
     // 各 flow 实例互不影响，基线全局注册保持原样（PRD-01 §实例隔离、Plan W2）。
-    flow.bind(agentCtx)
+    if (bindFlow) flow.bind(agentCtx)
+    /**
+     * 把一条委派子会话登记到画布节点归属（内存派生索引 + 运行上下文 + 业务库台账行三处同源）。
+     * 在子会话创建窗口内调用，它的第一批事件就带正确节点（不依赖启动返回后的补写）。
+     */
+    const attributeChild = (child: Agent, childSpec: AgentSpec, parentAgentId: string): void => {
+      const childSessionId = String(child.session.header.id)
+      attribution.set(childSessionId, { agentId: childSpec.agentId, parentAgentId })
+      const parentRun = runContext.get(owner.sessionKey)
+      if (parentRun === undefined) return
+      void runtime.runs.ledger.ensure({
+        session_key: childSessionId,
+        user_id: parentRun.userId,
+        agentic_flow_id: parentRun.canvasId,
+        run_project_id: parentRun.projectId,
+        llm_config_id: childSpec.modelRoute.replace(/^soloengine-/u, ''),
+      }).catch((error: unknown) => {
+        // 子会话归属行缺失只影响台账列举，子代理本身照常推进；失败必须可见。
+        ctx.logger.error(`soloengine: writing the ledger row for subagent session ${childSessionId} failed`, error)
+      })
+      runContext.set(childSessionId, { ...parentRun, llmConfigId: childSpec.modelRoute.replace(/^soloengine-/u, '') })
+    }
+    // 冷恢复组合：进程重启后 `send_message` 唤醒已持久化子会话时没有启动请求携带产品组合，
+    // 管理器按本登记重放。子会话日志里的 `soloengine/node-attribution` 说明它属于哪个节点；
+    // 归属缺失只发生在旧版本写入的会话上，如实报出而不是静默退化成「只有预设」。
+    ctx.subagents.registerResumeComposition(agent, {
+      scopeParent: flow.key,
+      setup: async (child) => {
+        const record = ctx.sessionProjections.stateOf(child.session, 'soloengine.nodeAttribution') ?? undefined
+        if (record === undefined) {
+          ctx.logger.warn(
+            `soloengine: resumed subagent ${String(child.id)} has no node attribution; its node composition `
+            + 'cannot be replayed (the session predates node attribution)',
+          )
+          return
+        }
+        const canvasId = runContext.get(owner.sessionKey)?.canvasId ?? ''
+        if (record.canvasId !== canvasId || record.parentAgentId !== spec.agentId) {
+          throw new FrameworkError(
+            409,
+            'NODE_ATTRIBUTION_MISMATCH',
+            `resumed subagent ${String(child.id)} belongs to node ${record.parentAgentId} of canvas `
+            + `"${record.canvasId}", not to a child of node ${spec.agentId} of canvas "${canvasId}"`,
+          )
+        }
+        const childSpec = compiled.agents.find(candidate => candidate.agentId === record.agentId)
+        if (childSpec === undefined) {
+          throw new FrameworkError(
+            409,
+            'NODE_MISSING',
+            `resumed subagent ${String(child.id)} belongs to node ${record.agentId}, which the current `
+            + 'canvas no longer has',
+          )
+        }
+        attributeChild(child, childSpec, spec.agentId)
+        await composeNode(child.ctx, child, childSpec, compiled, owner, flow, false)
+      },
+    })
     // 节点级插件：只挂进该 agent 作用域，随 agent 作用域撤销；流程级插件不在这里。
     if (spec.plugins.length > 0) {
       await flow.mountAgentEntries(agentCtx, spec.plugins.map(row => ({
@@ -383,6 +502,29 @@ export function createRunDriver(
         order: PERSONA_SECTION_ORDER,
         text: spec.persona,
         interpolate: false,
+      })
+    }
+    // 轮次上限（节点采样参数优先，未设置时取模型配置的工具轮次上限）：按每回合的工具调用次数执行。
+    // 超限的调用被拒绝并回一条可读原因，模型据此收束，而不是把配置留成死字段。
+    const modelRow = await runtime.models.byId(owner.userId, spec.modelRoute.replace(/^soloengine-/u, ''))
+    const turnLimit = spec.sampling?.max_tool_calls ?? modelRow?.max_tool_calls ?? undefined
+    if (turnLimit !== undefined) {
+      let toolCalls = 0
+      agentCtx.on('agent/pre-step', ({ agent: target, step }, next) => {
+        if (target === agent && step === 1) toolCalls = 0
+        return next()
+      })
+      agentCtx.on('tools/pre-execute', async (exec, next) => {
+        if (exec.agent !== agent) return next()
+        if (toolCalls >= turnLimit) {
+          return {
+            kind: 'deny',
+            reason: `节点「${spec.name}」本轮工具调用已达上限 ${String(turnLimit)}（轮次上限）；`
+              + '请基于已有结果直接给出最终答复。',
+          }
+        }
+        toolCalls += 1
+        return next()
       })
     }
     // 委派边 = 父节点工具表里的一个 Task 工具（作用域自己的注册，不受 restrict 影响）。
@@ -422,34 +564,41 @@ export function createRunDriver(
         async execute(args, exec) {
           const parent = exec.agent
           if (parent === undefined) throw new Error(`${edge.toolName} requires an owning agent session`)
+          const childMaxTokens = child.sampling?.max_tokens
           const activation = await ctx.subagents.startActivation({
             provider: 'spawn',
             label: child.name,
             request: {
               prompt: [{ type: 'text', text: args.task }],
               parent,
-              agentOptions: { provider: child.modelRoute, model: childModel },
+              // 画布运行声明的委派深度上限必须真正生效：只声明不传会让配置成为死字段。
+              maxDepth: options.maxDepth,
+              agentOptions: {
+                provider: child.modelRoute,
+                model: childModel,
+                ...childMaxTokens === undefined ? {} : { maxTokens: childMaxTokens },
+                ...child.sampling?.temperature === undefined ? {} : { temperature: child.sampling.temperature },
+              },
+              // 子代理挂到本 flow 实例作用域之下：实例插件与隔离服务对它可见；实例已继承预设，
+              // 因此预设服务同样可达（一个画布 = 一个 harness 实例，子代理也在实例内）。
+              scopeParent: flow.key,
+              // 每个被委派节点也是一个完整 agent：在子代理创建时把该节点的 persona/工具/技能/
+              // MCP/插件挂进它的作用域。作用域已由 scopeParent 绑到实例，这里不再重复绑定。
+              setup: async (childAgent) => {
+                attributeChild(childAgent, child, spec.agentId)
+                // 节点归属落进子会话自己的日志：进程重启后 send_message 冷恢复按它重放节点组合。
+                childAgent.session.append('soloengine/node-attribution', {
+                  canvasId: runContext.get(owner.sessionKey)?.canvasId ?? '',
+                  agentId: child.agentId,
+                  parentAgentId: spec.agentId,
+                })
+                await composeNode(childAgent.ctx, childAgent, child, compiled, owner, flow, false)
+              },
             },
             signal: exec.signal,
             delivery: 'parent',
           })
           const childSessionId = String(activation.childId)
-          attribution.set(childSessionId, { agentId: child.agentId, parentAgentId: spec.agentId })
-          // 子代理子会话按会话树落同一条归属链（PRD-12 FR-STO-005：全部子会话归属到对应画布节点）。
-          const parentRun = runContext.get(owner.sessionKey)
-          if (parentRun !== undefined) {
-            void runtime.runs.ledger.ensure({
-              session_key: childSessionId,
-              user_id: parentRun.userId,
-              agentic_flow_id: parentRun.canvasId,
-              run_project_id: parentRun.projectId,
-              llm_config_id: child.modelRoute.replace(/^soloengine-/u, ''),
-            }).catch((error: unknown) => {
-              // 子会话归属行缺失只影响台账列举，子代理本身照常推进；失败必须可见。
-              ctx.logger.error(`soloengine: writing the ledger row for subagent session ${childSessionId} failed`, error)
-            })
-            runContext.set(childSessionId, { ...parentRun, llmConfigId: child.modelRoute.replace(/^soloengine-/u, '') })
-          }
           const result = await activation.result
           const text = result.output
             .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
@@ -550,6 +699,10 @@ export function createRunDriver(
       } catch (error) {
         // 取不到租约：本次准入立即归还，不占用节点配额。
         await cloud.release(input.sessionKey)
+        // 跨节点配额拒绝是用户可见的业务结论（429），不降级成 500。
+        if (error instanceof CloudLeaseError && error.code === 'QUOTA_EXCEEDED') {
+          throw new FrameworkError(429, 'QUOTA_EXCEEDED', error.message)
+        }
         throw error
       }
     }
@@ -559,6 +712,7 @@ export function createRunDriver(
         workspaceOfSession.set(input.sessionKey, input.cwd)
         await workspaceSync.restore(input.sessionKey, input.cwd)
       } catch (error) {
+        await rollbackWorld(input.sessionKey)
         if (cloud !== undefined) await cloud.release(input.sessionKey)
         throw error
       }
@@ -568,6 +722,7 @@ export function createRunDriver(
         // 每会话一容器（W10.7）：命令经按会话路由的子进程提供方进入该容器。
         await sessionContainers.ensure(input.sessionKey, input.cwd)
       } catch (error) {
+        await rollbackWorld(input.sessionKey)
         if (cloud !== undefined) await cloud.release(input.sessionKey)
         throw error
       }
@@ -577,14 +732,22 @@ export function createRunDriver(
         // 每会话一台全 VM（D 档）：命令经 SSH 进入 guest。
         await sessionVms.ensure(input.sessionKey, input.cwd)
       } catch (error) {
+        await rollbackWorld(input.sessionKey)
         if (cloud !== undefined) await cloud.release(input.sessionKey)
         throw error
       }
     }
     // 运行档位（PRD-10 FR-SEC-006）：先解析并在创建运行前确认可写（fail loud），
     // 再把画布选定的原生预设名经权限预设原语写入本会话。
-    const runMode = resolveRunMode(input.settings.run_mode)
-    assertRunModeWritable(ctx, runMode)
+    let runMode: ReturnType<typeof resolveRunMode>
+    try {
+      runMode = resolveRunMode(input.settings.run_mode)
+      assertRunModeWritable(ctx, runMode)
+    } catch (error) {
+      await rollbackWorld(input.sessionKey)
+      if (cloud !== undefined) await cloud.release(input.sessionKey)
+      throw error
+    }
     // 归属必须在建 agent 之前登记：构造期就会落事件（会话种子等），
     // 否则这些行会落到「以会话键兜底」的节点归属上。
     attribution.set(input.sessionKey, { agentId: mainSpec.agentId, parentAgentId: null })
@@ -616,15 +779,21 @@ export function createRunDriver(
       await ctx.agentPresets.mount(flow.ctx, options.agentPreset)
       // 实例新增行随实例装载一次；装载失败（导入/激活）即拒绝本次运行，不静默降级。
       if (additions.length > 0 && flow.tree === undefined) await flow.mountEntries(additions)
+      const nodeMaxTokens = mainSpec.sampling?.max_tokens ?? input.mainAgent.maxTokens
       const agentOptions = {
         provider: input.mainAgent.provider,
         model: input.mainAgent.model,
-        ...input.mainAgent.maxTokens === null ? {} : { maxTokens: input.mainAgent.maxTokens },
+        ...nodeMaxTokens === null ? {} : { maxTokens: nodeMaxTokens },
+        ...mainSpec.sampling?.temperature === undefined ? {} : { temperature: mainSpec.sampling.temperature },
       }
-      const setup = (agentCtx: Context): Promise<void> => composeNode(agentCtx, mainSpec, input.compiled, {
-        sessionKey: input.sessionKey,
-        userId: input.userId,
-      }, flow)
+      const setup = (agentCtx: Context, agent: Agent): Promise<void> => composeNode(
+        agentCtx,
+        agent,
+        mainSpec,
+        input.compiled,
+        { sessionKey: input.sessionKey, userId: input.userId },
+        flow,
+      )
       handle = mode === 'create'
         ? await ctx.agents.create({
           sessionId: SessionId(input.sessionKey),
@@ -640,6 +809,7 @@ export function createRunDriver(
     } catch (error) {
       flowOfSession.delete(input.sessionKey)
       await flows.release(flowId)
+      await rollbackWorld(input.sessionKey)
       if (cloud !== undefined) await cloud.release(input.sessionKey)
       throw error
     }
@@ -651,10 +821,27 @@ export function createRunDriver(
       flowOfSession.delete(input.sessionKey)
       await handle.dispose()
       await flows.release(flowId)
+      await rollbackWorld(input.sessionKey)
       if (cloud !== undefined) await cloud.release(input.sessionKey)
       throw error
     }
     handles.set(input.sessionKey, handle)
+    // 运行面板按工作区渲染会话：新目录上的运行必须先登记工作区并挂上会话，否则面板会停在
+    // 「选择一个工作区开始」的死页面（会话打不开、消息也发不出）。工作区按运行项目目录幂等创建。
+    try {
+      const registry = ctx.get('workspaceRegistry') as
+        | { create(path: string): Promise<{ id: string; attachSession: (id: SessionId) => Promise<void> }> }
+        | undefined
+      if (registry !== undefined) {
+        const workspace = await registry.create(input.cwd)
+        await workspace.attachSession(SessionId(input.sessionKey))
+        console.log(`soloengine: session ${input.sessionKey} attached to workspace ${workspace.id} (${input.cwd})`)
+      }
+    } catch (error) {
+      // 分组失败的会话本身仍可运行；如实报出，避免面板空白无从归因。
+      // 本 profile 未挂 logger-console，取证行一律走 console（与文件中其他就绪行同一条约定）。
+      console.log(`soloengine: attaching session ${input.sessionKey} to a workspace for ${input.cwd} failed: ${String(error)}`)
+    }
     // 运行上下文落日志（产品记录）：承载「实时跟随」开关与运行归属事实，供跟随联动在
     // 刷新/重启后重建（`soloengine.runContext` 投影，客户端只读）。
     const context = runContext.get(input.sessionKey)
@@ -746,6 +933,11 @@ export function createRunDriver(
         }
         const row = await readStoredUsage(ctx.sessionPersistence, key)
         usageCache.set(key, { revision: snapshot.revision, row })
+        if (usageCache.size > USAGE_CACHE_LIMIT) {
+          // Map 按插入顺序迭代：淘汰最旧的一条（缓存未命中时重算即可）。
+          const oldest = usageCache.keys().next().value
+          if (oldest !== undefined) usageCache.delete(oldest)
+        }
         rows.push(row)
       }
       return rows

@@ -1,7 +1,7 @@
 /** Electron tag DOM inside a Sidebar-owned, stable content container. */
 import type { DesktopBrowserReservation } from '../../types.ts'
-import type { BrowserPresentation } from '../view/BrowserPresentation.ts'
-import css from '../view/Browser.module.css'
+import type { BrowserPresentation } from '../contract/BrowserPresentation.ts'
+import css from '../Browser.module.css'
 
 /** The Electron tag API used by its navigation provider. */
 export interface WebviewElement extends HTMLElement {

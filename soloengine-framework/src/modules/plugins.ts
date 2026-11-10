@@ -282,10 +282,15 @@ export class PluginService {
 
   /**
    * profile 级插件管理视图（组合包清单）。
+   *
+   * 只列「本实例的组合包」：profile 选中的，或 profile 声明了依赖的。安装自带但本 profile
+   * 既未选中、也未声明依赖的组合包（例如另一个应用形态的 `@deepseek-ai/dsh-headless`）
+   * 不属于本实例的插件面；它们一旦被热选中，会在运行中的进程里装载另一套启动器并退出服务。
    * @returns 组合包行（含启用态、可移除性、坏包原因）。
    */
   async managedBundles(): Promise<{ bundles: ManagedBundleRow[] }> {
-    return { bundles: await this.manager().bundles() }
+    const bundles = await this.manager().bundles()
+    return { bundles: bundles.filter(bundle => bundle.enabled || bundle.installed) }
   }
 
   /**
@@ -296,6 +301,13 @@ export class PluginService {
    */
   async setBundleEnabled(name: string, enabled: boolean): Promise<ManagedChangeResult> {
     if (name.trim() === '') throw new FrameworkError(400, 'PLUGIN_TARGET_REQUIRED', 'a bundle name is required')
+    if (enabled) {
+      const { bundles } = await this.managedBundles()
+      if (!bundles.some(bundle => bundle.name === name)) {
+        throw new FrameworkError(400, 'PLUGIN_BUNDLE_NOT_MANAGED',
+          `bundle ${name} is not part of this instance's profile; install it before enabling`)
+      }
+    }
     return await this.manager().setBundleEnabled(name, enabled)
   }
 
@@ -638,13 +650,19 @@ export class PluginService {
    *
    * 解析基于实例净组合（profile 基线 + 画布差异）；`disable` 生效于客户端行，
    * 同一包被多行声明时只要还有启用行就保留。被 `replace` 换掉包名的基线行会把它原来的包
-   * 计入关闭集合（否则运行面板会同时装载旧包与替代包）。画布不存在时返回空集合（面板仍渲染）。
+   * 计入关闭集合（否则运行面板会同时装载旧包与替代包）。
+   *
+   * 给了 `userId` 时按该账号可见的画布解析（本人 + 模板）；画布不存在或不属于该账号时返回
+   * 空集合（与画布不存在同语义）。未给账号（原生/未登录连接）按 flow id 读取。
    * 组合错误（未知行、包不可解析）抛 422——加载期报错，不静默降级。
    * @param canvasId - 画布 id（`/run/:agenticFlowId` 的 flow 段）。
+   * @param userId - 调用方账号；省略时不做归属过滤。
    * @returns 启用的客户端包名与关闭的客户端包名（均去重排序）。
    */
-  async clientSelection(canvasId: string): Promise<{ enabled: string[]; disabled: string[] }> {
-    const row = await this.runtime.canvas.byIdUnscoped(canvasId)
+  async clientSelection(canvasId: string, userId?: string): Promise<{ enabled: string[]; disabled: string[] }> {
+    const row = userId === undefined
+      ? await this.runtime.canvas.byIdUnscoped(canvasId)
+      : await this.runtime.canvas.byId(userId, canvasId)
     if (row === undefined) return { enabled: [], disabled: [] }
     const canvas = CanvasService.parseCanvas(row.canvas_data, canvasId)
     const diff = canvas.settings?.plugins ?? {}
@@ -861,8 +879,9 @@ export class PluginService {
       if (isLoaderInternal(row.name)) continue
       const info = this.packageInfo(row.name)
       if (info === undefined) {
-        throw new FrameworkError(422, 'PLUGIN_DIFF_INVALID',
-          `canvas ${canvasId} cannot compose: row ${row.id} names ${row.name}, which does not resolve to a package`)
+        // 基线行解析不到包是实例安装问题（不是调用方提交的差异有错）：按 500 报，便于定位。
+        throw new FrameworkError(500, 'PLUGIN_ROW_UNRESOLVED',
+          `canvas ${canvasId} cannot compose: baseline row ${row.id} names ${row.name}, which does not resolve to a package`)
       }
       rows.set(row.id, {
         id: row.id,

@@ -11,6 +11,14 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/types/index.js"
     },
+    "./auth": {
+      "types": "./lib/types/auth/index.d.ts",
+      "default": "./lib/types/auth/index.js"
+    },
+    "./crypto": {
+      "types": "./lib/types/crypto/index.d.ts",
+      "default": "./lib/types/crypto/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -21,7 +29,10 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@deepseek-ai/dsh-subprocess": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
+    "@modelcontextprotocol/client": "2.2.0",
     "@soloengine/agent-compiler": "workspace:*",
     "@soloengine/types": "workspace:*",
     "diff": "^9.0.0",
@@ -34,5 +45,8 @@
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.20.0",
     "typescript": "^6.0.3"
+  },
+  "optionalDependencies": {
+    "@soloengine/business-db-postgres": "workspace:*"
   }
 }

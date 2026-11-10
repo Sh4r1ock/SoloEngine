@@ -65,7 +65,7 @@ Each upload receipt belongs to one exact Session, and each request uses one sele
 
 - [Connection](../connection/README.md) — authenticated RPC, exact Host routes, and connection generations.
 - [Session Controller](../../api/session-controller/README.md) — prompt admission that consumes staged receipts.
-- [Web Worker runtime](../../experimental/webworker-runtime/README.md) — the page-to-Host Worker request tunnel.
+- [Web Worker runtime](../../../bat/removed-20261031/packages/experimental/webworker-runtime/README.md) — the page-to-Host Worker request tunnel.
 - [Client group map](../README.md) — browser services and UI feature packages.
 
 -----

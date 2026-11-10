@@ -105,25 +105,138 @@ function isEnvelope(value: unknown): value is { ok: boolean } {
   return value !== null && typeof value === 'object' && 'ok' in value
 }
 
+/** 会话失效广播（刷新失败后由 App 回登录页）。 */
+export const SESSION_EXPIRED_EVENT = 'soloengine:session-expired'
+
+/** 业务请求默认超时（毫秒）：服务端挂起时页面不能永远停在加载中。 */
+const DEFAULT_TIMEOUT_MS = 30_000
+
+/** 清令牌并广播会话失效（刷新失败或刷新后重试仍 401）。 */
+function expireSession(): void {
+  clearTokens()
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT))
+}
+
 /**
- * 发起一次框架层 REST 调用。
- * @param path - `/api/solo` 之后的短路径。
- * @param options - 方法 / body / 查询 / 中止信号。
- * @returns 成功信封（`ok: true` 的 JSON 对象）。
- * @throws ApiError —— 网络失败或 `ok: false`。
+ * 合并默认超时与调用方中止信号。
+ * @param caller - 调用方信号（可缺省）。
+ * @param timeout - 默认超时信号。
+ * @returns 合并后的信号，以及解除监听的回调。
  */
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const method = options.method ?? 'GET'
-  let response: Response
+function mergeSignals(caller: AbortSignal | undefined, timeout: AbortSignal): { signal: AbortSignal; release: () => void } {
+  if (caller === undefined) return { signal: timeout, release: () => undefined }
+  if (typeof AbortSignal.any === 'function') return { signal: AbortSignal.any([caller, timeout]), release: () => undefined }
+  // 兼容没有 AbortSignal.any 的浏览器：手动转发两个来源的中止。
+  const controller = new AbortController()
+  const abort = (): void => { controller.abort() }
+  for (const source of [caller, timeout]) {
+    if (source.aborted) {
+      controller.abort()
+      break
+    }
+    source.addEventListener('abort', abort, { once: true })
+  }
+  return {
+    signal: controller.signal,
+    release: () => {
+      caller.removeEventListener('abort', abort)
+      timeout.removeEventListener('abort', abort)
+    },
+  }
+}
+
+/**
+ * 带默认超时的 fetch：超时抛 `TIMEOUT`，调用方主动中止原样抛出，其余失败抛 `NETWORK`。
+ * @param url - 完整请求地址。
+ * @param init - 请求初始化参数。
+ * @param callerSignal - 调用方传入的中止信号。
+ * @returns 原始响应。
+ * @throws ApiError —— `TIMEOUT`（默认超时）或 `NETWORK`（其它网络失败）。
+ */
+async function timedFetch(url: string, init: RequestInit, callerSignal: AbortSignal | undefined): Promise<Response> {
+  const timeout = AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
+  const merged = mergeSignals(callerSignal, timeout)
   try {
-    response = await fetch(`${API_PREFIX}${withQuery(path, options.query)}`, {
+    return await fetch(url, { ...init, signal: merged.signal })
+  } catch (error) {
+    // 调用方自己中止：把原始异常交还上层，不伪装成超时或网络故障。
+    if (callerSignal?.aborted === true) throw error
+    if (timeout.aborted) throw new ApiError('TIMEOUT', 'request timed out', 0)
+    throw new ApiError('NETWORK', error instanceof Error ? error.message : String(error), 0)
+  } finally {
+    merged.release()
+  }
+}
+
+/** 单飞刷新：并发 401 只触发一次 `/auth/refresh`，其余请求等待同一结果。 */
+let refreshInFlight: Promise<boolean> | undefined
+
+/**
+ * 用刷新令牌换一对新令牌（单飞）。
+ * @returns 是否换到新令牌。
+ */
+async function refreshAccessToken(): Promise<boolean> {
+  if (refreshInFlight !== undefined) return refreshInFlight
+  // 没有刷新令牌属于确定的「不能刷新」：在单飞槽位之外直接返回，否则提前 return 会跳过
+  // finally，`refreshInFlight` 永远停在 undefined 之外的旧 Promise 上，本页后续请求再也不会刷新。
+  const refreshToken = readRefreshToken()
+  if (refreshToken === null || refreshToken === '') return false
+  refreshInFlight = (async () => {
+    try {
+      // 刷新端点同样要有超时：它挂起时所有等待刷新的业务请求都会一起永久等待。
+      const response = await timedFetch(`${API_PREFIX}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      }, undefined)
+      if (!response.ok) return false
+      const parsed = JSON.parse(await response.text()) as {
+        ok?: boolean
+        accessToken?: unknown
+        refreshToken?: unknown
+      }
+      if (parsed.ok !== true || typeof parsed.accessToken !== 'string' || typeof parsed.refreshToken !== 'string') {
+        return false
+      }
+      storeTokens(parsed.accessToken, parsed.refreshToken)
+      return true
+    } catch {
+      return false
+    } finally {
+      refreshInFlight = undefined
+    }
+  })()
+  return refreshInFlight
+}
+
+/** 认证入口自身的 401 是凭据错误，不做刷新重试。 */
+function isAuthEntry(path: string): boolean {
+  return path === '/auth/login' || path === '/auth/register' || path === '/auth/refresh' || path === '/auth/logout'
+}
+
+async function send<T>(path: string, options: RequestOptions, allowRefresh: boolean): Promise<T> {
+  const method = options.method ?? 'GET'
+  const response = await timedFetch(
+    `${API_PREFIX}${withQuery(path, options.query)}`,
+    {
       method,
       headers: headers(options.body !== undefined),
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    })
-  } catch (error) {
-    throw new ApiError('NETWORK', error instanceof Error ? error.message : String(error), 0)
+    },
+    options.signal,
+  )
+  if (response.status === 401 && allowRefresh && !isAuthEntry(path)) {
+    // 401 先单飞刷新并重试一次；刷新失败或重试仍 401 都清令牌并广播会话失效。
+    if (!(await refreshAccessToken())) {
+      expireSession()
+      throw await failure(response)
+    }
+    try {
+      return await send<T>(path, options, false)
+    } catch (retryFailure) {
+      if (retryFailure instanceof ApiError && retryFailure.status === 401) expireSession()
+      throw retryFailure
+    }
   }
   if (!response.ok) throw await failure(response)
   const text = await response.text()
@@ -140,20 +253,42 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 /**
+ * 发起一次框架层 REST 调用。
+ * @param path - `/api/solo` 之后的短路径。
+ * @param options - 方法 / body / 查询 / 中止信号。
+ * @returns 成功信封（`ok: true` 的 JSON 对象）。
+ * @throws ApiError —— 网络失败或 `ok: false`。
+ */
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return await send<T>(path, options, true)
+}
+
+/**
  * 取二进制响应（技能包导出）。
  * @param path - `/api/solo` 之后的短路径。
  * @returns 响应 Blob。
  * @throws ApiError —— 失败时把 JSON 错误体解析成结构化错误。
  */
 export async function requestBlob(path: string): Promise<Blob> {
-  let response: Response
-  try {
-    response = await fetch(`${API_PREFIX}${path}`, { headers: headers(false) })
-  } catch (error) {
-    throw new ApiError('NETWORK', error instanceof Error ? error.message : String(error), 0)
+  const attempt = async (allowRefresh: boolean): Promise<Blob> => {
+    const response = await timedFetch(`${API_PREFIX}${path}`, { headers: headers(false) }, undefined)
+    if (response.status === 401 && allowRefresh && !isAuthEntry(path)) {
+      // 二进制导出与普通请求同一套 401 处理：先刷新并重试一次，否则令牌过期后必然失败。
+      if (!(await refreshAccessToken())) {
+        expireSession()
+        throw await failure(response)
+      }
+      try {
+        return await attempt(false)
+      } catch (retryFailure) {
+        if (retryFailure instanceof ApiError && retryFailure.status === 401) expireSession()
+        throw retryFailure
+      }
+    }
+    if (!response.ok) throw await failure(response)
+    return await response.blob()
   }
-  if (!response.ok) throw await failure(response)
-  return await response.blob()
+  return await attempt(true)
 }
 
 /**
@@ -184,7 +319,14 @@ export function describeError(error: unknown): string {
   if (isNetworkFailure(error)) {
     return navigator.onLine ? t('common', 'errorServerUnreachable') : t('common', 'errorOffline')
   }
-  if (error instanceof ApiError) return error.message === '' ? error.code : error.message
-  if (error instanceof Error) return error.message
+  if (error instanceof ApiError) {
+    if (error.code === 'TIMEOUT') return t('common', 'errorTimeout')
+    return error.message === '' ? t('common', 'unknownError') : error.message
+  }
+  // 浏览器原生的中止/超时异常（AbortSignal.timeout 等）的 message 是英文原文，不得直出。
+  if (error instanceof Error) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') return t('common', 'errorTimeout')
+    return error.message
+  }
   return String(error)
 }

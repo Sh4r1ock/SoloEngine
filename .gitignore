@@ -246,12 +246,14 @@ data/database/
 # 临时文件
 *.swp
 *.swo
+.tmp/
 
 # 前端构建输出
 frontend/dist/
 
 
 # === DSH monorepo merged (v0.5.0.0) ===
+.dsh/
 .dsh-build/
 .e2e-workspace/
 .cache/
@@ -288,11 +290,14 @@ deepseek_harness/
 PRD/
 analysis/
 data/dsh-home/
+data/dsh-home-node-b/
 data/home/
 data/market/
 data/packaging/
 data/skills/
+data/workspace-cache/
 apps/web/dist/
 apps/desktop/.desktop-build/
+apps/desktop/.env.windows
 dist-exe/
 /dist/

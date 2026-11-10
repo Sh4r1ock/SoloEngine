@@ -1,4 +1,4 @@
-﻿.root {
+.root {
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -156,11 +156,14 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 横向滚动发生在 layer-2 面上：滚动条按提升面整对重绑（ui-theme scrollbar.css 的约定）。 */
 .hunkBody {
   margin: 0;
   padding: var(--se-space-1) var(--se-space-2);
   overflow-x: auto;
   background: var(--dsw-alias-bg-layer-2);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   border-radius: var(--se-radius-sm);
   font: var(--dsw-font-xxs-12);
   /* 差异行按列对齐（每行首字符是 ` `/`-`/`+`，其后是源码本体）：比例字族会让加减行与缩进

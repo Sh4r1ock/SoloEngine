@@ -1,6 +1,6 @@
 /** Bounded, application-known history used only by the iframe provider. */
-import type { BrowserTarget } from './url.ts'
-import type { BrowserHistoryEntry, BrowserTabState } from './BrowserPersistence.ts'
+import { parseBrowserAddress, type BrowserTarget } from '../contract/url.ts'
+import type { BrowserHistoryEntry, BrowserTabState } from '../contract/BrowserPersistence.ts'
 
 /** Maximum retained application-known navigation entries per tab. */
 export const MAX_BROWSER_HISTORY = 100
@@ -125,6 +125,38 @@ export class BrowserNavigation {
     } else if (navigation.status === 'known') {
       this.value = { ...this.value, navigation: { status: 'unknown', revision } }
     }
+  }
+
+  /**
+   * Adopt the address the carrier read from the loaded frame.
+   *
+   * A same-origin frame can report where it actually navigated (a link inside
+   * the page); that address replaces the requested one and becomes the newest
+   * application-known entry, without asking the frame to load again.
+   * @param url - the observed address.
+   */
+  observe(url: string): void {
+    const request = this.value.request
+    // A frame load without a controlled request (or after history collapsed) is not an
+    // application-known target: adopting it would invent an entry nobody navigated to.
+    if (request === undefined) return
+    const revision = request.revision
+    const parsed = parseBrowserAddress(url)
+    if (!parsed.ok) {
+      // An observation outside the HTTP(S) allowlist is not an
+      // application-known target; the requested address stays authoritative
+      // but is no longer known, so Back/Forward stop trusting it.
+      this.value = { ...this.value, navigation: { status: 'unknown', revision } }
+      return
+    }
+    const current = BrowserNavigation.current(this.value)
+    if (current?.url === parsed.target.url) {
+      this.value = { ...this.value, navigation: { status: 'known', revision } }
+      return
+    }
+    const entries = [...this.value.entries.slice(0, this.value.index + 1), parsed.target]
+    if (entries.length > MAX_BROWSER_HISTORY) entries.splice(0, entries.length - MAX_BROWSER_HISTORY)
+    this.value = { ...this.value, entries, index: entries.length - 1, navigation: { status: 'known', revision } }
   }
 
   private request(

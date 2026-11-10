@@ -1,44 +1,12 @@
 /**
  * Cordis YAML parsing and Loader-entry classification shared by repository checks.
+ *
+ * The YAML reading itself lives in `cordis-yaml.mjs` so the plain-Node audit script and these
+ * TypeScript gates share one `!!js` implementation; this module adds the TS-only classifiers.
  * @module scripts/cordis-yaml
  */
 
-import * as yaml from 'js-yaml'
-
-/** A Loader `!!js` expression preserved as data instead of executed. */
-export interface JsExpr {
-  __jsExpr: string
-}
-
-const jsExprType = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  resolve: data => typeof data === 'string',
-  construct: (data: unknown): JsExpr => {
-    if (typeof data !== 'string') throw new TypeError('!!js requires a scalar string')
-    return { __jsExpr: data }
-  },
-})
-const schema = yaml.JSON_SCHEMA.extend(jsExprType)
-
-/**
- * Parse a Cordis config while preserving Loader `!!js` expressions as data.
- * @param source - Cordis YAML source text.
- * @returns the parsed YAML value.
- */
-export function loadCordisYaml(source: string): unknown {
-  return yaml.load(source, { schema })
-}
-
-/**
- * Test whether a value is a preserved Loader `!!js` expression.
- * @param value - parsed YAML value.
- * @returns whether the value contains one preserved expression.
- */
-export function isJsExpr(value: unknown): value is JsExpr {
-  return typeof value === 'object'
-    && value !== null
-    && typeof (value as Record<string, unknown>).__jsExpr === 'string'
-}
+export { loadCordisYaml, isJsExpr, type JsExpr } from './cordis-yaml.mjs'
 
 /**
  * Test whether a Loader entry owns nested entries in its `config` array.

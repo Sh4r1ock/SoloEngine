@@ -5,11 +5,17 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-working-directory'
+import type {} from '@deepseek-ai/dsh-terminal'
+import type {
+  TerminalSendResult, TerminalSessionId, TerminalSessionService, TerminalSessionSnapshot,
+} from '@deepseek-ai/dsh-terminal'
 import { Remote, RemoteError, TypertRemoteService, type RemoteStream } from '@deepseek-ai/dsh-typert-protocol'
 import { discoverShells, resolveShell } from './shells.ts'
 import { BrowserTerminal } from './terminal.ts'
 import { TerminalRetention } from './retention.ts'
 import type {
+  AgentTerminalBackends, AgentTerminalInfo, AgentTerminalInput, AgentTerminalPage, AgentTerminalRange,
+  AgentTerminalSendResult, AgentTerminalSignal, AgentTerminalSpawnRequest, AgentTerminalSpawnResult,
   TerminalShell, TerminalInput, TerminalCreateRequest, TerminalEnvironment, TerminalFrame, TerminalRetentionFrame,
   WebTerminalId, WebTerminalInfo,
 } from './types.ts'
@@ -56,6 +62,8 @@ export interface Config {
   readonly activityPollIntervalMs: number
   /** Delay before retrying failed owned terminal cleanup. */
   readonly cleanupRetryMs: number
+  /** Longest wait for one line send against an agent terminal before the panel re-reads its scrollback. */
+  readonly agentSendWaitMs: number
 }
 
 interface TerminalAllocation {
@@ -70,6 +78,26 @@ interface OwnedSession {
   readonly terminals: Map<WebTerminalId, BrowserTerminal>
   readonly pending: Map<WebTerminalId, Promise<BrowserTerminal>>
   readonly allocations: Map<WebTerminalId, TerminalAllocation>
+}
+
+/** The backend type a new agent terminal uses when the caller names none (registered by `dsh-terminal-bash`). */
+const AGENT_TERMINAL_BACKEND = 'shell'
+
+/**
+ * Project one registry snapshot onto the panel's wire vocabulary.
+ * @param snapshot - an owner terminal as `ctx.terminals.list` reports it.
+ * @returns the terminal the panel lists.
+ */
+function agentTerminalOf(snapshot: TerminalSessionSnapshot): AgentTerminalInfo {
+  const status = snapshot.status
+  return {
+    terminalId: String(snapshot.sessionId),
+    ...snapshot.name === undefined ? {} : { name: snapshot.name },
+    type: snapshot.type,
+    ...snapshot.pid === undefined ? {} : { pid: snapshot.pid },
+    state: status.kind === 'running' ? 'running' : 'exited',
+    exitCode: status.kind === 'running' ? null : status.exitCode,
+  }
 }
 
 /** Typed Remote control of transient Session-owned terminal processes. */
@@ -90,6 +118,7 @@ export class TerminalController extends TypertRemoteService {
     unattendedTimeoutMs: z.number().step(1).min(0).max(Number.MAX_SAFE_INTEGER).default(7_200_000),
     activityPollIntervalMs: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(30_000),
     cleanupRetryMs: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(60_000),
+    agentSendWaitMs: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).default(30_000),
   })
 
   private readonly owners = new Map<SessionId, OwnedSession>()
@@ -146,6 +175,198 @@ export class TerminalController extends TypertRemoteService {
     const owner = this.owners.get(sessionId)
     if (owner === undefined) return []
     return [...owner.terminals.values(), ...owner.allocations.values()].map(terminal => terminal.info)
+  }
+
+  /**
+   * List the agent terminals this Session owns — the same PTY sessions the
+   * terminal tools operate, so the panel attaches to what the agent is doing.
+   * @param agent - Session owner supplied by the Gateway; ownership is the registry's.
+   * @param signal - request cancellation.
+   * @returns one entry per published owner terminal.
+   */
+  @Remote
+  agentTerminals(agent: Agent, signal: AbortSignal): AgentTerminalInfo[] {
+    signal.throwIfAborted()
+    return this.agentRegistry().list(agent).map(agentTerminalOf)
+  }
+
+  /**
+   * Report the agent-terminal backends this composition registered.
+   * @param agent - Session owner supplied by the Gateway (the backends are composition-wide).
+   * @param signal - request cancellation.
+   * @returns registered backend types and the default one.
+   */
+  @Remote
+  agentBackends(agent: Agent, signal: AbortSignal): AgentTerminalBackends {
+    signal.throwIfAborted()
+    void agent
+    return { backends: this.agentRegistry().listBackends(), default: this.defaultAgentBackend() }
+  }
+
+  /** The backend a request naming none uses: the shell backend when registered, else the first one. */
+  private defaultAgentBackend(): string {
+    const backends = this.agentRegistry().listBackends()
+    return backends.includes(AGENT_TERMINAL_BACKEND) ? AGENT_TERMINAL_BACKEND : backends[0] ?? ''
+  }
+
+  /**
+   * Create one agent terminal owned by this Session.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param request - backend type, optional display name, and optional working directory; an empty type selects the composition default.
+   * @param signal - request cancellation.
+   * @returns the new terminal and its backend's initial output.
+   */
+  @Remote
+  async agentSpawn(agent: Agent, request: AgentTerminalSpawnRequest, signal: AbortSignal): Promise<AgentTerminalSpawnResult> {
+    signal.throwIfAborted()
+    const spawned = await this.agentRegistry().spawn(agent, {
+      type: request.type === '' ? this.defaultAgentBackend() : request.type,
+      ...request.name === undefined ? {} : { name: request.name },
+      ...request.cwd === undefined ? {} : { cwd: request.cwd },
+    }, signal)
+    return { terminal: agentTerminalOf(spawned), motd: spawned.motd }
+  }
+
+  /**
+   * Read one bounded page of an agent terminal's retained output.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param terminalId - registry identity from {@link agentTerminals}.
+   * @param range - newest-relative offset and line count; omitted fields take the page defaults.
+   * @param signal - request cancellation.
+   * @returns the page in chronological order.
+   */
+  @Remote
+  agentRead(agent: Agent, terminalId: string, range: AgentTerminalRange, signal: AbortSignal): AgentTerminalPage {
+    signal.throwIfAborted()
+    const offset = range.offset === undefined ? 0 : Math.max(0, Math.floor(range.offset))
+    const count = range.count === undefined ? this.config.scrollback : Math.max(1, Math.floor(range.count))
+    const page = this.agentRegistry().read(agent, this.agentTerminalId(agent, terminalId), { offset, count })
+    return {
+      text: page.text,
+      totalLines: page.totalLines,
+      lineBegin: page.lineBegin,
+      lineEnd: page.lineEnd,
+      truncated: page.truncated,
+    }
+  }
+
+  /**
+   * Write one line into an agent terminal and wait briefly for its output.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param terminalId - registry identity from {@link agentTerminals}.
+   * @param input - text and whether to send Enter.
+   * @param signal - request cancellation; the command itself is not interrupted.
+   * @returns the bounded output produced before readiness, timeout, or process exit.
+   */
+  @Remote
+  async agentSend(
+    agent: Agent,
+    terminalId: string,
+    input: AgentTerminalInput,
+    signal: AbortSignal,
+  ): Promise<AgentTerminalSendResult> {
+    signal.throwIfAborted()
+    const operation = this.agentRegistry().startSend(agent, this.agentTerminalId(agent, terminalId), {
+      text: input.text,
+      submit: input.submit !== false,
+    })
+    const settled: TerminalSendResult = await Promise.race([
+      operation.done,
+      new Promise<TerminalSendResult>((resolve) => {
+        setTimeout(() => {
+          const delta = operation.readOutput()
+          resolve({
+            viewport: delta.delta,
+            waitReason: 'timeout',
+            sessionStatus: { kind: 'running' },
+            truncated: delta.truncated,
+          })
+        }, this.config.agentSendWaitMs).unref()
+      }),
+    ])
+    const status = settled.sessionStatus
+    return {
+      viewport: settled.viewport,
+      waitReason: settled.waitReason,
+      state: status.kind === 'running' ? 'running' : 'exited',
+      exitCode: status.kind === 'running' ? null : status.exitCode,
+      truncated: settled.truncated,
+    }
+  }
+
+  /**
+   * Deliver one signal to an agent terminal's verified foreground process group.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param terminalId - registry identity from {@link agentTerminals}.
+   * @param signalName - one of {@link AgentTerminalSignal}.
+   * @param signal - request cancellation.
+   * @returns whether the backend delivered the signal.
+   */
+  @Remote
+  async agentSignal(
+    agent: Agent,
+    terminalId: string,
+    signalName: AgentTerminalSignal,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    signal.throwIfAborted()
+    const result = await this.agentRegistry().signal(agent, this.agentTerminalId(agent, terminalId), signalName)
+    return result.delivered
+  }
+
+  /**
+   * Close one agent terminal owned by this Session.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param terminalId - registry identity from {@link agentTerminals}.
+   * @param signal - request cancellation.
+   * @returns whether a live terminal was killed.
+   */
+  @Remote
+  async agentClose(agent: Agent, terminalId: string, signal: AbortSignal): Promise<boolean> {
+    signal.throwIfAborted()
+    return this.agentRegistry().kill(agent, this.agentTerminalId(agent, terminalId), 'closed from the terminal panel')
+  }
+
+  /**
+   * The composition's agent-terminal registry, resolved at call time so a
+   * deployment that does not mount it keeps this controller's own facility.
+   * @returns the mounted registry.
+   * @throws RemoteError when no terminal registry is mounted.
+   */
+  private agentRegistry(): TerminalSessionService {
+    const terminals = this.ctx.get('terminals')
+    if (terminals === undefined) {
+      throw new RemoteError(
+        'terminal/unavailable',
+        'this composition mounts no agent terminal registry, so the panel cannot attach to agent terminals',
+        {},
+      )
+    }
+    return terminals
+  }
+
+  /**
+   * Resolve one panel-supplied id against the registry's own identities.
+   *
+   * The registry mints terminal ids; this controller only relays the string the
+   * panel received from {@link agentTerminals}. Looking the id up here keeps the
+   * brand inside its owning service and confines every panel call to terminals
+   * the Session actually owns.
+   * @param agent - Session owner supplied by the Gateway.
+   * @param terminalId - registry identity from {@link agentTerminals}.
+   * @returns the owner-minted identity.
+   * @throws RemoteError when this Session owns no such terminal.
+   */
+  private agentTerminalId(agent: Agent, terminalId: string): TerminalSessionId {
+    const owned = this.agentRegistry().list(agent).find(snapshot => String(snapshot.sessionId) === terminalId)
+    if (owned === undefined) {
+      throw new RemoteError(
+        'terminal/unknown-session',
+        `this Session owns no agent terminal ${JSON.stringify(terminalId)}`,
+        { terminalId },
+      )
+    }
+    return owned.sessionId
   }
 
   /**

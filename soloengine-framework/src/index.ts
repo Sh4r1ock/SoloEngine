@@ -4,6 +4,7 @@
  */
 
 export { SoloDatabase, BUSINESS_TABLES, type DatabaseEnvironment, type DatabaseOptions } from './db/index.ts'
+export { FRAMEWORK_VERSION } from './version.ts'
 export { MasterKey, MasterKeyError, encryptSecret, decryptSecret, maskSecret, safeEqual, MASTER_KEY_BYTES } from './crypto/index.ts'
 export { hashPassword, verifyPassword, TokenService, newId, newUserId, type TokenPayload } from './auth/index.ts'
 export { FrameworkRuntime, type FrameworkOptions } from './runtime.ts'

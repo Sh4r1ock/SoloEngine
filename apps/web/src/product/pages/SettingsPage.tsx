@@ -12,7 +12,7 @@ import {
   Switch,
   Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { describeError, request } from '../api.ts'
+import { ApiError, describeError, request } from '../api.ts'
 import { t, useLocale } from '../i18n.ts'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { PageHeader } from '../components/PageHeader.tsx'
@@ -126,6 +126,42 @@ function changeNotice(result: PluginChangeView): ManageNotice {
 }
 
 /**
+ * 插件安装失败的文案键。
+ *
+ * 只有网络中断、服务端 5xx 与限流/超时这类无法判断落地状态的失败才报「结果未知」；
+ * 服务端明确拒绝（带错误码的 4xx）按码给出具体原因与出路，不能伪造成未知或成功。
+ * @param failure - 捕获的失败。
+ * @returns `settings` 字典里的句子键。
+ */
+function installFailureKey(failure: unknown): string {
+  if (failure instanceof ApiError) {
+    switch (failure.code) {
+      case 'already-installed': return 'pluginInstallAlreadyInstalled'
+      case 'incompatible-version': return 'pluginInstallIncompatible'
+      case 'management-required':
+      case 'unaddressable': return 'pluginInstallReadOnly'
+      case 'invalid-spec': return 'pluginErrorInvalidSpec'
+      case 'not-found':
+      case 'unknown-plugin': return 'pluginErrorNotFound'
+      case 'not-a-package':
+      case 'not-a-bundle': return 'pluginErrorNotBundle'
+      case 'not-removable': return 'pluginErrorNotRemovable'
+      case 'bundle-in-use': return 'pluginErrorInUse'
+      case 'stop-profile': return 'pluginErrorStopped'
+      case 'PLUGIN_SPEC_REQUIRED': return 'pluginSpecRequired'
+      case 'NETWORK': return 'pluginInstallUnknown'
+      default: break
+    }
+    // 4xx 是服务端明确拒绝（安装没有开始）；408/429 与 5xx 无法判断落地状态。
+    return failure.status >= 400 && failure.status < 500
+      && failure.status !== 408 && failure.status !== 429
+      ? 'pluginErrorGeneric'
+      : 'pluginInstallUnknown'
+  }
+  return 'pluginInstallUnknown'
+}
+
+/**
  * 渲染设置页。
  */
 export function SettingsPage() {
@@ -146,6 +182,8 @@ export function SettingsPage() {
   const [bundleBusy, setBundleBusy] = useState<string | null>(null)
   const [manageNotice, setManageNotice] = useState<ManageNotice | null>(null)
   const [removeTarget, setRemoveTarget] = useState<ManagedBundleView | null>(null)
+  /** 移除确认框内的失败行：页面级提示会被 Modal 遮住，失败原因必须就地可见。 */
+  const [removeFailure, setRemoveFailure] = useState<{ text: string; retry: () => void } | null>(null)
   const [installOpen, setInstallOpen] = useState(false)
   const [installSpec, setInstallSpec] = useState('')
   const [installBusy, setInstallBusy] = useState(false)
@@ -158,6 +196,8 @@ export function SettingsPage() {
   // 出处放进页头状态并 1.6s 后回到「偏好已同步」（原型同款），不再单独占一行提示。
   const [notice, setNotice] = useState<{ section: Section; key: string } | null>(null)
   const noticeTimer = useRef<number | null>(null)
+  /** 字号滑块的短防抖：滚轮/辅助技术只触发 change，没有 pointerup/keyup 可等。 */
+  const fontCommitTimer = useRef<number | null>(null)
   // 字号滑块的拖动草稿：拖动中只更新数值提示与预览，松手才落盘（原型 input 预览 / change 保存）。
   // null 表示跟随已保存值，服务端偏好变化（首次加载、其它窗口保存）会直接反映到滑块上。
   const [fontDraft, setFontDraft] = useState<number | null>(null)
@@ -208,6 +248,7 @@ export function SettingsPage() {
   }, [canManagePlugins, loadBundles])
   useEffect(() => () => {
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
+    if (fontCommitTimer.current !== null) window.clearTimeout(fontCommitTimer.current)
     if (spyTimer.current !== null) window.clearTimeout(spyTimer.current)
   }, [])
   // 深链：`/settings#settings-plugins` 直接激活并滚到该分区。分节由 React 渲染，
@@ -269,12 +310,27 @@ export function SettingsPage() {
 
   /** 落盘字号；值未变时只丢弃草稿，避免一次无意义的写入。 */
   const commitFontSize = (next: number): void => {
+    // 立即提交（pointerup / keyup / blur）要撤掉待触发的防抖，否则会重复写一次。
+    if (fontCommitTimer.current !== null) {
+      window.clearTimeout(fontCommitTimer.current)
+      fontCommitTimer.current = null
+    }
     if (next === preferences.theme.fontSize) {
       setFontDraft(null)
       return
     }
     // 落盘期间继续拖动时保留更新的草稿，避免滑块被旧一次写入的返回值拽回去。
     saveAppearance({ fontSize: next }, () => { setFontDraft(current => current === next ? null : current) })
+  }
+
+  /** 拖动/滚轮/辅助技术改变字号：停手 300ms 落盘，不依赖 pointerup/keyup。 */
+  const previewFontSize = (next: number): void => {
+    setFontDraft(next)
+    if (fontCommitTimer.current !== null) window.clearTimeout(fontCommitTimer.current)
+    fontCommitTimer.current = window.setTimeout(() => {
+      fontCommitTimer.current = null
+      commitFontSize(next)
+    }, 300)
   }
 
   const saveLocale = (next: 'zh' | 'en'): void => {
@@ -304,7 +360,9 @@ export function SettingsPage() {
         setManageNotice(changeNotice(result.result))
         await Promise.all([loadBundles(), loadPlugins()])
       } catch (failure) {
-        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+        setManageNotice(failure instanceof ApiError && failure.code === 'PLUGIN_BUNDLE_NOT_MANAGED'
+          ? { key: 'pluginErrorNotManaged', tone: 'error' }
+          : { key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
       } finally {
         setBundleBusy(null)
       }
@@ -312,10 +370,10 @@ export function SettingsPage() {
   }
 
   /** 移除确认对话框里的组合包（原生移除检查与回滚由服务端完成）。 */
-  const confirmRemoveBundle = (): void => {
-    const target = removeTarget
+  const confirmRemoveBundle = (target: ManagedBundleView | null = removeTarget): void => {
     if (target === null) return
     setBundleBusy(target.name)
+    setRemoveFailure(null)
     setManageNotice(null)
     void (async () => {
       try {
@@ -327,7 +385,11 @@ export function SettingsPage() {
         setRemoveTarget(null)
         await Promise.all([loadBundles(), loadPlugins()])
       } catch (failure) {
-        setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+        // 失败留在确认框内（带重试）；页面级提示在 Modal 之下，用户看不到。
+        setRemoveFailure({
+          text: `${t('settings', 'pluginErrorGeneric')} — ${describeError(failure)}`,
+          retry: () => { confirmRemoveBundle(target) },
+        })
       } finally {
         setBundleBusy(null)
       }
@@ -378,10 +440,15 @@ export function SettingsPage() {
         setManageNotice(changeNotice(installed.result))
         await Promise.all([loadBundles(), loadPlugins()])
       } catch (failure) {
-        // 响应丢失（网络中断、页面代理超时）不等于安装失败：保留 requestId，
-        // 由「检查安装状态」向服务端要同一请求的最终结果。
-        setInstallError('pluginInstallUnknown')
-        setManageNotice({ key: 'pluginInstallUnknown', tone: 'error', detail: describeError(failure) })
+        // 明确失败（已安装/不兼容/只读…）按具体原因呈现；只有网络与无法判断落地状态的
+        // 失败才报「结果未知」，保留 requestId 供「检查安装状态」向服务端要最终结果。
+        const key = installFailureKey(failure)
+        setInstallError(key)
+        setManageNotice({
+          key,
+          tone: 'error',
+          detail: key === 'pluginInstallUnknown' ? describeError(failure) : undefined,
+        })
       } finally {
         setInstallBusy(false)
       }
@@ -652,8 +719,12 @@ export function SettingsPage() {
             value={fontSize}
             aria-label={t('settings', 'appearanceFontSize')}
             aria-valuetext={t('settings', 'fontSizeValue', { size: fontSize })}
-            onChange={(event) => { setFontDraft(Number(event.currentTarget.value)) }}
+            onChange={(event) => { previewFontSize(Number(event.currentTarget.value)) }}
             onPointerUp={(event) => { commitFontSize(Number(event.currentTarget.value)) }}
+            onBlur={() => {
+              // 失焦时把尚未落盘的草稿提交（键盘 Tab 离开、滚轮后直接走开都走这里）。
+              if (fontDraft !== null) commitFontSize(fontDraft)
+            }}
             onKeyUp={(event) => {
               if (RANGE_COMMIT_KEYS.has(event.key)) commitFontSize(Number(event.currentTarget.value))
             }}
@@ -766,16 +837,20 @@ export function SettingsPage() {
               <PluginGroup title={t('settings', 'pluginsBundles')} count={bundleTotal} full>
                 {/* 组合包行：超管拿到管理面（开关 + 移除），普通用户与未加载时沿用只读行。 */}
                 {bundles !== null
-                  ? bundles.map(bundle => (
-                    <BundleRow
-                      key={bundle.name}
-                      bundle={bundle}
-                      busy={bundleBusy === bundle.name}
-                      editable={canManagePlugins}
-                      onToggle={(enabled) => { toggleBundle(bundle, enabled) }}
-                      onRemove={() => { setRemoveTarget(bundle) }}
-                    />
-                  ))
+                  ? bundles.map((bundle) => {
+                    const counts = plugins.profile.bundleCounts.find(item => item.name === bundle.name)
+                    return (
+                      <BundleRow
+                        key={bundle.name}
+                        bundle={bundle}
+                        busy={bundleBusy === bundle.name}
+                        editable={canManagePlugins}
+                        {...(counts === undefined ? {} : { counts })}
+                        onToggle={(enabled) => { toggleBundle(bundle, enabled) }}
+                        onRemove={() => { setRemoveFailure(null); setRemoveTarget(bundle) }}
+                      />
+                    )
+                  })
                   : plugins.profile.bundleCounts.map(bundle => (
                     <PluginRow
                       key={bundle.name}
@@ -915,24 +990,32 @@ export function SettingsPage() {
 
       <Modal
         open={removeTarget !== null}
-        onClose={() => { setRemoveTarget(null) }}
+        onClose={() => { setRemoveTarget(null); setRemoveFailure(null) }}
         title={t('settings', 'pluginsRemoveTitle', { name: removeTarget?.name ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={t('settings', 'pluginsRemoveDesc')}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setRemoveTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button variant="outline" onClick={() => { setRemoveTarget(null); setRemoveFailure(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
               variant="ghost"
               className={css.dangerButton}
               disabled={bundleBusy !== null}
-              onClick={confirmRemoveBundle}
+              onClick={() => { confirmRemoveBundle() }}
             >
               {t('common', 'actionRemove')}
             </Button>
           </>
         )}
       >
+        {/* 失败原因就地呈现在确认框内：页面级提示会被 Modal 遮住。 */}
+        <NoticeLine
+          tone="error"
+          text={removeFailure === null ? null : removeFailure.text}
+          {...(removeFailure === null
+            ? {}
+            : { action: { label: t('common', 'actionRetry'), onClick: removeFailure.retry } })}
+        />
         <p className={css.cardBody}>{removeTarget?.name ?? ''}</p>
       </Modal>
     </div>
@@ -947,10 +1030,12 @@ export function SettingsPage() {
  * @param props.onToggle - 切换启用态。
  * @param props.onRemove - 请求移除（由调用方开确认框）。
  */
-function BundleRow({ bundle, busy, editable, onToggle, onRemove }: {
+function BundleRow({ bundle, busy, editable, counts, onToggle, onRemove }: {
   bundle: ManagedBundleView
   busy: boolean
   editable: boolean
+  /** 该组合包的 Host/Client 行计数（与原型的「Host x · Client y」同一口径）。 */
+  counts?: { hostCount: number; clientCount: number }
   onToggle: (enabled: boolean) => void
   onRemove: () => void
 }) {
@@ -970,6 +1055,14 @@ function BundleRow({ bundle, busy, editable, onToggle, onRemove }: {
         </span>
         {bundle.error !== null && (
           <span className={settingsCss.bundleError}>{t('settings', pluginErrorKey(bundle.error.code))}</span>
+        )}
+        {bundle.readOnlyReason !== null && (
+          <span className={settingsCss.pluginDesc}>{bundle.readOnlyReason}</span>
+        )}
+        {counts !== undefined && (
+          <span className={settingsCss.pluginCount}>
+            {t('settings', 'bundleCounts', { host: counts.hostCount, client: counts.clientCount })}
+          </span>
         )}
       </div>
       {editable && bundle.removable && (

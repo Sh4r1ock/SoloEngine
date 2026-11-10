@@ -138,6 +138,8 @@ export class RunService {
   private driver: RunDriver | undefined
   /** 会话 → 画布节点归属解析器（由 host 注入）。 */
   private agentResolver: ((sessionKey: string) => string | undefined) | undefined
+  /** 无台账行会话的归属回退（由 host 注入：按会话树根解析用户与运行项目）。 */
+  private ownershipResolver: ((sessionKey: string) => Promise<{ userId: string; projectId: string } | undefined>) | undefined
   /** 会话 → 回合级恢复点 id（主干 changeLedger 产出）。 */
   private readonly restorePoints = new Map<string, string>()
 
@@ -163,6 +165,43 @@ export class RunService {
    */
   setAgentResolver(resolver: (sessionKey: string) => string | undefined): void {
     this.agentResolver = resolver
+  }
+
+  /**
+   * 登记无台账行会话的归属回退（由 host 在挂载时注入）。
+   *
+   * 分支/草稿会话没有自己的 `sessions` 行，父指向只在 dsh 会话头里；host 按会话树根解析出
+   * 归属用户与运行项目后由此返回。模型路由的归属、变更台账的沙箱根都走这一份，避免各入口各写一套。
+   * @param resolver - 会话键 → 归属（无归属返回 `undefined`）。
+   */
+  setOwnershipResolver(
+    resolver: (sessionKey: string) => Promise<{ userId: string; projectId: string } | undefined>,
+  ): void {
+    this.ownershipResolver = resolver
+  }
+
+  /**
+   * 取一次会话的归属用户：自己的台账行优先，其次沿会话树根回退。
+   * @param sessionKey - 会话键。
+   * @returns 归属用户 id，或 `null`（无归属）。
+   */
+  async ownerOf(sessionKey: string): Promise<string | null> {
+    const row = await this.ledger.byKey(sessionKey)
+    if (row !== undefined) return row.user_id
+    const fallback = await this.ownershipResolver?.(sessionKey)
+    return fallback?.userId ?? null
+  }
+
+  /**
+   * 取一次会话的运行项目：自己的台账行优先，其次沿会话树根回退。
+   * @param sessionKey - 会话键。
+   * @returns 运行项目 id，或 `null`（无归属）。
+   */
+  async projectIdOf(sessionKey: string): Promise<string | null> {
+    const row = await this.ledger.byKey(sessionKey)
+    if (row !== undefined) return row.run_project_id
+    const fallback = await this.ownershipResolver?.(sessionKey)
+    return fallback?.projectId ?? null
   }
 
   /**
@@ -223,7 +262,7 @@ export class RunService {
     canvasData.nodes = await this.runtime.plugins.applyNodeDefaults(userId, (canvasData.nodes ?? []) as CanvasNodeInput[])
     // 画布节点存的是技能**行 id**；运行时按技能**名**寻址（`skill` 工具与挂载守卫都用名字）。
     // 在编译边界统一翻译，未知引用保留原值，由 noticeUnavailableRefs 报出。
-    const skillRows = await this.runtime.skills.list(userId)
+    const skillRows = await this.runtime.skills.listMountable(userId)
     const skillNameOf = new Map<string, string>()
     for (const row of skillRows) skillNameOf.set(row.id, row.name)
     for (const node of (canvasData.nodes ?? []) as { skills?: unknown }[]) {
@@ -282,7 +321,7 @@ export class RunService {
         }
       }
       for (const name of spec.skills) {
-        const rows = await this.runtime.skills.list(userId)
+        const rows = await this.runtime.skills.listMountable(userId)
         const row = rows.find(item => item.name === name)
         if (row === undefined) {
           console.log(`soloengine: canvas ${canvasId} node ${spec.agentId} references skill "${name}" that does not exist or is not visible; it stays unavailable to this agent`)
@@ -336,8 +375,9 @@ export class RunService {
     }
     const { startInput, llmConfigId } = await this.buildStartInput(userId, canvasId, project, sessionKey)
     await this.noticeUnavailableRefs(userId, canvasId, startInput.compiled)
+    let ensured: SessionLedgerRow
     try {
-      await this.ledger.ensure({
+      ensured = await this.ledger.ensure({
         session_key: sessionKey,
         user_id: userId,
         agentic_flow_id: canvasId,
@@ -351,8 +391,12 @@ export class RunService {
       }
       throw error
     }
-    const row = await this.ledger.byKey(sessionKey)
-    if (row === undefined) throw new FrameworkError(500, 'LEDGER_INSERT_FAILED', 'session ledger row missing after insert')
+    // `ensure` 是幂等的：并发下可能返回**别人**刚插入的同键行。必须在启动驱动前按归属判定，
+    // 否则会替他人在其会话上再起一次 agent，最后才以 404 收场。
+    if (ensured.user_id !== userId || ensured.agentic_flow_id !== canvasId || ensured.run_project_id !== project.id) {
+      throw new FrameworkError(409, 'SESSION_KEY_TAKEN', `session key ${sessionKey} already exists`)
+    }
+    const row = ensured
     // per-user SkillProvider（PRD-04 FR-SKILL-007）：运行前把该用户启用中的技能同步进
     // 项目层技能根（junction 农场），使本次运行的技能发现根 = 该用户的启用集合。
     try {
@@ -431,20 +475,49 @@ export class RunService {
   }
 
   /**
-   * 某 agenticflow 的最新会话键（运行面板 URL 的解析依据：`/run/:agenticFlowId`）。
+   * 某 agenticflow 的最新**运行**会话键（运行面板 URL 的解析依据：`/run/:agenticFlowId`）。
+   *
+   * 台账也登记客户端直接创建的会话（分支、面板新会话、草稿）：它们没有经过运行准入，行里
+   * `started_at` 为空，也没有任何已登记事件。运行面板按设计打开「该画布最近一次运行」
+   * （见 `docs/soloengine/01-架构.md`），因此只认**已启动或有事件**的归属行；否则客户端启动时
+   * 自动连接工作区留下的草稿会话会顶掉真正的运行会话，面板在下次深链打开成空白首屏。
+   *
+   * 两条判据都要：从日志重建的归属行走 `recover` 写入（`started_at` 为空）但事件已被重建，
+   * 仍应作为运行入口；而草稿在归属补登前就已结束，事件表里没有任何行。
    * @param flowId - 画布（agenticflow）ID。
    * @param restrictTo - 调用方连接可见的会话键；给出时只在这些键中挑选，避免把
    *   其他账号的会话键随外壳下发给本页面。
-   * @returns 最新会话键；该 flow 还没有可见会话时 undefined。
+   * @returns 最新运行会话键；该 flow 还没有可见的运行会话时 undefined。
    */
   async latestSessionKeyOfFlow(flowId: string, restrictTo?: ReadonlySet<string>): Promise<string | undefined> {
-    // 一个 flow 的会话通常同属一个账号；50 条足够覆盖「最新一条可见会话」，
-    // 同时不把整张台账读进内存（限制是为了有界查询，不是业务阈值）。
-    const rows = await this.db.prepare(
-      'SELECT session_key FROM sessions WHERE agentic_flow_id = ? ORDER BY created_at DESC LIMIT 50',
-    ).all<{ session_key: string }>(flowId)
-    if (restrictTo === undefined) return rows[0]?.session_key
-    return rows.find(row => restrictTo.has(row.session_key))?.session_key
+    // 先取最新 50 条再按可见集合过滤会漏掉「第 51 条才是自己的」这种情况。这里按
+    // (created_at, session_key) 逐页向前翻，直到命中可见键或翻完；每页查询仍然有界。
+    const ran = `started_at IS NOT NULL
+      OR EXISTS (SELECT 1 FROM events WHERE events.session_id = sessions.id)`
+    const pageSize = 200
+    let cursor: { createdAt: number; key: string } | undefined
+    for (let page = 0; page < 50; page += 1) {
+      const rows = cursor === undefined
+        ? await this.db.prepare(
+          `SELECT session_key, created_at FROM sessions
+            WHERE agentic_flow_id = ? AND (${ran})
+            ORDER BY created_at DESC, session_key DESC LIMIT ?`,
+        ).all<{ session_key: string; created_at: number }>(flowId, pageSize)
+        : await this.db.prepare(
+          `SELECT session_key, created_at FROM sessions
+            WHERE agentic_flow_id = ? AND (${ran})
+              AND (created_at < ? OR (created_at = ? AND session_key < ?))
+            ORDER BY created_at DESC, session_key DESC LIMIT ?`,
+        ).all<{ session_key: string; created_at: number }>(flowId, cursor.createdAt, cursor.createdAt, cursor.key, pageSize)
+      if (rows.length === 0) return undefined
+      if (restrictTo === undefined) return rows[0]?.session_key
+      const hit = rows.find(row => restrictTo.has(row.session_key))
+      if (hit !== undefined) return hit.session_key
+      if (rows.length < pageSize) return undefined
+      const last = rows[rows.length - 1] as { session_key: string; created_at: number }
+      cursor = { createdAt: last.created_at, key: last.session_key }
+    }
+    return undefined
   }
 
   /** 归属行 + 活状态 → 对外视图。 */
@@ -469,6 +542,27 @@ export class RunService {
   /** 列当前用户的会话。 */
   async listSessions(userId: string, limit = 50): Promise<RunSessionView[]> {
     return (await this.ledger.listByUser(userId, limit)).map(row => this.view(row))
+  }
+
+  /**
+   * 启动对账：把本进程无法再推进的进行中会话收敛为失败。
+   *
+   * 上一进程退出时 `pending` / `running` 行不会再有任何写入者，画布列表与会话台账会
+   * 永久显示「运行中」。同进程重载（HMR）仍存活的会话保留原状态；`prompt` 的冷恢复
+   * 仍可让失败行从日志续跑。
+   * @returns 收敛的归属行数。
+   */
+  async settleInterrupted(): Promise<number> {
+    let settled = 0
+    for (const row of await this.ledger.inFlight()) {
+      if (this.driver?.live(row.session_key).live === true) continue
+      await this.ledger.setStatus(row.id, 'failed', {
+        error: 'host restarted before the run finished',
+        completedAt: Date.now(),
+      })
+      settled += 1
+    }
+    return settled
   }
 
   /** 取单个会话。 */
@@ -660,11 +754,6 @@ export class RunService {
     return await this.db.prepare(
       'SELECT id, kind, at, user_id, ok, detail, created_at FROM creator_audit WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
     ).all<Record<string, unknown>>(userId, limit)
-  }
-
-  /** 会话键 → 归属用户（供 host 侧审计归属解析）。 */
-  async ownerOf(sessionKey: string): Promise<string | null> {
-    return (await this.ledger.byKey(sessionKey))?.user_id ?? null
   }
 
   /** 会话键 → 归属行主键。 */

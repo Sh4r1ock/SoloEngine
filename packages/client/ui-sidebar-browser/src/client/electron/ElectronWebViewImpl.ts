@@ -2,10 +2,10 @@
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { DesktopBrowserBridge, DesktopBrowserLeaseId } from '../../types.ts'
 import type { ElectronWebviewPresentation, WebviewElement } from './ElectronWebviewPresentation.ts'
-import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError } from '../browser/BrowserFrame.ts'
-import type { BrowserPageOptions } from '../browser/BrowserPage.ts'
-import { browserAddressCheckpoint, currentBrowserTarget } from '../browser/BrowserPersistence.ts'
-import { parseBrowserAddress, type BrowserTarget } from '../browser/url.ts'
+import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError } from '../contract/BrowserFrame.ts'
+import type { BrowserPageOptions } from '../contract/BrowserPage.ts'
+import { browserAddressCheckpoint, currentBrowserTarget } from '../contract/BrowserPersistence.ts'
+import { parseBrowserAddress, type BrowserTarget } from '../contract/url.ts'
 
 interface NavigationEvent extends Event { readonly isMainFrame: boolean }
 interface LoadFailureEvent extends NavigationEvent {

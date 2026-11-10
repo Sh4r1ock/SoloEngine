@@ -1,0 +1,176 @@
+# SoloEngine 云控制面声明式拓扑（IaC 重建演练入口，W14）。
+#
+# 拓扑与 L2 验收一致：共享 PostgreSQL + 控制面 + 网关 + 两个 host-network 节点容器 + 共享工作区对象卷。
+# 这是「Docker Compose 形态」的声明式部署；生产多宿主环境用同一组环境变量交给
+# K8s/VM 编排（控制面/网关/节点都是同一镜像的不同 SOLOENGINE_CLOUD_ROLE）。
+#
+# 用法：
+#   docker build --build-arg DSH_CLIENT_COMMIT_HASH=$(git rev-parse HEAD) -f packaging/container/Dockerfile -t soloengine:l2 .
+#   docker compose -f deploy/cloud/docker-compose.yml up -d
+#   node test/soloengine/cloud-rebuild.mjs   # 重建演练（自动 down/up 两次并核验数据恢复）
+#   node test/soloengine/cloud-autoscale.mjs # 扩容执行演练（决策 → 建节点 → 放置 → 缩容回收）
+#   node test/soloengine/cloud-overflow-session.mjs # 溢出会话一致性（跨节点/网关读取同一会话）
+#
+# 边界：host 网络共享同一 Docker VM，不是多物理机，也不是 microVM/全 VM（D18 的 L3）。
+name: soloengine-cloud
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: soloengine-cloud-pg
+    environment:
+      POSTGRES_PASSWORD: soloengine
+      POSTGRES_DB: cloud
+    ports:
+      - 127.0.0.1:55432:5432
+    healthcheck:
+      # 必须走 TCP：initdb 的临时实例只监听 unix socket，`pg_isready` 不带 -h 会提前通过，
+      # 控制面随后连上正在重启的真实实例并收到 57P03（the database system is starting up）。
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d cloud"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+  control:
+    image: ${SOLOENGINE_CONTAINER_IMAGE:-soloengine:l2}
+    container_name: soloengine-cloud-control
+    # 控制面无状态：桥接网络；宿主侧只发布到 127.0.0.1，宿主与 host-network 的网关/节点都按回环访问。
+    # 内部端口 8992：8991 留给云池唯一对外入口（与产品同端口），8993 不与宿主既有服务相争。
+    ports:
+      - 127.0.0.1:8992:8992
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SOLOENGINE_CLOUD_ROLE: control
+      # 控制面在 compose 桥接网络内，按服务名连共享库；host-network 的节点/网关仍走 127.0.0.1:55432。
+      SOLOENGINE_CLOUD_DATABASE_URL: postgres://postgres:soloengine@postgres:5432/cloud
+      SOLOENGINE_CLOUD_PORT: "8992"
+      # 跨节点配额闸门（W10.10）：每用户并发会话硬上限；节点本地准入仍是最终裁决。
+      SOLOENGINE_QUOTA_MAX_ACTIVE: "8"
+      # 端口映射只转发到容器的 eth0，不能转发到容器回环；bridge 形态必须绑 0.0.0.0。
+      # 对外仍只经 127.0.0.1:8992 发布，宿主与 host-network 的网关/节点按回环访问。
+      SOLOENGINE_CLOUD_HOST: 0.0.0.0
+    command: ["sh", "-c", "cd /app && node --import tsx/esm packages/soloengine/cloud-control/src/cli.ts"]
+
+  # 主密钥一次生成、全节点共享：令牌与加密密钥都由它派生，节点各自生成会导致会话改投
+  # 另一节点后鉴权失败。该服务写满 64 位十六进制后退出，节点等它完成再启动。
+  keys:
+    image: ${SOLOENGINE_CONTAINER_IMAGE:-soloengine:l2}
+    container_name: soloengine-cloud-keys
+    volumes:
+      - keys-data:/keys
+    command:
+      - sh
+      - -c
+      - >-
+        [ -f /keys/master.key ] || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > /keys/master.key;
+        chmod 600 /keys/master.key
+
+  gateway:
+    image: ${SOLOENGINE_CONTAINER_IMAGE:-soloengine:l2}
+    container_name: soloengine-cloud-gateway
+    network_mode: host
+    depends_on:
+      control:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      keys:
+        condition: service_completed_successfully
+    volumes:
+      # 与节点同一份主密钥：网关用它校验账号访问令牌，不能自建（自建会让既有令牌全部失效）。
+      - keys-data:/data/home/keys
+    environment:
+      SOLOENGINE_CLOUD_ROLE: gateway
+      SOLOENGINE_CONTROL_URL: http://127.0.0.1:8992
+      # 云池唯一对外入口：与产品同端口 8991（演练期间停本机主实例，结束后恢复）。
+      SOLOENGINE_GATEWAY_PORT: "8991"
+      # 归属校验（需求 §0.1.4）：共享业务库的 sessions.user_id 是真源；两项必须同时给出。
+      SOLOENGINE_KEYS_DIR: /data/home/keys
+      SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
+    command: ["sh", "-c", "cd /app && node --import tsx/esm packages/soloengine/cloud-control/src/cli.ts"]
+
+  node-a:
+    image: ${SOLOENGINE_CONTAINER_IMAGE:-soloengine:l2}
+    container_name: soloengine-cloud-node-a
+    network_mode: host
+    depends_on:
+      control:
+        condition: service_started
+      keys:
+        condition: service_completed_successfully
+    volumes:
+      - node-a-data:/data
+      - keys-data:/data/home/keys
+      # 工作区权威副本（W10.12/W13）：跨节点共享的对象存储根；本地工作副本仍在节点数据卷里。
+      - workspace-objects:/workspace-objects
+    environment:
+      SOLOENGINE_DB_FORM: cloud
+      SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
+      SOLOENGINE_WORKSPACE_STORE: /workspace-objects
+      SOLOENGINE_HOST: 127.0.0.1
+      SOLOENGINE_PORT: "8995"
+      SOLOENGINE_NO_OPEN: "1"
+      SOLOENGINE_CONTROL_URL: http://127.0.0.1:8992
+      SOLOENGINE_NODE_ID: node-a
+      SOLOENGINE_ROOT: /app
+      SOLOENGINE_DB: /data/soloengine.db
+      DSH_HOME: /data/dsh-home
+      SOLOENGINE_KEYS_DIR: /data/home/keys
+      SOLOENGINE_SKILLS_DIR: /data/skills
+    command:
+      - sh
+      - -c
+      - >-
+        [ -d /data/dsh-home ] || cp -a /app/data/. /data/;
+        cd /app && exec node --import tsx/esm apps/cli/src/bin.ts
+        --profile soloengine
+        --patch packages/soloengine/host/cordis.form-cloud.patch.yml
+        --host 127.0.0.1 --port 8995 --no-open
+
+  node-b:
+    image: ${SOLOENGINE_CONTAINER_IMAGE:-soloengine:l2}
+    container_name: soloengine-cloud-node-b
+    network_mode: host
+    depends_on:
+      control:
+        condition: service_started
+      keys:
+        condition: service_completed_successfully
+    volumes:
+      - node-b-data:/data
+      - keys-data:/data/home/keys
+      - workspace-objects:/workspace-objects
+    environment:
+      SOLOENGINE_DB_FORM: cloud
+      SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
+      SOLOENGINE_WORKSPACE_STORE: /workspace-objects
+      SOLOENGINE_HOST: 127.0.0.1
+      SOLOENGINE_PORT: "8996"
+      SOLOENGINE_NO_OPEN: "1"
+      SOLOENGINE_CONTROL_URL: http://127.0.0.1:8992
+      SOLOENGINE_NODE_ID: node-b
+      SOLOENGINE_ROOT: /app
+      SOLOENGINE_DB: /data/soloengine.db
+      DSH_HOME: /data/dsh-home
+      SOLOENGINE_KEYS_DIR: /data/home/keys
+      SOLOENGINE_SKILLS_DIR: /data/skills
+    command:
+      - sh
+      - -c
+      - >-
+        [ -d /data/dsh-home ] || cp -a /app/data/. /data/;
+        cd /app && exec node --import tsx/esm apps/cli/src/bin.ts
+        --profile soloengine
+        --patch packages/soloengine/host/cordis.form-cloud.patch.yml
+        --host 127.0.0.1 --port 8996 --no-open
+
+volumes:
+  pg-data:
+  keys-data:
+  node-a-data:
+  node-b-data:
+  workspace-objects:

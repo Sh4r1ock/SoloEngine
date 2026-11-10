@@ -23,7 +23,7 @@ import { posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-fs'
-import type { FsDirEntry, FsInfo, FsPathInfo, FsTarget } from '@deepseek-ai/dsh-fs'
+import type { FsDirEntry, FsInfo, FsPathInfo, FsTarget, FsVersion } from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -40,6 +40,8 @@ import type {
   WorkspaceFileStat,
   WorkspaceFileText,
   WorkspaceFileWatchFrame,
+  WorkspaceFileWriteOptions,
+  WorkspaceMutationResult,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -329,6 +331,109 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
+   * Create or replace one UTF-8 text file inside the Session's workspace.
+   *
+   * Mutations are workspace-scoped, unlike reads: a human edit through a GUI
+   * is a workspace operation, so the target must canonicalize under the root.
+   * The write runs under the deployment's sandbox mode rather than the
+   * Session's, because a Session's read-only preset governs the model, not the
+   * person at the keyboard.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param path - workspace path, absolute or relative to the workspace root.
+   * @param text - the complete new UTF-8 content.
+   * @param options - create-only or version guards; omit both for an unconditional replace.
+   * @param signal - caller cancellation.
+   * @returns the written file's absolute path, fresh version, and byte size.
+   */
+  @Remote
+  async write(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    text: string,
+    options: WorkspaceFileWriteOptions,
+    signal: AbortSignal,
+  ): Promise<WorkspaceFileStat> {
+    const bytes = Buffer.byteLength(text, 'utf8')
+    if (bytes > this.config.maxFileBytes) {
+      throw new RemoteError(
+        'workspace-file/too-large',
+        `${bytes} bytes of "${path}" exceed the ${this.config.maxFileBytes} byte write cap`,
+        { path, limit: this.config.maxFileBytes },
+      )
+    }
+    const target = await this.mutationTarget(workspaceFileScope, path, signal)
+    await this.requireParent(workspaceFileScope, target, path, signal)
+    const intent = options.createOnly === true
+      ? { kind: 'createIfAbsent' as const }
+      : options.expectedVersion === undefined
+        ? undefined
+        : await this.versionIntent(target, options.expectedVersion, path, signal)
+    await this.mutate(path, () => this.ctx.fs.writeText(target, text, intent, signal, this.mutationPolicy(workspaceFileScope)))
+    const info = await this.ctx.fs.stat(target, signal)
+    if (info === undefined) throw new RemoteError('workspace-file/not-found', `no entry at "${path}"`, { path })
+    return this.statOf(target, info)
+  }
+
+  /**
+   * Create one directory inside the Session's workspace. Its parent must exist.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param path - workspace path of the new directory.
+   * @param signal - caller cancellation.
+   * @returns the created directory's absolute path.
+   */
+  @Remote
+  async mkdir(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceMutationResult> {
+    const target = await this.mutationTarget(workspaceFileScope, path, signal)
+    await this.requireParent(workspaceFileScope, target, path, signal)
+    await this.mutate(path, () => this.ctx.fs.mkdir(target, signal, this.mutationPolicy(workspaceFileScope)))
+    return { absolutePath: this.ctx.fs.processPath(target), type: 'directory' }
+  }
+
+  /**
+   * Move one entry inside the Session's workspace to a destination that must
+   * not exist yet.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param from - workspace path of the existing entry.
+   * @param to - workspace path of the destination.
+   * @param signal - caller cancellation.
+   * @returns the destination's absolute path and kind.
+   */
+  @Remote
+  async rename(
+    workspaceFileScope: WorkspaceFileScope,
+    from: string,
+    to: string,
+    signal: AbortSignal,
+  ): Promise<WorkspaceMutationResult> {
+    const source = await this.existingTarget(workspaceFileScope, from, signal)
+    const info = await this.ctx.fs.stat(source, signal)
+    const destination = await this.mutationTarget(workspaceFileScope, to, signal)
+    await this.requireParent(workspaceFileScope, destination, to, signal)
+    await this.mutate(from, () => this.ctx.fs.rename(source, destination, signal, this.mutationPolicy(workspaceFileScope)))
+    return { absolutePath: this.ctx.fs.processPath(destination), type: info?.type === 'directory' ? 'directory' : 'file' }
+  }
+
+  /**
+   * Remove one file or directory inside the Session's workspace. A directory
+   * takes its contents with it.
+   *
+   * The name is `removeEntry`, not `remove`: a Remote method must not collide
+   * with the Client namespace service's own `remove(kind, method, token)`.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param path - workspace path of the entry to remove.
+   * @param signal - caller cancellation.
+   * @returns the removed entry's absolute path and kind.
+   */
+  @Remote
+  async removeEntry(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceMutationResult> {
+    const target = await this.existingTarget(workspaceFileScope, path, signal)
+    const info = await this.ctx.fs.stat(target, signal)
+    const type: 'file' | 'directory' = info?.type === 'directory' ? 'directory' : 'file'
+    await this.mutate(path, () => this.ctx.fs.remove(target, type === 'directory', signal, this.mutationPolicy(workspaceFileScope)))
+    return { absolutePath: this.ctx.fs.processPath(target), type }
+  }
+
+  /**
    * Watch one file or a directory's direct entries in the Session's filesystem.
    * Files use the backend's read authority; directories remain workspace-scoped.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
@@ -340,6 +445,95 @@ export class WorkspaceFiles extends TypertRemoteService {
   @Remote({ mode: 'stream' })
   changes(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame> {
     return this.feed.follow(workspaceFileScope.workspaceRoot, path, signal)
+  }
+
+  /**
+   * Resolve a mutation target and require it to stay inside the workspace
+   * root. The root itself is refused: a mutation names an entry under it.
+   */
+  private async mutationTarget(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<FsTarget> {
+    if (path.length === 0) throw new RemoteError('gateway/bad-request', 'path is required', {})
+    const { workspaceRoot } = workspaceFileScope
+    const root = await this.ctx.fs.resolve(workspaceRoot, { signal })
+    const target = await this.confine(root, workspaceRoot, path, signal)
+    this.refuseWorkspaceRoot(root, target, path)
+    return target
+  }
+
+  /**
+   * Refuse a mutation target that resolves to the workspace root itself.
+   * @param root - resolved workspace root.
+   * @param target - resolved mutation target.
+   * @param path - caller-supplied path, echoed in the failure.
+   * @throws RemoteError when the target is the workspace root.
+   */
+  private refuseWorkspaceRoot(root: FsTarget, target: FsTarget, path: string): void {
+    if (this.ctx.fs.processPath(target) === this.ctx.fs.processPath(root)) {
+      throw new RemoteError('gateway/bad-request', `"${path}" is the workspace root, which cannot be mutated`, {})
+    }
+  }
+
+  /**
+   * Resolve an entry a mutation must find: absent is `not-found`, and a final
+   * symbolic link is refused so a remove or move never acts on its destination
+   * while leaving the link behind.
+   */
+  private async existingTarget(
+    workspaceFileScope: WorkspaceFileScope,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<FsTarget> {
+    const { root, workspaceRoot, entry } = await this.inspect(workspaceFileScope, path, signal)
+    if (entry.type === 'symlink') {
+      throw new RemoteError('workspace-file/symlink-refused', `"${path}" is a symbolic link; mutations refuse to follow it`, { path })
+    }
+    const target = await this.confine(root, workspaceRoot, path, signal)
+    this.refuseWorkspaceRoot(root, target, path)
+    return target
+  }
+
+  /** Require the mutation target's parent to be an existing directory. */
+  private async requireParent(
+    workspaceFileScope: WorkspaceFileScope,
+    target: FsTarget,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const absolute = this.ctx.fs.processPath(target)
+    const paths = absolute.startsWith('/') ? posix : win32
+    const parent = await this.ctx.fs.resolve(paths.dirname(absolute), {
+      cwd: workspaceFileScope.workspaceRoot,
+      signal,
+    })
+    const info = await this.ctx.fs.stat(parent, signal)
+    if (info?.type !== 'directory') {
+      throw new RemoteError(
+        'workspace-file/parent-missing',
+        `the parent of "${path}" is not an existing directory`,
+        { path },
+      )
+    }
+  }
+
+  /**
+   * The policy a human-driven mutation runs under: the deployment's sandbox
+   * mode with this Session's workspace as the writable root.
+   */
+  private mutationPolicy(workspaceFileScope: WorkspaceFileScope) {
+    return { ...this.ctx.sandboxPolicy.resolve(), workspaceRoot: workspaceFileScope.workspaceRoot }
+  }
+
+  /** Run one backend mutation, translating its filesystem error into the wire vocabulary. */
+  private async mutate(path: string, operation: () => Promise<unknown>): Promise<void> {
+    try {
+      await operation()
+    } catch (error: unknown) {
+      throw mutationFailure(path, error)
+    }
   }
 
   private async relativePath(scope: WorkspaceFileScope, baseFile: string, path: string, signal: AbortSignal): Promise<string> {
@@ -409,6 +603,34 @@ export class WorkspaceFiles extends TypertRemoteService {
   }
 
   /**
+   * Turn a client-carried version string into the filesystem's own write guard.
+   *
+   * The filesystem mints version tokens; this controller only relays the string
+   * a client last read. Observing the current token first hands the owner's value
+   * back as the guard, reports the same stale failure the backend raises, and
+   * still lets the backend re-check the token when the write publishes.
+   * @param target - resolved target about to be written.
+   * @param expectedVersion - version string the client last read.
+   * @param path - workspace path named in a failure.
+   * @param signal - caller cancellation.
+   * @returns the replace-if-version guard carrying the observed token.
+   * @throws RemoteError when the entry is gone or no longer matches.
+   */
+  private async versionIntent(
+    target: FsTarget,
+    expectedVersion: string,
+    path: string,
+    signal: AbortSignal,
+  ): Promise<{ kind: 'replaceIfVersion'; version: FsVersion }> {
+    const info = await this.ctx.fs.stat(target, signal)
+    if (info === undefined) throw new RemoteError('workspace-file/not-found', `no entry at "${path}"`, { path })
+    if (String(info.version) !== expectedVersion) {
+      throw new RemoteError('workspace-file/stale-version', `"${path}" changed since it was read`, { path })
+    }
+    return { kind: 'replaceIfVersion', version: info.version }
+  }
+
+  /**
    * All gates for a regular file, ending in the one stat that names its version
    * and size. The stat re-checks what `lstat` saw: the file may have gone or
    * changed kind in between.
@@ -451,6 +673,36 @@ export class WorkspaceFiles extends TypertRemoteService {
       }
       throw error
     }
+  }
+}
+
+/**
+ * Map one backend mutation failure onto the wire vocabulary. The backend's
+ * stable `code` decides; the message rides along unchanged so an unclassified
+ * I/O failure still names its cause.
+ * @param path - the workspace path the caller named.
+ * @param error - the failure raised by the filesystem seam.
+ * @returns the Remote failure to throw.
+ */
+function mutationFailure(path: string, error: unknown): RemoteError {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : ''
+  const message = error instanceof Error ? error.message : String(error)
+  switch (code) {
+    case 'FS_ALREADY_EXISTS':
+    case 'FS_NOT_OBSERVED':
+      return new RemoteError('workspace-file/already-exists', message, { path })
+    case 'FS_STALE_VERSION':
+      return new RemoteError('workspace-file/stale-version', message, { path })
+    case 'FS_NOT_FOUND':
+      return new RemoteError('workspace-file/not-found', message, { path })
+    case 'FS_NOT_DIRECTORY':
+      return new RemoteError('workspace-file/parent-missing', message, { path })
+    case 'FS_PERMISSION_DENIED':
+      return new RemoteError('workspace-file/denied', message, { path, reason: 'permission' })
+    case 'FS_SANDBOX_DENIED':
+      return new RemoteError('workspace-file/denied', message, { path, reason: 'sandbox' })
+    default:
+      return new RemoteError('workspace-file/write-failed', message, { path }, { cause: error })
   }
 }
 

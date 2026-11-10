@@ -44,7 +44,7 @@ export function renderPath(text: string): ReactNode {
 }
 
 /** 路径值的统一容器（`.mono` 等宽 + hover 呈现完整值）。 */
-export function PathValue({ value, className }: { value: string; className?: string }) {
+export function PathValue({ value, className }: { value: string; className?: string | undefined }) {
   return (
     <span className={`${css.mono ?? ''} ${className ?? ''}`} title={value}>
       {renderPath(value)}

@@ -1,10 +1,11 @@
 /**
  * SoloEngine 设计语言阶梯 token（`--se-*`）——运行面板与框架层产品页面共用的**单一真源**。
  *
- * 依据《SoloEngine 前端样式与设计语言规范》§3 / §4 / §9 与 PRD-07 FR-UI-021：
- * DSH 已 token 化的维度（颜色/字号/阴影/动效/边框/交互态）照搬复用 `--dsw-*`；DSH 未抽象的
- * 三个维度（间距阶梯、圆角半径、z-index 叠加层）由 SoloEngine 自建统一阶梯。取值从 DSH 组件
- * 实际值归纳，风格统一不突兀。
+ * 依据《SoloEngine 前端样式与设计语言规范》§2 / §3 / §4 / §8 / §9 / §11 与 PRD-07 FR-UI-021：
+ * DSH 已 token 化的维度（颜色/字号/阴影/动效/交互态）照搬复用 `--dsw-*`；DSH 未抽象或以
+ * 平台值不合规范的部分（正文行高、间距阶梯、圆角半径、z-index 叠加层、发丝线取色、阅读列）
+ * 由 SoloEngine 自建统一阶梯。取值从 DSH 组件实际值与原型 `assets/css/tokens.css` 归纳，
+ * 风格统一不突兀。
  *
  * 消费方式（一份定义、两处消费）：
  * - 运行面板：`@soloengine/ui-theme/client` 把本文件作为插件自有样式注入文档；
@@ -15,7 +16,14 @@
  */
 
 :root {
-  /* ── 间距阶梯（§3；与 DSH 组件实际间距主频值兼容）────────────────────────── */
+  /* ── 正文排版（§2：正文 14/24；平台 `--dsw-font-s-14` 是 14/22）────────────
+   * 与平台阶梯同构，只改行高：字号仍由 `--dsh-content-font-size` 轴在消费侧派生。
+   * 界面 12/20 与代码 11/18 继续走平台 `--dsw-font-*`，不在此另立一套。 */
+  --se-font-body: 14px/24px var(--dsw-font-family);
+  /* 正文强档：表头等 500 字重的 14px 文本，行高与正文同为 24（平台是 22）。 */
+  --se-font-body-strong: 500 14px/24px var(--dsw-font-family);
+
+  /* ── 间距阶梯（§3；与原型 `--s-0…--s-11` 同构）──────────────────────────── */
   --se-space-0: 0;
   --se-space-1: 4px;
   --se-space-2: 8px;
@@ -23,15 +31,29 @@
   --se-space-4: 16px;
   --se-space-5: 24px;
   --se-space-6: 32px;
-  --se-space-8: 48px;
+  --se-space-7: 48px;
+  --se-space-8: 64px;
+  --se-space-9: 96px;
+  --se-space-10: 120px;
+  --se-space-11: 160px;
 
-  /* ── 圆角阶梯（§4；机制照搬 corner-shape，半径自建）────────────────────── */
-  --se-radius-xs: 4px;
-  --se-radius-sm: 8px;
-  --se-radius-md: 12px;
-  --se-radius-lg: 18px;
-  --se-radius-xl: 24px;
+  /* ── 圆角阶梯（§4；机制照搬 corner-shape，半径委托 DSH `--dsw-radius-*`）────── */
+  --se-radius-xs: var(--dsw-radius-xs);
+  --se-radius-sm: var(--dsw-radius-sm);
+  --se-radius-md: var(--dsw-radius-md);
+  --se-radius-lg: var(--dsw-radius-lg);
+  --se-radius-xl: var(--dsw-radius-xl);
+  --se-radius-panel: var(--dsw-radius-panel);
+  /* DSH 未提供圆形 token；999px 是「胶囊/圆形」的唯一自建值。 */
   --se-radius-full: 999px;
+
+  /* ── 动效阶梯（设计参考 §4.5；原生时长档 100/200/300ms 与规范 150/200/280 不同）── */
+  --se-duration-fast: 150ms;
+  --se-duration-base: 200ms;
+  --se-duration-slow: 280ms;
+  --se-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --se-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --se-ease-out: cubic-bezier(0, 0, 0.2, 1);
 
   /* ── z-index 叠加层（§9；portal 菜单与 Toast 必须压过 modal）────────────── */
   --se-z-base: 0;
@@ -41,6 +63,58 @@
   --se-z-dropdown: 100;
   --se-z-modal: 1000;
   --se-z-portal: 1100;
+
+  /* ── 阅读列（§8：内容列 1120、阅读列 760–800）──────────────────────────── */
+  --se-reading-max: 760px;
+}
+
+/* ── 发丝线（§11；0.5px 中性线，取值随主题走色阶）────────────────────────
+ * 浅色取注册六色里的品牌边框 #e1e5ee（平台静态色板 neutral-bluish-200），
+ * 不是平台 `--dsw-alias-border-l2` 的黑色 alpha rgba(0,0,0,.1)。
+ *
+ * 必须挂在 `body`：`--dsw-static-*` 由 design-platform.css 定义在 `body`，
+ * 自定义属性只在声明元素上替换，写在 `:root` 会解析成空值、整条发丝线不渲染。 */
+body {
+  --se-hairline: var(--dsw-static-neutral-bluish-200);
+  /* 原型 `--line-faint`：分组分隔线比主发丝线再淡一档。 */
+  --se-hairline-faint: color-mix(in srgb, var(--dsw-static-neutral-bluish-200) 58%, var(--dsw-static-neutral-00));
+}
+
+/* 深色发丝线：静态色板两主题不翻转，#e1e5ee 落在墨底上约 15:1（刺眼白线），
+ * 故按原型深色块 `--line: color-mix(in srgb, var(--ds-white) 16%, var(--ds-ink))`
+ * 由同一套静态色板派生；深色覆盖挂在 body[data-ds-dark-theme]（与平台同一钩子）。 */
+body[data-ds-dark-theme] {
+  --se-hairline: color-mix(in srgb, var(--dsw-static-neutral-00) 16%, var(--dsw-static-neutral-bluish-1000));
+  --se-hairline-faint: color-mix(in srgb, var(--dsw-static-neutral-00) 10%, var(--dsw-static-neutral-bluish-1000));
+}
+
+/* ── 强调文字、焦点、遮罩与浮层阴影（原型 `assets/css/tokens.css` §1/§5）─────
+ *
+ * `#4176e6` 与白底只有 3.6:1，只能作填充、焦点环与品牌强调；小号蓝色文字与链接
+ * 使用混入墨色后的 `--accent-text`（浅色 5.25:1、深色 7.72:1）。深色焦点轮廓
+ * 需要 66% 蓝 + 白，避免在 raised 表面上低于 3:1。这些值都引用 `--dsw-static-*`
+ *（定义在 body），因此必须挂在 body 上，写进 :root 会解析成空值。 */
+body {
+  --se-accent-text: color-mix(in srgb, var(--dsw-static-deepseek-500) 86%, var(--dsw-static-neutral-bluish-1000));
+  /* 原型 `--accent-line` / `--accent-weak`：强调描边与浅蓝底。 */
+  --se-accent-line: color-mix(in srgb, var(--dsw-static-deepseek-500) 46%, var(--dsw-static-neutral-00));
+  --se-accent-weak: color-mix(in srgb, var(--dsw-static-deepseek-500) 8%, var(--dsw-static-neutral-00));
+  --se-focus-ring: color-mix(in srgb, var(--dsw-static-deepseek-500) 36%, var(--dsw-static-neutral-00));
+  --se-focus-outline: var(--dsw-static-deepseek-500);
+  --se-scrim: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 42%, transparent);
+  --se-shadow-modal: 0 24px 64px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 16%, transparent);
+  --se-shadow-drawer: -18px 0 48px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 12%, transparent);
+}
+
+body[data-ds-dark-theme] {
+  --se-accent-text: color-mix(in srgb, var(--dsw-static-deepseek-500) 66%, var(--dsw-static-neutral-00));
+  --se-accent-line: color-mix(in srgb, var(--dsw-static-deepseek-500) 58%, var(--dsw-static-neutral-bluish-1000));
+  --se-accent-weak: color-mix(in srgb, var(--dsw-static-deepseek-500) 20%, var(--dsw-static-neutral-bluish-1000));
+  --se-focus-ring: color-mix(in srgb, var(--dsw-static-deepseek-500) 46%, var(--dsw-static-neutral-bluish-1000));
+  --se-focus-outline: color-mix(in srgb, var(--dsw-static-deepseek-500) 66%, var(--dsw-static-neutral-00));
+  --se-scrim: color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 66%, transparent);
+  --se-shadow-modal: 0 24px 64px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 70%, transparent);
+  --se-shadow-drawer: -18px 0 48px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 60%, transparent);
 }
 
 /* ── 代码着色浅色调色板的对比度校正（WCAG 1.4.3）────────────────────────────
@@ -66,49 +140,12 @@ body {
   --shiki-token-string-expression: #28823a;
 }
 
-/* ── 浅色下原生三级文本色的对比度校正（WCAG 1.4.3）────────────────────────────
+/* ── 浅色三级文本色 / caption / 选中态墨色的对比度校正 ──────────────────────
  *
- * 实测（运行面板，白底、13px/400 需 4.5:1）：`--dsw-alias-label-tertiary` 原值
- * rgb(129,133,140) 只有 **3.71**，面板上多处**承载信息**的文本因此不达标：
- * 会话页签「轨迹」、消息时间戳、用量「26 tok」、系统提示词来源名、行内分隔符
- * （证据 test/测试过程/S15/S15-座位4-operation-area.md 补记 7 的普查读数）。
+ * 校正值不写在这里：唯一真源是 `src/static.ts` 的 `CONTRAST_TOKEN_OVERRIDES`
+ * （运行面板经原生 `ctx.theme.overrideTokens` 注册，产品页经 ThemePresenter 快照写同一份）。
+ * 本文件不再以 `html body` 特异性覆盖 `--dsw-alias-*`——那会绕开原生覆盖通道并形成第二权威。
  *
- * 取值 #6b7278 = 白底 **4.88**、代码块底色 4.67，与上方 shiki 校正同一取值族（同色相
- * 家族的最小加深），不改字号、不动布局。深色同一令牌实测 8.79 已达标，故不校正：
- * DSH 的深色覆盖挂在 `body[data-ds-dark-theme]`（特异性高于本条 `body`），
- * 因此深色取它自己的值、浅色取这里的值。 */
-/* 特异性取 `html body`（0,0,2）：原生浅色声明就在 `body`（0,0,1）且加载在本表之后，
- * 同级写法则我们被覆盖（实测时间戳仍取旧值 rgb(129,133,140)）；而原生深色挂在
- * `body[data-ds-dark-theme]`（0,1,1）仍高于本条，故深色照旧取它自己的值。 */
-html body {
-  --dsw-alias-label-tertiary: #6b7278;
-}
-
-/* `--dsw-alias-label-caption` 原生取 bluish-400（#adb2b8），白底只有 **2.13**，而它承载的是
- * 要读的信息，不是禁用态：实测命中「模型推理等级 High」（`.kXebsa_triggerEffort`）与
- * 对话输入框占位墨色（`.V_JJJW_placeholder`）等 6 处 caption 族表面（WCAG 1.4.3 的豁免只覆盖
- * 非活动组件，占位符不在豁免内）。取值 #757575 = 白底 **4.6**，是达标的最小加深，且仍浅于
- * 上面校正后的 tertiary（#6b7278），标签阶梯的明暗次序不变。禁用/弱化族走
- * `--dsw-alias-label-dimmed`，本条不碰，避免让禁用项看起来可点。特异性同上一条：`html body`
- * （0,0,2）压过原生浅色 `body`，仍让位深色 `body[data-ds-dark-theme]`（0,1,1）。 */
-html body {
-  --dsw-alias-label-caption: #757575;
-}
-
-/* 同一令牌在深色也不达标：实测推理等级与输入框占位墨色 `rgb(129,133,140)` 落在
- * `rgb(44,44,46)` 上只有 **3.76**。取值 #9a9fa6 在同一底色上 **5.03**，且仍暗于深色的
- * tertiary（#adb2b8）——深色里「更次要 = 更暗」的阶梯次序不变。特异性 `html body[data-ds-dark-theme]`
- * （0,1,2）只压过原生同属性的深色声明，不触碰浅色。 */
-html body[data-ds-dark-theme] {
-  --dsw-alias-label-caption: #9a9fa6;
-}
-
-/* 激活页签的选中态墨色走 `--dsw-alias-state-business-primary`，浅色原生取
- * `--dsw-static-deepseek-500`（rgb(65,118,230)），白底实测 **4.23** < 4.5（R7/R11 的
- * WCAG AA 判据）。不自造新色：改指同一调色板里既有的下一档 `--dsw-static-deepseek-600`
- * （rgb(72,104,178)），白底 **5.39**，而白字压在该强调色上同样是 5.39（原 4.23）——
- * 两个方向一起变好，主按钮/选中态/焦点环的观感仍是同一族品牌蓝，只是深一档。
- * 深色取 `deepseek-400`（原生另一条声明），本条只写浅色，不触碰深色。 */
-html body {
-  --dsw-alias-state-business-primary: var(--dsw-static-deepseek-600);
-}
+ * 历史实测（保留作校正依据）：tertiary 原值白底 3.71；caption 原值白底 2.13、
+ * 深色 rgb(129,133,140) 在 rgb(44,44,46) 上 3.76；state-business-primary 原值白底 4.23。
+ */

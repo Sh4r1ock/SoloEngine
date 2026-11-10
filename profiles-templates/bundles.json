@@ -3,9 +3,8 @@
   "bundles": [
     "@deepseek-ai/dsh-base",
     "@deepseek-ai/dsh-web-app",
+    "dsh-free-search",
     "@anionex/dsh-turn-rewind",
-    "dsh-permission-rules",
-    "dsh-approve-for-me",
     "@soloengine/host"
   ],
   "patchReload": "live"

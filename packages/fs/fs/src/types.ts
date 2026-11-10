@@ -174,6 +174,7 @@ export interface FsEditOutcome {
  */
 export type FsErrorCode =
   | 'FS_NOT_FOUND'
+  | 'FS_ALREADY_EXISTS'
   | 'FS_NOT_DIRECTORY'
   | 'FS_NOT_TEXT'
   | 'FS_NOT_REGULAR_FILE'

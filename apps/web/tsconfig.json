@@ -215,7 +215,7 @@
   ],
   "references": [
     { "path": "../../packages/soloengine/types" },
-    { "path": "../../packages/experimental/auto-review" },
+    { "path": "../../packages/client/ui-brand-official" },
     {
       "path": "../../packages/client/store"
     },

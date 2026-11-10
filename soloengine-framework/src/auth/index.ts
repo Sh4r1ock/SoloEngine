@@ -9,7 +9,7 @@
  */
 
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
-import type { MasterKey } from '../crypto/index.ts'
+import { safeEqual, type MasterKey } from '../crypto/index.ts'
 
 /** scrypt 参数（N=16384, r=8, p=1 → 32 字节派生）。 */
 const SCRYPT_N = 16384
@@ -31,8 +31,12 @@ export function verifyPassword(password: string, stored: string): boolean {
   const saltText = parts[1]
   const expectedText = parts[2]
   if (saltText === undefined || expectedText === undefined) return false
+  // 形状先判：32 hex 盐 + 64 hex 哈希（32 字节）。否则 `scrypt$$` 这类空哈希会让
+  // 任意口令通过（0 长度缓冲区的 timingSafeEqual 恒等）。
+  if (!/^[0-9a-f]{32}$/iu.test(saltText) || !/^[0-9a-f]{64}$/iu.test(expectedText)) return false
   const salt = Buffer.from(saltText, 'hex')
   const expected = Buffer.from(expectedText, 'hex')
+  if (salt.length !== 16 || expected.length !== 32) return false
   const derived = scryptSync(password, salt, expected.length, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
   if (derived.length !== expected.length) return false
   return timingSafeEqual(derived, expected)
@@ -44,6 +48,8 @@ export interface TokenPayload {
   sub: string
   /** 类型：access（访问令牌）/ refresh（刷新令牌）。 */
   typ: 'access' | 'refresh'
+  /** 签发时的用户令牌版本（`users.token_version`；重置口令后自增，旧令牌即失效）。 */
+  tv: number
   /** 签发毫秒。 */
   iat: number
   /** 过期毫秒。 */
@@ -66,11 +72,12 @@ export class TokenService {
    * @param userId - 用户 ID。
    * @param type - 令牌类型。
    * @param ttlMs - 有效期毫秒。
+   * @param tokenVersion - 用户当前令牌版本（重置口令后自增）。
    * @returns 签名后的令牌串。
    */
-  sign(userId: string, type: TokenPayload['typ'], ttlMs: number): string {
+  sign(userId: string, type: TokenPayload['typ'], ttlMs: number, tokenVersion = 0): string {
     const now = Date.now()
-    const payload: TokenPayload = { sub: userId, typ: type, iat: now, exp: now + ttlMs }
+    const payload: TokenPayload = { sub: userId, typ: type, tv: tokenVersion, iat: now, exp: now + ttlMs }
     const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
     const signature = createHmac('sha256', this.secret).update(body).digest('base64url')
     return `${body}.${signature}`
@@ -88,9 +95,7 @@ export class TokenService {
     const body = parts[0] as string
     const signature = parts[1] as string
     const expected = createHmac('sha256', this.secret).update(body).digest('base64url')
-    const left = Buffer.from(signature)
-    const right = Buffer.from(expected)
-    if (left.length !== right.length || !timingSafeEqual(left, right)) return undefined
+    if (!safeEqual(signature, expected)) return undefined
     let payload: TokenPayload
     try {
       payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as TokenPayload

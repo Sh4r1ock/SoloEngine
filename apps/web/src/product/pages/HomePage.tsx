@@ -218,7 +218,7 @@ export function HomePage({ authenticated }: { authenticated: boolean }) {
               {t('home', 'navGithub')}
             </a>
             <ThemeCycleButton authenticated={authenticated} className={css.themeAction} />
-            <NavButton label={t('home', 'navLogin')} to="/login" variant="ghost" size="sm" className={css.loginAction} />
+            {!authenticated && <NavButton label={t('home', 'navLogin')} to="/login" variant="ghost" size="sm" className={css.loginAction} />}
             <NavButton label={t('home', 'navConsole')} to="/canvas" variant="primary" size="sm" className={css.navCta} />
             <button
               type="button"
@@ -238,7 +238,7 @@ export function HomePage({ authenticated }: { authenticated: boolean }) {
             <a href="#capabilities" onClick={() => { setMenuOpen(false) }}>{t('home', 'navCapabilities')}</a>
             <a href="#package" onClick={() => { setMenuOpen(false) }}>{t('home', 'navPackage')}</a>
             <a href="/styleguide" onClick={(event) => { event.preventDefault(); setMenuOpen(false); navigate('/styleguide') }}>{t('home', 'navStyleguide')}</a>
-            <a href="/login" onClick={(event) => { event.preventDefault(); setMenuOpen(false); navigate('/login') }}>{t('home', 'navLogin')}</a>
+            {!authenticated && <a href="/login" onClick={(event) => { event.preventDefault(); setMenuOpen(false); navigate('/login') }}>{t('home', 'navLogin')}</a>}
           </div>
         ) : null}
       </header>
@@ -265,8 +265,8 @@ export function HomePage({ authenticated }: { authenticated: boolean }) {
                   </a>
                 </div>
                 <div className={css.heroMeta}>
-                  <span>{t('home', 'metaPython')}</span>
-                  <span>{t('home', 'metaFastapi')}</span>
+                  <span>{t('home', 'metaNode')}</span>
+                  <span>{t('home', 'metaCordis')}</span>
                   <span>{t('home', 'metaReact')}</span>
                   <span>{t('home', 'metaLicense')}</span>
                 </div>

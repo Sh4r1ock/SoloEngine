@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包可从 Web Client 预览 Session 文件系统允许读取的文件。它按页读取 UTF-8 文本、按有界窗口或完整文件读取原始字节、从基文件目录解析关联文件，并报告文件元数据。可以跟随一个文件或一个目录直接子项的变化。文件读取和监听可以指向工作区外路径；目录列举和监听仍限定于工作区。本服务不提供修改操作。
+使用本包可从 Web Client 预览 Session 文件系统允许读取的文件。它按页读取 UTF-8 文本、按有界窗口或完整文件读取原始字节、从基文件目录解析关联文件，并报告文件元数据。可以跟随一个文件或一个目录直接子项的变化。文件读取和监听可以指向工作区外路径；目录列举和监听仍限定于工作区。修改操作只有下面四个（人操作），且一律限定于工作区。
 
 ## 目录
 
@@ -34,6 +34,10 @@ kind: "package-reference"
 | `readBytes(path, { range?, baseFile? })` | `WorkspaceFileBytes` = stat + `{ offset, data, eof }` | 以 `Uint8Array` 返回完整文件或有界字节范围；可从另一个文件所在目录解析目标 |
 | `list(path)` | `WorkspaceDirectoryListing { path, entries, truncated }` | 一个目录的直接子项 |
 | `changes(path)` | `WorkspaceFileWatchFrame` 流 | 订阅就绪确认，随后为单个文件或目录直接子项的失效通知 |
+| `write(path, text, options)` | `WorkspaceFileStat` | 新建或替换一个 UTF-8 文件；`createOnly` 拒绝已存在目标，`expectedVersion` 拒绝过期版本 |
+| `mkdir(path)` | `WorkspaceMutationResult { absolutePath, type }` | 在已存在的父目录下新建一个目录 |
+| `rename(from, to)` | `WorkspaceMutationResult` | 把一个条目移动到尚不存在的目标 |
+| `removeEntry(path)` | `WorkspaceMutationResult` | 删除一个文件，或连同内容删除一个目录 |
 
 ### 寻址与路径
 
@@ -68,9 +72,13 @@ kind: "package-reference"
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-workspace-files)是每个可接受字段及其 JSDoc 的完备来源。
 
+### 修改
+
+`write`、`mkdir`、`rename` 与 `remove` 是文件树与编辑器执行的人操作。它们限定于工作区：目标（以及 `rename` 的目标端）必须规范化后落在 Session 工作区根内，根本身被拒绝，末端符号链接被拒绝而不是跟随。`write` 受 `maxFileBytes` 限制。修改所用的沙箱策略是部署模式配以该 Session 的工作区为可写根——Session 的 `read-only` 预设约束的是模型，不是键盘前的人，因此不阻断这些调用。`mkdir` 与 `write` 要求父目录已存在。
+
 ### 失败
 
-每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`（目录列举或监听）、`workspace-file/watch-unsupported`（监听初始化失败）、`workspace-file/too-large`（带 `limit`，即适用的页、窗口或完整文件上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）以及 `workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）。调用方按代码分支，绝不按消息文本。
+每种失败都是一个带类型化 details 的 `RemoteError` 代码，声明于 [`src/types.ts`](src/types.ts)：`workspace-file/not-found`、`workspace-file/outside-workspace`（目录列举、监听或任何修改）、`workspace-file/watch-unsupported`（监听初始化失败）、`workspace-file/too-large`（带 `limit`，即适用的页、窗口、完整文件或写入上限）、`workspace-file/not-text`、`workspace-file/not-regular-file`（`kind` 为 `directory`、`symlink` 或 `other`）、`workspace-file/not-directory`（`kind` 为 `file`、`symlink` 或 `other`）、`workspace-file/already-exists`、`workspace-file/stale-version`、`workspace-file/parent-missing`、`workspace-file/symlink-refused`、`workspace-file/denied`（`reason` 为 `permission` 或 `sandbox`）以及 `workspace-file/write-failed`。调用方按代码分支，绝不按消息文本。
 
 ### Client 文件资源
 

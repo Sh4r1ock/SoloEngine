@@ -359,6 +359,17 @@ export interface HostConnectionHandle {
   setAccountScope(scope: ConnectionAccountScope | undefined): () => void
 
   /**
+   * Read the product account bound to a Peer's browser connection.
+   *
+   * Products that scope non-Session reads (canvases, instance composition) to
+   * the signed-in account need the account identity of the admitted request.
+   * @param peer - Peer the request speaks for.
+   * @returns the bound account id; undefined without an account scope, for an
+   * API operator Peer, or before the browser signs in.
+   */
+  accountIdOf(peer: PeerScope): string | undefined
+
+  /**
    * Answer whether the Peer may access every Session identity named by an RPC
    * payload. Payload argument objects are searched for Session identities; a
    * payload naming none is always allowed. Without an account scope every call

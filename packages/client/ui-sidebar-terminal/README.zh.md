@@ -1,5 +1,5 @@
 ---
-description: "在 Web 右侧栏打开、恢复和控制交互式 shell 标签页。"
+description: "Web 右侧 Sidebar 的行式 agent 终端 tab：挂到本会话的平台终端，读取有界 scrollback，一次发送一行，并在刷新后恢复所接的终端。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-从右侧栏开始页选择已安装的 shell，在 Session 当前工作目录运行命令。在标签页上重命名终端，并在刷新页面后恢复保留的进程。折叠侧栏让命令继续运行，关闭终端标签页则请求结束进程。Tab 补全使用 shell 的配置。命令使用执行环境中系统用户的权限，独立于 Agent 权限；详见[用户终端执行](../../api/terminal-controller/README.zh.md#use-this-package)。
+在右侧 Sidebar 打开终端 tab，接续当前会话的 agent 终端。面板挂到终端工具所操作的那批平台 PTY 会话，显示其有界 scrollback，一次发送一行；归属是本会话的，因此一个会话永远够不到另一个会话的终端。契约为行式，全屏 TUI 程序不在此呈现。页面刷新后标签页恢复到同一条终端；Host 重启后面板回放会话日志已持久的部分，并把新终端标注为新代际。
 
 ## 目录
 
@@ -25,45 +25,41 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-命令 `terminal.new` 在焦点停靠分栏创建独立终端，替换开始页并保留已有内容页。从聊天区或浮动内容页触发时，使用活动停靠分栏。开始页卡片右侧对齐显示当前有效快捷键的无背景文字，不额外弹出重复提示。Windows 和 macOS Web 使用[快捷键服务的平台默认值](../shortcuts/README.zh.md)；Linux Web 默认不绑定此命令。
+命令 `terminal.new` 在焦点停靠分栏打开一个终端 tab，替换开始页并保留已有内容页。Windows 与 macOS Web 使用[快捷键服务的平台默认值](../shortcuts/README.zh.md)；Linux Web 默认不绑定该命令。开始页卡片把当前有效快捷键以无边框文本右对齐，不再重复一个 tooltip。
 
-展开右侧栏，点击**新建终端**即可直接打开上次选择且仍可用的 shell。标题旁的独立箭头展开已安装 shell 菜单；选择后立即记住该项并打开终端。菜单展开时才查询 shell，不分配终端进程；查询失败可在菜单内重试。通过**新标签页**回到开始页并打开更多终端。
+不带 `terminalId` 打开的 tab 先恢复刷新前所接的那条终端，其次复用本会话第一个 agent 终端；会话还没有终端时创建一条。带 `{ terminalId }` 打开的 tab 挂到那一条确切终端，包括终端工具创建的终端。chip 条列出本会话的终端，**新建终端**再创建一条。注册表已不再持有的终端显示本地化的「终端已不存在」一行，而不是传输层消息。
 
-双击终端标签标题可重命名。其他页面持有输入权时，点击 **接管输入** 使当前连接可写。暂时断线时保留屏幕并提供 **重新连接**，不展示传输内部错误。已退出的 shell 仍显示退出码并提供 **新建终端**，不会自动重启。已退出的终端仍计入 Session 配额；达到上限时请关闭不用的标签。
+终端 tab 可见且进程在运行时，面板轮询当前终端的 scrollback；tab 隐藏时暂停，进程退出即停止（注册表报告时显示退出码）。回车或**发送**写入输入行；**中断**向前台命令投递 `SIGINT`。关闭 tab 不会杀掉终端，因为 agent 可能仍在使用它；只丢弃该 tab 的恢复记录。
 
-关闭或替换终端标签页会立即移除标签页，并在后台结束进程。清理失败没有通知或手动重试操作；已保存的未完成关闭请求会在 Client 插件启动时重试。折叠、切换标签页或 Session、浮动和全屏都保留进程。
-
-刷新后，[侧栏恢复布局](../../client/ui-sidebar-right/README.zh.md#state)，各终端在原标签页中重连保存的 Host 身份。折叠和非当前标签不会产生重复的恢复标签，也不改变选中项。保存布局之外的 Host 终端不会自动打开，也没有 UI 恢复入口；它们仍由 controller 的无人持有空闲回收及 Session/Host 卸载清理管理。保存的进程已消失时，显示本地化的不可用提示和 **新建终端**。点击后在原位置用全新终端替换失效标签；恢复过程不会自动创建替代进程。
-
-终端背景、默认文字、光标和选区跟随 DSH 主题，包括系统偏好和主题令牌覆盖。切换主题会保留运行中的 shell、输出和应用通过 OSC 设置的颜色。颜色重置命令恢复到当前 DSH 默认值。屏幕使用设置中的终端字号，并把设置中的终端字体排在内置等宽字体栈之前；修改任一项都会保留 shell 与输出，可见且可写的屏幕会按新的单元格尺寸重新适配 Host 网格。xterm 将文字对比度调整到 4.5:1；光标与所在单元格背景保持至少 3:1 的对比度，包括 Vim 配色方案。
+Host 重启后终端进程不在了，但有界输出还在：`terminal_send` 把每次前台视口作为工具结果的呈现元数据发布，会话日志将其持久化。面板把这段已持久输出显示在实时屏幕上方，并把新建的终端标注为新代际。
 
 <a id="understand-the-implementation"></a>
 ## 了解实现
 
 <details>
-<summary>实现细节</summary>
+<summary>实现内部——点击展开</summary>
 
-插件向右侧栏注册 `terminal` 类型及正文和标题 seat。开始页入口复用插件页面的蓝色终端图标，页签标题使用线条图标。无 React 依赖的终端模型属于 `api-terminal-controller`，通过框架 keyed hooks 暴露状态。`ui-primitives` 的 Menu 与 Button 提供 shell 选择和启动控件，支持键盘导航与选中标记。正文在 terminal 视图挂载时加载包内 `client.terminal.js` chunk，使 xterm.js 与 FitAddon 不进入启动 `client.js`；加载后由它们负责屏幕渲染和视口测量。正文在面板高度内为页签条下方预留 8px 间距。输入原样传到 PTY，包括 Tab 和控制字符。
+插件向右侧 Sidebar 注册 `terminal` 类型、开始页卡片、`sidebar.right.pane.tab` 下以 key 定位的正文，以及静态 chip 标题。正文收到绑定到该 tab 会话的注入面：`list`、`spawn`、`read`、`send`、`interrupt` 调用 [`api-terminal-controller`](../../api/terminal-controller/README.zh.md#agent-terminals) 上 `remote.terminal` 的 agent 终端方法（`agentTerminals`、`agentSpawn`、`agentRead`、`agentSend`、`agentSignal`）；`persisted` 经 `ctx.sessions` 读取同一会话已加载的事件窗口，在不发起 Host 调用的情况下重建其工具结果视口。
 
-终端 controller 独立保存每个全局唯一内容身份与 Host 的关联，并负责内容恢复；侧栏负责布局持久化。恢复视图不能分配替代进程。侧栏关闭 handler 通过[终端 controller](../../api/terminal-controller/README.zh.md#understand-the-implementation)安排清理并同步返回。浏览器组件清理和 tab 的 abort signal 只停止浏览器工作。
+终端注册表（`ctx.terminals`）是终端会话的唯一事实源，因此面板显示的就是终端工具使用的那一套；归属由 Host 侧注册表判定，而不是浏览器。分页按最新优先、有界行数请求，面板只保留一页而不是不断增长的缓冲。tab 记录的中止信号是每次调用的生命周期；记录对象重建不会重启打开副作用，因为信号通过 ref 读取。
 
-插件启动时，侧栏完整打开标签清单中的 terminal 条目会持有相匹配的已保存 Host 身份，包括非当前 Session。窗口持有关系独立于 React 挂载和屏幕订阅。删除最后一个匹配的 occurrence 会释放持有关系；折叠或切换视图不会释放。[终端控制器](../../api/terminal-controller/README.zh.md#use-this-package) 负责无人持有时的空闲回收和长命令保护。
+Sidebar 持久化 tab 记录但不保留导航参数，因此由 tab 自己的恢复记录（`tab → terminalId`，按浏览器 profile 有界）承载刷新前后的绑定。关闭 tab 时经 Sidebar 的关闭处理注销该记录；终端本身保持不动。
 
 </details>
 
 <a id="further-exploration"></a>
 ## 延伸阅读
 
-- [Subprocess](../../subprocess/subprocess/README.zh.md)
-- [Right Sidebar](../../client/ui-sidebar-right/README.zh.md)
-- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.zh.md)
+- [终端控制器](../../api/terminal-controller/README.zh.md)
+- [终端注册表](../../terminal/terminal/README.zh.md)
+- [右侧 Sidebar](../../client/ui-sidebar-right/README.zh.md)
 
 <a id="model-experience"></a>
 ## 模型体验
 
-无；此包只处理用户交互式终端，不向模型请求添加内容。
+无，因为本包只处理用户侧的终端交互，不增加模型输入。
 
-#### KV 缓存影响
+#### KV Cache 影响
 
 无；终端输出只在浏览器与 Host 之间传输。
 
@@ -71,17 +67,16 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 默认 shell 或原生 PTY 可能启动失败。标签页显示错误，不启动其他 shell。
-- 补全菜单和内联建议取决于 shell 配置，Web UI 不提供独立补全引擎。
-- 应用的 OSC 颜色覆盖由已挂载的渲染器保留；新打开的渲染器无法从 Host 屏幕快照恢复这些颜色。
-- 终端历史有上限。此功能不向 Agent 发送终端输出，不在单个标签页内拆分终端，也不在 Host 重启后恢复进程。
-- Terminal chunk 加载失败后需要刷新页面，因为 React 会在页面生命周期内缓存被拒绝的 lazy import。
+- **只有行式契约。**全屏 TUI 程序不呈现，面板显示注册表保留的行。
+- **只有一页 scrollback。**超出请求页的更早保留输出尚未分页接入。
+- **没有重命名与 resize。**终端沿用创建者给的名字，面板不调整 PTY 尺寸。
+- **历史有界。**不把终端输出送给 Agent，也不在 Host 重启后恢复进程；只回放会话日志仍通过工具结果持有的有界输出。
 
 <a id="dev-note"></a>
 ### 开发备注
 
 <details>
-<summary>维护说明</summary>
+<summary>维护者工作上下文——点击展开</summary>
 
 无。
 

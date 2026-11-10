@@ -271,9 +271,22 @@
           workspace-write:
             sandbox: workspace-write
             approval: ask
+          # Fourth preset (PRD-10 FR-SEC-003/006): the rule-gated admission
+          # gate lives in the native permission implementation body. Empty
+          # rules approve nothing, so the preset ships identical to
+          # workspace-write until an operator names tools and command prefixes.
+          approve-for-me:
+            sandbox: workspace-write
+            approval: ask
+            name: 白名单（Approve for me）
+            description: 沙箱提权先经确定性规则判定，未命中即回到原生审批；无应答者时 fail-closed
           danger-full-access:
             sandbox: danger-full-access
             approval: never
+        approveForMe:
+          tools: []
+          commandPrefixes: []
+          review: false
 
     - id: shell-env
       name: '@deepseek-ai/dsh-shell-env'

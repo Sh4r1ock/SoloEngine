@@ -551,6 +551,12 @@ export interface GenerateOptions {
   temperature?: number
   maxTokens?: number
   /**
+   * Provider-specific sampling fields merged into the wire request by adapters
+   * that support them (e.g. OpenAI-compatible `top_p`, `frequency_penalty`,
+   * `presence_penalty`). Adapters that cannot express a field ignore it.
+   */
+  samplingParams?: Record<string, unknown>
+  /**
    * Stop sequences: generation halts as soon as the model produces any one of
    * these strings (adapters map to the provider's stop field, e.g. OpenAI
    * `stop`). The stop string itself is not included in the output.

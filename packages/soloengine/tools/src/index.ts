@@ -139,13 +139,26 @@ export function apply(ctx: Context): void {
       const scope = scopeOf(agent.ctx)
       const visible = ctx.tools.schemas(scope).map(schema => schema.name).sort()
       const session = agent.session
-      const parentSession = session.header.parentSession
+      // 会话树深度按真实父链向上走：固定「有父 = 1」在孙级会话上会报错。
+      const sessions = ctx.get('sessions') as {
+        get?: (id: string) => { header: { parentSession?: string } } | undefined
+      } | undefined
+      const visited = new Set<string>()
+      let depth = 0
+      let cursor = session.header.parentSession === undefined ? undefined : String(session.header.parentSession)
+      while (cursor !== undefined && !visited.has(cursor)) {
+        visited.add(cursor)
+        depth += 1
+        cursor = sessions?.get?.(cursor)?.header.parentSession
+      }
+      const providers = ctx.llm.listProviders()
+      const provider = agent.options.provider ?? ''
       const value: DiagnosticsValue = {
         agent: {
           id: String(session.id),
-          parentId: parentSession === undefined ? '' : String(parentSession),
+          parentId: session.header.parentSession === undefined ? '' : String(session.header.parentSession),
           cwd: session.header.cwd ?? '',
-          depth: parentSession === undefined ? 0 : 1,
+          depth,
         },
         model: {
           provider: agent.options.provider ?? '(unset)',
@@ -164,8 +177,9 @@ export function apply(ctx: Context): void {
           names: visible,
         },
         route: {
-          registered: visible.length > 0,
-          providerCount: ctx.llm.listProviders().length,
+          // 「已注册」= 该 agent 正在用的 provider 出现在 LLM 路由表里；不能用「有可见工具」冒充。
+          registered: providers.some(entry => entry.id === provider),
+          providerCount: providers.length,
         },
       }
       return Promise.resolve(value)

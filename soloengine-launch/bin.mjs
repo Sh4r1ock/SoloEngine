@@ -34,8 +34,10 @@ const ROOT = resolve(HERE, '..')
 const PORT = Number(process.env.SOLOENGINE_PORT ?? 8991)
 /** 监听主机（dsh 拒绝 0.0.0.0）。 */
 const HOST = process.env.SOLOENGINE_HOST ?? '127.0.0.1'
-/** dsh home。 */
-const DSH_HOME = join(ROOT, 'data', 'dsh-home')
+/** dsh home（多节点/并行实例可用 `SOLOENGINE_DSH_HOME` 指向独立目录）。 */
+const DSH_HOME = process.env.SOLOENGINE_DSH_HOME === undefined || process.env.SOLOENGINE_DSH_HOME === ''
+  ? join(ROOT, 'data', 'dsh-home')
+  : resolve(process.env.SOLOENGINE_DSH_HOME)
 /** profile 名。 */
 const PROFILE = 'soloengine'
 /** profile 目录。 */
@@ -46,6 +48,71 @@ const DB_PATH = join(ROOT, 'data', 'database', 'soloengine.db')
 const KEYS_DIR = join(ROOT, 'data', 'home', 'keys')
 /** 框架层技能目录（技能发现的自定义根）。 */
 const SKILLS_DIR = join(ROOT, 'data', 'skills')
+
+/**
+ * 数据库形态：`single`（单机 SQLite，缺省）或 `cloud`（云 PostgreSQL）。二选一，不做运行时切换。
+ *
+ * 形态是启动配置，不是插件开关：它决定叠加哪一份形态覆盖（`cordis.form-*.patch.yml`），
+ * 也决定管理层业务库走哪个引擎。非法取值立即失败，不猜默认。
+ */
+const DB_FORM = (process.env.SOLOENGINE_DB_FORM ?? 'single').trim()
+if (DB_FORM !== 'single' && DB_FORM !== 'cloud') {
+  throw new Error(`SOLOENGINE_DB_FORM must be "single" or "cloud", got "${DB_FORM}"`)
+}
+/** 云形态的 PostgreSQL 连接串（单机形态必须留空，避免把数据写进错误的介质）。 */
+const DATABASE_URL = (process.env.SOLOENGINE_DATABASE_URL ?? '').trim()
+if (DB_FORM === 'cloud' && DATABASE_URL === '') {
+  throw new Error('SOLOENGINE_DB_FORM=cloud requires SOLOENGINE_DATABASE_URL')
+}
+if (DB_FORM === 'single' && DATABASE_URL !== '') {
+  throw new Error('SOLOENGINE_DB_FORM=single conflicts with SOLOENGINE_DATABASE_URL; unset the connection string or switch to cloud')
+}
+/** 当前形态的插件覆盖文件（键值后端 / 会话日志 / 会话检索三件同进同退）。 */
+const FORM_PATCH_PATH = join(ROOT, 'packages', 'soloengine', 'host', `cordis.form-${DB_FORM}.patch.yml`)
+
+/**
+ * 执行后端形态：`local`（缺省，本机进程）、`container`（每会话一容器）、`microvm`
+ * （同一容器装配，OCI 运行时提供独立内核隔离）、`full-vm`（每会话一台 QEMU 全 VM）。
+ * 后三档仅云形态。
+ *
+ * 与数据库形态同属启动配置：决定是否叠加执行后端覆盖（把本机子进程提供方换成按会话
+ * 路由到容器的提供方）。容器镜像由 `SOLOENGINE_CONTAINER_IMAGE` 给出（部署值）；
+ * C 档的 OCI 运行时由 `SOLOENGINE_CONTAINER_RUNTIME` 给出（缺省 `kata-runtime`）；
+ * D 档的基础镜像 / 状态目录 / 私钥由 `SOLOENGINE_VM_IMAGE` / `SOLOENGINE_VM_STATE_DIR` /
+ * `SOLOENGINE_VM_SSH_KEY` 给出。
+ */
+const EXECUTORS = ['local', 'container', 'microvm', 'full-vm']
+const EXECUTOR = (process.env.SOLOENGINE_EXECUTOR ?? 'local').trim()
+if (!EXECUTORS.includes(EXECUTOR)) {
+  throw new Error(`SOLOENGINE_EXECUTOR must be one of ${EXECUTORS.join(', ')}, got "${EXECUTOR}"`)
+}
+if (EXECUTOR !== 'local' && DB_FORM !== 'cloud') {
+  throw new Error(`SOLOENGINE_EXECUTOR=${EXECUTOR} requires SOLOENGINE_DB_FORM=cloud`)
+}
+/** C 档的 OCI 运行时（容器档为空 = Docker 默认运行时）。 */
+const CONTAINER_RUNTIME = (
+  process.env.SOLOENGINE_CONTAINER_RUNTIME
+  ?? (EXECUTOR === 'microvm' ? 'kata-runtime' : '')
+).trim()
+if (EXECUTOR === 'microvm' && CONTAINER_RUNTIME === '') {
+  throw new Error('SOLOENGINE_CONTAINER_RUNTIME is required when SOLOENGINE_EXECUTOR=microvm')
+}
+/** D 档的部署值：基础镜像、每会话状态目录与平台私钥（缺一即启动失败）。 */
+const VM_IMAGE = (process.env.SOLOENGINE_VM_IMAGE ?? '').trim()
+const VM_STATE_DIR = (process.env.SOLOENGINE_VM_STATE_DIR ?? '').trim()
+const VM_SSH_KEY = (process.env.SOLOENGINE_VM_SSH_KEY ?? '').trim()
+const VM_ACCEL = (process.env.SOLOENGINE_VM_ACCEL ?? '').trim()
+if (EXECUTOR === 'full-vm') {
+  if (VM_IMAGE === '') throw new Error('SOLOENGINE_VM_IMAGE is required when SOLOENGINE_EXECUTOR=full-vm')
+  if (VM_STATE_DIR === '') throw new Error('SOLOENGINE_VM_STATE_DIR is required when SOLOENGINE_EXECUTOR=full-vm')
+  if (VM_SSH_KEY === '') throw new Error('SOLOENGINE_VM_SSH_KEY is required when SOLOENGINE_EXECUTOR=full-vm')
+  if (VM_ACCEL !== '' && VM_ACCEL !== 'kvm' && VM_ACCEL !== 'tcg') {
+    throw new Error(`SOLOENGINE_VM_ACCEL must be "kvm" or "tcg", got "${VM_ACCEL}"`)
+  }
+}
+/** 当前执行后端的插件覆盖文件（C 档与容器档共用容器装配；D 档用全 VM 装配）。 */
+const EXECUTOR_OVERLAY = EXECUTOR === 'local' ? 'local' : EXECUTOR === 'full-vm' ? 'vm' : 'container'
+const EXECUTOR_PATCH_PATH = join(ROOT, 'packages', 'soloengine', 'host', `cordis.executor-${EXECUTOR_OVERLAY}.patch.yml`)
 /** 启动日志（只承载**当前这一轮**实例的 stdout/stderr，见 `rotateHostLog`）。 */
 const LOG_DIR = join(ROOT, 'test', 'logs')
 const LOG_PATH = join(LOG_DIR, 'soloengine-host.log')
@@ -79,32 +146,96 @@ function readTemplateFile(name) {
   return readFileSync(templatePath, 'utf8')
 }
 
-/** 第三方插件依赖（profile 根配置每次重写，故在此声明；缺失即启动前自检报出具体项）。 */
-const PLUGIN_DEPENDENCIES = {
-  '@anionex/dsh-turn-rewind': '0.3.8',
-  'dsh-permission-rules': '0.7.4',
-  'dsh-approve-for-me': '0.2.4',
+/**
+ * 插件清单唯一真源（`profiles-templates/plugins.json`）：第三方依赖版本与工作区包链接。
+ * 启动器、`soloengine-vendor/refresh.mjs` 与文档计数共读这一份；缺失/畸形即启动前报错。
+ */
+function readPluginManifest() {
+  const path = join(TEMPLATE_DIR, 'plugins.json')
+  if (!existsSync(path)) fail(`plugin manifest ${path} does not exist`)
+  let parsed
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    fail(`plugin manifest ${path} is not valid JSON: ${String(error)}`)
+  }
+  const dependencies = parsed?.dependencies
+  if (dependencies === null || typeof dependencies !== 'object' || Array.isArray(dependencies)
+    || Object.keys(dependencies).length === 0) {
+    fail(`plugin manifest ${path} declares no dependencies`)
+  }
+  for (const [name, version] of Object.entries(dependencies)) {
+    if (typeof name !== 'string' || name === '' || typeof version !== 'string' || version === '') {
+      fail(`plugin manifest ${path} carries a malformed dependency entry`)
+    }
+  }
+  const links = parsed?.links
+  if (!Array.isArray(links) || links.length === 0) fail(`plugin manifest ${path} declares no workspace links`)
+  const normalized = links.map(entry => {
+    if (typeof entry?.name !== 'string' || entry.name === ''
+      || typeof entry?.path !== 'string' || entry.path === '') {
+      fail(`plugin manifest ${path} carries a malformed link entry`)
+    }
+    return [entry.name, join(ROOT, entry.path)]
+  })
+  return { dependencies, links: normalized }
 }
 
-/** 以工作区包为源、在 profile 的 node_modules 里建立 junction 链接。 */
-const PROFILE_LINKS = [
-  ['@soloengine/host', join(ROOT, 'packages', 'soloengine', 'host')],
-  ['@soloengine/framework', join(ROOT, 'soloengine-framework')],
-  ['@soloengine/llm-db-adapter', join(ROOT, 'packages', 'soloengine', 'llm-db-adapter')],
-  ['@soloengine/tools', join(ROOT, 'packages', 'soloengine', 'tools')],
-  ['@soloengine/open-preview', join(ROOT, 'packages', 'soloengine', 'open-preview')],
-  ['@soloengine/types', join(ROOT, 'packages', 'soloengine', 'types')],
-  ['@soloengine/ui-theme', join(ROOT, 'packages', 'soloengine', 'ui-theme')],
-  ['@soloengine/ui-brand', join(ROOT, 'packages', 'soloengine', 'ui-brand')],
-  ['@soloengine/ui-conversation', join(ROOT, 'packages', 'soloengine', 'ui-conversation')],
-  ['@soloengine/client-bootstrap', join(ROOT, 'packages', 'soloengine', 'client-bootstrap')],
-  ['@soloengine/terminal-bridge', join(ROOT, 'packages', 'soloengine', 'terminal-bridge')],
-  ['@soloengine/browser-proxy', join(ROOT, 'packages', 'soloengine', 'browser-proxy')],
-  ['@soloengine/ui-terminal-owner', join(ROOT, 'packages', 'soloengine', 'ui-terminal-owner')],
-  ['@soloengine/ui-sidebar-files', join(ROOT, 'packages', 'soloengine', 'ui-sidebar-files')],
-  ['@soloengine/ui-document-editor', join(ROOT, 'packages', 'soloengine', 'ui-document-editor')],
-  ['@soloengine/ui-operation-area', join(ROOT, 'packages', 'soloengine', 'ui-operation-area')],
-]
+const PLUGIN_MANIFEST = readPluginManifest()
+
+/** 第三方插件依赖（profile 根配置每次重写，故在插件清单里声明）。 */
+const PLUGIN_DEPENDENCIES = PLUGIN_MANIFEST.dependencies
+
+/**
+ * 精确版本豁免（`<profile>/compatibility.json`）：插件清单的兼容区间未覆盖当前 DSH 版本，
+ * 但该版本的功能与接口已按本产品组合实测。只对列出的精确版本生效，升级插件或 DSH 即失效。
+ */
+const PLUGIN_VERSION_EXEMPTIONS = []
+
+/** 当前 DSH 运行时版本（app-boot 的版本即平台判定的运行时版本）。 */
+function dshRuntimeVersion() {
+  const manifest = join(ROOT, 'packages', 'boot', 'app-boot', 'package.json')
+  const version = JSON.parse(readFileSync(manifest, 'utf8'))?.version
+  if (typeof version !== 'string' || version.trim() === '') fail(`${manifest} declares no version`)
+  return version.trim()
+}
+
+/** 写入当前运行时所需的精确版本豁免（幂等；只增不减，撤销走平台 CLI）。 */
+function ensureVersionExemptions() {
+  if (PLUGIN_VERSION_EXEMPTIONS.length === 0) return
+  const runtime = dshRuntimeVersion()
+  const file = join(PROFILE_DIR, 'compatibility.json')
+  let exemptions = {}
+  if (existsSync(file)) {
+    try {
+      exemptions = JSON.parse(readFileSync(file, 'utf8'))
+    } catch (error) {
+      fail(`${file} is not valid JSON; repair it before exemptions can be written (${String(error)})`)
+    }
+  }
+  let changed = false
+  for (const entry of PLUGIN_VERSION_EXEMPTIONS) {
+    const versions = Array.isArray(exemptions[entry.packageVersion]) ? exemptions[entry.packageVersion] : []
+    if (versions.includes(runtime)) continue
+    exemptions[entry.packageVersion] = [...versions, runtime]
+    changed = true
+    log(`granted exact-version exemption ${entry.packageVersion} on dsh ${runtime}: ${entry.reason}`)
+  }
+  if (changed) writeFileSync(file, `${JSON.stringify(exemptions, undefined, 2)}\n`, { mode: 0o600 })
+}
+
+/** 以工作区包为源、在 profile 的 node_modules 里建立 junction 链接（清单来自 plugins.json）。 */
+const PROFILE_LINKS = PLUGIN_MANIFEST.links
+
+/** 读 profile 内已安装插件版本；未安装或清单不可读时为 undefined。 */
+function installedPluginVersion(packageName) {
+  try {
+    const version = JSON.parse(readFileSync(join(PROFILE_DIR, 'node_modules', packageName, 'package.json'), 'utf8'))?.version
+    return typeof version === 'string' ? version : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** 打印一行诊断。 */
 function log(message) {
@@ -129,6 +260,8 @@ function childEnvironment() {
     DSH_HOME,
     SOLOENGINE_ROOT: ROOT,
     SOLOENGINE_DB: DB_PATH,
+    SOLOENGINE_DB_FORM: DB_FORM,
+    SOLOENGINE_DATABASE_URL: DATABASE_URL,
     SOLOENGINE_KEYS_DIR: KEYS_DIR,
     SOLOENGINE_SKILLS_DIR: SKILLS_DIR,
   }
@@ -311,6 +444,22 @@ function freePort(port) {
     killPid(pid)
   }
   return owners
+}
+
+/**
+ * 等端口真正释放：kill 只是投递，进程退出与句柄回收滞后；立刻 spawn 新实例会撞
+ * EADDRINUSE 后静默退出，健康检查反而命中尚未退出的旧进程。
+ * @param {number} port - 监听的端口。
+ * @param {number} timeoutMs - 最长等待。
+ * @returns {Promise<boolean>} 端口在超时内变为可绑定。
+ */
+async function waitPortFree(port, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (await portFree(port)) return true
+    await new Promise(done => setTimeout(done, 200))
+  }
+  return false
 }
 
 // ── 变更账本陈旧状态（PRD-09/PRD-11 FR-DEP-011）───────────────────────────────
@@ -535,7 +684,13 @@ function rotateHostLog() {
 /** 启动实例：先释放端口，再以 8991 启动并等待就绪行。 */
 async function start() {
   init()
-  if (!(await portFree(PORT))) freePort(PORT)
+  ensureVersionExemptions()
+  if (!(await portFree(PORT))) {
+    freePort(PORT)
+    if (!(await waitPortFree(PORT))) {
+      throw new Error(`port ${String(PORT)} is still held after killing its owner; refusing to start a second instance`)
+    }
+  }
   // 变更账本陈旧状态先行隔离：陈旧命名空间会让主干在该工作区持续 fail loud
   // （Git worktree identity changed），而它对本产品自己的台账与撤回毫无影响。
   quarantineStaleLedgerState(scanStaleLedgerState())
@@ -544,6 +699,11 @@ async function start() {
   const args = [
     '--import', 'tsx/esm', join(ROOT, 'apps', 'cli', 'src', 'bin.ts'),
     '--profile', PROFILE,
+    // 数据库形态覆盖：三件流程级插件（键值后端 / 会话日志 / 会话检索）同进同退，
+    // 与 profile 里已装的两套插件一一对应，启动时只激活这一套。
+    // 必须排在 --host/--port 之前：启动器的选项在第一个未知参数处结束，之后全部交给应用。
+    '--patch', FORM_PATCH_PATH,
+    ...EXECUTOR === 'local' ? [] : ['--patch', EXECUTOR_PATCH_PATH],
     '--host', HOST, '--port', String(PORT),
   ]
   // PRD-11 FR-DEP-002：一键部署 → 就绪 → 浏览器访问。默认由 dsh web 用**带进程令牌的
@@ -608,6 +768,7 @@ function status() {
   log(`port ${String(PORT)}: ${holder}`)
   log(`dsh home: ${DSH_HOME}`)
   log(`profile: ${PROFILE_DIR}`)
+  log(`database form: ${DB_FORM}${DB_FORM === 'cloud' ? ' (PostgreSQL)' : ' (SQLite)'}`)
   log(`database: ${DB_PATH} ${existsSync(DB_PATH) ? '(present)' : '(missing)'}`)
   log(`bundles: ${readBundlesForReport().join(', ')}`)
   if (existsSync(LOG_PATH)) {
@@ -640,13 +801,58 @@ async function doctor() {
     findings.push(`data directory is not writable: ${String(error)}`)
   }
   try {
-    const { DatabaseSync } = await import('node:sqlite')
-    mkdirSync(dirname(DB_PATH), { recursive: true })
-    const db = new DatabaseSync(DB_PATH)
-    db.exec('PRAGMA journal_mode = WAL')
-    db.close()
+    if (DB_FORM === 'single') {
+      const { DatabaseSync } = await import('node:sqlite')
+      mkdirSync(dirname(DB_PATH), { recursive: true })
+      const db = new DatabaseSync(DB_PATH)
+      db.exec('PRAGMA journal_mode = WAL')
+      db.close()
+    } else {
+      // 连接串合法性在这里先判；真正的连通性由启动时的 PostgreSQL 适配器 fail loud。
+      try {
+        new URL(DATABASE_URL)
+      } catch {
+        findings.push(`SOLOENGINE_DATABASE_URL is not a valid connection URL: ${DATABASE_URL}`)
+      }
+    }
   } catch (error) {
     findings.push(`business database is not creatable: ${String(error)}`)
+  }
+  if (!existsSync(FORM_PATCH_PATH)) {
+    findings.push(`database form overlay ${FORM_PATCH_PATH} is missing (SOLOENGINE_DB_FORM=${DB_FORM})`)
+  }
+  if (EXECUTOR !== 'local' && !existsSync(EXECUTOR_PATCH_PATH)) {
+    findings.push(`executor overlay ${EXECUTOR_PATCH_PATH} is missing (SOLOENGINE_EXECUTOR=${EXECUTOR})`)
+  }
+  if ((EXECUTOR === 'container' || EXECUTOR === 'microvm')
+    && (process.env.SOLOENGINE_CONTAINER_IMAGE ?? '').trim() === '') {
+    findings.push(`SOLOENGINE_CONTAINER_IMAGE is required when SOLOENGINE_EXECUTOR=${EXECUTOR}`)
+  }
+  if (CONTAINER_RUNTIME !== '') {
+    const dockerBin = (process.env.SOLOENGINE_DOCKER ?? 'docker').trim()
+    const runtimes = spawnSync(dockerBin, ['info', '--format', '{{json .Runtimes}}'], { encoding: 'utf8' })
+    if (runtimes.status !== 0) {
+      findings.push(`docker info failed while checking OCI runtime ${CONTAINER_RUNTIME}: ${(runtimes.stderr ?? '').trim()}`)
+    } else if (!(runtimes.stdout ?? '').includes(`"${CONTAINER_RUNTIME}"`)) {
+      findings.push(`docker runtime ${CONTAINER_RUNTIME} is not registered (SOLOENGINE_EXECUTOR=${EXECUTOR})`)
+    }
+  }
+  if (EXECUTOR === 'full-vm') {
+    if (VM_IMAGE === '') findings.push('SOLOENGINE_VM_IMAGE is required when SOLOENGINE_EXECUTOR=full-vm')
+    else if (!existsSync(VM_IMAGE)) findings.push(`VM base image ${VM_IMAGE} does not exist`)
+    if (VM_STATE_DIR === '') findings.push('SOLOENGINE_VM_STATE_DIR is required when SOLOENGINE_EXECUTOR=full-vm')
+    if (VM_SSH_KEY === '') findings.push('SOLOENGINE_VM_SSH_KEY is required when SOLOENGINE_EXECUTOR=full-vm')
+    else if (!existsSync(VM_SSH_KEY)) findings.push(`VM SSH key ${VM_SSH_KEY} does not exist`)
+    if (VM_ACCEL === 'kvm' && !existsSync('/dev/kvm')) {
+      findings.push('SOLOENGINE_VM_ACCEL=kvm requires /dev/kvm on this node')
+    }
+    const qemuBin = (process.env.SOLOENGINE_QEMU ?? 'qemu-system-x86_64').trim()
+    const qemuImgBin = (process.env.SOLOENGINE_QEMU_IMG ?? 'qemu-img').trim()
+    const sshBin = (process.env.SOLOENGINE_SSH ?? 'ssh').trim()
+    for (const [bin, flag] of [[qemuBin, '--version'], [qemuImgBin, '--version'], [sshBin, '-V']]) {
+      const probe = spawnSync(bin, [flag], { encoding: 'utf8' })
+      if (probe.status !== 0) findings.push(`${bin} is required when SOLOENGINE_EXECUTOR=full-vm`)
+    }
   }
   if (!/^127\.0\.0\.1$|^0\.0\.0\.0$/.test(HOST)) findings.push(`trust domain host ${HOST} is not a legal bind address`)
   // 通配地址：平台的 web 命令按安全设计**拒绝** `--host 0.0.0.0`（会把远程代码执行暴露到网络）。
@@ -657,16 +863,17 @@ async function doctor() {
       + ' use SOLOENGINE_HOST=127.0.0.1 — containers reach it with `docker run --network=host` (loopback is then the host loopback)',
     )
   }
-  for (const [packageName] of PROFILE_LINKS) {
-    if (!existsSync(join(ROOT, 'packages', 'soloengine', 'host', 'package.json')) && packageName === '@soloengine/host') {
-      findings.push('@soloengine/host package is missing')
+  for (const [packageName, target] of PROFILE_LINKS) {
+    // 逐条核对链接目标（不只查 @soloengine/host）：任何一条工作区包缺失，profile 装载都会在运行期才炸。
+    if (!existsSync(join(target, 'package.json'))) {
+      findings.push(`workspace link target for ${packageName} is missing: ${target} (run: node soloengine-launch/bin.mjs init)`)
     }
   }
   // 第三方插件层（改造复用的实现主干）必须已在 profile 内：缺失即报出具体项与修复命令。
   for (const [packageName, version] of Object.entries(PLUGIN_DEPENDENCIES)) {
-    const installed = join(PROFILE_DIR, 'node_modules', packageName, 'package.json')
-    if (!existsSync(installed)) {
-      findings.push(`plugin ${packageName}@${version} is not installed; run: dsh plugin --profile ${PROFILE} add ${packageName}@${version}`)
+    const installed = installedPluginVersion(packageName)
+    if (installed !== version) {
+      findings.push(`plugin ${packageName}@${version} is not installed (found ${installed ?? 'none'}); run: node soloengine-launch/bin.mjs install`)
     }
   }
   // 变更账本陈旧状态（工作树身份已变/工作树不存在/身份副本丢失/孤儿 claim）：报出具体项与修复命令。
@@ -676,7 +883,7 @@ async function doctor() {
     )
   }
   // 关键配置摘要（PRD-11 FR-DEP-011：就绪输出给出访问地址与关键配置摘要）。
-  log(`doctor: config host=${HOST} port=${String(PORT)} profile=${PROFILE} bundles=${readBundlesForReport().join(', ')}`
+  log(`doctor: config host=${HOST} port=${String(PORT)} profile=${PROFILE} form=${DB_FORM} bundles=${readBundlesForReport().join(', ')}`
     + ` dsh-home=${DSH_HOME} database=${DB_PATH} (${existsSync(DB_PATH) ? 'present' : 'missing'})`)
   if (findings.length === 0) {
     log(`doctor: all checks passed (port ${String(PORT)} ${free ? 'free' : `held by this instance: pid ${owners.join(', ')}`},`
@@ -725,24 +932,28 @@ function install() {
   run('corepack', ['pnpm', 'install', '--no-frozen-lockfile', '--ignore-scripts'])
   init()
   const missing = Object.entries(PLUGIN_DEPENDENCIES)
-    .filter(([packageName]) => !existsSync(join(PROFILE_DIR, 'node_modules', packageName, 'package.json')))
+    .filter(([packageName, version]) => installedPluginVersion(packageName) !== version)
   if (missing.length === 0) {
     log(`install: profile plugin layers already present (${Object.keys(PLUGIN_DEPENDENCIES).join(', ')})`)
     return
   }
   log(`install: installing profile plugin layers (${missing.map(([name, version]) => `${name}@${version}`).join(', ')})`
     + `; profile pin ${String(JSON.parse(readFileSync(join(PROFILE_DIR, 'package.json'), 'utf8'))?.packageManager)}`)
+  // 豁免必须先于安装写入：平台的安装路径在装完包后会立刻按兼容门判定并回滚。
+  ensureVersionExemptions()
   // 直接以 node + tsx 载入 CLI（与 start 同一入口、同一份环境）：不能经 `pnpm exec tsx`——那样
   // `--profile` 会被 pnpm 自己吃掉；不带 `childEnvironment()` 则会被平台解析到 `~/.dsh` 下的另一个 profile。
   run('node', [
     '--import', 'tsx/esm', join(ROOT, 'apps', 'cli', 'src', 'bin.ts'),
-    'plugin', '--profile', PROFILE, 'install',
+    // 插件的 pnpm 参数原样转发；版本升级会改写 profile 清单，锁文件必须允许更新。
+    'plugin', '--profile', PROFILE, 'install', '--no-frozen-lockfile',
   ], { env: childEnvironment() })
   const stillMissing = Object.entries(PLUGIN_DEPENDENCIES)
-    .filter(([packageName]) => !existsSync(join(PROFILE_DIR, 'node_modules', packageName, 'package.json')))
+    .filter(([packageName, version]) => installedPluginVersion(packageName) !== version)
   if (stillMissing.length > 0) {
     fail(`profile plugin layers are still missing after install: ${stillMissing.map(([name]) => name).join(', ')}`)
   }
+  ensureVersionExemptions()
 }
 
 // ── dispatch ─────────────────────────────────────────────────────────────────
@@ -751,7 +962,11 @@ const command = process.argv[2] ?? 'status'
 switch (command) {
   case 'init': init(); break
   case 'install': install(); break
-  case 'build': run('corepack', ['pnpm', 'run', 'build']); break
+  // 产品构建按 official 客户端档位出包：品牌名/图标走 `ui-brand-official`，
+  // 标题取 `OFFICIAL_CLIENT_BUILD_ENVIRONMENT.DSH_CLIENT_TITLE=SoloEngine`。
+  case 'build': run('corepack', ['pnpm', 'run', 'build'], {
+    env: { ...process.env, DSH_BUILD_CLIENT_PROFILE: 'official' },
+  }); break
   case 'start': await start(); break
   case 'stop': stop(); break
   case 'status': status(); break

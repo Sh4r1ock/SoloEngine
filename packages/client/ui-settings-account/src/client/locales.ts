@@ -1,5 +1,5 @@
 /** Account settings copy, owned by the account feature. */
-import { onboardingCopy, onboardingEnglishCopy } from './locales/onboarding.ts'
+import { onboardingCopy, onboardingEnglishCopy } from './contract/locales/onboarding.ts'
 
 /** English account dictionary. */
 export const en = {

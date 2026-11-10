@@ -35,7 +35,7 @@ docker build -f packaging/container/Dockerfile `
 docker run -d --name soloengine --network=host -v soloengine-data:/app/data soloengine:local
 ```
 
-镜像默认命令是 `install && start`：`install` 幂等地补齐 profile 的第三方插件层（`@anionex/dsh-turn-rewind` / `dsh-permission-rules` / `dsh-approve-for-me`）。首次用空卷启动时，Docker 会把镜像里 `/app/data` 的内容（含已装好的插件层）复制进新卷，故通常无需再联网；卷被清空重建时也只需一次网络。
+镜像默认命令是 `install && start`：`install` 幂等地补齐 profile 的第三方插件层（`@anionex/dsh-turn-rewind` / `dsh-free-search`）。首次用空卷启动时，Docker 会把镜像里 `/app/data` 的内容（含已装好的插件层）复制进新卷，故通常无需再联网；卷被清空重建时也只需一次网络。
 
 ## 四、验证与自检
 

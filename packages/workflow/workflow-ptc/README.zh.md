@@ -109,7 +109,7 @@ Host 分别跟踪待完成的启动与已接受的 Activation。取消会中止�
 - [工作流服务](../workflow/README.zh.md)——调用方拥有的运行与清理。
 - [Node PTC 运行时](../../ptc-runtime/ptc-runtime-node/README.zh.md)——文件策略、进程限制与部署选择。
 - [workflow 工具](../tool-workflow/README.zh.md)——面向模型的脚本编排。
-- [Ralph 工具](../../experimental/tool-ralph/README.zh.md)——需显式启用的固定全新 agent 迭代。
+- [Ralph 工具](../../../bat/removed-20261031/packages/experimental/tool-ralph/README.md)——需显式启用的固定全新 agent 迭代。
 - [工作流沙箱复用](../../../.agents/notes/implemented/architecture/2026-09-13-workflow-ptc-sandbox-reuse.zh.md)——执行归属与取舍。
 
 -----

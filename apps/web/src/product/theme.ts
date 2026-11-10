@@ -1,20 +1,58 @@
 /**
- * 主题应用：把偏好写进 DOM（colorScheme / data-ds-dark-theme / --dsh-content-font-size）。
- * 偏好值本身经 REST 读写（见 `preferences.ts`），此处只负责落到 DOM。
+ * 主题应用：把偏好写进 DOM（colorScheme / data-ds-dark-theme / 字号变量 / theme-color）。
+ * 偏好值本身存浏览器 localStorage（见 `preferences.ts` / `browser-preferences.ts`），此处只负责落到 DOM。
+ *
+ * DOM 写入不复用自写实现，而是复用平台的两个官方通道：
+ * - 首屏画布着色：`bootThemeInjections`（ui-theme 的宿主启动注入）产出的 `<style>` 行，
+ *   以 `head.prepend` 落盘——先于应用样式表，应用样式一旦加载即接管；
+ * - 运行期投影：`ThemePresenter`（ui-layout 的客户端呈现器），由 `apply(snapshot)` 统一写
+ *   `html[data-ds-theme-source]`、`body[data-ds-dark-theme]`、三档字号与 `meta[theme-color]`。
  */
+
+import {
+  bootThemeInjections,
+  DEFAULT_FONT_SIZES,
+  FONT_SIZE_MAX as PLATFORM_FONT_SIZE_MAX,
+  FONT_SIZE_MIN as PLATFORM_FONT_SIZE_MIN,
+} from '@deepseek-ai/dsh-client-ui-theme/src/static.ts'
+import { ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/static.ts'
+import { CONTRAST_TOKEN_OVERRIDES } from '@soloengine/ui-theme/static'
+import { readBrowserPreferences, writeBrowserPreferences } from './browser-preferences.ts'
 
 /** 主题三模式。 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 内容字号下限。 */
-export const FONT_SIZE_MIN = 12
-/** 内容字号上限。 */
-export const FONT_SIZE_MAX = 17
+/**
+ * 产品暴露的内容字号下限（需求文档 §12.1 D22：产品只暴露 12~20）。
+ * 平台机制上下限（10~22）仍由原生常量承担，这里只做产品范围内的收窄。
+ */
+export const FONT_SIZE_MIN = Math.max(12, PLATFORM_FONT_SIZE_MIN)
+/** 产品暴露的内容字号上限（同上：取原生上限与产品上限的较小者）。 */
+export const FONT_SIZE_MAX = Math.min(20, PLATFORM_FONT_SIZE_MAX)
 /** 内容字号默认值。 */
 export const FONT_SIZE_DEFAULT = 14
 
+/** 平台主题快照（`ThemePresenter.apply` 的入参契约）。 */
+type ThemeSnapshot = Parameters<ThemePresenter['apply']>[0]
+
+/** 按配色取对比度校正值（校验真源与运行面板同一份 `CONTRAST_TOKEN_OVERRIDES`）。 */
+function contrastTokens(scheme: 'light' | 'dark'): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(CONTRAST_TOKEN_OVERRIDES).map(([name, modes]) => [name, modes[scheme]]),
+  )
+}
+
+/** 产品页可选的两种内置主题（token 只含与运行面板同源的对比度校正）。 */
+const THEMES = {
+  light: { id: 'light', colorScheme: 'light', tokens: contrastTokens('light') },
+  dark: { id: 'dark', colorScheme: 'dark', tokens: contrastTokens('dark') },
+} as const
+
 let preference: ThemePreference = 'system'
 let contentFontSize = FONT_SIZE_DEFAULT
+let revision = 0
+let presenter: ThemePresenter | null = null
+let bootStyle = false
 let media: MediaQueryList | null = null
 const listeners = new Set<() => void>()
 
@@ -24,66 +62,84 @@ function systemDark(): MediaQueryList {
   return media
 }
 
-/** 把当前偏好与字号写进 DOM。 */
-function paint(): void {
-  const dark = preference === 'dark' || (preference === 'system' && systemDark().matches)
-  document.documentElement.style.colorScheme = preference === 'system' ? 'light dark' : preference
-  if (dark) document.body.setAttribute('data-ds-dark-theme', '')
-  else document.body.removeAttribute('data-ds-dark-theme')
-  // 字号变量写在 `body` 上：平台启动注入（`bootThemeInjections`）与运行期 theme-presenter 都写
-  // `document.body`，后代元素继承的是 body 的值；写在 `documentElement` 会被 body 的内联值盖住。
-  document.body.style.setProperty('--dsh-content-font-size', `${String(contentFontSize)}px`)
-  cachePreference()
+/** 偏好解析出的实际配色。 */
+function resolvedScheme(): 'light' | 'dark' {
+  if (preference === 'system') return systemDark().matches ? 'dark' : 'light'
+  return preference
+}
+
+/** 组装平台主题快照：只有内容字号可调，代码/终端字号取平台默认。 */
+function snapshot(): ThemeSnapshot {
+  const scheme = resolvedScheme()
+  revision += 1
+  return {
+    preference,
+    fontSizes: { ...DEFAULT_FONT_SIZES, text: contentFontSize },
+    fontFamilies: { text: '', code: '', terminal: '' },
+    active: THEMES[scheme],
+    themes: [THEMES.light, THEMES.dark],
+    revision,
+  }
 }
 
 /**
- * 首屏预着色缓存（R15：深色保存态加载不闪浅色）。
+ * 首屏画布着色：取官方启动注入的 `<style>` 行并前置到 head。
  *
- * 偏好的唯一真源是服务端设置（preferences.ts），但它在 `/auth/me` 之后才返回；
- * 若首屏只能按默认值渲染，深色用户每次加载都会先看到一整屏浅色再翻成深色（FOUC）。
- * 这里把**最后一次成功应用的偏好**缓存进 localStorage，仅用于下次会话的首屏预着色：
- * 服务端偏好返回后 `applyThemePreference()` 会立即覆盖它，缓存永远不参与判定真值。
+ * 前置而非追加：官方语义是"应用样式加载前的画布底色"，产品样式表一旦生效就由
+ * token 接管；追加会把 `body{background-color}` 压在产品样式之后，切主题时底色不再跟随。
  */
-const THEME_CACHE_KEY = 'soloengine.themeCache'
+function installBootStyle(): void {
+  if (bootStyle) return
+  bootStyle = true
+  const style = bootThemeInjections(preference).find(row => row.kind === 'style')
+  if (style?.kind !== 'style') return
+  const element = document.createElement('style')
+  element.dataset.soloengineBootTheme = ''
+  element.textContent = style.text
+  document.head.prepend(element)
+}
 
-/** 把当前偏好写入首屏预着色缓存（存储不可用时静默——只影响下次首屏，不影响正确性）。 */
+/** 把当前偏好与字号投影到 DOM。 */
+function present(): void {
+  presenter ??= new ThemePresenter()
+  presenter.apply(snapshot())
+  cachePreference()
+}
+
+/** 把当前偏好写入浏览器偏好存储（存储不可用时静默——只影响下次首屏，不影响正确性）。 */
 function cachePreference(): void {
   try {
-    window.localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ preference, fontSize: contentFontSize }))
+    const stored = readBrowserPreferences()
+    writeBrowserPreferences({
+      theme: { preference, fontSize: contentFontSize },
+      locale: stored?.locale ?? 'zh',
+    })
   } catch {
-    // localStorage 被禁用/已满：预着色降级为默认值，真实偏好仍由服务端承担。
+    // localStorage 被禁用/已满：本次偏好仍作用于当前页面，只是下次首屏回到默认值。
   }
 }
 
-// 模块加载即预着色：在 React 首次渲染前把缓存偏好落进 DOM，深色用户首屏即是深色。
-try {
-  const cached = JSON.parse(window.localStorage.getItem(THEME_CACHE_KEY) ?? 'null') as {
-    preference?: unknown
-    fontSize?: unknown
-  } | null
-  if (cached !== null && typeof cached === 'object') {
-    const cachedPreference = cached.preference
-    const cachedFontSize = cached.fontSize
-    applyThemePreference(
-      cachedPreference === 'light' || cachedPreference === 'dark' || cachedPreference === 'system'
-        ? cachedPreference
-        : 'system',
-      typeof cachedFontSize === 'number' && Number.isFinite(cachedFontSize) ? cachedFontSize : undefined,
-    )
-  }
-} catch {
-  // 缓存损坏：按默认（跟随系统）渲染，服务端偏好返回后纠正。
+// 模块加载即预着色：在 React 首次渲染前把存储偏好落进 DOM，深色用户首屏即是深色。
+const storedPreferences = readBrowserPreferences()
+if (storedPreferences !== null) {
+  applyThemePreference(storedPreferences.theme.preference, storedPreferences.theme.fontSize)
+} else {
+  installBootStyle()
+  present()
 }
 
 /**
  * 应用主题偏好。
  * @param value - 浅色 / 深色 / 跟随系统。
- * @param fontSize - 内容字号（12~17），省略则沿用当前值。
+ * @param fontSize - 内容字号（12~20），省略则沿用当前值。
  */
 export function applyThemePreference(value: ThemePreference, fontSize?: number): void {
+  const changed = preference !== value
   preference = value
   if (fontSize !== undefined) contentFontSize = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, Math.round(fontSize)))
-  paint()
+  installBootStyle()
+  present()
+  if (changed) for (const item of listeners) item()
 }
 
 /** 当前主题偏好。 */
@@ -91,23 +147,30 @@ export function currentThemePreference(): ThemePreference {
   return preference
 }
 
+/**
+ * 订阅偏好变化：手动切换（含公开页只落本机）与「跟随系统」下的配色变化都会通知。
+ * 多个主题控件共用这一份模块状态，避免各自持有 `useState` 导致按钮标签不同步。
+ * @param listener - 偏好变化时调用。
+ * @returns 取消订阅函数。
+ */
+export function subscribeThemePreference(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
 /** 当前内容字号。 */
 export function currentContentFontSize(): number {
   return contentFontSize
 }
 
-/** 订阅系统主题变化（仅在「跟随系统」下触发重绘与通知）。 */
-export function subscribeSystemTheme(listener: () => void): () => void {
-  listeners.add(listener)
-  const query = systemDark()
-  const onChange = (): void => {
-    if (preference !== 'system') return
-    paint()
-    for (const item of listeners) item()
-  }
-  query.addEventListener('change', onChange)
-  return () => {
-    listeners.delete(listener)
-    query.removeEventListener('change', onChange)
-  }
-}
+/**
+ * 跟随系统：OS 配色变化时重新投影并通知订阅者（原型 `app.js` 的
+ * `prefers-color-scheme` 监听）。偏好不是 `system` 时不响应。
+ */
+systemDark().addEventListener('change', () => {
+  if (preference !== 'system') return
+  present()
+  for (const item of listeners) item()
+})

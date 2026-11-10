@@ -14,6 +14,9 @@
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
+  "files": [
+    "lib/types/**/*"
+  ],
   "license": "MIT",
   "devDependencies": {
     "@deepseek-ai/dsh-session": "workspace:*",

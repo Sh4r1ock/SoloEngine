@@ -1,0 +1,348 @@
+/* 用户管理：过滤条 + 密集账号表格（行高 56）+ 受保护规则说明。 */
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+  padding-bottom: var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+/* 元素选择器（0,1,1）压过原语 `.wrap` 的 32px（0,1,0），不依赖样式注入顺序：
+   过滤条里的搜索框必须与原型 `.search .input` 同为 36px 控件（--control-md）。 */
+span.searchInput {
+  box-sizing: border-box;
+  flex: 0 1 240px;
+  min-width: 220px;
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  gap: var(--se-space-2);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.searchInput input {
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.currentAccount {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.count {
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.statusDot,
+.statusDotActive {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-label-tertiary);
+}
+
+.statusDotActive {
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-md);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.tableWrap:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.table th {
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  text-align: left;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.table td {
+  box-sizing: border-box;
+  height: 56px;
+  padding: var(--se-space-2) var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  vertical-align: middle;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: var(--se-space-4);
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: var(--se-space-4);
+  text-align: right;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table tbody tr:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.userCell {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  min-width: 0;
+}
+
+.avatar {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  border: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.avatarInk {
+  border-color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+}
+
+.userText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.userNameLine {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  min-width: 0;
+}
+
+.userName {
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.userEmail {
+  margin-top: var(--se-space-1);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 原型徽标 20px / 12/20；原语 Tag 的 11/17 低于界面字号下限。 */
+span.badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  height: 20px;
+  padding: 0 var(--se-space-2);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-xs);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 用户名行的徽标收窄到 4px（原型 `.user-cell__name .badge`），与 8px 的页头徽标区分。 */
+.userNameLine span.badge {
+  padding: 0 var(--se-space-1);
+}
+
+span.badge[data-tone='info'] {
+  border-color: color-mix(in srgb, var(--dsw-static-deepseek-500) 46%, transparent);
+}
+
+span.badge[data-tone='outline'] {
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+
+span.badge[data-tone='quiet'] {
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.badgeDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.statusCell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.assets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.time,
+.timeMono {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.timeMono {
+  font-family: var(--dsh-font-family-code-default);
+}
+
+.actionCell {
+  text-align: right;
+}
+
+.manageButton {
+  min-width: 56px;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-7) var(--se-space-5);
+  text-align: center;
+}
+
+.emptyIcon {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.emptyDesc {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.rules {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--se-space-2);
+  padding: var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.rulesIcon {
+  display: inline-flex;
+  flex: none;
+  margin-top: var(--se-space-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 原型口令弹窗为 400px 的 sm 尺寸；双类提高特异性，压过产品默认宽度（520px）。 */
+.resetDialog.resetDialog {
+  width: min(400px, 100%);
+}
+
+@media (max-width: 640px) {
+  span.searchInput {
+    flex: 1 1 100%;
+    max-width: none;
+    min-width: 180px;
+  }
+
+  .spacer {
+    display: none;
+  }
+
+  .count {
+    margin-left: auto;
+  }
+}

@@ -21,6 +21,8 @@ export interface FilePickerProps {
   fileName?: string
   /** 是否由本组件展示文件名（调用方另有更详细回显时传 false）。 */
   showName?: boolean
+  /** 允许的最大字节数；省略表示不限制（服务端仍为最终权威）。 */
+  maxBytes?: number
   /** 选中文件回调（调用方自行读取内容）。 */
   onFile: (file: File) => void
 }
@@ -45,10 +47,20 @@ function matchesAccept(file: File, accept: string | undefined): boolean {
 }
 
 /**
+ * 字节数 → 人类可读上限（整 MB 取整，其余保留一位小数）。
+ * @param bytes - 字节数。
+ * @returns 例如 `64 MB`。
+ */
+function formatLimit(bytes: number): string {
+  const mb = bytes / (1024 * 1024)
+  return `${Number.isInteger(mb) ? String(mb) : mb.toFixed(1)} MB`
+}
+
+/**
  * 渲染文件选择控件。
  * @param props - 见 {@link FilePickerProps}。
  */
-export function FilePicker({ accept, fileName = '', showName = true, onFile }: FilePickerProps) {
+export function FilePicker({ accept, fileName = '', showName = true, maxBytes, onFile }: FilePickerProps) {
   const ref = useRef<HTMLInputElement>(null)
   const [rejected, setRejected] = useState<string | null>(null)
   return (
@@ -65,10 +77,17 @@ export function FilePicker({ accept, fileName = '', showName = true, onFile }: F
           {...(accept === undefined ? {} : { accept })}
           className={css.filePickerInput ?? ''}
           onChange={(event) => {
-            const file = event.currentTarget.files?.[0]
+            const input = event.currentTarget
+            const file = input.files?.[0]
+            // 选中后清空原生值：同一文件再次选择仍会触发 change，校验/上传失败后可重试。
+            input.value = ''
             if (file === undefined) return
             if (!matchesAccept(file, accept)) {
               setRejected(t('common', 'fileTypeRejected', { accept: accept ?? '' }))
+              return
+            }
+            if (maxBytes !== undefined && file.size > maxBytes) {
+              setRejected(t('common', 'fileTooLarge', { limit: formatLimit(maxBytes) }))
               return
             }
             setRejected(null)

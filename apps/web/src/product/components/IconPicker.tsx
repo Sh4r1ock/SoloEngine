@@ -72,7 +72,14 @@ export function IconPicker({ value, onChange, disabled = false }: {
   const [placement, setPlacement] = useState<PanelPlacement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
-  const searchRef = useRef<HTMLInputElement | null>(null)
+
+  /**
+   * 面板挂载即聚焦搜索框。打开瞬间 `placement` 还是 null（面板尚未渲染），
+   * 只依赖 `open` 的 effect 在挂载前就跑了，焦点落不到搜索框。
+   */
+  const focusSearch = useCallback((node: HTMLInputElement | null): void => {
+    node?.focus()
+  }, [])
 
   /** 重新按触发块位置摆放面板（打开、滚动、视口变化都走同一处）。 */
   const reposition = useCallback((): void => {
@@ -81,10 +88,9 @@ export function IconPicker({ value, onChange, disabled = false }: {
     setPlacement(placePanel(trigger.getBoundingClientRect()))
   }, [])
 
-  // 打开时摆位并聚焦搜索框；点击面板与触发块之外或按 Esc 关闭。
+  // 打开时摆位；点击面板与触发块之外或按 Esc 关闭。
   useEffect(() => {
     if (!open) return
-    searchRef.current?.focus()
     const onPointerDown = (event: MouseEvent): void => {
       const target = event.target as Node
       if (triggerRef.current?.contains(target) === true) return
@@ -136,7 +142,7 @@ export function IconPicker({ value, onChange, disabled = false }: {
     >
       <div className={css.head}>{t('canvases', 'iconPickerTitle')}</div>
       <input
-        ref={searchRef}
+        ref={focusSearch}
         className={css.search}
         type="search"
         value={query}

@@ -12,6 +12,13 @@ import type { AuthResult, UserView } from '../types.ts'
 import css from '../styles/login.module.css'
 
 /**
+ * 产品版本：由 host 在入口文档注入 `__SOLOENGINE_VERSION__`（与 `/api/solo/health` 的
+ * `version` 同源）。未注入时脚注只显示左侧品牌行，不编造版本号。
+ */
+const PRODUCT_VERSION: string | null =
+  (globalThis as { __SOLOENGINE_VERSION__?: string }).__SOLOENGINE_VERSION__ ?? null
+
+/**
  * 渲染登录页。
  * @param props.onAuthenticated - 登录成功回调（拿到用户视图）。
  * @param props.initialError - 进入登录页前的失败原因（令牌失效等）。
@@ -75,12 +82,16 @@ export function LoginPage({ onAuthenticated, initialError = null, initialTone = 
     setBusy(true)
     setError(null)
     void (async () => {
+      // 注册成功后立刻切到登录模式：失败重试只做登录，不会再次注册撞 409 USERNAME_TAKEN。
+      let registered = false
       try {
         if (mode === 'register') {
           await request<{ ok: true; user: UserView }>('/auth/register', {
             method: 'POST',
             body: { username: username.trim(), password },
           })
+          registered = true
+          setMode('login')
         }
         const result = await request<AuthResult>('/auth/login', {
           method: 'POST',
@@ -90,7 +101,9 @@ export function LoginPage({ onAuthenticated, initialError = null, initialTone = 
         onAuthenticated(result.user)
         navigate('/canvas')
       } catch (failure) {
-        setError(authMessage(failure))
+        setError(registered
+          ? `${t('login', 'errorRegisteredLoginFailed')} — ${describeError(failure)}`
+          : authMessage(failure))
         setTone('error')
         focusOffending(failure)
       } finally {
@@ -146,7 +159,7 @@ export function LoginPage({ onAuthenticated, initialError = null, initialTone = 
         </div>
         <div className={css.brandFoot}>
           <span>{t('login', 'panelFootLeft')}</span>
-          <span>{t('login', 'panelFootRight')}</span>
+          {PRODUCT_VERSION === null ? null : <span>{t('login', 'panelVersion', { version: PRODUCT_VERSION })}</span>}
         </div>
       </aside>
 

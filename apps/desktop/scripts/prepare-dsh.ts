@@ -39,9 +39,12 @@ const APP_ROOT = resolve(import.meta.dirname, '..')
 const BUILD_PATHS = resolveDesktopTargetBuildPaths()
 const DSH_OUTPUT_ROOT = BUILD_PATHS.dsh
 const BUILD_ROOT = mkdtempSync(join(tmpdir(), 'dsh-desktop-runtime-'))
-const STORE_ROOT = join(BUILD_ROOT, 'store')
 const RUNTIME_ROOT = BUILD_PATHS.runtime
 const PNPM_BUILD_STATE = BUILD_PATHS.dshPnpm
+// 内容寻址缓存与元数据缓存按目标目录持久化：重复打包（页面上的「重新生成」）不再重新下载
+// 整套运行时；每次安装仍是全新目录 + 锁文件校验，缓存只提供已校验过的字节。
+const STORE_ROOT = join(PNPM_BUILD_STATE, 'store')
+const METADATA_CACHE = join(PNPM_BUILD_STATE, 'cache')
 const PACKAGE_SET_ROOT = BUILD_PATHS.packageSet
 const NODE = join(BUILD_PATHS.electron, process.platform === 'win32' ? 'electron.exe' : 'Electron.app/Contents/MacOS/Electron')
 const PNPM = join(RUNTIME_ROOT, 'primary-runtime', 'dependencies', 'pnpm', 'bin', 'pnpm.mjs')
@@ -83,6 +86,14 @@ function runPnpm(args: readonly string[]): Promise<void> {
       `--config.registry=${registry}`,
       `--config.store-dir=${STORE_ROOT}`,
       '--config.enable-global-virtual-store=false',
+      // 受限网络（并发连接被中间设备截断）下默认 16 路并发会让元数据请求成批 `fetch failed`
+      // （`UND_ERR_DESTROYED`）；实测 1 路对同一镜像稳定通过。运行时是一次性完整安装，
+      // 这里用时间换可重复性，配合持久化缓存后重复打包不再需要网络。
+      '--network-concurrency=1',
+      '--fetch-retries=6',
+      '--fetch-retry-maxtimeout=120000',
+      // 缓存的元数据直接使用（缺失项仍联网）：重复打包不再依赖镜像的元数据接口。
+      '--prefer-offline',
       `--config.userconfig=${userConfig}`,
       command,
       ...commandArgs,
@@ -96,8 +107,10 @@ function runPnpm(args: readonly string[]): Promise<void> {
         NPM_CONFIG_STORE_DIR: STORE_ROOT,
         NPM_CONFIG_USERCONFIG: userConfig,
         ...desktopNodeEnvironment(NODE, join(RUNTIME_ROOT, 'bin'), {}),
+        // 该镜像同时有 A/AAAA：本机 IPv6 出网不完整，pnpm 的连接池会成批失败；优先 IPv4。
+        NODE_OPTIONS: '--dns-result-order=ipv4first',
         PATH: `${join(RUNTIME_ROOT, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
-        XDG_CACHE_HOME: join(PNPM_BUILD_STATE, 'cache'),
+        XDG_CACHE_HOME: METADATA_CACHE,
         XDG_CONFIG_HOME: config,
         XDG_STATE_HOME: join(PNPM_BUILD_STATE, 'state'),
       },
@@ -111,12 +124,37 @@ function runPnpm(args: readonly string[]): Promise<void> {
   })
 }
 
+/**
+ * 有界重试一个 pnpm 网络步骤：受限/抖动网络下单个进程内的连接池可能整批失效，
+ * 重开一个 pnpm 进程（新的连接池）通常即可完成；已下载内容留在持久化 store 中。
+ * @param args - pnpm 子命令与参数。
+ * @param label - 步骤标签（日志用）。
+ * @returns 成功完成。
+ */
+async function runPnpmWithRetry(args: readonly string[], label: string): Promise<void> {
+  let last: unknown
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await runPnpm(args)
+      return
+    } catch (error) {
+      last = error
+      if (attempt === 3) break
+      process.stderr.write(`desktop runtime: ${label} attempt ${String(attempt)} failed; retrying with a fresh pnpm process\n`)
+      await new Promise((resolveDelay) => { setTimeout(resolveDelay, 5000) })
+    }
+  }
+  throw last
+}
+
 async function main(): Promise<void> {
   try {
     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:reset', async () => {
       rmSync(DSH_OUTPUT_ROOT, { recursive: true, force: true })
-      rmSync(PNPM_BUILD_STATE, { recursive: true, force: true })
+      // 只清掉本轮的命令配置与状态；内容寻址缓存与元数据缓存跨轮保留（见 STORE_ROOT 注释）。
+      for (const transient of ['config', 'state']) rmSync(join(PNPM_BUILD_STATE, transient), { recursive: true, force: true })
       mkdirSync(STORE_ROOT, { recursive: true })
+      mkdirSync(METADATA_CACHE, { recursive: true })
     })
     const release = desktopRelease()
     const patches = await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:stage-packages', async () => {
@@ -125,13 +163,15 @@ async function main(): Promise<void> {
       createRuntimeProjectMetadata(BUILD_ROOT, release)
       return prepareRuntimePatches(BUILD_ROOT, resolve(APP_ROOT, '..', '..'))
     })
-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile', () => runPnpm(['install', '--lockfile-only']))
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:lockfile',
+      () => runPnpmWithRetry(['install', '--lockfile-only'], 'runtime:lockfile'))
     verifyRuntimePatches(BUILD_ROOT, patches)
     verifyDesktopCoreLockfile(
       readFileSync(join(BUILD_ROOT, 'pnpm-lock.yaml'), 'utf8'),
       readDesktopCorePackageSet(BUILD_ROOT, release.version),
     )
-    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install', () => runPnpm(['install', '--prod', '--frozen-lockfile', '--trust-lockfile']))
+    await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:install',
+      () => runPnpmWithRetry(['install', '--prod', '--frozen-lockfile', '--trust-lockfile'], 'runtime:install'))
     const packageSet = readDesktopCorePackageSet(BUILD_ROOT, release.version)
     const targetName = resolveDesktopBuildTarget()
     const target = { platform: process.platform, arch: desktopTargetPlatform(targetName).arch }
@@ -176,8 +216,9 @@ async function main(): Promise<void> {
   } finally {
     let cleaned = false
     const cleanup = (): void => {
-      try { rmSync(BUILD_ROOT, { recursive: true, force: true }) }
-      finally { rmSync(PNPM_BUILD_STATE, { recursive: true, force: true }) }
+      try { rmSync(BUILD_ROOT, { recursive: true, force: true }) } finally {
+        for (const transient of ['config', 'state']) rmSync(join(PNPM_BUILD_STATE, transient), { recursive: true, force: true })
+      }
       cleaned = true
     }
     try { await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:cleanup', async () => cleanup()) }

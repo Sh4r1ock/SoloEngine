@@ -13,9 +13,10 @@
  * 判定（每条都以「组合结果」为准，不读源码语义）：
  * 1. **insert 行**：必须出现在「有本层」里；且必须**不出现**在「无本层」里（否则是重复注册）。
  * 2. **patch 行**：必须**同时**出现在两侧（证明它确实在覆写一条已有行，而不是插了个新行）。
- * 3. **patch 真的生效**：本层声明的 `disabled` 必须与组合结果一致；本层声明的 `config` 必须与组合
- *    结果**整体相等**（patch 是整行替换，不做深合并）。`!!js` 表达式在组合结果里已被求值，故只校验
- *    键位存在（值由表达式决定，不能字面比较）。
+ * 3. **patch 真的生效**：本层声明的 `disabled` 必须与组合结果一致（`!!js` 表达式在 dump 里保留原文、
+ *    不求值，故只校验该键仍是布尔位或表达式）；本层声明的 `config` 必须与组合结果**整体相等**
+ *    （patch 是整行替换，不做深合并）。`!!js` 表达式在组合结果里已被求值，故只校验键位存在
+ *    （值由表达式决定，不能字面比较）。
  *
  * 退出码：有任一判定不成立即 1（fail loud）。
  *
@@ -28,7 +29,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync
 import { spawnSync } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import yaml from 'js-yaml'
+import { isJsExpr, loadCordisYaml } from '../scripts/cordis-yaml.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(HERE, '..')
@@ -48,22 +49,6 @@ const WORK_HOME = join(REPO_ROOT, 'test', 'logs', 'patch-audit-home')
 const LAYER_BUNDLE = '@soloengine/host'
 const CLI_ENTRY = join(REPO_ROOT, 'apps', 'cli', 'src', 'bin.ts')
 
-/** `!!js` 表达式在解析后留下的标记（值为源码文本，无法字面比较）。 */
-const JS_MARKER = Symbol('js-expression')
-
-/**
- * 自定义 YAML 类型：把 `!!js <源码>` 收成标记对象，而不是让解析器报「未知标签」。
- *
- * 平台的组合文件里 `!!js` 是合法语法；审计脚本要能**读全**这份文件，故必须承认这个标签。
- */
-// `!!js` 是 `tag:yaml.org,2002:js` 的简写；js-yaml 的 Type 认**完整标签**，写 `'!!js'`
-// 不会被匹配（会报 unknown tag），故这里用全称。
-const jsExpressionType = new yaml.Type('tag:yaml.org,2002:js', {
-  kind: 'scalar',
-  construct: (data) => ({ [JS_MARKER]: String(data) }),
-})
-const SCHEMA = yaml.DEFAULT_SCHEMA.extend([jsExpressionType])
-
 /**
  * 读一个 profile 的 bundle 清单。
  * @returns bundle 名数组与 patchReload 取值。
@@ -78,10 +63,13 @@ function readBundlesTemplate() {
 
 /**
  * 解析本层 patch 文件，分出 insert 行与 patch 行。
+ *
+ * YAML 读取与 `!!js` 语义复用 `scripts/cordis-yaml.mjs`（与 TS 门禁同一份实现，
+ * 组合文件里的 `!!js` 是合法语法，审计必须能**读全**它而不是报未知标签）。
  * @returns `{ inserts, patches }`，各自为行对象数组。
  */
 function readLayerPatch() {
-  const parsed = yaml.load(readFileSync(LAYER_PATCH, 'utf8'), { schema: SCHEMA })
+  const parsed = loadCordisYaml(readFileSync(LAYER_PATCH, 'utf8'))
   if (!Array.isArray(parsed)) throw new Error(`${LAYER_PATCH} must be a YAML array`)
   const inserts = []
   const patches = []
@@ -117,8 +105,8 @@ function wireLinks() {
   const modules = join(WORK_HOME, 'profiles', 'node_modules')
   mkdirSync(modules, { recursive: true })
   const soloengine = ['host', 'llm-db-adapter', 'tools', 'open-preview', 'types', 'agent-compiler',
-    'ui-theme', 'ui-brand', 'ui-conversation', 'client-bootstrap', 'terminal-bridge', 'browser-proxy',
-    'ui-terminal-owner', 'ui-sidebar-files', 'ui-document-editor', 'ui-operation-area']
+    'ui-theme', 'ui-conversation', 'client-bootstrap', 'browser-proxy',
+    'ui-document-editor', 'ui-operation-area']
   for (const name of soloengine) {
     const target = name === 'agent-compiler'
       ? join(REPO_ROOT, 'packages', 'soloengine', name)
@@ -130,7 +118,7 @@ function wireLinks() {
     symlinkSync(target, link, 'junction')
   }
   const instanceModules = join(REPO_ROOT, 'data', 'dsh-home', 'profiles', 'soloengine', 'node_modules')
-  for (const name of ['@anionex/dsh-turn-rewind', 'dsh-permission-rules', 'dsh-approve-for-me']) {
+  for (const name of ['@anionex/dsh-turn-rewind']) {
     const target = join(instanceModules, name)
     if (!existsSync(target)) continue
     const link = join(modules, name)
@@ -165,7 +153,7 @@ function dumpConfig(name) {
   }
   // 平台输出可能带 UTF-8 BOM（经 shell 管道时尤其常见）；YAML 解析器会把 BOM 当正文而报
   // 「end of the stream or a document separator is expected」，故先剥掉（只剥首个字符）。
-  const rows = yaml.load(result.stdout.replace(/^\uFEFF/u, ''), { schema: SCHEMA })
+  const rows = loadCordisYaml(result.stdout.replace(/^\uFEFF/u, ''))
   if (!Array.isArray(rows)) throw new Error(`dump-config output for ${name} is not a YAML array`)
   return rows
 }
@@ -181,7 +169,7 @@ function dumpConfig(name) {
  * @returns 差异描述数组（空数组即一致）。
  */
 function compare(declared, actual, path) {
-  if (declared !== null && typeof declared === 'object' && JS_MARKER in declared) {
+  if (isJsExpr(declared)) {
     return actual === undefined ? [`${path}: 组合结果缺少该键（本层声明为 !!js 表达式）`] : []
   }
   if (Array.isArray(declared)) {
@@ -244,8 +232,15 @@ for (const row of patches) {
   }
   if (!composed.has(id)) { findings.push(`patch ${id}: 组合结果里丢掉了这条 id`); continue }
   const actual = composed.get(id)
-  if (row.disabled !== undefined && actual.disabled !== row.disabled) {
-    findings.push(`patch ${id}: disabled 期望 ${JSON.stringify(row.disabled)}，组合结果为 ${JSON.stringify(actual.disabled)}`)
+  if (row.disabled !== undefined) {
+    if (isJsExpr(row.disabled)) {
+      // `--dump-config` 保留表达式原文、不求值：源码与结果无可比性，只要求该键仍是布尔位或表达式。
+      if (typeof actual.disabled !== 'boolean' && !isJsExpr(actual.disabled)) {
+        findings.push(`patch ${id}: disabled 声明为 !!js 表达式，组合结果却是 ${JSON.stringify(actual.disabled)}`)
+      }
+    } else if (actual.disabled !== row.disabled) {
+      findings.push(`patch ${id}: disabled 期望 ${JSON.stringify(row.disabled)}，组合结果为 ${JSON.stringify(actual.disabled)}`)
+    }
   }
   if (row.config !== undefined) {
     // 整行替换语义：组合结果里该行的 config 必须与本层声明**整体相等**。

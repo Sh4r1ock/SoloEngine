@@ -10,6 +10,7 @@ import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import type {
   ConnectionRpcAttachment,
   ConnectionRpcHandler,
+  HostConnectionHandle,
 } from '@deepseek-ai/dsh-client-connection'
 import type { RemoteAccessDecision } from '@deepseek-ai/dsh-api-remote-access'
 import { callResources, eventResources } from './access.ts'
@@ -521,7 +522,27 @@ export class TypertGatewayService extends Service implements TypertGateway {
       requireInteractions(peer, endpoint)
       return this.openRemoteEvents(payload, signal, peer)
     }
-    return this.openStream({ ...remoteRequest(endpoint, payload, signal, peer), uplink, uplinkWindow }, control)
+    const request = remoteRequest(endpoint, payload, signal, peer)
+    await this.assertSessionAccess(request)
+    return this.openStream({ ...request, uplink, uplinkWindow }, control)
+  }
+
+  /**
+   * Refuse a stream whose named arguments name a Session the calling
+   * connection does not own. Connection answers the ownership question; a
+   * deployment that registers no ownership policy allows every stream.
+   * @param request - decoded stream request and the Peer it speaks for.
+   * @throws RemoteError `remote-access/denied` when the connection refuses the Session.
+   */
+  private async assertSessionAccess(request: InvokeRemoteRequest): Promise<void> {
+    const connection = this.ctx.get('connection')
+    if (connection === undefined) return
+    if (await connection.authorizeSessions(request.peer, { args: request.args })) return
+    const endpoint = endpointOf(request.namespace, request.method)
+    throw new RemoteError('remote-access/denied', `remote access: ${endpoint}: the calling connection does not own the Session this stream reads`, {
+      action: endpoint,
+      reason: 'session-not-owned',
+    })
   }
 
   private async *openRemoteEvents(
@@ -588,35 +609,58 @@ export class TypertGatewayService extends Service implements TypertGateway {
         return
       }
       if ('context' in dispatch) this.startRemoteEvent(dispatch)
-      else this.broadcastRemoteEvent(dispatch)
+      else await this.broadcastRemoteEvent(dispatch)
     }
     if (!signal.aborted) {
       throw new Error('typert gateway: forwarded Remote event source ended unexpectedly')
     }
   }
 
-  private broadcastRemoteEvent(frame: TypertRemoteEventFrame): void {
+  private async broadcastRemoteEvent(frame: TypertRemoteEventFrame): Promise<void> {
     assertRemoteEventFrame(frame)
     const wire: RemoteEventEmitFrame = {
       type: 'emit',
       event: frame.event,
       args: frame.args,
     }
-    let resolved = false
-    let resources: readonly RemoteAccessResource[] | undefined
+    const resources = eventResources(frame.resources, frame.args)
     for (const client of this.remoteEventClients.values()) {
       if (!client.answers) {
         // A non-owner receives the whole notification or nothing: its resources decide, payloads are never trimmed,
         // and a notification with invalid resources reaches no non-owner.
-        if (!resolved) {
-          resources = eventResources(frame.resources, frame.args)
-          resolved = true
-        }
         if (resources === undefined) continue
         if (this.ctx.remoteAccess.decide({ principal: client.principal, action: `event:${frame.event}`, resources }).kind === 'deny') continue
       }
+      // A connection bound to a product account sees only the Sessions that account owns.
+      if (!(await this.connectionAllows(client.peer, resources))) continue
       client.queue.push(wire)
     }
+  }
+
+  /**
+   * Ask the Connection service whether this event's Session resources belong to
+   * the Peer's bound account. Without a Connection or an account scope the
+   * native delivery behavior applies.
+   * @param peer - Peer receiving the notification.
+   * @param resources - resources the notification names.
+   * @returns whether the notification may reach this Peer.
+   */
+  private async connectionAllows(
+    peer: PeerScope,
+    resources: readonly RemoteAccessResource[] | undefined,
+  ): Promise<boolean> {
+    if (resources === undefined) return true
+    const sessionIds = resources.flatMap((resource) => {
+      // Resource kinds are merge-extensible, so the kind is compared as a string.
+      const kind: string = resource.kind
+      if (kind !== 'session') return []
+      const id: unknown = Reflect.get(resource, 'id')
+      return typeof id === 'string' ? [id] : []
+    })
+    if (sessionIds.length === 0) return true
+    const connection: HostConnectionHandle | undefined = this.ctx.get('connection')
+    if (connection === undefined) return true
+    return (await connection.authorizeSessionIds(peer, sessionIds)) !== false
   }
 
   private startRemoteEvent(source: TypertRemoteEventInvocation): void {

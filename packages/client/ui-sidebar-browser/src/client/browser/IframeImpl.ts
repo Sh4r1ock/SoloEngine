@@ -1,10 +1,11 @@
 /** Iframe navigation provider with bounded application-known history. */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { IframePresentation } from '../view/IframePresentation.ts'
-import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError, type BrowserSandboxControl } from './BrowserFrame.ts'
-import type { BrowserPageOptions } from './BrowserPage.ts'
+import type { IframeObservation, IframePresentation } from './IframePresentation.ts'
+import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError, type BrowserSandboxControl } from '../contract/BrowserFrame.ts'
+import type { BrowserPageOptions } from '../contract/BrowserPage.ts'
 import { BrowserNavigation } from './BrowserNavigation.ts'
-import type { BrowserTarget } from './url.ts'
+import type { BrowserTarget } from '../contract/url.ts'
+import type { BrowserProxyRefusal } from '../contract/proxy.ts'
 
 /** Owns iframe navigation; the view reports loads without reading cross-origin content. */
 export class IframeImpl implements BrowserFrame {
@@ -13,6 +14,7 @@ export class IframeImpl implements BrowserFrame {
   private readonly store: SnapshotStore<BrowserFrameState>
   private sandboxed = true
   private error: BrowserLoadError | undefined
+  private rejection: BrowserProxyRefusal | undefined
   private disposed = false
   private disposal: Promise<void> | undefined
 
@@ -23,12 +25,22 @@ export class IframeImpl implements BrowserFrame {
   }
 
   /**
-   * Record a controlled load or a later navigation to an unreadable address.
+   * Record a controlled load, adopting the address the frame reported.
    * @param revision - document generation whose iframe emitted load.
+   * @param observation - what the same-origin carrier read from the frame.
    */
-  handleLoaded(revision: number): void {
+  handleLoaded(revision: number, observation: IframeObservation = {}): void {
     if (this.disposed) return
-    this.navigation.frameLoaded(revision)
+    if (observation.rejection !== undefined) {
+      this.rejection = observation.rejection
+      this.error = undefined
+      this.navigation.frameLoaded(revision)
+      this.publish()
+      return
+    }
+    this.rejection = undefined
+    if (observation.address === undefined) this.navigation.frameLoaded(revision)
+    else this.navigation.observe(observation.address)
     this.publish()
   }
 
@@ -84,6 +96,7 @@ export class IframeImpl implements BrowserFrame {
   private load(request: ReturnType<BrowserNavigation['navigate']> | undefined): void {
     if (request === undefined) return
     this.error = undefined
+    this.rejection = undefined
     this.publish()
     this.presentation.show({ target: request.target, revision: request.revision, sandboxed: this.sandboxed })
   }
@@ -94,7 +107,7 @@ export class IframeImpl implements BrowserFrame {
     return { target, address: target === undefined ? 'empty' : state.navigation.status === 'unknown' ? 'unknown' : 'requested',
       loading: state.navigation.status === 'loading' && this.error === undefined,
       canGoBack: this.navigation.canGoBack, canGoForward: this.navigation.canGoForward,
-      error: this.error, sandboxEnabled: this.sandboxed }
+      error: this.error, rejection: this.rejection, sandboxEnabled: this.sandboxed }
   }
 
   private publish(): void {

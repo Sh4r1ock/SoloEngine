@@ -30,6 +30,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { structuredPatch } from 'diff'
+import type { BusinessDatabase, SqlValue } from '../db/port.ts'
 import type { FrameworkRuntime } from '../runtime.ts'
 import { gateWorkspacePath } from '../sandbox/workspace-gate.ts'
 import { FrameworkError } from './accounts.ts'
@@ -437,15 +438,26 @@ export interface RevertExecutionResult {
   restorePoint: string | null
 }
 
+/**
+ * 可见性条件：本人写入的行，或该行所属会话属于本人。
+ *
+ * 历史行可能没有 `user_id`（抓拍时未解析到归属），但 `session_id` 仍在；按会话归属兜底
+ * 既能读到自己的行，也不会把别人的文件差异暴露给所有人。
+ */
+const CHANGE_VISIBILITY = '(user_id = ? OR session_id IN (SELECT session_key FROM sessions WHERE user_id = ?))'
+
 /** 变更台账域服务。 */
 export class ChangeLedgerService {
+  private readonly db: BusinessDatabase
   /** 撤回的写回实现（由 host 侧的变更记录模块注入——写回必须经原生写入路径，见模块头注释）。 */
   private revertExecutor: ((input: RevertExecutionInput) => Promise<RevertExecutionResult>) | undefined
 
   /**
    * @param runtime - 框架层运行时（业务库直读/直写 + 运行项目沙箱根）。
    */
-  constructor(private readonly runtime: FrameworkRuntime) {}
+  constructor(private readonly runtime: FrameworkRuntime) {
+    this.db = runtime.db
+  }
 
   /**
    * 注入撤回执行器（写回经原生 `fs` 守卫 + 补发写后观测，必须由 host 侧完成）。
@@ -475,17 +487,17 @@ export class ChangeLedgerService {
    * @param content - 文本内容。
    * @returns 内容哈希（主键）。
    */
-  storeBlob(content: string): string {
+  async storeBlob(content: string): Promise<string> {
     const hash = hashOf(content)
     const bytes = Buffer.byteLength(content, 'utf8')
     if (bytes > MAX_BLOB_BYTES) {
       // 大文件：只记哈希与字节数（不静默截断内容 → 撤回时对这类记录结构化拒绝）。
-      this.runtime.db.raw.prepare(
+      await this.db.prepare(
         'INSERT OR IGNORE INTO file_content_blobs (content_hash, content, is_large_file, file_size, created_at) VALUES (?, NULL, 1, ?, ?)',
       ).run(hash, bytes, new Date().toISOString())
       return hash
     }
-    this.runtime.db.raw.prepare(
+    await this.db.prepare(
       'INSERT OR IGNORE INTO file_content_blobs (content_hash, content, is_large_file, file_size, created_at) VALUES (?, ?, 0, ?, ?)',
     ).run(hash, content, bytes, new Date().toISOString())
     return hash
@@ -496,10 +508,10 @@ export class ChangeLedgerService {
    * @param hash - 内容哈希。
    * @returns 内容；不存在或大文件未存正文时返回 `null`。
    */
-  readBlob(hash: string): string | null {
-    const row = this.runtime.db.raw.prepare(
+  async readBlob(hash: string): Promise<string | null> {
+    const row = await this.db.prepare(
       'SELECT content FROM file_content_blobs WHERE content_hash = ?',
-    ).get(hash) as { content: string | null } | undefined
+    ).get<{ content: string | null }>(hash)
     return row?.content ?? null
   }
 
@@ -513,7 +525,7 @@ export class ChangeLedgerService {
    * @param input - 记录入参。
    * @returns 新记录的视图，或 `null`（内容相同/二进制无法行级比较时仍落记录，见下）。
    */
-  record(input: ChangeRecordInput): FileChangeView | null {
+  async record(input: ChangeRecordInput): Promise<FileChangeView | null> {
     const before = input.before
     const after = input.after
     if (before === null && after === null) return null
@@ -521,14 +533,14 @@ export class ChangeLedgerService {
 
     const operation: ChangeOperation = before === null ? 'created' : after === null ? 'deleted' : 'modified'
     const binary = (before !== null && looksBinary(before)) || (after !== null && looksBinary(after))
-    const beforeHash = before === null ? null : this.storeBlob(before)
-    const afterHash = after === null ? null : this.storeBlob(after)
+    const beforeHash = before === null ? null : await this.storeBlob(before)
+    const afterHash = after === null ? null : await this.storeBlob(after)
     const diff = binary
       ? { diffData: null, linesAdded: null, linesRemoved: null, hunks: null }
       : computeDiff(before ?? '', after ?? '')
     const now = new Date().toISOString()
     const id = randomUUID()
-    this.runtime.db.raw.prepare(
+    await this.db.prepare(
       `INSERT INTO file_changes (
          id, session_id, message_id, agent_id, user_id, file_path, operation, origin, tool_call_id,
          content_type, before_content_hash, after_content_hash, diff_data, lines_added, lines_removed,
@@ -554,8 +566,8 @@ export class ChangeLedgerService {
       now,
       now,
     )
-    const row = this.runtime.db.raw.prepare('SELECT * FROM file_changes WHERE id = ?').get(id) as unknown as FileChangeRow
-    return toView(row)
+    const row = await this.db.prepare('SELECT * FROM file_changes WHERE id = ?').get<FileChangeRow>(id)
+    return toView(row as FileChangeRow)
   }
 
   // ── 查询（FR-FC-011）──────────────────────────────────────────────────────
@@ -566,9 +578,9 @@ export class ChangeLedgerService {
    * @param query - 过滤条件。
    * @returns 变更记录（按创建时间与 id 稳定排序）。
    */
-  list(userId: string, query: ChangeQuery): FileChangeView[] {
-    const clauses: string[] = ['(user_id = ? OR user_id IS NULL)']
-    const params: unknown[] = [userId]
+  async list(userId: string, query: ChangeQuery): Promise<FileChangeView[]> {
+    const clauses: string[] = [CHANGE_VISIBILITY]
+    const params: SqlValue[] = [userId, userId]
     if (query.sessionKey !== undefined && query.sessionKey !== '') {
       clauses.push('session_id = ?')
       params.push(query.sessionKey)
@@ -582,7 +594,7 @@ export class ChangeLedgerService {
       params.push(query.filePath)
     }
     const limit = Math.min(5000, Math.max(1, Math.floor(query.limit ?? 500)))
-    return this.rowsWithin(userId, clauses, params, limit).map(toView)
+    return (await this.rowsWithin(userId, clauses, params, limit)).map(toView)
   }
 
   /**
@@ -595,8 +607,8 @@ export class ChangeLedgerService {
    * @param turn - 回合序号。
    * @returns 按文件分组的净变更条目。
    */
-  turnView(userId: string, sessionKey: string, turn: number): TurnViewEntry[] {
-    const rows = this.list(userId, { sessionKey, turn, limit: 5000 })
+  async turnView(userId: string, sessionKey: string, turn: number): Promise<TurnViewEntry[]> {
+    const rows = (await this.list(userId, { sessionKey, turn, limit: 5000 }))
       .filter(row => row.origin === 'agent')
     const byFile = new Map<string, FileChangeView[]>()
     for (const row of rows) {
@@ -639,25 +651,47 @@ export class ChangeLedgerService {
    * @param query - 过滤条件。
    * @returns 统计结果。
    */
-  summary(userId: string, query: ChangeQuery): {
+  async summary(userId: string, query: ChangeQuery): Promise<{
     total: number
     byStatus: Record<string, number>
     byOperation: Record<string, number>
     linesAdded: number
     linesRemoved: number
-  } {
-    const rows = this.list(userId, { ...query, limit: 5000 })
+  }> {
+    // 在 SQL 里聚合：`list` 的 5000 行上限只用于展示，统计必须覆盖全部匹配行。
+    const clauses: string[] = [CHANGE_VISIBILITY]
+    const params: SqlValue[] = [userId, userId]
+    if (query.sessionKey !== undefined && query.sessionKey !== '') {
+      clauses.push('session_id = ?')
+      params.push(query.sessionKey)
+    }
+    if (query.turn !== undefined && Number.isFinite(query.turn)) {
+      clauses.push('message_id = ?')
+      params.push(Math.floor(query.turn))
+    }
+    if (query.filePath !== undefined && query.filePath !== '') {
+      clauses.push('file_path = ?')
+      params.push(query.filePath)
+    }
+    const rows = await this.db.prepare(
+      `SELECT status, operation, COUNT(*) AS count,
+              COALESCE(SUM(lines_added), 0) AS added, COALESCE(SUM(lines_removed), 0) AS removed
+         FROM file_changes WHERE ${clauses.join(' AND ')}
+        GROUP BY status, operation`,
+    ).all<{ status: string; operation: string; count: number; added: number; removed: number }>(...params)
     const byStatus: Record<string, number> = {}
     const byOperation: Record<string, number> = {}
+    let total = 0
     let linesAdded = 0
     let linesRemoved = 0
     for (const row of rows) {
-      byStatus[row.status] = (byStatus[row.status] ?? 0) + 1
-      byOperation[row.operation] = (byOperation[row.operation] ?? 0) + 1
-      linesAdded += row.linesAdded ?? 0
-      linesRemoved += row.linesRemoved ?? 0
+      total += Number(row.count)
+      byStatus[row.status] = (byStatus[row.status] ?? 0) + Number(row.count)
+      byOperation[row.operation] = (byOperation[row.operation] ?? 0) + Number(row.count)
+      linesAdded += Number(row.added)
+      linesRemoved += Number(row.removed)
     }
-    return { total: rows.length, byStatus, byOperation, linesAdded, linesRemoved }
+    return { total, byStatus, byOperation, linesAdded, linesRemoved }
   }
 
   // ── 审阅（FR-FC-005）──────────────────────────────────────────────────────
@@ -672,9 +706,9 @@ export class ChangeLedgerService {
    * @param input - 审阅入参。
    * @returns 被更新的记录 id 列表。
    */
-  review(input: ReviewInput): { updated: string[] } {
+  async review(input: ReviewInput): Promise<{ updated: string[] }> {
     if (input.changeId !== undefined && input.changeId !== '') {
-      const row = this.rowById(input.userId, input.changeId)
+      const row = await this.rowById(input.userId, input.changeId)
       if (row === undefined) {
         throw new FrameworkError(404, 'CHANGE_NOT_FOUND', `file change ${input.changeId} not found for this user`)
       }
@@ -685,7 +719,7 @@ export class ChangeLedgerService {
         // 空文件/二进制这类无行级差异的记录更是永远无法裁决。
         const hunks = parseHunks(row)
         if (hunks !== null) for (const hunk of hunks) hunk.status = input.status
-        this.writeHunks(row.id, hunks, input.status)
+        await this.writeHunks(row.id, hunks, input.status)
         return { updated: [row.id] }
       }
       const hunks = parseHunks(row)
@@ -701,12 +735,12 @@ export class ChangeLedgerService {
       for (const hunk of hunks) if (target.has(hunk.id)) hunk.status = input.status
       const decided = hunks.every(hunk => hunk.status !== null)
       const status: ChangeStatus = hunkStatusOf(hunks, input.status, decided)
-      this.writeHunks(row.id, hunks, status)
+      await this.writeHunks(row.id, hunks, status)
       return { updated: [row.id] }
     }
 
-    const clauses: string[] = ['(user_id = ? OR user_id IS NULL)', 'session_id = ?']
-    const params: unknown[] = [input.userId, input.sessionKey]
+    const clauses: string[] = [CHANGE_VISIBILITY, 'session_id = ?']
+    const params: SqlValue[] = [input.userId, input.userId, input.sessionKey]
     if (input.turn !== undefined && Number.isFinite(input.turn)) {
       clauses.push('message_id = ?')
       params.push(Math.floor(input.turn))
@@ -719,7 +753,7 @@ export class ChangeLedgerService {
       throw new FrameworkError(400, 'REVIEW_SCOPE_REQUIRED',
         'a turn or a file path is required: whole-turn review names the turn, per-file review names the file')
     }
-    const rows = this.rowsWithin(input.userId, clauses, params, 5000)
+    const rows = await this.rowsWithin(input.userId, clauses, params, 5000)
     if (rows.length === 0) {
       throw new FrameworkError(404, 'CHANGE_NOT_FOUND',
         `no file change matches the review scope (session=${input.sessionKey}, turn=${String(input.turn ?? '*')}, file=${input.filePath ?? '*'})`)
@@ -727,7 +761,7 @@ export class ChangeLedgerService {
     for (const row of rows) {
       const hunks = parseHunks(row)
       if (hunks !== null) for (const hunk of hunks) hunk.status = input.status
-      this.writeHunks(row.id, hunks, input.status)
+      await this.writeHunks(row.id, hunks, input.status)
     }
     return { updated: rows.map(row => row.id) }
   }
@@ -751,9 +785,9 @@ export class ChangeLedgerService {
    * @param changeIds - 指定记录集合（可选）。
    * @returns 撤回计划（还原项与跳过项）。
    */
-  revertPlan(userId: string, sessionKey: string, turn: number | null, changeIds?: readonly string[]): RevertPlan {
-    const root = this.sandboxRootOf(userId, sessionKey)
-    const rows = this.revertRows(userId, sessionKey, turn, changeIds)
+  async revertPlan(userId: string, sessionKey: string, turn: number | null, changeIds?: readonly string[]): Promise<RevertPlan> {
+    const root = await this.sandboxRootOf(userId, sessionKey)
+    const rows = await this.revertRows(userId, sessionKey, turn, changeIds)
     const restores: RevertRestore[] = []
     const skipped: RevertSkip[] = []
 
@@ -805,7 +839,7 @@ export class ChangeLedgerService {
         if (before === null) {
           targetContent = ''
         } else {
-          const blob = this.readBlob(before)
+          const blob = await this.readBlob(before)
           if (blob === null) {
             skipped.push({
               changeId: head.id, filePath, code: 'LARGE_FILE',
@@ -823,7 +857,7 @@ export class ChangeLedgerService {
           const hunks = parseHunks(row)
           let fallback = running
           if (hunks === null && row.before_content_hash !== null) {
-            const blob = this.readBlob(row.before_content_hash)
+            const blob = await this.readBlob(row.before_content_hash)
             if (blob === null) {
               missing = {
                 changeId: row.id, filePath, code: 'BLOB_MISSING',
@@ -873,16 +907,18 @@ export class ChangeLedgerService {
    * @param changeIds - 显式记录集合（给出即用它，用于「对撤回记录再撤回」）。
    * @returns 记录行（按时间升序）。
    */
-  private revertRows(
+  private async revertRows(
     userId: string,
     sessionKey: string,
     turn: number | null,
     changeIds?: readonly string[],
-  ): FileChangeRow[] {
+  ): Promise<FileChangeRow[]> {
     if (changeIds !== undefined && changeIds.length > 0) {
-      const rows = changeIds
-        .map(id => this.rowById(userId, id))
-        .filter((row): row is FileChangeRow => row !== undefined)
+      const rows: FileChangeRow[] = []
+      for (const id of changeIds) {
+        const row = await this.rowById(userId, id)
+        if (row !== undefined) rows.push(row)
+      }
       if (rows.length !== changeIds.length) {
         throw new FrameworkError(404, 'CHANGE_NOT_FOUND', 'one or more requested file changes do not exist for this user')
       }
@@ -891,8 +927,8 @@ export class ChangeLedgerService {
     if (turn === null || !Number.isFinite(turn)) {
       throw new FrameworkError(400, 'TURN_REQUIRED', 'a turn is required for a per-turn revert (or name explicit change ids)')
     }
-    return this.rowsWithin(userId, ['(user_id = ? OR user_id IS NULL)', 'session_id = ?', 'message_id = ?'],
-      [userId, sessionKey, Math.floor(turn)], 5000)
+    return (await this.rowsWithin(userId, [CHANGE_VISIBILITY, 'session_id = ?', 'message_id = ?'],
+      [userId, userId, sessionKey, Math.floor(turn)], 5000))
       .filter(row => row.origin === 'agent')
   }
 
@@ -914,12 +950,12 @@ export class ChangeLedgerService {
    * @param changeIds - 已成功还原的记录 id。
    * @returns 被标记的记录数。
    */
-  markReverted(userId: string, changeIds: readonly string[]): number {
+  async markReverted(userId: string, changeIds: readonly string[]): Promise<number> {
     let count = 0
     for (const id of changeIds) {
-      const row = this.rowById(userId, id)
+      const row = await this.rowById(userId, id)
       if (row === undefined) continue
-      this.runtime.db.raw.prepare('UPDATE file_changes SET status = ?, updated_at = ? WHERE id = ?')
+      await this.db.prepare('UPDATE file_changes SET status = ?, updated_at = ? WHERE id = ?')
         .run('reverted', new Date().toISOString(), id)
       count += 1
     }
@@ -934,15 +970,21 @@ export class ChangeLedgerService {
    * @param sessionKey - 会话键。
    * @returns 沙箱根绝对路径。
    */
-  private sandboxRootOf(userId: string, sessionKey: string): string {
-    const ledgerRow = this.runtime.runs.ledger.byKey(sessionKey)
-    if (ledgerRow === undefined || (ledgerRow.user_id !== userId && ledgerRow.user_id !== '')) {
+  private async sandboxRootOf(userId: string, sessionKey: string): Promise<string> {
+    // 分支/草稿会话没有自己的台账行：运行域按会话树根回退解析归属（与模型路由同一份）。
+    const owner = await this.runtime.runs.ownerOf(sessionKey)
+    if (owner === null || (owner !== userId && owner !== '')) {
       throw new FrameworkError(404, 'SESSION_NOT_IN_LEDGER',
         `session ${sessionKey} has no run ledger row for this user; the change ledger serves runs of this instance only`)
     }
-    const project = this.runtime.canvas.projectById(userId, ledgerRow.run_project_id)
+    const projectId = await this.runtime.runs.projectIdOf(sessionKey)
+    if (projectId === null) {
+      throw new FrameworkError(404, 'SESSION_NOT_IN_LEDGER',
+        `session ${sessionKey} has no run ledger row for this user; the change ledger serves runs of this instance only`)
+    }
+    const project = await this.runtime.canvas.projectById(userId, projectId)
     if (project === undefined) {
-      throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${ledgerRow.run_project_id} not found for this user`)
+      throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${projectId} not found for this user`)
     }
     return project.folder_path
   }
@@ -961,22 +1003,28 @@ export class ChangeLedgerService {
   }
 
   /** 取一条记录（按用户可见性）。 */
-  private rowById(userId: string, id: string): FileChangeRow | undefined {
-    return this.runtime.db.raw.prepare(
-      'SELECT * FROM file_changes WHERE id = ? AND (user_id = ? OR user_id IS NULL)',
-    ).get(id, userId) as unknown as FileChangeRow | undefined
+  private async rowById(userId: string, id: string): Promise<FileChangeRow | undefined> {
+    return await this.db.prepare(
+      `SELECT * FROM file_changes WHERE id = ? AND ${CHANGE_VISIBILITY}`,
+    ).get<FileChangeRow>(id, userId, userId)
   }
 
-  /** 条件查询原始行（可见性由 `clauses` 内的归属条件承担）。 */
-  private rowsWithin(_userId: string, clauses: readonly string[], params: readonly unknown[], limit: number): FileChangeRow[] {
-    return this.runtime.db.raw.prepare(
-      `SELECT * FROM file_changes WHERE ${clauses.join(' AND ')} ORDER BY created_at ASC, id ASC LIMIT ?`,
-    ).all(...params as never[], limit) as unknown as FileChangeRow[]
+  /**
+   * 条件查询原始行（可见性由 `clauses` 内的归属条件承担）。
+   *
+   * 取**最新** `limit` 行（倒序取再翻回时间正序）：按正序取前 N 会在超过上限时
+   * 只返回最旧的记录，变更面板就看不到最近写入。
+   */
+  private async rowsWithin(_userId: string, clauses: readonly string[], params: readonly SqlValue[], limit: number): Promise<FileChangeRow[]> {
+    const rows = await this.db.prepare(
+      `SELECT * FROM file_changes WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC, id DESC LIMIT ?`,
+    ).all<FileChangeRow>(...params, limit)
+    return rows.reverse()
   }
 
   /** 写回 hunks 与行状态。 */
-  private writeHunks(id: string, hunks: ChangeHunk[] | null, status: ChangeStatus): void {
-    this.runtime.db.raw.prepare('UPDATE file_changes SET hunks = ?, status = ?, updated_at = ? WHERE id = ?')
+  private async writeHunks(id: string, hunks: ChangeHunk[] | null, status: ChangeStatus): Promise<void> {
+    await this.db.prepare('UPDATE file_changes SET hunks = ?, status = ?, updated_at = ? WHERE id = ?')
       .run(hunks === null ? null : JSON.stringify(hunks), status, new Date().toISOString(), id)
   }
 }

@@ -1,0 +1,22 @@
+{
+  "name": "@soloengine/egress-proxy",
+  "version": "0.1.0",
+  "description": "SoloEngine 会话出口代理资产（W10.9）：代理容器内运行的 HTTP CONNECT/SOCKS5/DNS 脚本与资产定位入口。",
+  "private": true,
+  "type": "module",
+  "main": "lib/types/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/types/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "assets/server.mjs"
+  ],
+  "license": "MIT"
+}

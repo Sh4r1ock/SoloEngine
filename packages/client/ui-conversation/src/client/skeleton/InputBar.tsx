@@ -29,12 +29,12 @@ import type {} from '@deepseek-ai/dsh-goal/client'
 // api-remotes import already places it in every client program.
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerBarProps } from '../contract/slots.ts'
-import { DraftEditor } from '../input/editor/DraftEditor.tsx'
+import { DraftEditor } from '../DraftEditor.tsx'
 import {
   focusDraftEditor, installDraftFilePicker, installDraftKeymap, installDraftWheel,
   keepDraftFocus, revealDraftSelection,
-} from '../input/editor/view-binding.ts'
-import { resolveSubmitMode } from '../input/submission-policy.ts'
+} from '../view-binding.ts'
+import { resolveSubmitMode } from '../submission-policy.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { isImageMediaType } from '../service.ts'
 import { ContextMeter } from './ContextMeter.tsx'

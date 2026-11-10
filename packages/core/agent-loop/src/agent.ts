@@ -580,6 +580,7 @@ export class ReactLoopAgent implements Agent {
       : undefined
     const reasoningEffort = this.options.reasoningEffort ?? persistedReasoningEffort
     const maxTokens = this.options.maxTokens
+    const temperature = this.options.temperature
     const seedConfig = deepFreeze(structuredClone(
       this.requestHeaderLogged
         // oxlint-disable-next-line typescript/no-non-null-assertion -- the instance logged the header it now folds
@@ -588,6 +589,7 @@ export class ReactLoopAgent implements Agent {
           ...route,
           ...reasoningEffort === undefined ? {} : { reasoningEffort },
           ...maxTokens === undefined ? {} : { maxTokens },
+          ...temperature === undefined ? {} : { temperature },
         },
     ))
     const proposedConfig = await this.dispatch.waterfall(

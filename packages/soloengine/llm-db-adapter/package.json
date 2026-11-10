@@ -1,7 +1,7 @@
 {
   "name": "@soloengine/llm-db-adapter",
   "version": "0.1.0",
-  "description": "SoloEngine DB 密钥模型适配器：把 llm_configs 每行暴露为一条 soloengine-<id> 模型路由，执行时从数据库解密密钥与地址，秒级轮询发现变更并全量替换。",
+  "description": "SoloEngine 模型路由适配器：把管理层每条启用中的模型配置暴露为一条 soloengine-<id> 路由，执行时向管理层要已解密密钥与地址，秒级轮询发现变更并全量替换。",
   "private": true,
   "type": "module",
   "main": "lib/types/index.js",
@@ -23,7 +23,8 @@
     "@deepseek-ai/dsh-anonymous-user-id": "workspace:*",
     "@deepseek-ai/dsh-credentials": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
-    "@deepseek-ai/dsh-llm-deepseek": "workspace:*"
+    "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

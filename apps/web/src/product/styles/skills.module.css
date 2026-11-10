@@ -1,0 +1,473 @@
+/* 技能页：过滤条 + 分组发丝线列表（行高 44–64，禁止卡片栅格）。 */
+
+.filterBar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+  padding-bottom: var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+/* 元素选择器（0,1,1）压过原语 `.wrap` 的 32px（0,1,0），不依赖样式注入顺序。 */
+span.search {
+  flex: 1 1 240px;
+  min-width: 220px;
+  max-width: 320px;
+  /* 原生输入壳 32 高 + 上下描边 2；border-box 让 36 成为含描边的总高（原型 --control-md）。 */
+  box-sizing: border-box;
+  height: 36px;
+}
+
+/* 归属过滤（原型 .segmented）：36px 外壳 + 30px 分段，不是 24px Pill。 */
+.segmented {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 36px;
+  padding: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.segmentItem {
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 var(--se-space-3);
+  border: 0;
+  border-radius: var(--se-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--se-duration-fast) var(--se-ease-standard),
+    color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.segmentItem:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.segmentItem:focus-visible {
+  outline: 2px solid var(--se-focus-outline);
+  outline-offset: -2px;
+}
+
+.segmentActive {
+  background-color: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 0 0 0.5px var(--se-hairline);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.count {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+/* 原型 `.skill-groups`：分组之间 32（--s-6），页面级 24 留白只留在过滤条与首组之间。 */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-6);
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding-bottom: var(--se-space-2);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.groupTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: var(--se-space-3);
+  align-items: center;
+  padding: var(--se-space-3) var(--se-space-2);
+  border-bottom: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  transition: background-color var(--se-duration-fast) var(--se-ease-standard);
+}
+
+.row:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.rowInactive .glyph,
+.rowInactive .rowName,
+.rowInactive .rowDesc {
+  opacity: 0.62;
+}
+
+.rowMain {
+  min-width: 0;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.rowName {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.rowDesc {
+  margin: var(--se-space-1) 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  flex-wrap: wrap;
+  margin-top: var(--se-space-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.tagList {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--se-space-1);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--se-space-2);
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  flex: none;
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--se-space-2);
+  /* 原型 .empty 的 96px 上下留白（与画布列表页的 .emptyState 同一取值）。 */
+  padding: 96px var(--se-space-5);
+  /* 原型 .empty 继承 14px 正文；产品页面正文轴为 13px。 */
+  font-size: 14px;
+  text-align: center;
+}
+
+.emptyIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--se-space-1);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.emptyTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 500;
+}
+
+.emptyDesc {
+  max-width: 44ch;
+  margin: 0;
+  /* 原型 .empty__desc 在 44ch 内占两行（2 × 20 = 40）：产品文案更短，仍保留同一块
+     两行高度，空态总高与原型 352 对齐（96×2 + 40 + 4 + 24 + 40 + 28 + 8×3）。 */
+  min-height: calc(var(--se-space-6) + var(--se-space-2));
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* ── 两阶段导入（原型 .import-*）──────────────────────────────────────── */
+
+/* 原型用的 lg 弹窗（760px）：预览是元信息卡 + 目录树两段结构，默认宽度放不下；
+   双类提高特异性，压过产品默认宽度（520px）。 */
+.importDialog.importDialog {
+  width: min(760px, 100%);
+}
+
+.importSteps {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding-bottom: var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.importStep {
+  padding: var(--se-space-1) var(--se-space-2);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.importStepActive {
+  border-color: color-mix(in srgb, var(--dsw-static-deepseek-500) 40%, transparent);
+  background-color: color-mix(in srgb, var(--dsw-static-deepseek-500) 10%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.importPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--se-space-4);
+}
+
+.importMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-3);
+  margin: 0;
+  padding: var(--se-space-4);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-alias-bg-module-platform);
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: var(--se-space-3);
+  align-items: baseline;
+}
+
+.metaLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.metaValue {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.metaValueMono {
+  font-family: var(--dsh-font-family-code-default);
+}
+
+.importTree,
+.importRejected {
+  grid-column: 1 / -1;
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  overflow: hidden;
+}
+
+.importRejected {
+  border: 0;
+}
+
+.importTreeHead {
+  padding: var(--se-space-2) var(--se-space-3);
+  border-bottom: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.importTreeList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.importTreeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--se-space-3);
+  height: 30px;
+  padding: 0 var(--se-space-3);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.importTreeRow:first-child {
+  border-top: 0;
+}
+
+.importTreePath {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--dsh-font-family-code-default);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 预览行右侧的字节数（原型 import-tree 的 .count）：不与路径抢宽，等宽小字。 */
+.importTreeSize {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  white-space: nowrap;
+}
+
+.importRejectedNote {
+  flex: none;
+}
+
+@media (max-width: 720px) {
+  .row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .rowActions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .rowMeta {
+    gap: var(--se-space-2);
+  }
+
+  .importPreview {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  span.search {
+    flex: 1 1 180px;
+    max-width: none;
+  }
+}
+
+/* 原型 skills.html:58-60：标签过滤是原生 select（36px / 8px 圆角 / 发丝线 / 自绘箭头）。 */
+.select {
+  box-sizing: border-box;
+  width: auto;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 var(--se-space-6) 0 var(--se-space-3);
+  border: 0.5px solid var(--se-hairline);
+  border-radius: var(--se-radius-sm);
+  background-color: var(--dsw-specific-input-major);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--dsw-alias-label-secondary) 50%),
+    linear-gradient(135deg, var(--dsw-alias-label-secondary) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) calc(50% + 1px),
+    calc(100% - 11px) calc(50% + 1px);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 22px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.select:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l4);
+}

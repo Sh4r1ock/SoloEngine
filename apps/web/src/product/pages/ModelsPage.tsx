@@ -113,6 +113,20 @@ function isHttpUrl(value: string): boolean {
 }
 
 /**
+ * 行内动作失败文案：后端这两类机器码有确定出路，按产品文案呈现；其余保留「前缀 — 原因」。
+ * @param failure - 请求异常。
+ * @param fallbackKey - 本次动作的产品前缀（models 字典键）。
+ * @returns 可直接显示的失败句。
+ */
+function actionFailureText(failure: unknown, fallbackKey: string): string {
+  if (failure instanceof ApiError) {
+    if (failure.code === 'DEFAULT_REQUIRES_ACTIVE') return t('models', 'errorDefaultRequiresActive')
+    if (failure.code === 'CONFIG_NOT_FOUND') return t('models', 'errorConfigGone')
+  }
+  return `${t('models', fallbackKey)} — ${describeError(failure)}`
+}
+
+/**
  * 渲染模型配置页。
  */
 export function ModelsPage() {
@@ -121,11 +135,18 @@ export function ModelsPage() {
   const [usage, setUsage] = useState<ModelUsageRow[]>([])
   const [usageWindow, setUsageWindow] = useState<ModelUsageWindow | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [busyId, setBusyId] = useState<string | null>(null)
+  /** 列表与用量各自失败：任一份失败都不把另一份清空成「还没有模型」。 */
+  const [modelsError, setModelsError] = useState<string | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  /** 行内动作（测试/启停/设默认/删除）的忙碌态：动作分开，测试按钮不再被启停误标成「测试中」。 */
+  const [busy, setBusy] = useState<{ id: string; action: 'test' | 'toggle' | 'default' | 'delete' } | null>(null)
+  /** 页内错误与它的重试动作（重试必须重跑刚失败的动作，而不是只刷新列表）。 */
+  const [error, setError] = useState<{ text: string; retry?: () => void } | null>(null)
   const [editTarget, setEditTarget] = useState<ModelView | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ModelView | null>(null)
+  /** 删除确认框内的失败行：页面级错误行会被 Modal 遮住，失败原因必须就地可见。 */
+  const [deleteFailure, setDeleteFailure] = useState<{ text: string; retry: () => void } | null>(null)
   // 测试结果按配置 id 保留：测另一行不会抹掉上一行的结果；`lastTestedId` 只决定顶部提示行点名谁。
   const [testResults, setTestResults] = useState<Record<string, ModelTestResult>>({})
   const [lastTestedId, setLastTestedId] = useState<string | null>(null)
@@ -140,20 +161,24 @@ export function ModelsPage() {
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true)
-    try {
-      const [modelResult, usageResult] = await Promise.all([
-        request<{ ok: true; models: ModelView[] }>('/models'),
-        request<{ ok: true; byModel: ModelUsageRow[]; window: ModelUsageWindow }>('/usage'),
-      ])
-      setModels(modelResult.models)
-      setUsage(usageResult.byModel)
-      setUsageWindow(usageResult.window)
-      setError(null)
-    } catch (failure) {
-      setError(`${t('models', 'errorLoad')} — ${describeError(failure)}`)
-    } finally {
-      setLoading(false)
+    const [modelResult, usageResult] = await Promise.allSettled([
+      request<{ ok: true; models: ModelView[] }>('/models'),
+      request<{ ok: true; byModel: ModelUsageRow[]; window: ModelUsageWindow }>('/usage'),
+    ])
+    if (modelResult.status === 'fulfilled') {
+      setModels(modelResult.value.models)
+      setModelsError(null)
+    } else {
+      setModelsError(`${t('models', 'errorLoad')} — ${describeError(modelResult.reason)}`)
     }
+    if (usageResult.status === 'fulfilled') {
+      setUsage(usageResult.value.byModel)
+      setUsageWindow(usageResult.value.window)
+      setUsageError(null)
+    } else {
+      setUsageError(`${t('models', 'errorUsage')} — ${describeError(usageResult.reason)}`)
+    }
+    setLoading(false)
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -180,21 +205,108 @@ export function ModelsPage() {
       window.setTimeout(() => { URL.revokeObjectURL(url) }, 10_000)
       toast.show(t('models', 'toastExported'), 'success')
     } catch (failure) {
-      setError(`${t('models', 'errorExport')} — ${describeError(failure)}`)
+      setError({
+        text: `${t('models', 'errorExport')} — ${describeError(failure)}`,
+        retry: () => { void exportModels() },
+      })
     }
   }
 
-  const act = (id: string, action: () => Promise<void>, failureKey: string, successText?: string): void => {
-    setBusyId(id)
+  /** 用量明细导出（NFR-OBS-002）：服务端按事件流折叠出 CSV（按模型聚合 + 按会话明细），浏览器只负责下载。 */
+  const exportUsage = async (): Promise<void> => {
+    try {
+      const blob = await requestBlob('/usage/export')
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = 'soloengine-usage.csv'
+      anchor.click()
+      window.setTimeout(() => { URL.revokeObjectURL(url) }, 10_000)
+      toast.show(t('models', 'toastUsageExported'), 'success')
+    } catch (failure) {
+      setError({
+        text: `${t('models', 'errorExport')} — ${describeError(failure)}`,
+        retry: () => { void exportUsage() },
+      })
+    }
+  }
+
+  const act = (
+    id: string,
+    action: 'toggle' | 'default' | 'delete',
+    run: () => Promise<void>,
+    failureKey: string,
+    successText?: string,
+  ): void => {
+    setBusy({ id, action })
     setError(null)
     void (async () => {
       try {
-        await action()
+        await run()
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
-        setError(`${t('models', failureKey)} — ${describeError(failure)}`)
+        setError({
+          text: actionFailureText(failure, failureKey),
+          retry: () => { act(id, action, run, failureKey, successText) },
+        })
       } finally {
-        setBusyId(null)
+        setBusy(null)
+      }
+    })()
+  }
+
+  /**
+   * 测试一行连通性；结果按配置 id 保留，失败时页内错误可直接重试同一行。
+   * @param model - 目标配置。
+   */
+  const testModel = (model: ModelView): void => {
+    setBusy({ id: model.id, action: 'test' })
+    setError(null)
+    void (async () => {
+      try {
+        const result = await request<{ ok: true; result: ModelTestResult }>(
+          `/models/${model.id}/test`,
+          { method: 'POST' },
+        )
+        setTestResults(previous => ({ ...previous, [model.id]: result.result }))
+        setLastTestedId(model.id)
+        // 原型 models.js:268 只对成功的连通性测试弹 Toast；失败留在页内结果行。
+        if (result.result.ok) {
+          toast.show(
+            result.result.latency_ms === undefined
+              ? t('models', 'testOk')
+              : t('models', 'toastTestOk', { ms: result.result.latency_ms }),
+            'success',
+          )
+        }
+      } catch (failure) {
+        setError({
+          text: actionFailureText(failure, 'errorTest'),
+          retry: () => { testModel(model) },
+        })
+      } finally {
+        setBusy(null)
+      }
+    })()
+  }
+
+  /** 删除配置：失败时把原因与重试留在确认框内，成功后关闭并刷新列表。 */
+  const deleteModel = (model: ModelView): void => {
+    setBusy({ id: model.id, action: 'delete' })
+    setDeleteFailure(null)
+    void (async () => {
+      try {
+        await request(`/models/${model.id}`, { method: 'DELETE' })
+        setDeleteTarget(null)
+        toast.show(t('models', 'toastDeleted'), 'success')
+        await load()
+      } catch (failure) {
+        setDeleteFailure({
+          text: actionFailureText(failure, 'errorDelete'),
+          retry: () => { deleteModel(model) },
+        })
+      } finally {
+        setBusy(null)
       }
     })()
   }
@@ -214,7 +326,23 @@ export function ModelsPage() {
         )}
       />
 
-      <NoticeLine tone="error" text={error} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
+      <NoticeLine
+        tone="error"
+        text={error === null ? null : error.text}
+        {...(error?.retry === undefined
+          ? {}
+          : { action: { label: t('common', 'actionRetry'), onClick: error.retry } })}
+      />
+      <NoticeLine
+        tone="error"
+        text={modelsError}
+        action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
+      />
+      <NoticeLine
+        tone="error"
+        text={usageError}
+        action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
+      />
       {lastTestedId !== null && (() => {
         // 顶部提示只点名最近一次测试：每行结果按 id 保留在表格里，测另一行不会清空上一行。
         const id = lastTestedId
@@ -242,7 +370,7 @@ export function ModelsPage() {
 
       {loading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
 
-      {!loading && (() => {
+      {!loading && modelsError === null && usageError === null && (() => {
         // 用量面板遍历**全部模型配置**（原型 models.js:41）：没有调用记录的模型也占一行，
         // 否则新建或未调用的模型在用量图里完全消失。
         const usageById = new Map(usage.map(row => [row.llm_config_id, row]))
@@ -292,12 +420,22 @@ export function ModelsPage() {
                   </p>
                 )}
               </div>
-              <span className={modelsCss.count}>
-                {t('models', 'usageTotal', {
-                  tokens: chartRows.reduce((sum, row) => sum + row.totalTokens, 0).toLocaleString(locale),
-                  requests: chartRows.reduce((sum, row) => sum + row.requests, 0).toLocaleString(locale),
-                })}
-              </span>
+              <div className={modelsCss.panelActions}>
+                <span className={modelsCss.count}>
+                  {t('models', 'usageTotal', {
+                    tokens: chartRows.reduce((sum, row) => sum + row.totalTokens, 0).toLocaleString(locale),
+                    requests: chartRows.reduce((sum, row) => sum + row.requests, 0).toLocaleString(locale),
+                  })}
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<IconDownloadOutlineRegular size={14} />}
+                  onClick={() => { void exportUsage() }}
+                >
+                  {t('models', 'usageDetailExport')}
+                </Button>
+              </div>
             </div>
             <div className={modelsCss.panelBody}>
               {chartRows.length === 0 ? (
@@ -355,7 +493,7 @@ export function ModelsPage() {
         )
       })()}
 
-      {(!loading || models.length > 0) && (
+      {(!loading || models.length > 0) && modelsError === null && (
         <section className={modelsCss.section} aria-labelledby="models-table-title">
           <div className={modelsCss.sectionHead}>
             <div>
@@ -426,7 +564,11 @@ export function ModelsPage() {
                   {visible.map((model) => {
                     const row = usage.find(item => item.llm_config_id === model.id)
                     const tested = testResults[model.id] ?? null
-                    const testing = busyId === model.id
+                    // 同一行的动作互斥：该行任一动作在途时，测试/启停/菜单全部禁用，
+                    // 否则并发动作会覆盖唯一的 busy 槽位，按钮状态与实际请求对不上。
+                    const rowBusyAction = busy !== null && busy.id === model.id ? busy.action : null
+                    const rowBusy = rowBusyAction !== null
+                    const testing = rowBusyAction === 'test'
                     const testIcon = tested === null
                       ? <IconGaugeOutlineRegular size={14} />
                       : tested.ok ? <IconCheckOutlineRegular size={14} /> : <IconWarningOutlineRegular size={14} />
@@ -479,9 +621,9 @@ export function ModelsPage() {
                             type="button"
                             className={modelsCss.toggle}
                             aria-pressed={model.is_active}
-                            disabled={busyId === model.id}
+                            disabled={busy?.id === model.id}
                             onClick={() => {
-                              act(model.id, async () => {
+                              act(model.id, 'toggle', async () => {
                                 await request(`/models/${model.id}/active`, {
                                   method: 'POST',
                                   body: { active: !model.is_active },
@@ -524,36 +666,10 @@ export function ModelsPage() {
                               variant="ghost"
                               className={modelsCss.testButton}
                               icon={testing ? <span className={css.spinner} aria-hidden="true" /> : testIcon}
-                              disabled={testing}
+                              disabled={rowBusy}
                               aria-busy={testing}
                               aria-label={t('models', 'testAria', { name: model.name })}
-                              onClick={() => {
-                                setBusyId(model.id)
-                                setError(null)
-                                void (async () => {
-                                  try {
-                                    const result = await request<{ ok: true; result: ModelTestResult }>(
-                                      `/models/${model.id}/test`,
-                                      { method: 'POST' },
-                                    )
-                                    setTestResults(previous => ({ ...previous, [model.id]: result.result }))
-                                    setLastTestedId(model.id)
-                                    // 原型 models.js:268 只对成功的连通性测试弹 Toast；失败留在页内结果行。
-                                    if (result.result.ok) {
-                                      toast.show(
-                                        result.result.latency_ms === undefined
-                                          ? t('models', 'testOk')
-                                          : t('models', 'toastTestOk', { ms: result.result.latency_ms }),
-                                        'success',
-                                      )
-                                    }
-                                  } catch (failure) {
-                                    setError(`${t('models', 'errorTest')} — ${describeError(failure)}`)
-                                  } finally {
-                                    setBusyId(null)
-                                  }
-                                })()
-                              }}
+                              onClick={() => { testModel(model) }}
                             >
                               {testLabel}
                             </Button>
@@ -562,27 +678,27 @@ export function ModelsPage() {
                               align="end"
                               portal
                               items={[
-                                { id: 'edit', label: t('models', 'editAction'), disabled: busyId === model.id },
-                                { id: 'default', label: t('models', 'setDefault'), disabled: busyId === model.id || model.is_default },
+                                { id: 'edit', label: t('models', 'editAction'), disabled: busy?.id === model.id },
+                                { id: 'default', label: t('models', 'setDefault'), disabled: busy?.id === model.id || model.is_default },
                                 {
                                   id: 'toggle',
                                   label: model.is_active ? t('models', 'disable') : t('models', 'enable'),
-                                  disabled: busyId === model.id,
+                                  disabled: busy?.id === model.id,
                                 },
                                 { type: 'separator', id: 'separator' },
-                                { id: 'delete', label: t('models', 'deleteAction'), danger: true, disabled: busyId === model.id },
+                                { id: 'delete', label: t('models', 'deleteAction'), danger: true, disabled: busy?.id === model.id },
                               ]}
                               onSelect={(id) => {
                                 setMenuId(null)
                                 if (id === 'edit') setEditTarget(model)
                                 if (id === 'default') {
-                                  act(model.id, async () => {
+                                  act(model.id, 'default', async () => {
                                     await request(`/models/${model.id}/default`, { method: 'POST' })
                                     await load()
                                   }, 'errorSave', t('models', 'toastDefault', { name: model.name }))
                                 }
                                 if (id === 'toggle') {
-                                  act(model.id, async () => {
+                                  act(model.id, 'toggle', async () => {
                                     await request(`/models/${model.id}/active`, {
                                       method: 'POST',
                                       body: { active: !model.is_active },
@@ -592,7 +708,10 @@ export function ModelsPage() {
                                     ? t('models', 'toastDisabled', { name: model.name })
                                     : t('models', 'toastEnabled', { name: model.name }))
                                 }
-                                if (id === 'delete') setDeleteTarget(model)
+                                if (id === 'delete') {
+                                  setDeleteFailure(null)
+                                  setDeleteTarget(model)
+                                }
                               }}
                               onClose={() => { setMenuId(null) }}
                               anchor={(
@@ -602,7 +721,7 @@ export function ModelsPage() {
                                   className={modelsCss.moreButton}
                                   icon={<IconEllipsisOutlineRegular size={14} />}
                                   aria-label={t('models', 'moreActions')}
-                                  disabled={busyId === model.id}
+                                  disabled={busy?.id === model.id}
                                   onClick={() => { setMenuId(menuId === model.id ? null : model.id) }}
                                 />
                               )}
@@ -633,25 +752,21 @@ export function ModelsPage() {
 
       <Modal
         open={deleteTarget !== null}
-        onClose={() => { setDeleteTarget(null) }}
+        onClose={() => { setDeleteTarget(null); setDeleteFailure(null) }}
         title={t('models', 'deleteTitle', { name: deleteTarget?.name ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={`${t('models', 'deleteNote')}${t('models', 'deleteIrreversible')}`}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteFailure(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
               variant="ghost"
               className={css.dangerButton}
-              disabled={deleteTarget === null || busyId === deleteTarget.id}
+              disabled={deleteTarget === null || busy?.id === deleteTarget.id}
               onClick={() => {
                 const target = deleteTarget
                 if (target === null) return
-                act(target.id, async () => {
-                  await request(`/models/${target.id}`, { method: 'DELETE' })
-                  setDeleteTarget(null)
-                  await load()
-                }, 'errorDelete', t('models', 'toastDeleted'))
+                deleteModel(target)
               }}
             >
               {t('common', 'actionDelete')}
@@ -659,6 +774,14 @@ export function ModelsPage() {
           </>
         )}
       >
+        {/* 失败原因就地呈现在确认框内：页面级错误行会被 Modal 遮住。 */}
+        <NoticeLine
+          tone="error"
+          text={deleteFailure === null ? null : deleteFailure.text}
+          {...(deleteFailure === null
+            ? {}
+            : { action: { label: t('common', 'actionRetry'), onClick: deleteFailure.retry } })}
+        />
         {deleteTarget !== null && (
           <p className={css.cardBody}>
             {deleteTarget.name}
@@ -739,7 +862,9 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
     setModelName(target?.model_name ?? '')
     setApiKey('')
     setClearKey(false)
-    setBaseUrl(target?.base_url ?? defaultBaseUrl(CREATE_DEFAULTS.provider))
+    // 编辑时回显存储值：base_url 为 null 就留空，不能套「新建默认地址」——否则只改别的字段
+    // 也会把默认地址静默写进一条原本没有地址的配置。
+    setBaseUrl(target === null ? defaultBaseUrl(CREATE_DEFAULTS.provider) : (target.base_url ?? ''))
     setIsFullUrl(target?.is_full_url ?? false)
     const createFallback = target === null
     setTemperature(numericInput(target?.temperature, createFallback ? CREATE_DEFAULTS.temperature : ''))
@@ -760,7 +885,12 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
     setBaseUrlError(null)
   }, [target, open])
 
-  const numeric = (): Record<string, number> => {
+  /**
+   * 数值字段：新建时空串表示省略（走默认），编辑时空串发送 null 清除已存值。
+   * @param forUpdate - 是否为编辑提交。
+   * @returns 待提交的数值字段。
+   */
+  const numeric = (forUpdate: boolean): Record<string, number | null> => {
     const fields: Record<string, number | undefined> = {
       temperature: numberField(temperature),
       max_tokens: numberField(maxTokens),
@@ -772,9 +902,10 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
       timeout: numberField(timeout),
       max_tool_calls: numberField(maxToolCalls),
     }
-    const result: Record<string, number> = {}
+    const result: Record<string, number | null> = {}
     for (const [key, value] of Object.entries(fields)) {
       if (value !== undefined) result[key] = value
+      else if (forUpdate) result[key] = null
     }
     return result
   }
@@ -820,23 +951,24 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
       provider: provider.trim(),
       model_name: modelName.trim(),
       is_full_url: isFullUrl,
-      ...numeric(),
+      ...numeric(target !== null),
     }
     if (apiKey !== '' && !clearKey) body.api_key = apiKey
     // 清除已保存密钥是独立动作：空串表示「不修改」，不能兼作「清空」。
     if (clearKey) body.clear_api_key = true
-    if (baseUrl.trim() !== '') body.base_url = baseUrl.trim()
-    if (extraParams.trim() !== '') body.extra_params = extraParams.trim()
+    // 编辑时空地址表示清除（回到提供方默认）；新建时空串省略，由服务端套默认。
+    if (target !== null || baseUrl.trim() !== '') body.base_url = baseUrl.trim()
+    // 编辑时空 JSON 表示清除；新建时空串省略。
+    if (target !== null) body.extra_params = extraParams.trim() === '' ? null : extraParams.trim()
+    else if (extraParams.trim() !== '') body.extra_params = extraParams.trim()
+    // 默认标记与保存同一次写入：分两步会在第二步失败时留下「已保存但未设默认」的半成品。
+    if (setDefault && (target === null || !target.is_default)) body.is_default = true
     if (target !== null) body.version = latestVersion ?? target.version
     void (async () => {
       try {
-        const saved = target === null
-          ? await request<{ ok: true; model: ModelView }>('/models', { method: 'POST', body })
-          : await request<{ ok: true; model: ModelView }>(`/models/${target.id}`, { method: 'PATCH', body })
-        // 默认模型是独立动作（同一时刻只有一个默认）：保存后按开关结果落一次。
-        if (setDefault && !saved.model.is_default) {
-          await request(`/models/${saved.model.id}/default`, { method: 'POST' })
-        }
+        await (target === null
+          ? request<{ ok: true; model: ModelView }>('/models', { method: 'POST', body })
+          : request<{ ok: true; model: ModelView }>(`/models/${target.id}`, { method: 'PATCH', body }))
         onSaved()
       } catch (failure) {
         // 错误就近呈现在对话框内（带本地化前缀）；不再向页面级重复投递（会被 Modal 遮挡）。
@@ -899,156 +1031,184 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
         onKeyDown={submitFormOnEnter}
       >
         <NoticeLine tone="error" text={error} />
-        <div className={modelsCss.formGrid}>
-          <div className={modelsCss.fieldFull}>
-            <Field label={t('models', 'fieldName')} error={nameError}>
+        <section className={modelsCss.formSection} aria-labelledby="model-section-basic">
+          <h3 id="model-section-basic" className={modelsCss.formSectionTitle}>{t('models', 'sectionBasic')}</h3>
+          <div className={modelsCss.formGrid}>
+            <div className={modelsCss.fieldFull}>
+              <Field label={t('models', 'fieldName')} error={nameError}>
+                <Input
+                  data-modal-autofocus
+                  aria-invalid={nameError === null ? undefined : true}
+                  value={name}
+                  onChange={(event) => { setName(event.currentTarget.value); setNameError(null) }}
+                />
+              </Field>
+            </div>
+            <Field label={t('models', 'fieldProvider')}>
+              <select
+                className={modelsCss.select}
+                value={provider}
+                onChange={(event) => {
+                  const next = event.currentTarget.value
+                  // 新建时地址跟随提供方默认值；用户改过地址后不再覆盖（默认值必须可编辑）。
+                  if (target === null && (baseUrl.trim() === '' || baseUrl === defaultBaseUrl(provider))) {
+                    setBaseUrl(defaultBaseUrl(next))
+                  }
+                  setProvider(next)
+                }}
+              >
+                {PROVIDER_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>{t('models', option.labelKey)}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t('models', 'fieldModelName')} error={modelNameError}>
               <Input
-                data-modal-autofocus
-                aria-invalid={nameError === null ? undefined : true}
-                value={name}
-                onChange={(event) => { setName(event.currentTarget.value); setNameError(null) }}
+                aria-invalid={modelNameError === null ? undefined : true}
+                placeholder={t('models', 'modelNamePlaceholder')}
+                value={modelName}
+                onChange={(event) => { setModelName(event.currentTarget.value); setModelNameError(null) }}
               />
             </Field>
           </div>
-          <Field label={t('models', 'fieldProvider')}>
-            <select
-              className={modelsCss.select}
-              value={provider}
-              onChange={(event) => {
-                const next = event.currentTarget.value
-                // 新建时地址跟随提供方默认值；用户改过地址后不再覆盖（默认值必须可编辑）。
-                if (target === null && (baseUrl.trim() === '' || baseUrl === defaultBaseUrl(provider))) {
-                  setBaseUrl(defaultBaseUrl(next))
-                }
-                setProvider(next)
-              }}
-            >
-              {PROVIDER_OPTIONS.map(option => (
-                <option key={option.value} value={option.value}>{t('models', option.labelKey)}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label={t('models', 'fieldModelName')} error={modelNameError}>
-            <Input
-              aria-invalid={modelNameError === null ? undefined : true}
-              placeholder={t('models', 'modelNamePlaceholder')}
-              value={modelName}
-              onChange={(event) => { setModelName(event.currentTarget.value); setModelNameError(null) }}
-            />
-          </Field>
-          <div className={modelsCss.fieldFull}>
-            <Field label={t('models', 'fieldBaseUrl')} hint={t('models', 'fieldBaseUrlHint')} error={baseUrlError}>
+        </section>
+        <section className={modelsCss.formSection} aria-labelledby="model-section-connection">
+          <h3 id="model-section-connection" className={modelsCss.formSectionTitle}>{t('models', 'sectionConnection')}</h3>
+          <div className={modelsCss.formGrid}>
+            <div className={modelsCss.fieldFull}>
+              <Field label={t('models', 'fieldBaseUrl')} hint={t('models', 'fieldBaseUrlHint')} error={baseUrlError}>
+                <Input
+                  aria-invalid={baseUrlError === null ? undefined : true}
+                  value={baseUrl}
+                  onChange={(event) => { setBaseUrl(event.currentTarget.value); setBaseUrlError(null) }}
+                />
+              </Field>
+            </div>
+            <div className={modelsCss.fieldFull}>
+              <label className={css.checkRow}>
+                <input
+                  className={css.checkInput}
+                  type="checkbox"
+                  checked={isFullUrl}
+                  onChange={(event) => { setIsFullUrl(event.currentTarget.checked) }}
+                />
+                <span>{t('models', 'fieldIsFullUrl')}</span>
+              </label>
+            </div>
+            <Field label={t('models', 'fieldTimeout')}>
               <Input
-                aria-invalid={baseUrlError === null ? undefined : true}
-                value={baseUrl}
-                onChange={(event) => { setBaseUrl(event.currentTarget.value); setBaseUrlError(null) }}
+                type="number"
+                min={1}
+                max={600}
+                step={1}
+                value={timeout}
+                onChange={(event) => { setTimeoutValue(event.currentTarget.value) }}
               />
             </Field>
           </div>
-          <div className={modelsCss.fieldFull}>
-            <label className={css.checkRow}>
-              <input
-                className={css.checkInput}
-                type="checkbox"
-                checked={isFullUrl}
-                onChange={(event) => { setIsFullUrl(event.currentTarget.checked) }}
-              />
-              <span>{t('models', 'fieldIsFullUrl')}</span>
-            </label>
+        </section>
+        <section className={modelsCss.formSection} aria-labelledby="model-section-secret">
+          <h3 id="model-section-secret" className={modelsCss.formSectionTitle}>{t('models', 'sectionSecret')}</h3>
+          <div className={modelsCss.formGrid}>
+            <div className={modelsCss.fieldFull}>
+              <Field
+                label={t('models', 'fieldApiKey')}
+                hint={target === null
+                  ? (apiKey === '' ? `${t('models', 'fieldApiKeyHint')} · ${t('models', 'secretEmptyHint')}` : t('models', 'fieldApiKeyHint'))
+                  : [
+                    t('models', 'fieldApiKeyHint'),
+                    target.key_state === 'unreadable' ? t('models', 'secretUnreadable') : target.api_key_masked ?? t('models', 'secretAbsent'),
+                  ].join(' · ')}
+              >
+                <Input
+                  type="password"
+                  autoComplete="new-password"
+                  value={apiKey}
+                  disabled={clearKey}
+                  placeholder={target === null ? t('models', 'secretPlaceholderNew') : t('models', 'secretPlaceholder')}
+                  onChange={(event) => { setApiKey(event.currentTarget.value) }}
+                />
+                {target !== null && target.has_api_key && (
+                  <label className={css.checkRow}>
+                    <input
+                      className={css.checkInput}
+                      type="checkbox"
+                      checked={clearKey}
+                      onChange={(event) => {
+                        setClearKey(event.currentTarget.checked)
+                        if (event.currentTarget.checked) setApiKey('')
+                      }}
+                    />
+                    <span>{t('models', 'fieldApiKeyClear')}</span>
+                  </label>
+                )}
+              </Field>
+            </div>
           </div>
-          <div className={modelsCss.fieldFull}>
-            <Field
-              label={t('models', 'fieldApiKey')}
-              hint={target === null
-                ? (apiKey === '' ? `${t('models', 'fieldApiKeyHint')} · ${t('models', 'secretEmptyHint')}` : t('models', 'fieldApiKeyHint'))
-                : [
-                  t('models', 'fieldApiKeyHint'),
-                  target.key_state === 'unreadable' ? t('models', 'secretUnreadable') : target.api_key_masked ?? t('models', 'secretAbsent'),
-                ].join(' · ')}
-            >
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={apiKey}
-                disabled={clearKey}
-                placeholder={target === null ? t('models', 'secretPlaceholderNew') : t('models', 'secretPlaceholder')}
-                onChange={(event) => { setApiKey(event.currentTarget.value) }}
-              />
-              {target !== null && target.has_api_key && (
-                <label className={css.checkRow}>
-                  <input
-                    className={css.checkInput}
-                    type="checkbox"
-                    checked={clearKey}
-                    onChange={(event) => {
-                      setClearKey(event.currentTarget.checked)
-                      if (event.currentTarget.checked) setApiKey('')
-                    }}
-                  />
-                  <span>{t('models', 'fieldApiKeyClear')}</span>
-                </label>
-              )}
-            </Field>
-          </div>
-          {/* 原型首屏字段顺序（models.js:139-148）：温度 / max_tokens / 超时 / 轮次上限。
-              数值输入用原生 number + min/max/step 做第一道约束，区间与 `models.ts` 的
+        </section>
+        <section className={modelsCss.formSection} aria-labelledby="model-section-sampling">
+          <h3 id="model-section-sampling" className={modelsCss.formSectionTitle}>{t('models', 'sectionSampling')}</h3>
+          <div className={modelsCss.formGrid}>
+            {/* 数值输入用原生 number + min/max/step 做第一道约束，区间与 `models.ts` 的
               NUMERIC_LIMITS 同值；后端校验仍是最终守卫。 */}
-          <Field label={t('models', 'fieldTemperature')}>
-            <Input
-              type="number"
-              min={0}
-              max={2}
-              step={0.1}
-              value={temperature}
-              onChange={(event) => { setTemperature(event.currentTarget.value) }}
-            />
-          </Field>
-          <Field label={t('models', 'fieldMaxTokens')}>
-            <Input
-              type="number"
-              min={1}
-              step={1}
-              value={maxTokens}
-              onChange={(event) => { setMaxTokens(event.currentTarget.value) }}
-            />
-          </Field>
-          <Field label={t('models', 'fieldTimeout')}>
-            <Input
-              type="number"
-              min={1}
-              max={600}
-              step={1}
-              value={timeout}
-              onChange={(event) => { setTimeoutValue(event.currentTarget.value) }}
-            />
-          </Field>
-          <Field label={t('models', 'fieldMaxToolCalls')}>
-            <Input
-              type="number"
-              min={1}
-              step={1}
-              value={maxToolCalls}
-              onChange={(event) => { setMaxToolCalls(event.currentTarget.value) }}
-            />
-          </Field>
-          <div className={modelsCss.fieldFull}>
-            <label className={css.checkRow}>
-              <input
-                className={css.checkInput}
-                type="checkbox"
-                checked={setDefault}
-                disabled={target?.is_default === true}
-                onChange={(event) => { setSetDefault(event.currentTarget.checked) }}
+            <Field label={t('models', 'fieldTemperature')}>
+              <Input
+                type="number"
+                min={0}
+                max={2}
+                step={0.1}
+                value={temperature}
+                onChange={(event) => { setTemperature(event.currentTarget.value) }}
               />
-              <span>{t('models', 'fieldDefault')}</span>
-            </label>
-          </div>
-        </div>
-        {/* PRD-03 §3 的扩展参数独立成组：原型首屏保持原样，额外字段在下方分节呈现。 */}
-        <section className={modelsCss.advanced} aria-labelledby="model-advanced-title">
-          <div className={modelsCss.advancedHead}>
-            <h3 id="model-advanced-title" className={modelsCss.advancedTitle}>{t('models', 'advancedTitle')}</h3>
-            <p className={modelsCss.advancedHint}>{t('models', 'advancedHint')}</p>
+            </Field>
+            <Field label={t('models', 'fieldMaxTokens')}>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={maxTokens}
+                onChange={(event) => { setMaxTokens(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('models', 'fieldMaxToolCalls')}>
+              <Input
+                type="number"
+                min={1}
+                step={1}
+                value={maxToolCalls}
+                onChange={(event) => { setMaxToolCalls(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('models', 'fieldTopP')}>
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={topP}
+                onChange={(event) => { setTopP(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('models', 'fieldFrequencyPenalty')}>
+              <Input
+                type="number"
+                min={-2}
+                max={2}
+                step={0.1}
+                value={frequencyPenalty}
+                onChange={(event) => { setFrequencyPenalty(event.currentTarget.value) }}
+              />
+            </Field>
+            <Field label={t('models', 'fieldPresencePenalty')}>
+              <Input
+                type="number"
+                min={-2}
+                max={2}
+                step={0.1}
+                value={presencePenalty}
+                onChange={(event) => { setPresencePenalty(event.currentTarget.value) }}
+              />
+            </Field>
           </div>
           <div className={modelsCss.advancedGroup}>
             <h4 className={modelsCss.advancedGroupTitle}>{t('models', 'advancedLimits')}</h4>
@@ -1074,41 +1234,6 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
             </div>
           </div>
           <div className={modelsCss.advancedGroup}>
-            <h4 className={modelsCss.advancedGroupTitle}>{t('models', 'advancedSampling')}</h4>
-            <div className={modelsCss.formGrid}>
-              <Field label={t('models', 'fieldTopP')}>
-                <Input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={topP}
-                  onChange={(event) => { setTopP(event.currentTarget.value) }}
-                />
-              </Field>
-              <Field label={t('models', 'fieldFrequencyPenalty')}>
-                <Input
-                  type="number"
-                  min={-2}
-                  max={2}
-                  step={0.1}
-                  value={frequencyPenalty}
-                  onChange={(event) => { setFrequencyPenalty(event.currentTarget.value) }}
-                />
-              </Field>
-              <Field label={t('models', 'fieldPresencePenalty')}>
-                <Input
-                  type="number"
-                  min={-2}
-                  max={2}
-                  step={0.1}
-                  value={presencePenalty}
-                  onChange={(event) => { setPresencePenalty(event.currentTarget.value) }}
-                />
-              </Field>
-            </div>
-          </div>
-          <div className={modelsCss.advancedGroup}>
             <h4 className={modelsCss.advancedGroupTitle}>{t('models', 'advancedExtra')}</h4>
             <Field label={t('models', 'fieldExtraParams')} hint={t('models', 'fieldExtraParamsHint')}>
               <textarea
@@ -1118,6 +1243,19 @@ function ModelFormDialog({ open, target, onClose, onSaved }: {
               />
             </Field>
           </div>
+        </section>
+        <section className={modelsCss.formSection} aria-labelledby="model-section-default">
+          <h3 id="model-section-default" className={modelsCss.formSectionTitle}>{t('models', 'sectionDefault')}</h3>
+          <label className={css.checkRow}>
+            <input
+              className={css.checkInput}
+              type="checkbox"
+              checked={setDefault}
+              disabled={target?.is_default === true}
+              onChange={(event) => { setSetDefault(event.currentTarget.checked) }}
+            />
+            <span>{t('models', 'fieldDefault')}</span>
+          </label>
         </section>
       </form>
     </Drawer>

@@ -20,6 +20,7 @@
     "src/media-references.ts",
     "src/model-selection-projection.ts",
     "src/archived-session-gate.ts",
+    "src/scope.ts",
     "src/skill-catalog.ts"
   ],
   "references": [

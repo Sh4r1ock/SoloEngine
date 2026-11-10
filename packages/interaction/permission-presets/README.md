@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Offer named permission modes that set sandbox and approval together while each enforcement service keeps its own value. Configured presets supply future-session defaults; an explicitly loaded Auto review integration can add one current-session-only option. Clients read selectable entries from a process catalog and the current choice from the Session projection. Unmatched knob combinations appear as `custom`, which users can leave but cannot select. This package owns selection and defaults; the sandbox, approval, and Auto integration own execution.
+Offer named permission modes that bundle sandbox and approval while each enforcement service keeps its own value. Configured presets supply future-session defaults; an explicitly loaded Auto review integration can add one current-session-only option. Clients read selectable entries from a process catalog and the current choice from the Session projection; unmatched knob combinations appear as `custom`. The shipped `approve-for-me` entry is the fourth preset: it approves one call when the tool and every shell command segment match the configured rules and no fixed high-risk check fires, lets an optional reviewer narrow that set, and delegates everything else to native approval.
 
 ## Table of Contents
 
@@ -38,18 +38,39 @@ The plugin config defines the preset table and the default for fresh sessions. E
       workspace-write:
         sandbox: workspace-write
         approval: ask
+      approve-for-me:
+        sandbox: workspace-write
+        approval: ask
       danger-full-access:
         sandbox: danger-full-access
         approval: never
     defaultPreset: workspace-write
+    approveForMe:
+      tools: []
+      commandPrefixes: []
+      review: false
 ```
 
 | Field | Default | Meaning |
 |---|---|---|
-| `presets` | `workspace-write`, `danger-full-access` | Table of preset name → sandbox/approval bundle |
+| `presets` | `workspace-write`, `approve-for-me`, `danger-full-access` | Table of preset name → sandbox/approval bundle |
 | `defaultPreset` | inferred | Preset pinned into fresh sessions; required when composition defaults match no preset |
+| `approveForMe.tools` | `[]` | Tool names eligible for automatic approval; empty approves nothing |
+| `approveForMe.commandPrefixes` | `[]` | Literal token prefixes; every segment of a compound shell command must match one |
+| `approveForMe.review` | `false` | Ask the current session model to confirm a rule-matched call; it can only narrow |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-permission-presets) is the exhaustive source for every accepted field and its JSDoc. `custom` is reserved for the derived not-a-preset state, while `auto` is reserved for the Auto review integration. Mounting requires a confining bash executor (one that reports a `sandboxMode`) and the approval service.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-permission-presets) is the exhaustive source for every accepted field and its JSDoc. `custom` is reserved for the derived not-a-preset state, while `auto` is reserved for the Auto review integration. Mounting requires a confining bash executor (one that reports a `sandboxMode`) and the approval service. A malformed command prefix fails the mount instead of admitting on a prefix nobody can parse.
+
+### Approve-for-me admission
+
+`approve-for-me` bundles the workspace-write sandbox with the `ask` policy as a fourth entry over the same two knobs. Its admission gate answers one approval request with exactly one `allowed-once` grant only when all of the following hold:
+
+- the requesting tool is listed in `approveForMe.tools`;
+- for `bash` and `pwsh`, the command parses unambiguously (quotes honoured; substitution, redirection, subshells, backgrounding, and unbalanced quotes never admit), every segment of a compound command starts with a configured literal token prefix, and no fixed high-risk check fires — filesystem-root wipes, raw-device writes, setuid/setgid changes, recursive ownership changes, host shutdown, force-push or history rewrite, a remote fetch piped into a shell, or a credential path;
+- no string argument names a credential or secret path; and
+- when `review` is enabled, the current session model returns exactly `{"decision":"allow"}`.
+
+Everything else delegates to the native approval waterfall. An empty `tools` list approves nothing, and an absent answerer resolves `unavailable` (fail closed). The gate is session-scoped and every grant is one-shot.
 
 ### Switching presets
 
@@ -77,7 +98,8 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PermissionPresetService`: configured table, fixed Auto registration, write path, settings namespace, session pinning, children |
+| [`src/index.ts`](src/index.ts) | `PermissionPresetService`: configured table, fixed Auto registration, write path, settings namespace, session pinning, admission gate wiring, children |
+| [`src/approve-for-me.ts`](src/approve-for-me.ts) | Deterministic `approve-for-me` rules: command tokenizer, literal prefixes, fixed high-risk checks, credential paths, reviewer protocol |
 | [`src/types.ts`](src/types.ts) | Process catalog, catalog-change event, and `permissions` current-selection types |
 
 ### Write path
@@ -135,6 +157,8 @@ These limits define what the preset service does not offer. They are current pac
 - **The configured preset table is fixed for the plugin lifetime** — only the fixed Auto contribution can change the live process catalog without reloading this service.
 - **Auto cannot become a default** — it exists only while its integration effect is live and is intentionally absent from the `permission` settings schema.
 - **Configured defaults must name a configured preset** — removing a referenced preset requires changing `defaultPreset` in the same Config edit.
+- **The admission rules ship empty** — `approve-for-me` behaves like `workspace-write` until an operator lists tools and command prefixes.
+- **The reviewer only narrows** — it cannot approve a call the rules did not match, and a missing LLM service or route returns requests to human approval.
 
 <a id="dev-note"></a>
 ### Dev Note

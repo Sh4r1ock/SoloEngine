@@ -285,12 +285,16 @@ export function apply(ctx: Context): void {
           forkAt: (seq) => {
             const turn = [...chat.getSnapshot().timeline.turns.values()].find(turn => turn.end?.seq === seq)
             const messageId = turn?.data.get('turn-tail')?.closing?.finalNode.messageId
+            // The child is catalogued before the optional title rename; open it
+            // there so a rename failure cannot strand the user on the source
+            // view after the fork already exists.
             ctx.sessions.fork({ sessionId, atSeq: seq, increaseTitle: true, onCreated: (childId) => {
               ctx.get('productAnalytics')?.track('branch_session_click', { session_id: childId, parent_session_id: sessionId, ...messageId === undefined ? {} : { parent_message_id: messageId }, click_position: 'footer' })
+              ctx.uiWorkspace.openSession(childId)
             } })
-              .then((childId) => { ctx.uiWorkspace.openSession(childId) })
-              .catch(() => {
-                // Fork or child-title failure leaves the source view unchanged.
+              .catch((error: unknown) => {
+                // A failed rename after creation still leaves the opened child in place.
+                console.error('ui-chat: fork failed', error)
               })
           },
         }

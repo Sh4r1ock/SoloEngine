@@ -1,0 +1,35 @@
+{
+  "name": "@soloengine/session-persistence-postgres",
+  "version": "0.1.0",
+  "description": "SoloEngine 的 PostgreSQL 会话日志后端：把事件日志与头信息写进同一个 PG 库的 log schema，与 JSONL 后端同契约、可整组替换。",
+  "private": true,
+  "type": "module",
+  "main": "lib/types/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/types/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "pg": "8.13.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@types/node": "^22.20.0",
+    "@types/pg": "8.11.10"
+  }
+}

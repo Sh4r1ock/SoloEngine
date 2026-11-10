@@ -1,10 +1,10 @@
 /**
- * 运行上下文事件族与投影键声明（PRD-07 FR-UI-006）。
+ * 运行上下文事件族与投影键声明（产品记录）。
  *
- * 运行面板会话头的产品信息层级（当前项目、运行模式）以**原生形态**叠加：一次运行发起时
- * 写一条 `soloengine/run-context` 持久事件；宿主侧注册 `soloengine.runContext` 投影把它
- * 折叠为只读视图；客户端经标准 `useProjection('soloengine.runContext')` 座位消费。
- * 不新建业务表、不自建事件通道、不落第二副本。
+ * 一次运行发起时写一条 `soloengine/run-context` 持久事件（画布/运行项目归属、选定的原生权限
+ * 预设名、实时跟随开关）；宿主侧注册 `soloengine.runContext` 投影把它折叠为只读视图；客户端经
+ * 标准 `useProjection('soloengine.runContext')` 座位消费（跟随联动读开关）。不新建业务表、不自建
+ * 事件通道、不落第二副本。
  *
  * `soloengine/run-context` 是 log-only 事件（不进模型历史）。官方 `SessionEventMap` 的声明
  * 合并是官方明文支持的扩展路径（先例 `compaction/*`、`hook/*`、`tool-workflow/*`），未声明
@@ -16,8 +16,12 @@
 import type { SessionEventMap } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap, SessionProjectionStateMap } from '@deepseek-ai/dsh-session-projection/types'
 
-/** 画布全局运行模式（PRD-02 FR-CANVAS-015；与权限三档同值域）。 */
-export type RunMode = 'ask' | 'allowlist' | 'auto'
+/**
+ * 画布运行档位 = **原生权限预设名**（PRD-02 FR-CANVAS-015）。
+ *
+ * 不另立档位名：预设表与语义归平台的 `permission-presets`（白名单档由第三方插件声明）。
+ */
+export type RunMode = 'workspace-write' | 'approve-for-me' | 'danger-full-access'
 
 /** 一次运行的上下文（`soloengine/run-context` 事件的数据体，whole-value、纯 JSON）。 */
 export interface RunContextRecord {

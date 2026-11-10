@@ -1,6 +1,6 @@
 {
-  "name": "DeepSeek Harness",
-  "short_name": "DSH",
+  "name": "SoloEngine",
+  "short_name": "SoloEngine",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

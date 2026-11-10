@@ -1,14 +1,14 @@
 /** Builtin PDF registration through document metadata and the keyed body slot. */
 import type { Context } from '@deepseek-ai/cordis'
-import { retainDocumentTabs } from '../document/tab-lifetime.ts'
+import { retainDocumentTabs } from '../contract/document/tab-lifetime.ts'
 import type {} from '../index.ts'
-import type { DocumentPreviewDefinition } from '../document/registry.ts'
+import type { DocumentPreviewDefinition } from '../contract/document/registry.ts'
 import type { PdfBodyInjected } from './pdf.tsx'
 import { LazyPdfBody } from './LazyPdfBody.tsx'
 import type { BoundActions } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createPdfStore, type PdfStore } from './store.ts'
-import { ZoomViewport, zoomSurfaceClass } from '../zoom/ZoomViewport.tsx'
+import { ZoomViewport, zoomSurfaceClass } from '../contract/zoom/ZoomViewport.tsx'
 import { en, zh } from './locales.ts'
 
 /** PDF metadata and keyed body share this package-local implementation identity. */

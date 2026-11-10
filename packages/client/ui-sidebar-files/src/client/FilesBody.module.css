@@ -69,13 +69,13 @@
 
 .row {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   align-items: center;
   width: 100%;
   min-width: 0;
   /* Rows abut, so the hover fill is the whole row; the tree's air is this
      inset, not a gap between rows. */
-  padding: 5px 10px;
+  padding: 0 4px 0 0;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -87,6 +87,64 @@
 
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The entry the Session's last tool presentation pointed at. */
+.rowCurrent {
+  background: var(--dsw-alias-interactive-bg-active, var(--dsw-alias-interactive-bg-hover));
+}
+
+/* The label gesture fills the row; the rename and delete controls sit after it. */
+.gesture {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 5px 6px 5px 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.rowActions {
+  display: flex;
+  flex: none;
+  gap: 0;
+  align-items: center;
+  opacity: 0;
+}
+
+.row:hover .rowActions,
+.row:focus-within .rowActions {
+  opacity: 1;
+}
+
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 3px;
+  color: var(--dsw-alias-label-tertiary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  cursor: pointer;
+}
+
+.rowAction:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.actionIcon {
+  width: 14px;
+  height: 14px;
 }
 
 /* The folder glyph rides the tertiary ink, as the workspace tree's does (ui-workspace Rows `.slot`). */
@@ -175,4 +233,65 @@
    on the text's line and spaces it. */
 .titleIcon {
   flex: none;
+}
+
+/* The search bar sits under the header and above the tree it filters. */
+.searchRow {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 4px 6px 6px 16px;
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.searchInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 8px;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+}
+
+.searchInput:focus-visible {
+  outline: 1px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 0;
+}
+
+/* The create, rename, and delete confirmation bar. */
+.confirm {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 6px 6px 6px 16px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+}
+
+.confirmText {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* A refused create, rename, or delete: the reason stays until the next try. */
+.failure {
+  flex: 0 0 auto;
+  padding: 6px 10px 6px 16px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  background: var(--dsw-alias-interactive-bg-hover-danger);
 }

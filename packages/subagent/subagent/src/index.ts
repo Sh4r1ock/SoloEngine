@@ -61,6 +61,7 @@ import type {
   SubagentProvider,
   SubagentRunEndInfo,
   SubagentRunInfo,
+  SubagentResumeComposition,
   SubagentSendMessageOptions,
   SubagentStartRequest,
 } from './types.ts'
@@ -91,6 +92,7 @@ export type {
   SubagentProvider,
   SubagentResult,
   SubagentRun,
+  SubagentResumeComposition,
   SubagentSendMessageOptions,
   SubagentStartRequest,
   ResolvedSubagentStartRequest,
@@ -200,6 +202,12 @@ export class SubagentRuntime extends TypertRemoteService {
   private providers = new Map<string, SubagentProvider>()
   private manager: SubagentManager | undefined
   /**
+   * Product-owned cold-resume composition per exact parent Agent. A WeakMap
+   * keeps the registration free of explicit teardown: the entry disappears
+   * with the parent object that authorized the children it describes.
+   */
+  private readonly resumeCompositions = new WeakMap<Agent, SubagentResumeComposition>()
+  /**
    * The contained lifecycle-edge publisher. Built here because scoped dispatch
    * keys its carrier by this exact service instance, whose own context filter
    * composes into the carrier.
@@ -217,6 +225,7 @@ export class SubagentRuntime extends TypertRemoteService {
         },
         prepareContinuable: (name, request) => this.prepareContinuable(name, request),
         observeActivation: (provider, childId, parent) => this.observeActivation(provider, childId, parent),
+        resumeComposition: parent => this.resumeCompositions.get(parent),
       }, () => this.config.maxActiveSubagents.get())
       this.manager = manager
       childCtx.effect(() => () => {
@@ -271,6 +280,9 @@ export class SubagentRuntime extends TypertRemoteService {
     if (spec.childId !== undefined && provider.prepareContinuable === undefined) {
       throw new SubagentError('reserved child ids require a local backend', 'UNSUPPORTED_CAPABILITY')
     }
+    if (spec.request.setup !== undefined && provider.prepareContinuable === undefined) {
+      throw new SubagentError('per-child setup requires a local backend', 'UNSUPPORTED_CAPABILITY')
+    }
     assertSubagentMaxDepth(spec.request.maxDepth)
     this.assertCapabilities(provider, { ...spec.request, signal: spec.signal })
     const manager = this.requireManager()
@@ -281,6 +293,19 @@ export class SubagentRuntime extends TypertRemoteService {
     return provider.prepareContinuable === undefined
       ? manager.startExternal(spec)
       : manager.startLocal(spec)
+  }
+
+  /**
+   * Declare the composition this product replays when the exact parent Agent
+   * cold-resumes one of its persisted continuable children. A start request
+   * applies its own `setup`/`scopeParent` at creation; a later resume has no
+   * start request, so the product states its composition here once. The
+   * registration is keyed by the live parent object and disappears with it.
+   * @param parent - the exact live parent whose children this composition describes.
+   * @param composition - the product's resume-time setup and enclosing scope.
+   */
+  registerResumeComposition(parent: Agent, composition: SubagentResumeComposition): void {
+    this.resumeCompositions.set(parent, composition)
   }
 
   /**

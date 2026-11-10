@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-Backend API runs on `http://localhost:8990`, frontend dev server on `http://localhost:8991`.
+The whole application is served on one port: `http://localhost:8991` (frontend and REST API share the same origin).
 
 ### Submitting a Pull Request
 

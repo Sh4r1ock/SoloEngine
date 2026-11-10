@@ -1,0 +1,56 @@
+# 云形态覆盖（SOLOENGINE_DB_FORM=cloud）：整个 SoloEngine 一个 PostgreSQL 库，按 schema 分区。
+#
+# 由启动器按形态以 `--patch` 叠加在本层之后。两套插件都随包安装，这里只切换「启动哪一套」：
+# 基线的 JSONL 会话日志与 SQLite 检索被禁用，三个 PG 流程级插件接管同一批服务名。
+# 服务名唯一（`ctx.storage` 后端注册名、`ctx.sessionPersistence`、`ctx.sessionQuery`），
+# 两套同时激活会在加载期报错——互斥是加载期事实，不是运行期开关。
+#
+# schema 分区：`mgmt`（管理层 13 表 + schema_versions）、`kv`（键值）、`log`（会话日志）、
+# `search`（检索索引）。三个 provider 共用同一个数据库账号与同一个库；跨用户隔离**不靠**
+# 数据库账号或 schema 权限，而由服务端的归属判定承担（连接层账号作用域 + 框架层按用户的
+# 会话/模型路由收敛，见功能行 187/189）。节点本地不留数据。
+
+# 会话日志：JSONL 文件是节点本地数据，云形态不装载。
+- id: session-persistence-jsonl
+  disabled: true
+
+# 会话检索：SQLite 派生索引是节点本地文件，云形态不装载。
+- id: session-query-sqlite
+  disabled: true
+
+# 云形态关闭 HMR（显式声明）：多副本共享同一前端产物目录，热重载会在副本间抖动，
+# 且浏览器经网关连接时没有本地文件观察通道；产物更新走整体发布而不是逐个文件重载。
+- id: hmr
+  disabled: true
+
+# dsh 的非会话 KV 改走 PostgreSQL 后端。
+- id: storage-domain
+  config:
+    backend: postgres
+
+- insert:
+    # 键值后端（kv schema）。
+    - id: storage-postgres
+      name: '@soloengine/storage-postgres'
+      config:
+        url: !!js process.env.SOLOENGINE_DATABASE_URL
+        schema: kv
+
+    # 会话日志后端（log schema）。
+    - id: session-persistence-postgres
+      name: '@soloengine/session-persistence-postgres'
+      config:
+        url: !!js process.env.SOLOENGINE_DATABASE_URL
+        schema: log
+        # 写入侧租约围栏（W10.4）：多节点部署由启动器注入控制面地址与本节点 id；
+        # 两者都不设时围栏关闭（单节点云形态）。只给其一会在加载期报错。
+        controlUrl: !!js process.env.SOLOENGINE_CONTROL_URL
+        nodeId: !!js process.env.SOLOENGINE_NODE_ID
+
+    # 会话检索后端（search schema，可丢弃派生索引）。
+    - id: session-query-postgres
+      name: '@soloengine/session-query-postgres'
+      config:
+        url: !!js process.env.SOLOENGINE_DATABASE_URL
+        schema: search
+        openAt: first-search

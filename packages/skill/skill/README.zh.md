@@ -83,6 +83,10 @@ Skill 摘要保留胜出提供方可选的指令文件 `path`，供提供文件�
 
 注册表采用宿主 + 按 scope 的分层结构，即工具注册表确立的形态：注册落入调用方上下文 scope 对应的层——宿主行与 repository 插件落入全局层，由 agent preset 常驻组合挂载的插件落入该 preset 的层。读取时将全局层与观察 scope 的链合并；最近层直接赢得重名，单层内重名则依次按 rank、提供方注册顺序与提供方本地顺序裁决。
 
+### 作用域限制
+
+`restrict(names)` 把一个 scope 的模型可见目录收窄到声明的允许清单：`list`/`snapshot` 只合并这些名字，`get` 拒绝其余；未受限视图仍看到完整目录。它必须在 scoped 上下文调用——根上下文抛 `skills.restrict() requires a scoped context`——重复调用替换该 scope 的集合，返回的 disposer 恢复未受限视图。
+
 ### 源码地图
 
 | 文件 | 职责 |

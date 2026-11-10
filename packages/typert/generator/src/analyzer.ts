@@ -812,7 +812,7 @@ class FaceAnalyzer {
       if (target.includes('*') || subpath === './package.json'
         || subpath === './typert' || subpath === './client/typert' || subpath === './remote'
         // Data exports carry no TypeScript API; their owning readers validate the resources.
-        || /\.(?:json|ya?ml|svg|png|jpe?g|webp)$/iu.test(target)) continue
+        || /\.(?:json|ya?ml|svg|png|jpe?g|webp|css)$/iu.test(target)) continue
       const sourcePath = sourcePathForExport(registration.root, target)
       const sourceFile = this.sourceFiles.get(realPath(sourcePath))
       if (sourceFile === undefined) {
