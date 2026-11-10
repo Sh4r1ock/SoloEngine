@@ -336,7 +336,10 @@ export class CloudGateway {
     for (const [name, value] of Object.entries(request.headers)) {
       if (!isGatewayOwnedHeader(name) && value !== undefined) headers[name] = value
     }
-    headers.host = target.host
+    // Host 与 Origin 原样保留（与 WS 升级路径同一口径）。节点的信任门要求 Origin 与 Host
+    // 同源，且信任门 cookie 按 `Host:port` 绑定、引导重定向按 Host 生成；把 Host 改写成
+    // 节点回环地址会让带 Origin 的浏览器请求一律 403，引导也会指向浏览器不可达的节点。
+    // 部署侧把网关对外 authority 声明进节点的 `--trusted-host`（回环入口无需声明）。
     if (route.placed !== null) headers['x-soloengine-placement'] = route.nodeId
     if (ownership.userId !== undefined) headers[GATEWAY_USER_HEADER] = ownership.userId
     const upstream = httpRequest({
