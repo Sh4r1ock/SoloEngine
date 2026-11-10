@@ -15,7 +15,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { FrameworkRuntime } from '@soloengine/framework'
+import { FrameworkError, type FrameworkRuntime } from '@soloengine/framework'
 import type {} from '@soloengine/types'
 import { resolveSessionOwnership } from './session-ownership.ts'
 import { sendFailure, sendJson } from './bridge-json.ts'
@@ -85,8 +85,14 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
         }
         const folderPath = join(process.env.SOLOENGINE_ROOT ?? process.cwd(), 'data', 'runs', canvasId)
         mkdirSync(folderPath, { recursive: true })
-        const session = await runtime.runs.createRun(userId, { canvasId, folderPath })
-        sendJson(res, 201, { ok: true, session: { panel_path: session.panel_path } })
+        try {
+          const session = await runtime.runs.createRun(userId, { canvasId, folderPath })
+          sendJson(res, 201, { ok: true, session: { panel_path: session.panel_path } })
+        } catch (error) {
+          // 编译拒绝（缺模型/空画布等）是业务失败，按框架层状态码回 4xx，不能落成 500。
+          if (error instanceof FrameworkError) throw new BridgeFailure(error.status, error.code, error.message)
+          throw error
+        }
         return
       }
       if (route !== 'live-follow' || method !== 'POST') {
