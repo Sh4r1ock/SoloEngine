@@ -297,13 +297,28 @@ export class PgControlStore implements ControlRepository {
       const selected = await client.query('SELECT * FROM cloud_session_leases WHERE session_key = $1 FOR UPDATE', [input.sessionKey])
       const existing = selected.rows[0] as LeaseRow | undefined
       if (existing === undefined) {
-        await client.query(`
-          INSERT INTO cloud_session_leases (session_key, node_id, epoch, holder, expires_at, renewed_at, user_id)
-          VALUES ($1, $2, 1, $3, $4, $5, $6)
-        `, [input.sessionKey, input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null])
-        await audit(client, input.sessionKey, input.nodeId, 1, 'lease-acquired', nowIso, { holder: input.holder })
-        await client.query('COMMIT')
-        return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: true }
+        // `SELECT … FOR UPDATE` 不锁不存在的行：并发首取时两边都会读到「无租约」再同时插入。
+        // 唯一约束是最终裁决；输的一方重读当前租约并按「已被持有」返回，而不是把约束错误冒成 500。
+        // 有界重试只覆盖「赢家插入后又立刻释放」这一条极窄路径，不能无限循环。
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const inserted = await client.query(`
+            INSERT INTO cloud_session_leases (session_key, node_id, epoch, holder, expires_at, renewed_at, user_id)
+            VALUES ($1, $2, 1, $3, $4, $5, $6)
+            ON CONFLICT (session_key) DO NOTHING
+          `, [input.sessionKey, input.nodeId, input.holder, expiresAt, nowIso, input.userId ?? null])
+          if ((inserted.rowCount ?? 0) === 1) {
+            await audit(client, input.sessionKey, input.nodeId, 1, 'lease-acquired', nowIso, { holder: input.holder })
+            await client.query('COMMIT')
+            return { ok: true, lease: await this.writtenLease(input.sessionKey), acquired: true }
+          }
+          const raced = await this.getLease(input.sessionKey)
+          if (raced !== undefined) {
+            await client.query('ROLLBACK')
+            return { ok: false, code: 'LEASE_HELD', lease: raced }
+          }
+        }
+        await client.query('ROLLBACK')
+        throw new Error(`lease ${input.sessionKey} is being created and released concurrently; retry the acquisition`)
       }
       if (existing.holder === input.holder && existing.node_id === input.nodeId) {
         // 自己名下已过期的租约不能走「续约」（续约要求未到期），否则本节点会永远 LEASE_HELD。
