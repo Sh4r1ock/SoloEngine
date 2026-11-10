@@ -96,6 +96,17 @@ export class AccountService {
     return await this.db.prepare('SELECT * FROM users WHERE username = ?').get<UserRow>(username)
   }
 
+  /**
+   * 按大小写折叠的用户名取行（注册唯一性判据）。
+   *
+   * 用户目录由登录名派生，Windows 上 `Alice` 与 `alice` 是同一个目录；唯一性必须比物理目录更严。
+   * @param username - 登录名。
+   * @returns 首个同名（忽略大小写）的账号行。
+   */
+  async byUsernameFolded(username: string): Promise<UserRow | undefined> {
+    return await this.db.prepare('SELECT * FROM users WHERE lower(username) = lower(?)').get<UserRow>(username)
+  }
+
   /** 按 ID 取行。 */
   async byId(id: string): Promise<UserRow | undefined> {
     return await this.db.prepare('SELECT * FROM users WHERE id = ?').get<UserRow>(id)
@@ -127,7 +138,10 @@ export class AccountService {
       throw new FrameworkError(400, 'USERNAME_INVALID', `username ${username} is a reserved device name`)
     }
     if (input.password.length < 4) throw new FrameworkError(400, 'PASSWORD_TOO_SHORT', 'password must be at least 4 characters')
-    if (await this.byUsername(username) !== undefined) {
+    // 登录名大小写折叠唯一：登录名直接成为用户隔离目录名，而 Windows 文件系统大小写不敏感，
+    // `Alice` 与 `alice` 会落进同一个目录（跨用户共享技能/MCP/项目）。同一物理目录只允许一个账号。
+    const folded = await this.byUsernameFolded(username)
+    if (folded !== undefined) {
       throw new FrameworkError(409, 'USERNAME_TAKEN', `username ${username} already exists`)
     }
     if (input.email !== undefined && input.email !== '' && await this.byEmail(input.email) !== undefined) {
@@ -154,8 +168,9 @@ export class AccountService {
       ).run(row.id, row.username, row.email, row.hashed_password, row.is_active, row.is_superuser, row.created_at, row.updated_at, row.last_login, row.version)
     } catch (error) {
       // 先查后插的竞态：并发同名/同邮箱由唯一约束兜底，转成可区分的 409（不把约束串回前端）。
+      // 唯一约束本身区分大小写，故折叠判定仍要重查一次。
       if (isUniqueViolation(error)) {
-        if (await this.byUsername(username) !== undefined) {
+        if (await this.byUsernameFolded(username) !== undefined) {
           throw new FrameworkError(409, 'USERNAME_TAKEN', `username ${username} already exists`)
         }
         if (input.email !== undefined && input.email !== '' && await this.byEmail(input.email) !== undefined) {
