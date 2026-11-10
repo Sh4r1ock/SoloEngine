@@ -143,7 +143,7 @@ export class SessionLedger {
   async setStatus(
     id: number,
     status: SessionLedgerRow['status'],
-    patch: { error?: string; startedAt?: number; completedAt?: number } = {},
+    patch: { error?: string | null; startedAt?: number; completedAt?: number } = {},
   ): Promise<SessionLedgerRow> {
     const now = Date.now()
     const row = await this.byId(id)

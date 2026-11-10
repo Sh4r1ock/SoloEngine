@@ -313,8 +313,10 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
     const restored: string[] = []
     const revertedChangeIds: string[] = []
     const failures: { filePath: string; reason: string }[] = []
-    const row = await runtime.runs.ledger.byKey(sessionKey)
-    const project = row === undefined ? undefined : await runtime.canvas.projectById(row.user_id, row.run_project_id)
+    // 分支/草稿会话没有自己的台账行：运行项目按会话树根解析（与撤回计划的沙箱根同一处），
+    // 否则「计划算得出来、执行找不到项目」会在同一入口给出两种结果。
+    const projectId = await runtime.runs.projectIdOf(sessionKey)
+    const project = projectId === null ? undefined : await runtime.canvas.projectById(userId, projectId)
     if (project === undefined) {
       throw new Error(`session ${sessionKey} has no run project; cannot resolve the sandbox root for the revert`)
     }
@@ -572,7 +574,10 @@ async function attributeOf(
   }
   const callId = exec?.callId === undefined ? null : exec.callId
   const turn = callId === null ? null : calls.get(sessionKey)?.get(callId)?.turn ?? null
-  const owner = (await runtime.runs.ledger.byKey(sessionKey))?.user_id ?? null
+  // 归属用户走运行域的同一份解析：分支/草稿会话与子代理子会话没有自己的台账行，
+  // 只认 `ledger.byKey` 会让它们的 agent 写入落成 `user_id=null`——台账可见性按用户过滤，
+  // 这些记录随后既不出现在变更面板里，也不能按轮次撤回。
+  const owner = await runtime.runs.ownerOf(sessionKey)
   const nodeId = runtime.runs.agentIdOf(sessionKey)
   const isToolWrite = callId !== null
   return {

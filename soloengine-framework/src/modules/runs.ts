@@ -591,7 +591,14 @@ export class RunService {
     // 恢复后照常排队推进（云形态下租约由节点运行时在恢复前取得）。
     if (!driver.live(sessionKey).live) await this.resumeRun(userId, row)
     const result = await driver.prompt(sessionKey, text)
-    if (row.status === 'pending') await this.ledger.setStatus(row.id, 'running', { startedAt: Date.now() })
+    // 续跑同一条会话：启动对账会把上一进程留下的行收敛为 failed，恢复后的新回合必须把
+    // 折叠缓存扳回 running（否则画布列表在整轮期间显示「失败/已完成」），并清掉旧错误。
+    if (row.status !== 'running') {
+      await this.ledger.setStatus(row.id, 'running', {
+        ...(row.started_at === null ? { startedAt: Date.now() } : {}),
+        error: null,
+      })
+    }
     return result
   }
 
