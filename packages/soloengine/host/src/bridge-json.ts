@@ -7,7 +7,7 @@
  * @module @soloengine/host/bridge-json
  */
 
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { ServerResponse } from 'node:http'
 
 /** 桥自身的结构化错误（状态码 + 稳定错误码）。 */
 export class BridgeFailure extends Error {
@@ -24,17 +24,26 @@ export class BridgeFailure extends Error {
 
 /**
  * 读取请求体（JSON；空体即 `{}`）。
- * @param req - 请求。
+ *
+ * 非对象/非法 JSON 是请求问题（400），不是桥的内部错误：两个桥把本函数的失败原样回给
+ * 浏览器，状态码必须让调用方知道「改请求」而不是「重试」。
+ * @param req - 请求（只读异步块流；`IncomingMessage` 即满足）。
  * @returns 解析后的对象。
+ * @throws {BridgeFailure} 请求体不是合法 JSON，或顶层不是对象。
  */
-export async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+export async function readJsonBody(req: AsyncIterable<Buffer | string>): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
-  for await (const chunk of req) chunks.push(chunk as Buffer)
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   const raw = Buffer.concat(chunks).toString('utf8')
   if (raw.trim() === '') return {}
-  const parsed: unknown = JSON.parse(raw)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (error) {
+    throw new BridgeFailure(400, 'BODY_INVALID', `request body is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+  }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('request body must be a JSON object')
+    throw new BridgeFailure(400, 'BODY_NOT_OBJECT', 'request body must be a JSON object')
   }
   return parsed as Record<string, unknown>
 }
