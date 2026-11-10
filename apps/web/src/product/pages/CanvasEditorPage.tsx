@@ -405,7 +405,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   /** 自动保存失败后暂停重试：下一次用户编辑或手动保存成功再恢复（防止请求风暴）。 */
   const [autoSaveHalted, setAutoSaveHalted] = useState(false)
   // 错误/通知存「文案键 + 动态细节」，渲染时才翻译——存翻译字符串会在切换语言后残留旧语种。
-  const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorRun' | 'errorPreview' | 'errorDuplicate'; detail: string } | null>(null)
+  const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorRun' | 'errorDuplicate'; detail: string } | null>(null)
   const [conflict, setConflict] = useState(false)
   /** 待确认的角色模板切换：模板会覆盖当前提示词与工具（与 v0.4.0 的预设切换同一保护）。 */
   const [roleSwitch, setRoleSwitch] = useState<{ nodeId: string; presetId: string } | null>(null)
