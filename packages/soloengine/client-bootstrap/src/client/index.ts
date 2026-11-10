@@ -17,6 +17,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 
 declare global {
   interface Window {
@@ -31,8 +32,8 @@ declare global {
   }
 }
 
-/** 需要的服务：会话控制器（会话列表基线）与工作区导航（与点击列表同一条选择路径）。 */
-export const inject = ['sessions', 'uiWorkspace']
+/** 需要的服务：会话控制器（会话列表基线）、工作区导航与工作区状态（面板新增工作区 → 运行项目登记）。 */
+export const inject = ['sessions', 'uiWorkspace', 'workspaces']
 
 /** 产品访问令牌的浏览器存储键（与 `apps/web/src/product/api.ts` 同一契约）。 */
 const ACCESS_TOKEN_KEY = 'soloengine.accessToken'
@@ -161,10 +162,65 @@ function startRun(flowId: string): void {
 }
 
 /**
+ * 面板里新增的工作区一旦有了会话，就把「画布 × 目录」登记为运行项目。
+ *
+ * 需求 §9.5 ⑤：同一个 flow 可以登记无限多个运行项目，每次运行按所选目录登记。目录由面板的
+ * 原生「添加工作区」选择（产品不自建选择器）；工作区实体归原生，运行项目台账归产品，因此
+ * 这里按原生工作区快照做一次对账：加载时已存在的工作区不登记（它们可能属于别的画布），
+ * 只有本次加载后新增、且已经产生会话的工作区才登记。登记后宿主按 cwd 命中运行项目并补登
+ * 会话台账行（`resolveSessionOwnership` 的 adopt 分支），画布列表与打包才看得见这次运行。
+ * @param ctx - 客户端根上下文。
+ * @param flowId - 地址栏里的画布 id。
+ */
+function registerNewWorkspaceProjects(ctx: ClientContext, flowId: string): void {
+  const baseline = new Set<string>()
+  const registered = new Set<string>()
+  let captured = false
+  const register = (path: string): void => {
+    const token = accessToken()
+    if (token === '') return
+    void fetch('/api/solo/projects', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ canvasId: flowId, folderPath: path }),
+    }).then((response) => {
+      if (response.ok) {
+        console.log(`soloengine-client-bootstrap: registered run project ${path} for canvas ${flowId}`)
+        return
+      }
+      console.warn(`soloengine-client-bootstrap: registering run project ${path} failed with HTTP ${String(response.status)}`)
+    }, (error: unknown) => {
+      console.warn(`soloengine-client-bootstrap: registering run project ${path} failed: ${String(error)}`)
+    })
+  }
+  const scan = (): void => {
+    const snapshot = ctx.workspaces.list.getSnapshot()
+    if (snapshot.phase !== 'ready') return
+    if (!captured) {
+      captured = true
+      for (const workspace of snapshot.items) baseline.add(workspace.path)
+      return
+    }
+    for (const workspace of snapshot.items) {
+      if (baseline.has(workspace.path) || registered.has(workspace.path)) continue
+      if (workspace.sessionIds.length === 0) continue
+      registered.add(workspace.path)
+      register(workspace.path)
+    }
+  }
+  scan()
+  ctx.effect(
+    () => ctx.workspaces.list.subscribe(scan),
+    'soloengine-client-bootstrap: register panel workspaces as run projects',
+  )
+}
+
+/**
  * 浏览器插件体：等待会话列表就绪并把本画布最近一次运行选为当前。
  *
- * 该 flow 还没有任何运行会话时，面板自己就是入口：`startRun` 在面板内用原生目录选择器
- * 取得工作根并调用 `POST /runs`，成功后重新载入同一 URL（宿主此时已能解析会话）。
+ * 该 flow 还没有任何运行会话时，面板自己就是入口：`startRun` 用受管工作根在面板内发起一次
+ * 运行并重载同一 URL（宿主此时已能解析会话）。
  *
  * 装配期先向工作区导航声明 URL 指向的会话：启动恢复据此只打开它，不再为「最近工作区」
  * 连接草稿（没有空会话时会**新建**一个）。运行面板的会话由 URL 决定，草稿只会让该画布
@@ -174,6 +230,7 @@ function startRun(flowId: string): void {
 export function apply(ctx: ClientContext): void {
   const flowId = window.__SOLOENGINE_RUN_FLOW__
   if (typeof flowId !== 'string' || flowId === '') return
+  registerNewWorkspaceProjects(ctx, flowId)
   const target = runPanelTarget()
   if (target === undefined) {
     if (window.__SOLOENGINE_RUN_EMPTY__ === true) startRun(flowId)

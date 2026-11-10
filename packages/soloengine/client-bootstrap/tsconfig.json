@@ -12,10 +12,16 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../api/workspace-controller/tsconfig.client.json"
+    },
+    {
       "path": "../../client/ui-renderer"
     },
     {
       "path": "../../client/ui-session"
+    },
+    {
+      "path": "../../client/ui-workspace"
     },
     {
       "path": "../../core/session"
