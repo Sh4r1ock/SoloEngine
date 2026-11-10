@@ -10,8 +10,8 @@
  * @module @soloengine/framework/sandbox/workspace-gate
  */
 
-import { existsSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, normalize, resolve, sep } from 'node:path'
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path'
 import { FrameworkError } from '../modules/accounts.ts'
 
 /** 门禁入参。 */
@@ -46,6 +46,52 @@ export function isLoopback(address: string | undefined): boolean {
 }
 
 /**
+ * 前缀比较用的路径折叠。
+ *
+ * Windows 路径大小写不敏感：同一文件可以写成 `D:\work\x` 或 `d:\WORK\x`，而
+ * `normalize`/`resolve` 不会改写大小写。按字面比较会把根内路径误判为越界
+ * （绝对路径经对话框或外部调用传入时常见），因此只在 win32 上折叠大小写；
+ * 其他平台按字面比较。
+ * @param value - 规范化后的路径。
+ * @returns 用于前缀比较的键。
+ */
+function pathKey(value: string): string {
+  return process.platform === 'win32' ? value.toLowerCase() : value
+}
+
+/**
+ * 解析一个可能不存在的目标：先找到最近的存在祖先做 realpath，再拼回缺失的后缀。
+ *
+ * 只对"目标本身"做 realpath 不足以防住符号链接：`root/link/new.txt` 在 `new.txt`
+ * 尚未创建时不存在，但 `link` 已经指向根外；必须先解析最近的已存在祖先。
+ * @param target - 规范化后的绝对目标。
+ * @returns 真实落盘路径（缺失部分按字面拼接）。
+ */
+function realpathThroughExistingAncestor(target: string): string {
+  let ancestor = target
+  const suffix: string[] = []
+  // 用 lstat 判「这一层在目录树里有没有条目」：悬空符号链接本身存在但 realpath 解析不到，
+  // 若按 existsSync 跳过它，就会把「穿不过去的链接」当成普通缺失段放行。
+  const present = (path: string): boolean => {
+    try {
+      lstatSync(path)
+      return true
+    } catch {
+      // 只把「不存在/不可 stat」当作缺失段；链接存在但悬空时下面 realpathSync 会明确报错。
+      return false
+    }
+  }
+  while (!present(ancestor)) {
+    const parent = dirname(ancestor)
+    if (parent === ancestor) break
+    suffix.unshift(basename(ancestor))
+    ancestor = parent
+  }
+  const real = realpathSync(ancestor)
+  return normalize(suffix.length === 0 ? real : join(real, ...suffix))
+}
+
+/**
  * 校验目标路径是否可安全访问（读/写共用）。
  * @param options - 门禁入参。
  * @returns 校验结果；任一判据失败抛结构化错误。
@@ -59,7 +105,9 @@ export function gateWorkspacePath(options: WorkspaceGateOptions): WorkspaceGateR
 
   // 判据 2：前缀校验（先按规范化路径判，避免不存在的目标无法 realpath）。
   const prefix = root.endsWith(sep) ? root : `${root}${sep}`
-  if (candidate !== root && !candidate.startsWith(prefix)) {
+  const candidateKey = pathKey(candidate)
+  const rootKey = pathKey(root)
+  if (candidateKey !== rootKey && !candidateKey.startsWith(pathKey(prefix))) {
     throw new FrameworkError(403, 'OUT_OF_SANDBOX_ROOT', `path ${options.target} is outside the workspace root ${root}`)
   }
 
@@ -68,20 +116,26 @@ export function gateWorkspacePath(options: WorkspaceGateOptions): WorkspaceGateR
     throw new FrameworkError(404, 'FILE_NOT_FOUND', `${options.target} does not exist`)
   }
 
-  // 判据 1：realpath 校验（存在时解析符号链接，再复核前缀）。
-  if (exists) {
-    let real: string
-    try {
-      real = normalize(realpathSync(candidate))
-    } catch (error) {
-      throw new FrameworkError(400, 'PATH_UNRESOLVABLE', `cannot resolve ${options.target}: ${String(error)}`)
-    }
-    const realRoot = normalize(realpathSync(root))
-    const realPrefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`
-    if (real !== realRoot && !real.startsWith(realPrefix)) {
-      throw new FrameworkError(403, 'OUT_OF_SANDBOX_ROOT',
-        `path ${options.target} resolves to ${real}, outside the workspace root ${realRoot}`)
-    }
+  // 判据 1：realpath 校验。目标不存在时解析最近的已存在祖先，缺失后缀按字面拼回，
+  // 再把**真实路径**作为后续读写落点——否则根内符号链接目录下的新文件会绕过前缀判据。
+  let real: string
+  try {
+    real = exists ? normalize(realpathSync(candidate)) : realpathThroughExistingAncestor(candidate)
+  } catch (error) {
+    throw new FrameworkError(400, 'PATH_UNRESOLVABLE', `cannot resolve ${options.target}: ${String(error)}`)
+  }
+  let realRoot: string
+  try {
+    realRoot = normalize(realpathSync(root))
+  } catch (error) {
+    // 根目录不存在/不可解析是配置或项目目录问题，不是 500：给出可处置的业务错误。
+    throw new FrameworkError(400, 'SANDBOX_ROOT_UNRESOLVABLE',
+      `cannot resolve the workspace root ${root}: ${String(error)}`)
+  }
+  const realPrefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`
+  if (pathKey(real) !== pathKey(realRoot) && !pathKey(real).startsWith(pathKey(realPrefix))) {
+    throw new FrameworkError(403, 'OUT_OF_SANDBOX_ROOT',
+      `path ${options.target} resolves to ${real}, outside the workspace root ${realRoot}`)
   }
 
   // 判据 3：loopback（仅当调用方声明了来源时校验）。
@@ -92,12 +146,17 @@ export function gateWorkspacePath(options: WorkspaceGateOptions): WorkspaceGateR
   // 判据 4：mtime 冲突（仅当目标存在且调用方给出期望值时校验）。
   let mtimeMs: number | null = null
   if (exists) {
-    mtimeMs = statSync(candidate).mtimeMs
+    try {
+      mtimeMs = statSync(real).mtimeMs
+    } catch (error) {
+      // 判据 1 与这里之间目标被删除：按「不存在」报出，不让 ENOENT 变成裸 500。
+      throw new FrameworkError(404, 'FILE_NOT_FOUND', `${options.target} disappeared while it was being checked: ${String(error)}`)
+    }
     if (options.expectedMtimeMs !== undefined && Number(options.expectedMtimeMs) !== Math.floor(mtimeMs)) {
       throw new FrameworkError(409, 'MTIME_CONFLICT',
         `${options.target} changed on disk (expected mtime ${String(options.expectedMtimeMs)}, found ${String(Math.floor(mtimeMs))}); re-read and retry`)
     }
   }
 
-  return { path: candidate, exists, mtimeMs }
+  return { path: real, exists, mtimeMs }
 }
