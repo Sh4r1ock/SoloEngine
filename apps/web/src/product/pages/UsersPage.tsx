@@ -342,8 +342,9 @@ export function UsersPage({ user }: { user: UserView }) {
       {!loading && error === null && visible.length === 0 && (
         <div className={css.empty}>
           <span className={css.emptyIcon} aria-hidden="true"><IconUsersOutlineRegular size={20} /></span>
-          <p className={css.emptyTitle}>{t('users', 'noMatch')}</p>
-          <p className={css.emptyDesc}>{t('users', 'noMatchDesc')}</p>
+          {/* 一个账号都没有 ≠ 过滤后无匹配：后者才该让人去改搜索关键词。 */}
+          <p className={css.emptyTitle}>{t('users', rows.length === 0 ? 'empty' : 'noMatch')}</p>
+          <p className={css.emptyDesc}>{t('users', rows.length === 0 ? 'emptyDesc' : 'noMatchDesc')}</p>
         </div>
       )}
 
