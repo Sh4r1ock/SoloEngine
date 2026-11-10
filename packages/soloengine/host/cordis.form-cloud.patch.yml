@@ -54,3 +54,11 @@
         url: !!js process.env.SOLOENGINE_DATABASE_URL
         schema: search
         openAt: first-search
+
+# 信任门签名密钥在多节点之间共享（Plan W6 改动面：仅信任门签名密钥改为共享凭据来源）。
+# 浏览器 cookie 按 `Host:port` 用 credentials 文档里的密钥签名；节点各存一份会让租约改投
+# 另一节点后 cookie 立即失效。部署把该变量指向共享卷；未声明时沿用各节点 DSH_HOME 下的
+# 默认文件（单机形态）。
+- id: credentials
+  config:
+    path: !!js process.env.SOLOENGINE_CREDENTIALS_PATH || undefined

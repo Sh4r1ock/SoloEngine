@@ -107,10 +107,13 @@ services:
       - keys-data:/data/home/keys
       # 工作区权威副本（W10.12/W13）：跨节点共享的对象存储根；本地工作副本仍在节点数据卷里。
       - workspace-objects:/workspace-objects
+      # 信任门签名密钥（Plan W6）：浏览器 cookie 由任一节点签发，密钥必须跨节点同一份。
+      - node-credentials:/data/home/credentials
     environment:
       SOLOENGINE_DB_FORM: cloud
       SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
       SOLOENGINE_WORKSPACE_STORE: /workspace-objects
+      SOLOENGINE_CREDENTIALS_PATH: /data/home/credentials/.credentials.yaml
       SOLOENGINE_HOST: 127.0.0.1
       SOLOENGINE_PORT: "8995"
       SOLOENGINE_NO_OPEN: "1"
@@ -144,10 +147,12 @@ services:
       - node-b-data:/data
       - keys-data:/data/home/keys
       - workspace-objects:/workspace-objects
+      - node-credentials:/data/home/credentials
     environment:
       SOLOENGINE_DB_FORM: cloud
       SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
       SOLOENGINE_WORKSPACE_STORE: /workspace-objects
+      SOLOENGINE_CREDENTIALS_PATH: /data/home/credentials/.credentials.yaml
       SOLOENGINE_HOST: 127.0.0.1
       SOLOENGINE_PORT: "8996"
       SOLOENGINE_NO_OPEN: "1"
@@ -174,3 +179,4 @@ volumes:
   node-a-data:
   node-b-data:
   workspace-objects:
+  node-credentials:
