@@ -7,6 +7,9 @@
  * 只写一条 `soloengine/run-context` 持久事件（后写覆盖先写，投影随之更新）：运行档位与
  * 实时跟随属于「这一次运行怎么跑」，由面板随时调整，不写回画布。
  *
+ * 另有两条面板专用路由：`start`（无会话时用受管工作根发起运行）与 `workspace`（把面板里
+ * 新增的工作区目录登记为本次 flow 的运行项目，需求 §9.5 ⑤）。
+ *
  * @module @soloengine/host/run-settings-bridge
  */
 
@@ -95,8 +98,37 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
         }
         return
       }
-      if (route !== 'live-follow' || method !== 'POST') {
+      if (route !== 'live-follow' && route !== 'workspace') {
         throw new BridgeFailure(404, 'BRIDGE_ROUTE_NOT_FOUND', `no run settings route for ${method} ${url.pathname}`)
+      }
+      if (method !== 'POST') {
+        throw new BridgeFailure(405, 'BRIDGE_METHOD_NOT_ALLOWED', `${route} requires POST`)
+      }
+      if (route === 'workspace') {
+        // 面板里新增的工作区：登记为本次 flow 的运行项目（需求 §9.5 ⑤）。目录由原生工作区
+        // 选择器给出，产品只把「画布 × 目录」记进台账，宿主随后按会话 cwd 补登会话行。
+        const body = await readJsonBody(req)
+        const canvasId = typeof body.canvasId === 'string' ? body.canvasId.trim() : ''
+        const folderPath = typeof body.folderPath === 'string' ? body.folderPath.trim() : ''
+        if (canvasId === '') throw new BridgeFailure(400, 'CANVAS_REQUIRED', 'canvasId is required to register a run project')
+        if (folderPath === '') throw new BridgeFailure(400, 'FOLDER_REQUIRED', 'folderPath is required to register a run project')
+        const admission = ctx.connection.admit(req)
+        const userId = 'peer' in admission ? ctx.connection.accountIdOf(admission.peer) : undefined
+        if (userId === undefined) {
+          throw new BridgeFailure(401, 'UNAUTHENTICATED', 'registering a run project requires a signed-in account')
+        }
+        const canvas = await runtime.canvas.byId(userId, canvasId)
+        if (canvas === undefined) {
+          throw new BridgeFailure(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} is not visible to this account`)
+        }
+        try {
+          const project = await runtime.canvas.ensureProject(userId, canvasId, folderPath)
+          sendJson(res, 201, { ok: true, project: { id: project.id } })
+        } catch (error) {
+          if (error instanceof FrameworkError) throw new BridgeFailure(error.status, error.code, error.message)
+          throw error
+        }
+        return
       }
       const body = await readJsonBody(req)
       const sessionKey = typeof body.sessionKey === 'string' ? body.sessionKey : ''

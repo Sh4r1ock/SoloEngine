@@ -162,13 +162,13 @@ function startRun(flowId: string): void {
 }
 
 /**
- * 面板里新增的工作区一旦有了会话，就把「画布 × 目录」登记为运行项目。
+ * 面板里新增的工作区登记为本次 flow 的运行项目。
  *
  * 需求 §9.5 ⑤：同一个 flow 可以登记无限多个运行项目，每次运行按所选目录登记。目录由面板的
  * 原生「添加工作区」选择（产品不自建选择器）；工作区实体归原生，运行项目台账归产品，因此
  * 这里按原生工作区快照做一次对账：加载时已存在的工作区不登记（它们可能属于别的画布），
- * 只有本次加载后新增、且已经产生会话的工作区才登记。登记后宿主按 cwd 命中运行项目并补登
- * 会话台账行（`resolveSessionOwnership` 的 adopt 分支），画布列表与打包才看得见这次运行。
+ * 本次加载后新增的工作区一出现就登记。登记必须早于会话创建——面板里的新会话要能被账号作用域
+ * 看见，就得先有台账归属（否则新会话没有台账行，侧栏与画布列表都看不到它）。
  * @param ctx - 客户端根上下文。
  * @param flowId - 地址栏里的画布 id。
  */
@@ -177,12 +177,10 @@ function registerNewWorkspaceProjects(ctx: ClientContext, flowId: string): void 
   const registered = new Set<string>()
   let captured = false
   const register = (path: string): void => {
-    const token = accessToken()
-    if (token === '') return
-    void fetch('/api/solo/projects', {
+    void fetch('/soloengine/run-settings/workspace', {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ canvasId: flowId, folderPath: path }),
     }).then((response) => {
       if (response.ok) {
@@ -204,7 +202,6 @@ function registerNewWorkspaceProjects(ctx: ClientContext, flowId: string): void 
     }
     for (const workspace of snapshot.items) {
       if (baseline.has(workspace.path) || registered.has(workspace.path)) continue
-      if (workspace.sessionIds.length === 0) continue
       registered.add(workspace.path)
       register(workspace.path)
     }

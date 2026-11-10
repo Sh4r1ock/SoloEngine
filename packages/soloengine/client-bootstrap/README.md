@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Browser bootstrap for the run panel. It reads the flow and session keys injected by the host, selects the canvas's latest native session, and retains it through the client connection. It first declares that session to Workspace navigation, so startup restoration opens it instead of connecting — and possibly creating — a draft session. When the addressed flow has no session yet it starts one through the host bridge with the managed working root. It also reconciles Workspaces added during this panel load: once such a Workspace owns a session, the pair (canvas, directory) is registered as a run project so the host can attribute that session. It owns no plugin tree and no model context.
+Browser bootstrap for the run panel. It reads the flow and session keys injected by the host, selects the canvas's latest native session, and retains it through the client connection. It first declares that session to Workspace navigation, so startup restoration opens it instead of connecting a draft session. With no session it starts one through the host bridge with the managed working root. It also registers Workspaces added during this panel load as run projects before any session exists, so the account scope can show their new sessions. It owns no plugin tree and no model context.
 
 ## Table of Contents
 
@@ -34,7 +34,7 @@ No effect: selection never changes request content.
 ## Known Limitations and Deferred Work
 
 - Workspaces that already existed when the panel loaded are not registered: they may belong to another canvas, and the browser cannot tell which flow created them.
-- A Workspace is registered only after it owns a session, so a directory the user added but never ran in leaves no run-project row.
+- A Workspace the user added but never ran in keeps an empty run-project row.
 
 ### Dev Note
 
