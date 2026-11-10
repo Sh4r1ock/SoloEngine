@@ -119,8 +119,6 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
   const pending = new Map<string, PendingCapture>()
   /** 撤回写回的目标键 → 撤回上下文（让写回落 `origin='revert'`）。 */
   const revertTargets = new Map<string, { sessionKey: string; userId: string; agentId: string | null; of: readonly string[] }>()
-  /** 会话 → 其运行项目目录（主干检查点边界状态；`session/disposed` 时释放）。 */
-  const sessionWorkspaces = new Map<string, string>()
   /**
    * 会话 → 正在跑的回合的工作区。
    *
@@ -159,11 +157,10 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
     }
   })
 
-  /** 会话销毁：释放其工作区与在飞回合的边界状态。 */
+  /** 会话销毁：释放在飞回合的边界状态。 */
   ctx.on('session/disposed', (session: SessionEventsFace & { id: unknown }) => {
     try {
       const key = String(session.id)
-      sessionWorkspaces.delete(key)
       runningTurns.delete(key)
       syncTrunkCheckpointMode()
     } catch (error) {
@@ -183,7 +180,6 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
   const enterWorkspace = (session: SessionEventsFace, sessionKey: string): void => {
     const cwd = session.header?.cwd
     if (typeof cwd !== 'string' || cwd === '') return
-    sessionWorkspaces.set(sessionKey, cwd)
     runningTurns.set(sessionKey, cwd)
     const boundary = workspaceBoundary(cwd)
     if (boundary !== 'worktree-root' && !announcedBoundaries.has(`${boundary}:${cwd}`)) {
@@ -588,14 +584,4 @@ async function attributeOf(
     callId,
     origin: isToolWrite ? 'agent' : 'user',
   }
-}
-
-/**
- * 供路由层复用的写路径钩子（人写入经产品 REST 时标记 `origin='user'`）。
- * @param userId - 人类写入者的用户标识。
- * @param sessionKey - 目标会话键；无会话级归属时为 null。
- * @returns 原样携带归属信息的写标记。
- */
-export function markUserWrite(userId: string, sessionKey: string | null): { userId: string; sessionKey: string | null } {
-  return { userId, sessionKey }
 }
