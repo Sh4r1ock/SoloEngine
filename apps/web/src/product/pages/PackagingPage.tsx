@@ -8,6 +8,7 @@ import { isTerminalStage, type PackagingRunStatus, type PackagingStageStatus } f
 import { ApiError, describeError, request } from '../api.ts'
 import { t } from '../i18n.ts'
 import { Drawer } from '../components/Drawer.tsx'
+import { openPage } from '../router.ts'
 import { NoticeLine } from '../components/NoticeLine.tsx'
 import { useToastHost } from '../components/Toaster.tsx'
 import { Field } from '../components/Field.tsx'
@@ -188,6 +189,9 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
     appId: null,
   })
   const [error, setError] = useState<string | null>(null)
+  /** 列表数据（项目 / 部署指引）的加载与失败态：首屏必须有加载态，失败后可原地重试。 */
+  const [listsLoading, setListsLoading] = useState(true)
+  const [listsFailed, setListsFailed] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [confirmError, setConfirmError] = useState<string | null>(null)
@@ -197,10 +201,12 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
   // 数据一起丢掉（R8 具体 / R17 可操作出路 / R24 部分失败隔离）。画布来自抽屉上下文，
   // 不再由打包自己拉取。
   const loadLists = useCallback(async (): Promise<void> => {
+    setListsLoading(true)
     const [projectResult, guideResult] = await Promise.allSettled([
       request<{ ok: true; projects: RunProjectView[] }>('/projects'),
       request<{ ok: true; guide: DeploymentGuide }>('/deployment/guide'),
     ])
+    setListsLoading(false)
     const failed: string[] = []
     let reason: unknown = null
     const settle = <T,>(result: PromiseSettledResult<T>, label: string, apply: (value: T) => void): void => {
@@ -212,6 +218,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
     }
     settle(projectResult, t('packaging', 'errorProjects'), (value) => { setProjects(value.projects) })
     settle(guideResult, t('packaging', 'errorDeployment'), (value) => { setGuide(value.guide) })
+    setListsFailed(failed.length > 0)
     if (failed.length === 0) {
       setError(null)
       return
@@ -323,8 +330,8 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
   const previewStatus = loading
     ? t('packaging', 'previewing')
     : preview === null ? t('packaging', 'previewNever') : t('packaging', 'previewLoaded')
-  // 原型 packaging.html:59：预览时间固定显示「刚刚」（原型没有本地时钟口径）。
-  const previewTime = t('packaging', 'relativeJustNow')
+  // 原型 packaging.html:59 固定「刚刚」；但「从未预览」旁边不能再贴一个时间——那会自相矛盾。
+  const previewTime = preview === null ? '' : t('packaging', 'relativeJustNow')
   // 原型 packaging.html:64：步骤 1 的状态恒为「就绪」（步骤条表达可用性，不表达是否已读取）。
   const previewStepState = t('packaging', 'stepReady')
   const runStepState = run === null ? t('packaging', 'stageStatusPending') : t('packaging', stageKey(run.status))
@@ -478,7 +485,12 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
         ))}
       </nav>
 
-      <NoticeLine tone="error" text={error} />
+      {listsLoading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
+      <NoticeLine
+        tone="error"
+        text={error}
+        {...(listsFailed ? { action: { label: t('common', 'actionRetry'), onClick: () => { void loadLists() } } } : {})}
+      />
 
       <div className={pkgCss.layout}>
         <div className={pkgCss.main}>
@@ -754,6 +766,16 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
                 </Button>
                 <span className={css.fieldHint}>{t('packaging', 'runHint')}</span>
                 {selectedProject === null && <span className={css.fieldHint}>{t('packaging', 'needProject')}</span>}
+                {selectedCanvas !== null && canvasProjects.length === 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { openPage(`/run/${selectedCanvas}`) }}
+                  >
+                    {t('packaging', 'createProject')}
+                  </Button>
+                )}
               </div>
             </form>
             {/* 原型在开跑前就渲染阶段清单与终端：阶段全部「等待」，终端给出空占位与复制入口。 */}
@@ -791,7 +813,11 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
               running={run?.status === 'running'}
               exitCode={run === null ? undefined : run.status === 'failed' ? 1 : run.status === 'completed' ? 0 : undefined}
               runStateDot={run !== null}
-              labels={run === null ? { ...terminalLabels(), noOutput: t('packaging', 'terminalWaiting') } : terminalLabels()}
+              labels={{
+                ...terminalLabels(),
+                copy: t('packaging', 'terminalCopy'),
+                ...(run === null ? { noOutput: t('packaging', 'terminalWaiting') } : {}),
+              }}
               className={`${css.terminal} ${pkgCss.terminal}`}
             />
             {run !== null && (
