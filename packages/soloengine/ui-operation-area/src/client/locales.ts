@@ -49,6 +49,7 @@ export const zh = {
   'changes.skipLargeFile': '文件超出可恢复大小，跳过',
   'changes.skipBlobMissing': '记录的历史内容缺失，无法恢复',
   'changes.skipNoNetChange': '内容与当前一致，无需恢复',
+  'changes.skipAnchorMismatch': '文件内有被丢弃的写入且行位置已变，无法按记录安全还原',
   'changes.skipUnknown': '跳过',
   'follow.failed': '工具跟随未完成：右栏面板没有在预期时间内就位',
 }
@@ -99,6 +100,7 @@ export const en: Record<keyof typeof zh, string> = {
   'changes.skipLargeFile': 'The file exceeds the restorable size limit; skipped',
   'changes.skipBlobMissing': 'The recorded content is missing, so it cannot be restored',
   'changes.skipNoNetChange': 'Content already matches; nothing to restore',
+  'changes.skipAnchorMismatch': 'The file contains discarded writes that shifted lines, so it cannot be restored safely from the record',
   'changes.skipUnknown': 'Skipped',
   'follow.failed': 'Tool follow-through did not happen: the right-side panel never mounted in time',
 }

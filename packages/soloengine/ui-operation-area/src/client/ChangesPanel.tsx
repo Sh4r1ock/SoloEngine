@@ -90,6 +90,7 @@ const SKIP_KEYS: Record<string, SoloengineOpsKey> = {
   LARGE_FILE: 'changes.skipLargeFile',
   BLOB_MISSING: 'changes.skipBlobMissing',
   NO_NET_CHANGE: 'changes.skipNoNetChange',
+  ANCHOR_MISMATCH: 'changes.skipAnchorMismatch',
 }
 
 /** 失败句子：已知码给本地化原因，未知码回落服务端诊断，诊断也空则通用句。 */

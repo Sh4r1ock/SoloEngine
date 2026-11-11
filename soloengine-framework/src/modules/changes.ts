@@ -21,6 +21,9 @@
  *   撤回时该文件以 `NO_NET_CHANGE` 跳过，不制造空写。
  * - **漂移检测**（FR-FC-008）：撤回前比对磁盘当前内容哈希与记录的**变更后**内容哈希（文件级取该轮
  *   最终记录态）；不一致即跳过该文件并提示，其余文件照常恢复（不因部分漂移整体失败）。
+ * - **行号错位**（FR-FC-005 与 FR-FC-007 的组合边界）：轮内有写入被整条丢弃且改变了行数时，
+ *   更早记录的回退无法按行号锚定——该文件跳过（`ANCHOR_MISMATCH`）并给出原因，绝不盲写；
+ *   单条记录内的逐 hunk 丢弃仍按记录行号精确还原。
  * - **二进制文件**（PRD-09 §5）：行级差异不适用——记录字节数与哈希、`content_type='binary'`，
  *   差异视图标注「二进制文件」，不产出 hunks。
  *
@@ -182,13 +185,14 @@ export interface RevertSkip {
   reason: string
 }
 
-/** 跳过原因码：漂移 / 裁决丢弃 / 还原源缺失 / 无净变更。 */
+/** 跳过原因码：漂移 / 裁决丢弃 / 还原源缺失 / 无净变更 / 行位置无法锚定。 */
 export type RevertSkipCode =
   | 'DRIFTED'
   | 'REJECTED'
   | 'BLOB_MISSING'
   | 'LARGE_FILE'
   | 'NO_NET_CHANGE'
+  | 'ANCHOR_MISMATCH'
 
 /** 撤回计划。 */
 export interface RevertPlan {
@@ -311,6 +315,30 @@ function sideLines(hunk: ChangeHunk, side: 'old' | 'new'): string[] {
     else if (side === 'new' && marker === '+') out.push(text)
   }
   return out
+}
+
+/**
+ * 校验一组 hunk 在给定内容上能否按行号锚定（该侧每一段的行文本必须逐行相等）。
+ *
+ * 撤回链从最终记录态逐条回退：只要中间有记录被整条丢弃（保留新侧）并改变了行数，
+ * 更早记录的 `newStart` 就会与当前内容错位；按错位行号贴回会静默写错文件。
+ * 锚定不上即由调用方跳过该文件并给出结构化原因，绝不盲写。
+ * @param content - 当前内容。
+ * @param hunks - 待贴回的 hunks。
+ * @param side - 校验哪一侧。
+ * @returns 是否全部可锚定（纯插入的 hunk 无该侧行，视为可锚定）。
+ */
+function hunksAnchor(content: string, hunks: readonly ChangeHunk[], side: 'old' | 'new'): boolean {
+  const { lines } = splitText(content)
+  for (const hunk of hunks) {
+    const start = side === 'old' ? hunk.oldStart : hunk.newStart
+    const count = side === 'old' ? hunk.oldLines : hunk.newLines
+    if (count === 0) continue
+    const expected = sideLines(hunk, side)
+    const actual = lines.slice(start - 1, start - 1 + count)
+    if (actual.length !== expected.length || actual.some((line, index) => line !== expected[index])) return false
+  }
+  return true
 }
 
 /**
@@ -855,6 +883,14 @@ export class ChangeLedgerService {
         // 逐条回退（从最后一条记录往最早一条）；被丢弃的 hunk 不在回退之列。
         for (const row of [...live].reverse()) {
           const hunks = parseHunks(row)
+          // 行号错位（前面有被整条丢弃的写入改变了行数）时不能盲写：跳过并在计划里点名。
+          if (hunks !== null && !hunksAnchor(running, hunks, 'new')) {
+            missing = {
+              changeId: row.id, filePath, code: 'ANCHOR_MISMATCH',
+              reason: '该文件在轮内有被丢弃的写入且改变了行位置，按记录行号回退会写错内容；请逐 hunk 审阅后处理',
+            }
+            break
+          }
           let fallback = running
           if (hunks === null && row.before_content_hash !== null) {
             const blob = await this.readBlob(row.before_content_hash)
