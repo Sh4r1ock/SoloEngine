@@ -974,7 +974,7 @@ export class SkillService {
       const stat = statSync(p)
       // 清单只用于文件树与二进制判定：不整份读入（大文件会把响应体撑爆）。
       // 文本文件给空串，二进制给 null；正文由 `/skills/:id/file` 单文件读取。
-      const textual = looksTextual(readHead(p, 4096))
+      const textual = looksTextual(readHead(p, 4096), { sample: true })
       return { path: relative, size: stat.size, text: textual ? '' : null }
     })
   }

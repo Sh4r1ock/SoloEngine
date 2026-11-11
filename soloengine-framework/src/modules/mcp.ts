@@ -637,10 +637,12 @@ export class McpService {
       throw new FrameworkError(413, 'FILE_TOO_LARGE',
         `${relative} is ${String(stat.size)} bytes; files larger than ${String(MAX_EDIT_BYTES)} bytes cannot be opened here`)
     }
-    if (!looksTextual(readHead(target, TEXT_SAMPLE_BYTES))) {
+    // 正文会整份解码再写回：合法性按整份文件判定（采样子集合法但尾部非法的文件同样拒绝）。
+    const data = readFileSync(target)
+    if (!looksTextual(data)) {
       throw new FrameworkError(415, 'BINARY_FILE', `${relative} is not a text file and cannot be edited here`)
     }
-    return { path: relativePath(dir, target).replace(/\\/gu, '/'), content: readFileSync(target, 'utf8') }
+    return { path: relativePath(dir, target).replace(/\\/gu, '/'), content: data.toString('utf8') }
   }
 
   /**
@@ -670,7 +672,7 @@ export class McpService {
         throw new FrameworkError(409, 'TARGET_IS_DIRECTORY',
           `${relative} is a directory; the editor only writes files`)
       }
-      if (!looksTextual(readHead(target, TEXT_SAMPLE_BYTES))) {
+      if (!looksTextual(readHead(target, TEXT_SAMPLE_BYTES), { sample: true })) {
         throw new FrameworkError(415, 'BINARY_FILE', `${relative} is not a text file and cannot be overwritten here`)
       }
     }
@@ -1311,7 +1313,7 @@ function walkTree(root: string, limit: number | null): { files: McpServerFileEnt
       return {
         path: relativePath(root, child).replace(/\\/gu, '/'),
         bytes: lstatSync(child).size,
-        text: looksTextual(readHead(child, TEXT_SAMPLE_BYTES)),
+        text: looksTextual(readHead(child, TEXT_SAMPLE_BYTES), { sample: true }),
       }
     } catch {
       // 遍历期间文件被删除或不可读：跳过这一条，不制造不存在的条目。
