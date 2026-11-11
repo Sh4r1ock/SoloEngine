@@ -333,14 +333,28 @@ export class CloudGateway {
     }
     const route = await this.route(sessionKey, ownership.userId)
     if (!route.ok) {
-      const quota = route.code === 'QUOTA_EXCEEDED'
-      response.writeHead(quota ? 429 : 503, { 'content-type': 'application/json; charset=utf-8' })
-      response.end(JSON.stringify(quota
-        ? { ok: false, code: 'QUOTA_EXCEEDED', message: 'the account has reached its concurrent-session quota' }
-        : { ok: false, code: 'NO_CAPACITY', message: 'no node can take this session' }))
+      this.rejectRoute(response, route, 'session')
       return
     }
     this.pipeHttp(request, response, route, ownership.userId)
+  }
+
+  /**
+   * 回写路由失败：超配额 429，集群无容量 503。
+   * @param response - 出站响应。
+   * @param route - 失败的路由结果。
+   * @param subject - 无容量说明里的对象（会话或产品面请求）。
+   */
+  private rejectRoute(
+    response: ServerResponse,
+    route: Extract<GatewayRoute, { ok: false }>,
+    subject: 'session' | 'request',
+  ): void {
+    const quota = route.code === 'QUOTA_EXCEEDED'
+    response.writeHead(quota ? 429 : 503, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify(quota
+      ? { ok: false, code: 'QUOTA_EXCEEDED', message: 'the account has reached its concurrent-session quota' }
+      : { ok: false, code: 'NO_CAPACITY', message: `no node can take this ${subject}` }))
   }
 
   /**
@@ -361,11 +375,7 @@ export class CloudGateway {
     }
     const route = await this.route(placementKey, undefined, this.entryTtlMs)
     if (!route.ok) {
-      const quota = route.code === 'QUOTA_EXCEEDED'
-      response.writeHead(quota ? 429 : 503, { 'content-type': 'application/json; charset=utf-8' })
-      response.end(JSON.stringify(quota
-        ? { ok: false, code: 'QUOTA_EXCEEDED', message: 'the account has reached its concurrent-session quota' }
-        : { ok: false, code: 'NO_CAPACITY', message: 'no node can take this request' }))
+      this.rejectRoute(response, route, 'request')
       return
     }
     this.pipeHttp(request, response, route, undefined)
