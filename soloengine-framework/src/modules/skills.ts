@@ -423,14 +423,41 @@ export class SkillService {
 
   /**
    * 空字节序列（处理二进制文件的遍历）。
-   * @param bytes - 原始字节。
+   *
+   * 解压预算按中央目录声明的原始大小在**解压前**执行：与 MCP 上传包同一道闸门。
+   * zip 炸弹（几 MB 压缩包展开成 GB）不能等到解压完再量——那一步就已经把内存吃光，
+   * 后面的条目/字节上限根本到不了。
+   * @param bytes - zip 字节。
+   * @returns 解压后的条目。
    */
   private static bytesToEntries(bytes: Uint8Array): ZipEntry[] {
-    const map = unzipSync(bytes)
-    const entries = Object.entries(map).map(([name, data]) => ({ name, data }))
-    if (entries.length > MAX_ARCHIVE_ENTRIES) {
-      throw new FrameworkError(400, 'ARCHIVE_TOO_LARGE', `archive has ${String(entries.length)} entries; the limit is ${String(MAX_ARCHIVE_ENTRIES)}`)
+    let declaredTotal = 0
+    let declaredCount = 0
+    const overflow: string[] = []
+    let map: Record<string, Uint8Array>
+    try {
+      map = unzipSync(bytes, {
+        filter: (file) => {
+          declaredCount += 1
+          declaredTotal += file.originalSize
+          if (declaredCount > MAX_ARCHIVE_ENTRIES
+            || file.originalSize > MAX_ARCHIVE_ENTRY_BYTES
+            || declaredTotal > MAX_ARCHIVE_BYTES) {
+            overflow.push(file.name)
+            return false
+          }
+          return true
+        },
+      })
+    } catch (error) {
+      throw new FrameworkError(400, 'ARCHIVE_INVALID',
+        `the skill package is not a valid ZIP archive: ${error instanceof Error ? error.message : String(error)}`)
     }
+    if (overflow.length > 0) {
+      throw new FrameworkError(400, 'ARCHIVE_TOO_LARGE',
+        `archive expands beyond the import limits at ${overflow[0] as string}; the archive is refused before extraction`)
+    }
+    const entries = Object.entries(map).map(([name, data]) => ({ name, data }))
     let total = 0
     for (const entry of entries) {
       if (entry.data.byteLength > MAX_ARCHIVE_ENTRY_BYTES) {
@@ -492,12 +519,26 @@ export class SkillService {
     if (resolved !== targetRoot && !resolved.startsWith(prefix)) {
       throw new FrameworkError(400, 'PATH_TRAVERSAL', `entry ${relative} escapes the skill directory and is rejected`)
     }
-    // 词法归一挡不住指向根外的符号链接：目标已存在时按真实路径复核一次。
-    if (existsSync(resolved)) {
-      const realRoot = realpathSync(targetRoot)
-      const realTarget = realpathSync(resolved)
+    // 词法归一挡不住指向根外的符号链接：按**最近的已存在祖先**复核真实路径。
+    // 只查目标本身会漏掉「新文件写在已存在的链接目录下」这一形态。
+    if (existsSync(targetRoot)) {
+      let probe = resolved
+      while (!existsSync(probe)) {
+        const parent = dirname(probe)
+        if (parent === probe) break
+        probe = parent
+      }
+      let realRoot: string
+      let realProbe: string
+      try {
+        realRoot = realpathSync(targetRoot)
+        realProbe = realpathSync(probe)
+      } catch (error) {
+        throw new FrameworkError(400, 'PATH_TRAVERSAL',
+          `entry ${relative} cannot be resolved inside the skill directory: ${error instanceof Error ? error.message : String(error)}`)
+      }
       const realPrefix = realRoot.endsWith(path.sep) ? realRoot : `${realRoot}${path.sep}`
-      if (realTarget !== realRoot && !realTarget.startsWith(realPrefix)) {
+      if (realProbe !== realRoot && !realProbe.startsWith(realPrefix)) {
         throw new FrameworkError(400, 'PATH_TRAVERSAL', `entry ${relative} resolves outside the skill directory and is rejected`)
       }
     }
