@@ -18,6 +18,7 @@ import {
 import { ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/static.ts'
 import { CONTRAST_TOKEN_OVERRIDES } from '@soloengine/ui-theme/static'
 import { readBrowserPreferences, writeBrowserPreferences } from './browser-preferences.ts'
+import { getLocale } from './i18n.ts'
 
 /** 主题三模式。 */
 export type ThemePreference = 'light' | 'dark' | 'system'
@@ -112,7 +113,8 @@ function cachePreference(): void {
     const stored = readBrowserPreferences()
     writeBrowserPreferences({
       theme: { preference, fontSize: contentFontSize },
-      locale: stored?.locale ?? 'zh',
+      // 语言属于 i18n 的决定，主题写入不得把它固化成默认中文（英文浏览器首次访问会被改写）。
+      locale: stored?.locale ?? getLocale(),
     })
   } catch {
     // localStorage 被禁用/已满：本次偏好仍作用于当前页面，只是下次首屏回到默认值。
