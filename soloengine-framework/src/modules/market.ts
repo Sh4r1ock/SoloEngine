@@ -11,7 +11,7 @@
  * @module @soloengine/framework/modules/market
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { zipSync } from 'fflate'
 import Schema from '@deepseek-ai/schemastery'
@@ -530,6 +530,19 @@ export class MarketService {
     if (!existsSync(sourcePath)) {
       throw new FrameworkError(404, 'MARKET_SOURCE_MISSING', `market entry ${entry.id} source ${entry.source} does not exist`)
     }
+    // 词法边界挡不住符号链接：source 本身或它内部的链接都不能把 data 根外的内容装进技能包。
+    const realRoot = resolve(this.runtime.dataDir)
+    let realSource: string
+    try {
+      realSource = realpathSync(sourcePath)
+    } catch (error) {
+      throw new FrameworkError(404, 'MARKET_SOURCE_MISSING',
+        `market entry ${entry.id} source ${entry.source} cannot be resolved: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    const realPrefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`
+    if (realSource !== realRoot && !realSource.startsWith(realPrefix)) {
+      throw new FrameworkError(404, 'MARKET_SOURCE_MISSING', `market source ${entry.source} escapes the data directory`)
+    }
     let archive: Uint8Array
     if (statSync(sourcePath).isDirectory()) {
       // 目录以包内相对路径直接入包（不加前缀）：落盘后技能根即 <用户技能目录>/<name>，
@@ -644,16 +657,29 @@ export class MarketService {
   }
 }
 
-/** 递归列出目录下全部文件的绝对路径（排序稳定）。 */
+/** 市场源目录的递归深度上限（符号链接已跳过，仍防异常深树）。 */
+const MAX_MARKET_DEPTH = 32
+
+/**
+ * 递归列出目录下全部普通文件的绝对路径（排序稳定）。
+ *
+ * 不跟随符号链接：市场源里的链接不能把 data 根外的内容装进技能包，也不会因链接环无限递归。
+ * @param root - 目录绝对路径。
+ * @returns 文件绝对路径（排序）。
+ */
 function walkFiles(root: string): string[] {
   const out: string[] = []
-  const visit = (dir: string): void => {
+  const visit = (dir: string, depth: number): void => {
+    if (depth > MAX_MARKET_DEPTH) return
     for (const name of readdirSync(dir)) {
       const path = join(dir, name)
-      if (statSync(path).isDirectory()) visit(path)
-      else out.push(path)
+      let stat
+      try { stat = lstatSync(path) } catch { continue }
+      if (stat.isSymbolicLink()) continue
+      if (stat.isDirectory()) visit(path, depth + 1)
+      else if (stat.isFile()) out.push(path)
     }
   }
-  visit(root)
+  visit(root, 0)
   return out.sort()
 }
