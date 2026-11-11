@@ -250,7 +250,8 @@ export function ModelsPage() {
           retry: () => { act(id, action, run, failureKey, successText) },
         })
       } finally {
-        setBusy(null)
+        // 只清自己那一槽：另一行的动作可能仍在途，无条件置空会让它提前解禁。
+        setBusy(current => current !== null && current.id === id && current.action === action ? null : current)
       }
     })()
   }
@@ -285,7 +286,7 @@ export function ModelsPage() {
           retry: () => { testModel(model) },
         })
       } finally {
-        setBusy(null)
+        setBusy(current => current !== null && current.id === model.id && current.action === 'test' ? null : current)
       }
     })()
   }
@@ -306,7 +307,7 @@ export function ModelsPage() {
           retry: () => { deleteModel(model) },
         })
       } finally {
-        setBusy(null)
+        setBusy(current => current !== null && current.id === model.id && current.action === 'delete' ? null : current)
       }
     })()
   }
@@ -466,7 +467,7 @@ export function ModelsPage() {
                               className={isDefault(row)
                                 ? `${modelsCss.chartBarFill} ${modelsCss.chartBarFillAccent}`
                                 : modelsCss.chartBarFill}
-                              style={{ width: `${Math.max(2, Math.round((row.totalTokens / maxTokens) * 100))}%` }}
+                              style={{ width: row.totalTokens === 0 ? '0%' : `${Math.max(2, Math.round((row.totalTokens / maxTokens) * 100))}%` }}
                             />
                           </div>
                           <div className={modelsCss.chartMeta}>
@@ -743,9 +744,18 @@ export function ModelsPage() {
         target={editTarget}
         onClose={() => { setCreateOpen(false); setEditTarget(null) }}
         onSaved={() => {
+          const editedId = editTarget?.id
           toast.show(t('models', editTarget === null ? 'toastCreated' : 'toastSaved'), 'success')
           setCreateOpen(false)
           setEditTarget(null)
+          // 连接事实（地址/密钥/模型名）已变，旧的「测试成功」不再代表当前配置。
+          if (editedId !== undefined) {
+            setTestResults((previous) => {
+              if (previous[editedId] === undefined) return previous
+              return Object.fromEntries(Object.entries(previous).filter(([id]) => id !== editedId))
+            })
+            setLastTestedId(current => current === editedId ? null : current)
+          }
           void load()
         }}
       />

@@ -358,7 +358,12 @@ export function SettingsPage() {
           body: { name: bundle.name, enabled },
         })
         setManageNotice(changeNotice(result.result))
-        await Promise.all([loadBundles(), loadPlugins()])
+        try {
+          await Promise.all([loadBundles(), loadPlugins()])
+        } catch (failure) {
+          // 启停已经生效：刷新失败只报「清单没刷新」，不能把它说成操作失败。
+          setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+        }
       } catch (failure) {
         setManageNotice(failure instanceof ApiError && failure.code === 'PLUGIN_BUNDLE_NOT_MANAGED'
           ? { key: 'pluginErrorNotManaged', tone: 'error' }
@@ -383,7 +388,12 @@ export function SettingsPage() {
         })
         setManageNotice(changeNotice(result.result))
         setRemoveTarget(null)
-        await Promise.all([loadBundles(), loadPlugins()])
+        try {
+          await Promise.all([loadBundles(), loadPlugins()])
+        } catch (failure) {
+          // 对话框已关闭：刷新失败必须落在页面级提示上，否则用户既看不到原因也没有重试入口。
+          setManageNotice({ key: 'pluginErrorGeneric', tone: 'error', detail: describeError(failure) })
+        }
       } catch (failure) {
         // 失败留在确认框内（带重试）；页面级提示在 Modal 之下，用户看不到。
         setRemoveFailure({

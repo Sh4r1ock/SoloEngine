@@ -191,7 +191,8 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
   const [error, setError] = useState<string | null>(null)
   /** 列表数据（项目 / 部署指引）的加载与失败态：首屏必须有加载态，失败后可原地重试。 */
   const [listsLoading, setListsLoading] = useState(true)
-  const [listsFailed, setListsFailed] = useState(false)
+  /** 列表加载失败与预览/运行失败各占一行：共用一行会让「重试」指向与失败无关的动作。 */
+  const [listsError, setListsError] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [confirmError, setConfirmError] = useState<string | null>(null)
@@ -218,13 +219,12 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
     }
     settle(projectResult, t('packaging', 'errorProjects'), (value) => { setProjects(value.projects) })
     settle(guideResult, t('packaging', 'errorDeployment'), (value) => { setGuide(value.guide) })
-    setListsFailed(failed.length > 0)
     if (failed.length === 0) {
-      setError(null)
+      setListsError(null)
       return
     }
     // 只有部署指引失败时按错误码给出本地文案（DEPLOYMENT_UNBOUND 等）；多方失败保留归因。
-    setError(failed.length === 1 && guideResult.status === 'rejected'
+    setListsError(failed.length === 1 && guideResult.status === 'rejected'
       ? packagingFailureText(guideResult.reason, 'errorDeployment')
       : `${failed.join('；')} — ${describeError(reason)}`)
   }, [])
@@ -488,9 +488,10 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
       {listsLoading && <div className={css.empty}>{t('common', 'stateLoading')}</div>}
       <NoticeLine
         tone="error"
-        text={error}
-        {...(listsFailed ? { action: { label: t('common', 'actionRetry'), onClick: () => { void loadLists() } } } : {})}
+        text={listsError}
+        {...(listsError === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: () => { void loadLists() } } })}
       />
+      <NoticeLine tone="error" text={error} />
 
       <div className={pkgCss.layout}>
         <div className={pkgCss.main}>

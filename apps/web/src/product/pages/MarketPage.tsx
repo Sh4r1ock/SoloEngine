@@ -234,6 +234,9 @@ export function MarketPage() {
     setCategory(null)
     if (next !== kind) {
       setCategories([])
+      // 上一类型的条目不能留在新标签下：请求返回前它们是另一类资产，且总数为旧值。
+      setEntries([])
+      setTotal(0)
       // 已安装集合按类型区分：换类型先作废旧响应并清空，避免另一类型的同名条目被误标「已安装」。
       installedSeq.current += 1
       setInstalledNames(new Set<string>())

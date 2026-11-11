@@ -138,8 +138,10 @@ export function CanvasesPage({ user }: { user: UserView }) {
   const allTags = useMemo(() => {
     const tags = new Set<string>()
     for (const canvas of canvases) for (const tag of canvas.tags) tags.add(tag)
+    // 正在生效的过滤值必须留在选项里，否则下拉会显示成「无过滤」而列表仍被过滤。
+    if (tagFilter !== null && !tags.has(tagFilter)) tags.add(tagFilter)
     return [...tags].sort()
-  }, [canvases])
+  }, [canvases, tagFilter])
 
   const templates = useMemo(() => canvases.filter(canvas => canvas.is_template), [canvases])
 
@@ -542,34 +544,42 @@ export function CanvasesPage({ user }: { user: UserView }) {
         description={t('canvases', 'templatePickerDescription')}
         footer={<Button variant="outline" onClick={() => { setTemplateOpen(false) }}>{t('common', 'actionClose')}</Button>}
       >
-        {templates.length === 0
-          ? <p className={common.empty}>{t('canvases', 'templateEmpty')}</p>
-          : (
-            <div className={css.templateList}>
-              {templates.map(template => (
-                <div key={template.id} className={css.templateRow}>
-                  <div className={css.rowMain}>
-                    <div className={css.rowTitleLine}>
-                      <span className={css.rowName}>{template.name}</span>
-                      <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>
-                      {template.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
+        {error !== null && canvases.length === 0
+          ? (
+            <NoticeLine
+              tone="error"
+              text={error.text}
+              action={{ label: t('common', 'actionRetry'), onClick: error.retry }}
+            />
+          )
+          : templates.length === 0
+            ? <p className={common.empty}>{t('canvases', 'templateEmpty')}</p>
+            : (
+              <div className={css.templateList}>
+                {templates.map(template => (
+                  <div key={template.id} className={css.templateRow}>
+                    <div className={css.rowMain}>
+                      <div className={css.rowTitleLine}>
+                        <span className={css.rowName}>{template.name}</span>
+                        <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>
+                        {template.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
+                      </div>
+                      {template.description !== null && template.description !== '' && (
+                        <p className={css.rowDesc}>{template.description}</p>
+                      )}
                     </div>
-                    {template.description !== null && template.description !== '' && (
-                      <p className={css.rowDesc}>{template.description}</p>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={busyId === template.id || template.canvas_error !== undefined}
+                      onClick={() => { setTemplateOpen(false); duplicate(template, true) }}
+                    >
+                      {t('canvases', 'templateUse')}
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={busyId === template.id || template.canvas_error !== undefined}
-                    onClick={() => { setTemplateOpen(false); duplicate(template, true) }}
-                  >
-                    {t('canvases', 'templateUse')}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
       </Modal>
 
       <Modal

@@ -119,8 +119,11 @@ export function SkillsPage({ user }: { user: UserView }) {
         if (trimmed !== '') values.add(trimmed)
       }
     }
+    // 正在生效的过滤值必须留在选项里：删掉最后一个带该标签的技能后，下拉不能变成
+    // 「没有任何选项」却又继续过滤（用户看不到真正的过滤条件）。
+    if (tagFilter !== null && !values.has(tagFilter)) values.add(tagFilter)
     return [...values].sort()
-  }, [skills])
+  }, [skills, tagFilter])
 
   // 两组互斥：公共与系统级（系统出厂 + 他人发布的公共），我的技能（归属当前用户）。
   const groupSystem = useMemo(
@@ -139,7 +142,8 @@ export function SkillsPage({ user }: { user: UserView }) {
       } catch (failure) {
         setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText) } })
       } finally {
-        setBusyId(null)
+        // 只清自己那一槽：另一行的动作可能仍在途，无条件置空会让它提前解禁并被重复提交。
+        setBusyId(current => current === id ? null : current)
       }
     })()
   }

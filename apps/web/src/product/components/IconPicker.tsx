@@ -11,6 +11,7 @@
  * @module product/components/IconPicker
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { t } from '../i18n.ts'
 import { DEFAULT_CANVAS_ICON, filterIcons } from '../utils/iconLibrary.ts'
@@ -101,6 +102,8 @@ export function IconPicker({ value, onChange, disabled = false }: {
       if (event.key === 'Escape') {
         event.stopPropagation()
         setOpen(false)
+        // 面板卸载后焦点会落到 body：归还给触发块，键盘用户不丢位置。
+        triggerRef.current?.focus()
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -126,12 +129,38 @@ export function IconPicker({ value, onChange, disabled = false }: {
 
   const options = filterIcons(query)
 
+  /**
+   * 面板经 portal 挂在 body 上、位于弹窗焦点陷阱之外：不在这里接管 Tab，陷阱会把焦点
+   * 直接拉回弹窗，网格里的图标按钮永远到不了。这里只在焦点位于面板内时自行循环。
+   * @param event - 面板内的键盘事件。
+   */
+  const trapPanelTab = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Tab') return
+    const panelElement = panelRef.current
+    if (panelElement === null || !panelElement.contains(document.activeElement)) return
+    const items = [...panelElement.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')]
+    const first = items[0]
+    const last = items.at(-1)
+    if (first === undefined || last === undefined) return
+    const active = document.activeElement
+    if (event.shiftKey && active === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault()
+      first.focus()
+    }
+    // 阻止弹窗陷阱在 document 上再次改写焦点。
+    event.stopPropagation()
+  }
+
   const panel = placement === null ? null : (
     <div
       ref={panelRef}
       className={css.panel}
       role="dialog"
       aria-label={t('canvases', 'iconPickerTitle')}
+      onKeyDown={trapPanelTab}
       style={{
         left: `${String(placement.left)}px`,
         width: `${String(placement.width)}px`,

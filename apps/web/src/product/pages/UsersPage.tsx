@@ -147,7 +147,8 @@ export function UsersPage({ user }: { user: UserView }) {
       } catch (failure) {
         setError({ text: actionErrorText(failure), retry: () => { act(id, action, body, path, successText) } })
       } finally {
-        setBusy(null)
+        // 只清自己那一槽：另一行的动作可能在后到的响应之前就已开始，无条件置空会让它提前解禁。
+        setBusy(current => current !== null && current.id === id && current.action === action ? null : current)
       }
     })()
   }
