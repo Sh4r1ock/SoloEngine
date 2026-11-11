@@ -1203,14 +1203,6 @@ export class McpService {
 }
 
 /**
- * 从缓存的枚举结果里取出工具名。
- *
- * 缓存列存的是 `McpToolInfo[]`（`{name, description, inputSchema}` 对象数组），不是字符串数组；
- * 把它当字符串数组解析会得到一串 `[object Object]`，于是「明明枚举到的工具」被判成未知。
- * @param text - `mcp_servers.tools` 列文本。
- * @returns 工具名数组（形态异常即空数组）。
- */
-/**
  * 把一条错误的整条链（含 `cause` 与 AggregateError 的 `errors[]`）拼成可判定的文本。
  * 传输层超时一般以 `TypeError: fetch failed` 为外壳、真正原因埋在 cause 链里，
  * 只看最外层会错判成 unknown。
