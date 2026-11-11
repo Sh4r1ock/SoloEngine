@@ -573,13 +573,14 @@ export class SkillService {
     const skillMd = files.find(file => path.basename(file.path).toLowerCase() === 'skill.md')
     const rootName = guessRootName(files)
     const meta = skillMd?.text !== undefined ? this.parseMetadata(skillMd.text, rootName) : { name: rootName }
+    const strip = archiveRootPrefix(files.map(file => file.path))
     return {
       name: assertSkillName(meta.name),
       version: meta.version ?? '1.0.0',
       description: meta.description ?? null,
       author: meta.author ?? username,
       files: files
-        .map(file => ({ path: file.path, size: file.size }))
+        .map(file => ({ path: strip === '' ? file.path : file.path.slice(strip.length), size: file.size }))
         .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0)),
       skippedRejected: skipped.sort(),
       fingerprint: fingerprintOf(entries),
@@ -622,14 +623,17 @@ export class SkillService {
       }
       throw new FrameworkError(409, 'SKILL_EXISTS', `skill ${name} already exists for user`)
     }
+    const writable = entries
+      .map(entry => ({ entry, rawName: entry.name.replace(/\\/g, '/') }))
+      .filter(({ rawName }) => !rawName.endsWith('/') && !isArchiveJunk(rawName))
+    // 文件夹压缩与产品自身的导出都把技能放在与包名相同的顶层目录里；不剥掉这一层，
+    // 文件会落成 `<name>/<name>/SKILL.md`，技能加载器只认 `<root>/<name>/SKILL.md`。
+    const strip = archiveRootPrefix(writable.map(item => item.rawName))
     writeSkillDirectory(targetRoot, (staging) => {
-      for (const entry of entries) {
-        const rawName = entry.name.replace(/\\/g, '/')
-        if (rawName.endsWith('/')) continue
-        // 与预览同一口径：宿主元数据不落盘（否则预览说跳过、实际却写进去了）。
-        if (isArchiveJunk(rawName)) continue
+      for (const { entry, rawName } of writable) {
+        const relative = strip === '' ? rawName : rawName.slice(strip.length)
         const text = looksTextual(entry.data) ? strFromU8(entry.data) : undefined
-        const safePath = this.safeJoin(staging, rawName)
+        const safePath = this.safeJoin(staging, relative)
         mkdirSync(dirname(safePath), { recursive: true })
         if (text !== undefined) writeFileSync(safePath, text, 'utf8')
         else writeFileSync(safePath, entry.data)
@@ -1283,6 +1287,23 @@ function guessRootName(files: SkillFileEntry[]): string {
     if (seg !== undefined && seg !== '') return seg
   }
   return 'skill'
+}
+
+/**
+ * 归档是否把所有文件都放在同一个顶层目录下（文件夹压缩与本产品导出的形态）。
+ *
+ * 有效技能包在根上有 `SKILL.md`，因此「每个文件都至少有一层目录」本身就说明
+ * 那一层是打包壳而不是技能内容；扁平归档不会命中。
+ * @param paths - 归档内文件路径（`/` 分隔）。
+ * @returns 要剥掉的顶层前缀（含 `/`）；无需剥离时为 `''`。
+ */
+function archiveRootPrefix(paths: readonly string[]): string {
+  const first = paths[0]
+  if (first === undefined) return ''
+  const segment = first.split('/')[0]
+  if (segment === undefined || segment === '') return ''
+  const prefix = `${segment}/`
+  return paths.every(path => path.startsWith(prefix)) ? prefix : ''
 }
 
 /** 归一化路径（复用 node:path）。 */
