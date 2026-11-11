@@ -460,8 +460,11 @@ export class MarketService {
   private async installCounts(): Promise<Map<MarketKind, Map<string, number>>> {
     const counts = new Map<MarketKind, Map<string, number>>()
     for (const [kind, table] of [['skill', 'skills_packages'], ['mcp', 'mcp_servers']] as const) {
-      const rows = await this.db.prepare(`SELECT name, COUNT(*) AS total FROM ${table} GROUP BY name`)
-        .all<{ name: string; total: number }>()
+      // 系统出厂行（user_id IS NULL）是随实例附带的模板，不是任何人的一次安装：
+      // 全新实例上把内置技能算成「1 次安装」会让市场卡片给出错误的流行度。
+      const rows = await this.db.prepare(
+        `SELECT name, COUNT(*) AS total FROM ${table} WHERE user_id IS NOT NULL GROUP BY name`,
+      ).all<{ name: string; total: number }>()
       counts.set(kind, new Map(rows.map(row => [row.name, Number(row.total)])))
     }
     return counts
