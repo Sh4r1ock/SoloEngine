@@ -382,9 +382,16 @@ export class LlmConfigService {
     }
     set('updated_at', now)
     assignments.push('version = version + 1')
-    values.push(id, userId)
+    values.push(id, userId, Number(patch.version))
+    // 版本条件必须进 UPDATE：预检与写入之间可能有并发提交（两个编辑器会双双通过预检）。
     await this.db.transaction(async tx => {
-      await tx.prepare(`UPDATE llm_configs SET ${assignments.join(', ')} WHERE id = ? AND user_id = ?`).run(...values)
+      const updated = await tx.prepare(
+        `UPDATE llm_configs SET ${assignments.join(', ')} WHERE id = ? AND user_id = ? AND version = ?`,
+      ).run(...values)
+      if (updated.changes !== 1) {
+        throw new FrameworkError(409, 'VERSION_CONFLICT',
+          `model config ${id} was modified concurrently; refresh and retry`)
+      }
       if (patch.is_default === true) await this.makeExclusiveDefault(tx, userId, id)
       // 经 PATCH 停用默认项与 `/active` 同一语义：默认必须顺延，不能留在已停用的行上。
       else if (patch.is_active === false && row.is_default === 1) await this.promoteNextDefault(tx, userId, id)
@@ -502,7 +509,13 @@ export class LlmConfigService {
   async testConnectivity(userId: string, id: string): Promise<ConnectivityResult> {
     const row = await this.byId(userId, id)
     if (row === undefined) throw new FrameworkError(404, 'CONFIG_NOT_FOUND', `model config ${id} not found`)
-    const apiKey = await this.resolveApiKey(userId, id)
+    let apiKey: string | null
+    try {
+      apiKey = await this.resolveApiKey(userId, id)
+    } catch {
+      // 主密钥轮换/密文损坏：视图已把该行标成 key_state='unreadable'，测试按钮给出同一处置。
+      return { ok: false, kind: 'auth', message: 'the stored api_key cannot be decrypted; re-enter the key' }
+    }
     if (apiKey === null) {
       return { ok: false, kind: 'auth', message: 'api_key is not configured for this model config' }
     }
