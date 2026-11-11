@@ -20,7 +20,7 @@ import { PathValue } from '../components/PathValue.tsx'
 import { useSearchShortcut } from '../components/useSearchShortcut.ts'
 import { submitFormOnEnter } from '../utils/submitOnEnter.ts'
 import { codeLabels, terminalLabels } from '../components/labels.ts'
-import type { McpCallResult, McpServerFilesView, McpServerView, McpTestResult, McpToolInfo } from '../types.ts'
+import type { McpCallResult, McpServerFilesView, McpServerView, McpTestResult, McpToolInfo, UserView } from '../types.ts'
 import css from '../styles/common.module.css'
 import mcpCss from '../styles/mcp.module.css'
 import { Drawer } from '../components/Drawer.tsx'
@@ -39,6 +39,8 @@ interface PageError {
   key: string
   detail?: string
   kind?: string
+  /** 失败所属的服务器名：异步动作可能在用户已切到另一台服务器后才返回。 */
+  name?: string
   retry?: () => void
 }
 
@@ -174,8 +176,9 @@ function schemaFields(schema: unknown): SchemaField[] {
 
 /**
  * 渲染 MCP 页。
+ * @param props.user - 当前用户（系统级服务器仅超管可改写，与后端 `mutableRow` 同一判据）。
  */
-export function McpPage() {
+export function McpPage({ user }: { user: UserView }) {
   const locale = useLocale()
   const [servers, setServers] = useState<McpServerView[]>([])
   const [loading, setLoading] = useState(true)
@@ -228,7 +231,8 @@ export function McpPage() {
       } catch (failure) {
         setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText) } })
       } finally {
-        setBusyId(null)
+        // 只清自己那一槽：另一台服务器的动作可能仍在途，无条件置空会让它提前解禁。
+        setBusyId(current => current === id ? null : current)
       }
     })()
   }
@@ -247,6 +251,13 @@ export function McpPage() {
   const busyAction = (id: string): string | null => (busyId !== null && busyId.startsWith(`${id}:`)
     ? busyId.slice(id.length + 1)
     : null)
+
+  /**
+   * 可改写范围与后端 `mutableRow` 同一判定：本人服务器；系统服务器（`user_id IS NULL`）仅超管；
+   * 他人的公共服务器只读。不可写时入口直接禁用，不让用户填完表单才吃 403。
+   */
+  const writable = (server: McpServerView): boolean =>
+    server.user_id === user.id || (server.user_id === null && user.is_superuser)
 
   const loadFailed = error?.key === 'errorLoad'
 
@@ -318,15 +329,16 @@ export function McpPage() {
           const detail = failureHint(server, result.result.kind)
           setError({
             key: 'errorTest',
+            name: server.name,
             kind: result.result.kind ?? 'unknown',
             ...(detail === undefined ? {} : { detail }),
             retry: () => { runTest(server) },
           })
         }
       } catch (failure) {
-        setError({ key: 'errorTest', detail: describeError(failure), retry: () => { runTest(server) } })
+        setError({ key: 'errorTest', name: server.name, detail: describeError(failure), retry: () => { runTest(server) } })
       } finally {
-        setBusyId(null)
+        setBusyId(current => current === `${server.id}:test` ? null : current)
       }
     })()
   }
@@ -363,9 +375,9 @@ export function McpPage() {
           })
         }
       } catch (failure) {
-        setError({ key: 'errorEnumerate', detail: describeError(failure), retry: () => { runEnumerate(server) } })
+        setError({ key: 'errorEnumerate', name: server.name, detail: describeError(failure), retry: () => { runEnumerate(server) } })
       } finally {
-        setBusyId(null)
+        setBusyId(current => current === `${server.id}:enumerate` ? null : current)
       }
     })()
   }
@@ -392,7 +404,7 @@ export function McpPage() {
           retry: () => { toggleTool(server, toolName, next) },
         })
       } finally {
-        setBusyId(null)
+        setBusyId(current => current === `${server.id}:tool` ? null : current)
       }
     })()
   }
@@ -413,7 +425,7 @@ export function McpPage() {
           retry: () => { deleteServer(server) },
         })
       } finally {
-        setBusyId(null)
+        setBusyId(current => current === `${server.id}:delete` ? null : current)
       }
     })()
   }
@@ -459,6 +471,7 @@ export function McpPage() {
         tone="error"
         text={error === null ? null : [
           t('mcp', error.key),
+          error.name ?? null,
           error.kind === undefined ? null : t('mcp', kindKey(error.kind)),
           error.detail ?? null,
         ].filter((part): part is string => part !== null).join(' — ')}
@@ -575,6 +588,7 @@ export function McpPage() {
                       <div className={mcpCss.detailName}>
                         <h2 className={mcpCss.detailTitle}>{selected.name}</h2>
                         <Tag tone="neutral">{transport}</Tag>
+                        {writable(selected) ? null : <Tag tone="quiet">{t('mcp', 'readonlyBadge')}</Tag>}
                         {/* 原型 `mcp.js:70`：启用 → `badge--accent`（蓝点），停用 → `badge--disabled`。 */}
                         <Tag
                           tone={selected.is_active ? 'info' : 'quiet'}
@@ -617,17 +631,22 @@ export function McpPage() {
                             id: 'edit',
                             label: t('common', 'actionEdit'),
                             icon: <IconEditOutlineRegular size={14} />,
-                            disabled: busyOn(selected.id),
+                            disabled: busyOn(selected.id) || !writable(selected),
                           },
                           {
                             id: 'toggle',
                             label: selected.is_active ? t('mcp', 'disableServer') : t('mcp', 'enableServer'),
                             icon: selected.is_active ? <IconStopFillRegular size={14} /> : <IconPlayOutlineRegular size={14} />,
-                            disabled: busyOn(selected.id),
+                            disabled: busyOn(selected.id) || !writable(selected),
                           },
                           { id: 'test', label: t('mcp', 'test'), icon: <IconRefreshOutlineRegular size={14} />, disabled: busyOn(selected.id) },
                           { type: 'separator' as const, id: 'sep' },
-                          { id: 'delete', label: t('common', 'actionDelete'), danger: true, disabled: busyOn(selected.id) },
+                          {
+                            id: 'delete',
+                            label: t('common', 'actionDelete'),
+                            danger: true,
+                            disabled: busyOn(selected.id) || !writable(selected),
+                          },
                         ]}
                         onSelect={(id) => {
                           setMenuId(null)
@@ -885,7 +904,7 @@ export function McpPage() {
                                     <Switch
                                       checked={!disabled}
                                       label={`${tool.name} ${disabled ? t('mcp', 'toolDisabled') : t('mcp', 'toolEnabled')}`}
-                                      disabled={busyOn(selected.id)}
+                                      disabled={busyOn(selected.id) || !writable(selected)}
                                       onChange={(next) => { toggleTool(selected, tool.name, next) }}
                                     />
                                     <span className={mcpCss.toolState}>

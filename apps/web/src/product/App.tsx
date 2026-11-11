@@ -118,13 +118,13 @@ export function ProductApp() {
   // 否则「服务瞬断 → 被赶到登录页」依旧会把用户当成已退出。
   useEffect(() => {
     if (checked && user === null && readAccessToken() === null && route.name !== 'login' && route.name !== 'home') {
-      navigate('/login')
+      navigate('/login', { replace: true })
     }
   }, [checked, user, route.name])
 
-  // 已登录却在登录页 → 回到画布列表。
+  // 已登录却在登录页 → 回到画布列表（replace：登录页不该留在历史里，后退会被再次弹出）。
   useEffect(() => {
-    if (user !== null && route.name === 'login') navigate('/canvas')
+    if (user !== null && route.name === 'login') navigate('/canvas', { replace: true })
   }, [user, route.name])
 
   const onAuthenticated = useCallback((next: UserView) => {
@@ -134,11 +134,14 @@ export function ProductApp() {
   }, [])
 
   const logout = useCallback(() => {
+    // 先离开页面：未保存改动的阻塞确认属于「离开」这一步，用户取消时不能已经处于登出状态。
+    // pushState 同步改地址栏，故这里能直接判断是否真的走了。
+    navigate('/login', { replace: true })
+    if (window.location.pathname !== '/login') return
     // 本地先清理并离开页面：服务端黑洞不能让用户卡在页面上（R009）。
     clearTokens()
     resetPreferences()
     setUser(null)
-    navigate('/login')
     // 服务端登出是 best-effort（令牌自包含、无服务端会话表）；2s 超时后放弃。
     void request('/auth/logout', { method: 'POST', signal: AbortSignal.timeout(2000) }).catch(() => undefined)
   }, [])
@@ -192,7 +195,7 @@ export function ProductApp() {
       case 'models': return <ModelsPage />
       case 'skills': return <SkillsPage user={user} />
       case 'skill': return <SkillFilePage key={route.params.id ?? ''} skillId={route.params.id ?? ''} user={user} />
-      case 'mcp': return <McpPage />
+      case 'mcp': return <McpPage user={user} />
       case 'market': return <MarketPage />
       case 'settings': return <SettingsPage />
       case 'users': return <UsersPage user={user} />
