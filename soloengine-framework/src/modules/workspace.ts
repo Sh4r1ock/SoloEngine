@@ -98,8 +98,12 @@ const DEFAULT_READ_LIMIT = 2000
 const MAX_READ_LIMIT = 20000
 /** 单次写入字节上限（编辑器保存；与 express.json 的 32mb 上限一致但更紧）。 */
 const MAX_WRITE_BYTES = 8 * 1024 * 1024
+/** 单份文本读取上限：行窗口只返回一页，但整文件解码仍要进内存，超限明确拒绝而不是 OOM。 */
+const MAX_READ_BYTES = 32 * 1024 * 1024
 /** 搜索条目上限。 */
 const SEARCH_LIMIT = 500
+/** 搜索递归深度上限（已跳过符号链接，仍防异常深树把栈耗尽）。 */
+const SEARCH_MAX_DEPTH = 64
 /** 搜索跳过的目录（与生态惯例一致：不把 .git/node_modules 拉进结果）。 */
 const SEARCH_SKIP_DIRS = new Set(['.git', 'node_modules', '.cache', 'dist', '.next', '__pycache__'])
 
@@ -299,6 +303,10 @@ export class WorkspaceService {
     if (stat.isDirectory()) {
       throw new FrameworkError(400, 'IS_A_DIRECTORY', `${target} is a directory`)
     }
+    if (stat.size > MAX_READ_BYTES) {
+      throw new FrameworkError(413, 'FILE_TOO_LARGE',
+        `${target} is ${String(stat.size)} bytes; the text reader is limited to ${String(MAX_READ_BYTES)} bytes`)
+    }
     const raw = readFileSync(gated.path, 'utf8')
     const all = raw.split('\n')
     const offset = Math.max(0, Math.floor(options.offset ?? 0))
@@ -420,6 +428,13 @@ export class WorkspaceService {
     if (destination.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${to} already exists; refusing to overwrite it`)
     }
+    // 目录不能移进自身（`a` → `a/b/c`）：文件系统会抛 EINVAL/EPERM 变成裸 500。
+    if (statSync(source.path).isDirectory()) {
+      const sourceKey = pathKey(source.path)
+      if (pathKey(destination.path) === sourceKey || pathKey(destination.path).startsWith(`${sourceKey}${sep}`)) {
+        throw new FrameworkError(400, 'RENAME_INTO_SELF', `cannot move ${from} inside itself`)
+      }
+    }
     // 目标父目录缺失时 renameSync 抛 ENOENT（裸 500）；与写入/建目录同一判据给 400。
     const destinationParent = dirname(destination.path)
     if (!existsDirectory(destinationParent)) {
@@ -477,8 +492,12 @@ export class WorkspaceService {
     const needle = query.toLowerCase()
     const entries: WorkspaceEntry[] = []
     let truncated = false
-    const walk = (directory: string): void => {
-      if (truncated) return
+    // 结果上限与深度上限的语义不同：达到条目上限后停止整次搜索；超过深度只标记截断，
+    // 同层的其余兄弟项仍要检查（否则一个深目录会掩盖根目录里的命中）。
+    let limitReached = false
+    const walk = (directory: string, depth: number): void => {
+      if (limitReached) return
+      if (depth > SEARCH_MAX_DEPTH) { truncated = true; return }
       let names: string[]
       try {
         names = readdirSync(directory)
@@ -486,7 +505,7 @@ export class WorkspaceService {
         return
       }
       for (const name of names) {
-        if (truncated) return
+        if (limitReached) return
         const absolute = join(directory, name)
         let child: ReturnType<typeof lstatSync>
         try {
@@ -500,7 +519,11 @@ export class WorkspaceService {
         const isDirectory = child.isDirectory()
         if (isDirectory && SEARCH_SKIP_DIRS.has(name)) continue
         if (name.toLowerCase().includes(needle)) {
-          if (entries.length >= SEARCH_LIMIT) { truncated = true; return }
+          if (entries.length >= SEARCH_LIMIT) {
+            truncated = true
+            limitReached = true
+            return
+          }
           entries.push({
             name,
             path: toWorkspacePath(gated.root, absolute),
@@ -509,10 +532,10 @@ export class WorkspaceService {
             mtimeMs: Math.floor(child.mtimeMs),
           })
         }
-        if (isDirectory) walk(absolute)
+        if (isDirectory) walk(absolute, depth + 1)
       }
     }
-    walk(gated.path)
+    walk(gated.path, 0)
     entries.sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === 'directory' ? -1 : 1
       return left.path.localeCompare(right.path)
@@ -531,6 +554,15 @@ function requireConfirm(confirm: boolean, action: string, target: string): void 
   if (confirm !== true) {
     throw new FrameworkError(400, 'CONFIRMATION_REQUIRED', `${action} of ${target} requires an explicit confirmation (confirm: true)`)
   }
+}
+
+/**
+ * 路径前缀比较键：Windows 大小写不敏感，其余平台按字面。
+ * @param value - 绝对路径。
+ * @returns 用于比较的键。
+ */
+function pathKey(value: string): string {
+  return process.platform === 'win32' ? value.toLowerCase() : value
 }
 
 /**
