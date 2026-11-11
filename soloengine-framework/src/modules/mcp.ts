@@ -421,12 +421,29 @@ export class McpService {
         throw new FrameworkError(400, 'ARCHIVE_REQUIRED', 'package upload requires archiveBase64')
       }
       let files: Record<string, Uint8Array>
+      // 解压预算按中央目录声明的原始大小在**解压前**执行：zip 炸弹（几 MB 压缩包展开成 GB）
+      // 不能等到解压完再量——那一步就已经把内存吃光，后面的条目/字节上限根本到不了。
+      let declaredTotal = 0
+      const overflow: string[] = []
       try {
-        files = unzipSync(new Uint8Array(Buffer.from(input.archiveBase64, 'base64')))
+        files = unzipSync(new Uint8Array(Buffer.from(input.archiveBase64, 'base64')), {
+          filter: (file) => {
+            declaredTotal += file.originalSize
+            if (file.originalSize > MAX_UPLOAD_ENTRY_BYTES || declaredTotal > MAX_UPLOAD_BYTES) {
+              overflow.push(file.name)
+              return false
+            }
+            return true
+          },
+        })
       } catch (error) {
         // 解压器的原始报错只有 "invalid zip data"：换成可处置的稳定错误码（前端按码本地化）。
         throw new FrameworkError(422, 'ARCHIVE_INVALID',
           `the uploaded package is not a valid ZIP archive: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      if (overflow.length > 0) {
+        throw new FrameworkError(422, 'ARCHIVE_TOO_LARGE',
+          `archive expands beyond the upload limits at ${overflow[0] as string}; the archive is refused before extraction`)
       }
       const entries = Object.entries(files)
       if (entries.length > MAX_UPLOAD_ENTRIES) {
