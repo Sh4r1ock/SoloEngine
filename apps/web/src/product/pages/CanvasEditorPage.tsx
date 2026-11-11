@@ -1,12 +1,12 @@
 /** 画布编辑器：工具栏 + 画布区（网格/节点/连线）+ 右侧属性面板。 */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   Button, DisclosureRow, IconArchiveOutlineMedium, IconChevronDownOutlineRegular,
-  IconChevronLeftOutlineRegular, IconCloseOutlineRegular,
+  IconChevronLeftOutlineRegular, IconChevronUpOutlineRegular, IconCloseOutlineRegular,
   IconCopyOutlineRegular, IconEllipsisOutlineRegular, IconPanelLeftOutlineRegular, IconPlayOutlineRegular,
-  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  Input, Menu, Modal, Pill, RiskConfirmation,
+  IconPlusOutlineRegular, IconRefreshOutlineRegular, IconStopFillRegular, IconTrashOutlineRegular,
+  Input, Menu, Modal, Pill, RiskConfirmation, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { BrandGlyph } from '@deepseek-ai/dsh-client-ui-brand-official/src/static.ts'
@@ -25,7 +25,7 @@ import { NOTE_WIDTH, NODE_WIDTH, alignToPeers, snap } from '../canvas-data.ts'
 import { rolePresetName, type AgentRolePreset } from '@soloengine/types'
 import type {
   CanvasAvailability, CanvasData, CanvasEdge, CanvasNode, CanvasView, InstancePluginDiff, McpServerView, ModelView,
-  NodePluginRowView, NodeSampling, PluginRow, SkillView, UserView,
+  NodePluginRowView, NodeSampling, PluginRow, RunProjectView, RunSessionView, SkillView, UserView,
 } from '../types.ts'
 import css from '../styles/common.module.css'
 import editor from '../styles/editor.module.css'
@@ -397,6 +397,12 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 960)
   /** 检查器是否展开（窄屏时它是右侧抽屉；窄屏默认收起，选中节点再打开）。 */
   const [inspectorOpen, setInspectorOpen] = useState(() => window.innerWidth > 960)
+  /** 底部运行面板是否折叠到 40px。 */
+  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  /** 顶栏「预览」请求：展开面板并切到预览标签（原型 editor.js:1070-1074）。 */
+  const [previewSignal, setPreviewSignal] = useState(0)
+  /** 该画布可用的运行项目（预览试运行需要项目目录作为沙箱工作区）。 */
+  const [projects, setProjects] = useState<RunProjectView[]>([])
   const [showGrid, setShowGrid] = useState<boolean>(() => readGridPreference(canvasId))
   /** 端口拖线：起点节点 + 当前指针的画布坐标（松手落到目标节点即建委派边）。 */
   const [portDrag, setPortDrag] = useState<{ from: string; x: number; y: number } | null>(null)
@@ -405,7 +411,7 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
   /** 自动保存失败后暂停重试：下一次用户编辑或手动保存成功再恢复（防止请求风暴）。 */
   const [autoSaveHalted, setAutoSaveHalted] = useState(false)
   // 错误/通知存「文案键 + 动态细节」，渲染时才翻译——存翻译字符串会在切换语言后残留旧语种。
-  const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorRun' | 'errorDuplicate'; detail: string } | null>(null)
+  const [error, setError] = useState<{ key: 'errorLoad' | 'errorSave' | 'errorPreview' | 'errorDuplicate'; detail: string } | null>(null)
   const [conflict, setConflict] = useState(false)
   /** 待确认的角色模板切换：模板会覆盖当前提示词与工具（与 v0.4.0 的预设切换同一保护）。 */
   const [roleSwitch, setRoleSwitch] = useState<{ nodeId: string; presetId: string } | null>(null)
@@ -475,11 +481,13 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     try {
       // 辅助数据（模型/技能/MCP/项目/模板/插件）互不依赖，也不是画布可编辑的前提：
       // 任一失败只在对应分组提示，不能把整页判成「加载画布失败」而让节点编辑与保存一起失效。
-      const [modelResult, skillResult, mcpResult, presetResult, pluginResult, defaultsResult]
+      const [modelResult, skillResult, mcpResult, projectResult, presetResult, pluginResult, defaultsResult]
         = await Promise.allSettled([
           request<{ ok: true; models: ModelView[] }>('/models'),
           request<{ ok: true; skills: SkillView[] }>('/skills'),
           request<{ ok: true; servers: McpServerView[] }>('/mcp'),
+          // 运行项目：编辑器内轻量预览需要项目目录作为沙箱工作区（FR-CANVAS-017）。
+          request<{ ok: true; projects: RunProjectView[] }>('/projects'),
           // 角色模板（FR-CANVAS-011）：唯一真源在后端，前端不另立第二份清单。
           request<{ ok: true; presets: AgentRolePreset[] }>('/canvases/meta/presets'),
           // profile 组合行：实例插件分节只列客户端行（宿主行由组合层管理）。
@@ -519,6 +527,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       else auxiliaryFailures.push({ key: 'groupSkills', detail: describeError(skillResult.reason) })
       if (mcpResult.status === 'fulfilled') setServers(mcpResult.value.servers)
       else auxiliaryFailures.push({ key: 'groupMcp', detail: describeError(mcpResult.reason) })
+      if (projectResult.status === 'fulfilled') setProjects(projectResult.value.projects)
+      else auxiliaryFailures.push({ key: 'auxProjects', detail: describeError(projectResult.reason) })
       setAuxiliaryErrors(auxiliaryFailures)
       request<{ ok: true } & CanvasAvailability>(`/canvases/${canvasId}/availability`)
         .then((result) => { setAvailability(result) })
@@ -1752,6 +1762,14 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
             <span className={editor.topbarDivider} aria-hidden="true" />
             <Button
               size="sm"
+              className={editor.previewButton}
+              icon={<Glyph><path d="M2.5 10S5.5 4.5 10 4.5 17.5 10 17.5 10 14.5 15.5 10 15.5 2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.4" /></Glyph>}
+              onClick={() => { setPanelCollapsed(false); setPreviewSignal(value => value + 1) }}
+            >
+              {t('editor', 'previewAction')}
+            </Button>
+            <Button
+              size="sm"
               variant="primary"
               icon={<IconPlayOutlineRegular size={14} />}
               onClick={() => { openPage(`/run/${canvasId}`) }}
@@ -2758,6 +2776,16 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
           </aside>
         </div>
 
+        {/* 运行面板是画布与检查器之下的整行（原型 editor.html:136-173：底部面板全宽）。 */}
+        <CanvasPreview
+          canvasId={canvasId}
+          projects={projects}
+          onError={(detail) => { setError({ key: 'errorPreview', detail }) }}
+          collapsed={panelCollapsed}
+          onToggleCollapsed={() => { setPanelCollapsed(!panelCollapsed) }}
+          focusSignal={previewSignal}
+        />
+
         <RiskConfirmation
           open={roleSwitch !== null}
           title={t('editor', 'roleSwitchTitle')}
@@ -3015,5 +3043,412 @@ function DefaultPluginsDialog({ open, diff, version, onClose, onSaved }: {
         <Button size="sm" onClick={addRow}>{t('editor', 'pluginAdd')}</Button>
       </div>
     </Modal>
+  )
+}
+
+/** 预览条目（与 Host 侧 `PreviewStream` 的折叠结果同形；轻量，只承载呈现所需字段）。 */
+interface PreviewEntry {
+  seq: number
+  kind: 'text' | 'tool' | 'status' | 'error'
+  text?: string
+  toolName?: string
+  phase?: 'start' | 'result' | 'error'
+  turn?: number
+}
+
+/** 预览读取响应。 */
+interface PreviewResponse {
+  ok: true
+  sessionKey: string
+  status: string
+  lastSeq: number
+  entries: PreviewEntry[]
+}
+
+/** 轮询间隔（轻量路径：不另建推送通道，按短周期增量读取即可呈现流式效果）。 */
+const PREVIEW_POLL_MS = 700
+
+/**
+ * 预览运行状态的呈现文案。
+ *
+ * Host 侧状态词（preview-stream.ts `statusOf`：pending/running/completed/idle/failed/stopped）是英文
+ * 原文，直接摆上界面会在中文语境里混出机器词（R7）——这里统一过一遍字典；未知值原样呈现
+ * （不猜、不静默吞）。状态在 state 里存原文、渲染时才翻译，切语言也不会残留旧语种。
+ * @param status - Host 侧状态原文。
+ * @returns 当前语言的呈现文案。
+ */
+function previewStatusLabel(status: string): string {
+  if (status === 'pending') return t('editor', 'previewPending')
+  if (status === 'running') return t('editor', 'previewRunning')
+  if (status === 'completed') return t('editor', 'previewCompleted')
+  if (status === 'idle') return t('editor', 'previewIdle')
+  if (status === 'failed') return t('editor', 'previewFailed')
+  if (status === 'stopped') return t('editor', 'previewStopped')
+  if (status === 'starting') return t('editor', 'previewStarting')
+  return status
+}
+
+/**
+ * 画布编辑器内的实时预览（PRD-02 FR-CANVAS-017）。
+ *
+ * 与「运行」按钮的关系：运行进完整运行面板（原生客户端插件树），预览留在编辑器内，
+ * 只呈现**纯文本流与工具状态**——不复刻卡片体系。停止与清空是预览自己的两个动作，
+ * 分别落到既有的取消路由与本地缓冲。
+ * @param props - 画布、可用运行项目、错误回传、折叠状态与顶栏预览信号。
+ */
+function CanvasPreview({ canvasId, projects, onError, collapsed, onToggleCollapsed, focusSignal }: {
+  canvasId: string
+  projects: RunProjectView[]
+  onError: (detail: string) => void
+  /** 折叠到 40px（只留标题栏与状态）。 */
+  collapsed: boolean
+  /** 折叠/展开切换（底部栏与顶栏预览动作共用同一状态）。 */
+  onToggleCollapsed: () => void
+  /** 顶栏「预览」的递增信号：切到预览标签并把焦点交给输入框。 */
+  focusSignal: number
+}) {
+  const [message, setMessage] = useState('')
+  const [tab, setTab] = useState<'console' | 'preview'>('console')
+  const [entries, setEntries] = useState<PreviewEntry[]>([])
+  const [sessionKey, setSessionKey] = useState<string | null>(null)
+  // 状态存 Host 原文（pending/running/…/starting），渲染时经 previewStatusLabel 翻译。
+  const [status, setStatus] = useState('idle')
+  const [busy, setBusy] = useState(false)
+  const [running, setRunning] = useState(false)
+  const cursorRef = useRef(0)
+  /** 「清空日志」的丢弃水位线：已读到的 seq 在清空后不再回放（在途拉取的响应也按它过滤）。 */
+  const clearedRef = useRef(0)
+  /** 在途拉取是否仍可采纳：停止/清空后置 false，旧响应不再把状态改回「运行中」。 */
+  const activeRef = useRef(false)
+  const logRef = useRef<HTMLDivElement | null>(null)
+  const inputWrapRef = useRef<HTMLSpanElement | null>(null)
+  /** 已处理的顶栏预览信号：输入框只在预览标签内挂载，切标签后补一次聚焦。 */
+  const focusedSignalRef = useRef(0)
+
+  // 顶栏「预览」：切到预览标签（原型 editor.js:1070-1074）。
+  useEffect(() => {
+    if (focusSignal === 0) return
+    setTab('preview')
+  }, [focusSignal])
+
+  // 输入框随预览标签挂载：切到预览后再聚焦，避免对未挂载的输入框调用 focus。
+  useEffect(() => {
+    if (tab !== 'preview' || focusSignal === 0 || focusedSignalRef.current === focusSignal) return
+    focusedSignalRef.current = focusSignal
+    inputWrapRef.current?.querySelector('input')?.focus()
+  }, [tab, focusSignal])
+
+  const candidates = projects.filter(project => project.agentic_flow_id === canvasId)
+
+  /** 增量拉取一次预览日志（水位线只前进，重复条目不会重放）。 */
+  const pull = useCallback(async (): Promise<void> => {
+    if (sessionKey === null) return
+    try {
+      const result = await request<PreviewResponse>(
+        `/sessions/${encodeURIComponent(sessionKey)}/preview?after=${String(cursorRef.current)}`,
+      )
+      if (!activeRef.current) return
+      if (result.entries.length > 0) {
+        cursorRef.current = result.lastSeq
+        // 清空之前已呈现过的条目不再回放：在途响应同样丢弃，旧日志不会因为一次拉取而复活。
+        const fresh = result.entries.filter(entry => entry.seq > clearedRef.current)
+        if (fresh.length > 0) setEntries(previous => [...previous, ...fresh])
+      }
+      if (result.status !== 'unknown') setStatus(result.status)
+      if (result.status === 'completed' || result.status === 'idle' || result.status === 'stopped' || result.status === 'failed') {
+        activeRef.current = false
+        setRunning(false)
+      }
+    } catch (failure) {
+      onError(describeError(failure))
+      activeRef.current = false
+      setRunning(false)
+    }
+  }, [sessionKey, onError])
+
+  // 运行期间按短周期增量读取；停止后自然退出轮询（不另建推送通道）。
+  useEffect(() => {
+    if (!running || sessionKey === null) return
+    const timer = window.setInterval(() => { void pull() }, PREVIEW_POLL_MS)
+    return () => { window.clearInterval(timer) }
+  }, [running, sessionKey, pull])
+
+  // 日志追加后贴底（预览是「看最新」的视图）。
+  useEffect(() => {
+    const node = logRef.current
+    if (node === null) return
+    node.scrollTop = node.scrollHeight
+  }, [entries])
+
+  /** 发起一次试运行：复用运行域既有路由（编译 → mainagent 就位 → 投递消息）。 */
+  const send = async (): Promise<void> => {
+    const text = message.trim()
+    if (text === '' || busy) return
+    setBusy(true)
+    try {
+      let key = sessionKey
+      if (key === null) {
+        const projectId = candidates[0]?.id ?? null
+        if (projectId === null) {
+          // 运行项目必须有沙箱目录（FR-CANVAS-040/041）：没有项目时明确要求先建项目，
+          // 不再以空目录发起注定被 FOLDER_REQUIRED 拒绝的请求。
+          onError(t('editor', 'previewProjectRequired'))
+          setBusy(false)
+          return
+        }
+        const session = await request<{ ok: true; session: RunSessionView }>('/runs', {
+          method: 'POST',
+          body: { canvasId, projectId },
+        })
+        key = session.session.session_key
+        setSessionKey(key)
+        cursorRef.current = 0
+        setEntries([])
+      }
+      await request(`/sessions/${encodeURIComponent(key)}/prompt`, { method: 'POST', body: { text } })
+      setMessage('')
+      activeRef.current = true
+      setRunning(true)
+      setStatus('starting')
+    } catch (failure) {
+      onError(describeError(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 停止当前试运行。 */
+  const stop = async (): Promise<void> => {
+    if (sessionKey === null) return
+    setBusy(true)
+    try {
+      await request(`/sessions/${encodeURIComponent(sessionKey)}/cancel`, {
+        method: 'POST',
+        body: { reason: 'stopped from the canvas preview' },
+      })
+      activeRef.current = false
+      setRunning(false)
+      setStatus('stopped')
+    } catch (failure) {
+      onError(describeError(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /**
+   * 清空日志（原型 clear-btn：先停掉在跑的试运行，再把状态复位为「未运行」）。
+   * 水位线保持——否则下一次轮询会把已读过的旧日志当成新条目重新追加。
+   */
+  const clearLog = (): void => {
+    clearedRef.current = cursorRef.current
+    setEntries([])
+    activeRef.current = false
+    if (running && sessionKey !== null) {
+      void request(`/sessions/${encodeURIComponent(sessionKey)}/cancel`, {
+        method: 'POST',
+        body: { reason: 'stopped from the canvas preview' },
+      }).catch((failure: unknown) => { onError(describeError(failure)) })
+    }
+    setRunning(false)
+    setStatus('idle')
+  }
+
+  return (
+    <div className={editor.preview} data-collapsed={collapsed ? '' : undefined} role="region" aria-label={t('editor', 'previewRegion')}>
+      <div className={editor.previewBar}>
+        <div className={editor.consoleTabs} role="tablist" aria-label={t('editor', 'consoleTabs')}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'console'}
+            className={tab === 'console' ? `${editor.consoleTab} ${editor.consoleTabActive}` : editor.consoleTab}
+            onClick={() => {
+              // 折叠状态下先展开面板再切换（原型 setTab 的 is-collapsed 处理）。
+              if (collapsed) onToggleCollapsed()
+              setTab('console')
+            }}
+          >
+            {t('editor', 'consoleTab')}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'preview'}
+            className={tab === 'preview' ? `${editor.consoleTab} ${editor.consoleTabActive}` : editor.consoleTab}
+            onClick={() => {
+              if (collapsed) onToggleCollapsed()
+              setTab('preview')
+            }}
+          >
+            {t('editor', 'previewTab')}
+          </button>
+        </div>
+        <span className={editor.consoleStatus}>
+          <span className={editor.consoleDot} data-live={running ? '' : undefined} />
+          {previewStatusLabel(status)}
+        </span>
+        <span className={editor.previewSpacer} />
+        {/* 面板 meta（原型 .console__meta）：一行陈述本次试运行的真实来源。 */}
+        <span className={editor.consoleMeta}>{t('editor', 'consoleMeta')}</span>
+        {running && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<IconStopFillRegular size={12} />}
+            disabled={busy}
+            onClick={() => { void stop() }}
+          >
+            {t('editor', 'previewStop')}
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={clearLog}>
+          {t('editor', 'previewClear')}
+        </Button>
+        <button
+          type="button"
+          className={editor.consoleCollapse}
+          aria-label={t('editor', collapsed ? 'expandPanel' : 'collapsePanel')}
+          title={t('editor', collapsed ? 'expandPanel' : 'collapsePanel')}
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapsed}
+        >
+          {collapsed ? <IconChevronUpOutlineRegular size={14} /> : <IconChevronDownOutlineRegular size={14} />}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <>
+          <div className={editor.previewLog} ref={logRef}>
+            {tab === 'console'
+              ? (
+                <>
+                  {entries.length === 0 && (
+                    <div className={editor.consoleEmpty}>
+                      <span className={editor.consoleEmptyTitle}>{t('editor', 'consoleEmptyTitle')}</span>
+                      <p className={editor.consoleEmptyDesc}>{t('editor', 'consoleEmptyDesc')}</p>
+                    </div>
+                  )}
+                  {entries.map(entry => <PreviewLine key={entry.seq} entry={entry} />)}
+                </>
+              )
+              : (
+                <>
+                  {entries.length === 0 && (
+                    <div className={editor.consoleEmpty}>
+                      <span className={editor.consoleEmptyTitle}>{t('editor', 'previewEmptyTitle')}</span>
+                      <p className={editor.consoleEmptyDesc}>{t('editor', 'previewEmptyDesc')}</p>
+                    </div>
+                  )}
+                  {/* 轻量预览同时呈现文本流与工具状态：连续工具条目合成一行紧凑 chip。 */}
+                  {groupPreviewEntries(entries).map(row => (row.tools
+                    ? (
+                      <div key={`tools-${String(row.key)}`} className={editor.previewToolChips}>
+                        {row.entries.map(entry => <PreviewLine key={entry.seq} entry={entry} chips />)}
+                      </div>
+                    )
+                    : row.entries.map(entry => <PreviewLine key={entry.seq} entry={entry} />)))}
+                </>
+              )}
+          </div>
+
+          {/* 测试输入只在「实时预览」标签内（原型 editor.html:160-171）：运行日志标签不提供发送口。 */}
+          {tab === 'preview' && (
+            <div className={editor.previewInput}>
+              <span className={editor.previewInputField} ref={inputWrapRef}>
+                <Input
+                  value={message}
+                  placeholder={t('editor', 'previewPlaceholder')}
+                  onChange={(event) => { setMessage(event.currentTarget.value) }}
+                  onKeyDown={(event) => { if (event.key === 'Enter') void send() }}
+                />
+              </span>
+              <Button size="sm" variant="primary" disabled={busy || message.trim() === ''} onClick={() => { void send() }}>
+                {busy ? t('editor', 'previewSending') : t('editor', 'previewSend')}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** 预览行分组：连续工具条目合成一行 chip，其余条目各自成行。 */
+interface PreviewRow {
+  key: number
+  entries: PreviewEntry[]
+  tools: boolean
+}
+
+/**
+ * 把预览条目按「连续工具条目」分组。
+ * @param entries - 预览条目（seq 递增）。
+ * @returns 预览行。
+ */
+function groupPreviewEntries(entries: PreviewEntry[]): PreviewRow[] {
+  const rows: PreviewRow[] = []
+  for (const entry of entries) {
+    const last = rows[rows.length - 1]
+    const tools = entry.kind === 'tool'
+    if (tools && last !== undefined && last.tools) last.entries.push(entry)
+    else rows.push({ key: entry.seq, entries: [entry], tools })
+  }
+  return rows
+}
+
+/**
+ * 把 Host 原文的轮次条目翻成当前语言（`turn N started` / `turn ended (reason)`；流协议不变）。
+ * @param entry - 状态或错误条目。
+ * @param failed - 该条目是否表示回合失败。
+ * @returns 本地化文案；不是轮次条目时保留原文。
+ */
+function turnLine(entry: PreviewEntry, failed: boolean): string {
+  const raw = entry.text ?? ''
+  if (entry.turn === undefined || !raw.startsWith('turn ')) return raw
+  if (raw.startsWith('turn ended')) return t('editor', failed ? 'turnFailed' : 'turnEnded', { turn: entry.turn })
+  return t('editor', 'turnStarted', { turn: entry.turn })
+}
+
+/**
+ * 工具阶段的状态文案键。
+ * @param phase - 工具阶段。
+ * @returns 文案键。
+ */
+function toolStateKey(phase: PreviewEntry['phase']): string {
+  if (phase === 'start') return 'previewToolRunning'
+  if (phase === 'error') return 'previewToolFailed'
+  return 'previewToolDone'
+}
+
+/**
+ * 工具状态 chip 的语气。
+ * @param phase - 工具阶段。
+ * @returns Tag 语气（执行中=信息、完成=成功、失败=危险）。
+ */
+function toolTone(phase: PreviewEntry['phase']): 'info' | 'success' | 'danger' {
+  if (phase === 'start') return 'info'
+  if (phase === 'error') return 'danger'
+  return 'success'
+}
+
+/**
+ * 渲染一条预览条目（纯文本与工具状态两态，绝不在此复刻卡片）。
+ * @param props - 条目与是否用紧凑状态 chip 呈现。
+ * @returns 预览行元素。
+ */
+function PreviewLine({ entry, chips = false }: { entry: PreviewEntry; chips?: boolean }): ReactElement {
+  if (entry.kind === 'text') return <p className={editor.previewText}>{entry.text}</p>
+  if (entry.kind === 'error') return <p className={editor.previewError}>{turnLine(entry, true)}</p>
+  if (entry.kind === 'status') return <p className={editor.previewStatusLine}>{turnLine(entry, false)}</p>
+  // 工具名缺失时只呈现状态词，不拼出 "undefined"（结果事件理论上能按 callId 对上名字）。
+  const state = t('editor', toolStateKey(entry.phase))
+  const label = entry.toolName === undefined ? state : `${entry.toolName} — ${state}`
+  if (chips) return <Tag tone={toolTone(entry.phase)}>{label}</Tag>
+  return (
+    <p className={editor.previewTool}>
+      <span className={editor.previewToolName}>{label}</span>
+      {entry.text === undefined || entry.text === '' ? '' : `\n${entry.text}`}
+    </p>
   )
 }

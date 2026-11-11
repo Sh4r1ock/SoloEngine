@@ -974,6 +974,258 @@ textarea.descriptionArea {
   transform: translateY(0);
 }
 
+/* --------------------------------------------------------------------------
+   运行面板
+   -------------------------------------------------------------------------- */
+.preview {
+  display: grid;
+  grid-template-rows: 40px minmax(0, 1fr) auto;
+  height: 224px;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 0.5px solid var(--se-hairline);
+  background-color: var(--dsw-alias-bg-layer-1);
+}
+
+.preview[data-collapsed] {
+  grid-template-rows: 40px;
+  height: 40px;
+}
+
+/* 原型 editor.css:1051-1053：≤960 运行面板 200px；editor.css:1091-1095：视口高 ≤700 时 176px。 */
+@media (max-width: 960px) {
+  .preview {
+    height: 200px;
+  }
+
+  .preview[data-collapsed] {
+    height: 40px;
+  }
+}
+
+@media (max-height: 700px) {
+  .preview {
+    height: 176px;
+  }
+
+  .preview[data-collapsed] {
+    height: 40px;
+  }
+}
+
+.previewBar {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-3);
+  height: 40px;
+  padding: 0 var(--se-space-3) 0 var(--se-space-4);
+  border-bottom: 0.5px solid var(--se-hairline);
+}
+
+.consoleTabs {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-1);
+  height: 100%;
+  flex: none;
+}
+
+.consoleTab {
+  position: relative;
+  height: 100%;
+  padding: 0 var(--se-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.consoleTab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.consoleTabActive {
+  color: var(--dsw-alias-label-primary);
+}
+
+.consoleTabActive::after {
+  content: '';
+  position: absolute;
+  left: var(--se-space-2);
+  right: var(--se-space-2);
+  bottom: 0;
+  height: 2px;
+  /* 2px 高的指示条上，圆角被裁到半高（1px），阶梯 xs 与 2px 渲染完全一致。 */
+  border-radius: var(--se-radius-xs);
+  background-color: var(--dsw-static-deepseek-500);
+}
+
+.consoleStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.consoleDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--se-radius-full);
+  background-color: var(--dsw-alias-border-l3);
+}
+
+.consoleDot[data-live] {
+  background-color: var(--dsw-static-deepseek-500);
+  /* 原型 `.dot--live`：运行中蓝点脉冲 1.4s（docs/01 §6、docs/03 §8.3）。 */
+  animation: consoleDotPulse 1.4s var(--se-ease-standard) infinite;
+}
+
+@keyframes consoleDotPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 面板 meta：等宽 12px，原型 .console__meta 的位置（清空按钮之前）。 */
+.consoleMeta {
+  margin-right: var(--se-space-2);
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.consoleCollapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--se-radius-xs);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.consoleCollapse:hover {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.previewLog {
+  overflow: auto;
+  min-height: 0;
+  padding: var(--se-space-2) var(--se-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+}
+
+.consoleEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--se-space-1);
+  padding: var(--se-space-2) 0;
+}
+
+.consoleEmptyTitle {
+  color: var(--dsw-alias-label-secondary);
+  font-family: var(--dsh-font-family-code-default);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.consoleEmptyDesc {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.previewText {
+  font-size: 13px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.previewTool {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.previewToolName {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 工具状态 chip 行（实时预览把连续工具条目呈现为紧凑状态 chip）。 */
+.previewToolChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--se-space-1);
+}
+
+.previewStatusLine {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  margin: 0;
+}
+
+.previewError {
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-state-error-primary);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.previewInput {
+  display: flex;
+  align-items: center;
+  gap: var(--se-space-2);
+  padding: var(--se-space-2) var(--se-space-4);
+  border-top: 0.5px solid var(--se-hairline);
+}
+
+.previewInputField {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 控件不参与收缩；间隔器负责把状态/操作推到右端（原型 .console__actions margin-left:auto）。 */
+.previewBar > * {
+  flex: none;
+}
+
+.previewBar > .previewSpacer {
+  flex: 1 1 auto;
+}
+
 
 /* --------------------------------------------------------------------------
    响应式（原型 editor.css）
@@ -993,6 +1245,10 @@ textarea.descriptionArea {
   }
 
   .saveState {
+    display: none;
+  }
+
+  .previewButton {
     display: none;
   }
 }
