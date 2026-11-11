@@ -304,17 +304,26 @@ export class LlmConfigService {
         now, now,
       )
       if (input.is_default === true) await this.makeExclusiveDefault(tx, userId, id)
-      // 有配置就必须有默认路由（原型 models.js:230-233）：首个配置未勾默认时，
-      // 取最早的启用项；没有启用项就取当前行。
+      // 有配置就必须有**可用**的默认路由（原型 models.js:230-233）：首个配置未勾默认时，
+      // 取最早的启用项。停用行不能成为默认；没有任何启用项时连旧默认标记一起清掉。
       const hasDefault = await tx.prepare(
-        'SELECT 1 AS ok FROM llm_configs WHERE user_id = ? AND is_default = 1 LIMIT 1',
+        'SELECT 1 AS ok FROM llm_configs WHERE user_id = ? AND is_default = 1 AND is_active = 1 LIMIT 1',
       ).get(userId)
       if (hasDefault === undefined) {
         const candidate = await tx.prepare(
           'SELECT id FROM llm_configs WHERE user_id = ? AND is_active = 1 ORDER BY created_at ASC, id ASC LIMIT 1',
         ).get(userId)
-        const fallbackId = (candidate as { id?: string } | undefined)?.id ?? id
-        await tx.prepare('UPDATE llm_configs SET is_default = 1 WHERE id = ?').run(fallbackId)
+        const fallbackId = (candidate as { id?: string } | undefined)?.id
+        if (fallbackId === undefined) {
+          await tx.prepare(
+            'UPDATE llm_configs SET is_default = 0, updated_at = ?, version = version + 1 WHERE user_id = ? AND is_default = 1',
+          ).run(now, userId)
+        } else {
+          await tx.prepare(
+            'UPDATE llm_configs SET is_default = 1, updated_at = ?, version = version + 1 WHERE id = ?',
+          ).run(now, fallbackId)
+          await this.makeExclusiveDefault(tx, userId, fallbackId)
+        }
       }
     })
     return this.view(await this.byId(userId, id) as LlmConfigRow)
@@ -417,9 +426,13 @@ export class LlmConfigService {
     // 历史会话仍在（归属链保留），而该路由随即从注册表消失——后续请求得到结构化
     // 「路由不存在」，不静默回退（PRD-06 FR-ENG-015）。
     await this.db.transaction(async tx => {
+      // 默认标记在事务内重读：调用前的快照可能已被另一请求改过（setActive 没有版本入参），
+      // 用旧快照判断会留下「停用 + 默认」的组合。
+      const current = await tx.prepare('SELECT is_default FROM llm_configs WHERE id = ? AND user_id = ?')
+        .get<{ is_default: number }>(id, userId)
       await tx.prepare('UPDATE sessions SET llm_config_id = NULL WHERE llm_config_id = ?').run(id)
       await tx.prepare('DELETE FROM llm_configs WHERE id = ? AND user_id = ?').run(id, userId)
-      if (row.is_default === 1) await this.promoteNextDefault(tx, userId, id)
+      if (current?.is_default === 1) await this.promoteNextDefault(tx, userId, id)
     })
   }
 
@@ -434,10 +447,13 @@ export class LlmConfigService {
     if (row === undefined) throw new FrameworkError(404, 'CONFIG_NOT_FOUND', `model config ${id} not found`)
     const now = new Date().toISOString()
     await this.db.transaction(async tx => {
+      // 与 remove 同一理由：默认标记必须在事务内重读，旧快照可能已被另一请求改过。
+      const current = await tx.prepare('SELECT is_default FROM llm_configs WHERE id = ? AND user_id = ?')
+        .get<{ is_default: number }>(id, userId)
       await tx.prepare(
         'UPDATE llm_configs SET is_active = ?, updated_at = ?, version = version + 1 WHERE id = ? AND user_id = ?',
       ).run(active ? 1 : 0, now, id, userId)
-      if (!active && row.is_default === 1) await this.promoteNextDefault(tx, userId, id)
+      if (!active && current?.is_default === 1) await this.promoteNextDefault(tx, userId, id)
     })
     return this.view(await this.byId(userId, id) as LlmConfigRow)
   }
