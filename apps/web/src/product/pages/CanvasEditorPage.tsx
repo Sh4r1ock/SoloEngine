@@ -666,12 +666,18 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
     setData(history[index] ?? data)
   }
 
+  /** 在途保存标记：手动保存与自动保存共用同一道闸，避免同 version 的并发 PATCH。 */
+  const savingRef = useRef(false)
+
   /**
    * 保存画布。
    * @param silent - 自动保存传 true：原型只在手动保存时弹「已保存」。
    */
   const save = useCallback(async (silent = false): Promise<void> => {
-    if (canvas === null || savedMeta === null || readOnly) return
+    // 同一时刻只允许一次 PATCH：两次并发都用请求发出时的同一 version，
+    // 后一次必然被后端判为 VERSION_CONFLICT，把页面拖进「自动保存已停」的冲突态。
+    if (canvas === null || savedMeta === null || readOnly || savingRef.current) return
+    savingRef.current = true
     const startedAt = performance.now()
     setSaving(true)
     try {
@@ -713,6 +719,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       // 下一次用户编辑（data/meta 变化）或手动保存成功后再恢复。
       if (silent) setAutoSaveHalted(true)
     } finally {
+      // 请求已结束即放开闸门；「保存中」的最短呈现只影响按钮文案，不应挡住下一次手动保存。
+      savingRef.current = false
       // 自动保存：写入已完成，但「保存中」至少呈现 360ms（原型节奏），不让状态一闪而过。
       if (silent) {
         const remaining = AUTO_SAVE_WRITE_MS - (performance.now() - startedAt)
