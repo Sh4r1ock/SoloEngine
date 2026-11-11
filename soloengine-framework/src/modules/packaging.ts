@@ -886,49 +886,62 @@ export class PackagingService {
       rmSync(stagingPath, { recursive: true, force: true })
       throw error
     }
-    await this.publishDirectory(stagingPath, artifactPath)
-
-    // 读回已发布的产物：profile 路径与预设清单从这里重取（临时目录的路径已不存在）。
-    const published = this.readMaterializedProfile(id, artifactPath)
-    const profileStage: PackagingStage = {
-      id: 'profile',
-      label: '固化为 profile',
-      status: 'ok',
-      output: `wrote profile ${published.dir} → bundles=${String(bundles.length)} presets=${String(published.presetIds.length)}`
-        + ` (default=${published.entryPresetId}, presets=${published.presetIds.join(', ')});`
-        + ` files=${published.files.join(', ')}`,
+    try {
+      await this.publishDirectory(stagingPath, artifactPath)
+    } catch (error) {
+      // rename 重试耗尽时暂存目录还在：留着它只会占磁盘，且调用方拿不到 id 去清理。
+      rmSync(stagingPath, { recursive: true, force: true })
+      throw error
     }
 
-    const verifyStage = this.verifyArtifact(id, artifactPath, { requireClosure: true })
-    // 桌面形态：发行流水线的前置检查 + `prepare-profile` 暂存（PRD-11 FR-DEP-006）。
-    // 发行封装本身（打包 exe/安装包）由发行流水线执行，本请求只做到暂存。
-    const desktop = desktopRequest === undefined ? undefined : await this.stageDesktop(published.dir, artifactPath, desktopRequest)
-    const desktopStage: PackagingStage | undefined = desktop === undefined ? undefined : {
-      id: 'desktop',
-      label: '桌面发行暂存',
-      status: 'ok',
-      output: desktop.output,
-    }
+    try {
+      // 读回已发布的产物：profile 路径与预设清单从这里重取（临时目录的路径已不存在）。
+      const published = this.readMaterializedProfile(id, artifactPath)
+      const profileStage: PackagingStage = {
+        id: 'profile',
+        label: '固化为 profile',
+        status: 'ok',
+        output: `wrote profile ${published.dir} → bundles=${String(bundles.length)} presets=${String(published.presetIds.length)}`
+          + ` (default=${published.entryPresetId}, presets=${published.presetIds.join(', ')});`
+          + ` files=${published.files.join(', ')}`,
+      }
 
-    const written = listRegularFiles(artifactPath)
-    const writtenBytes = written.reduce((sum, file) => sum + statSync(join(artifactPath, file)).size, 0)
-    const materializeStage: PackagingStage = {
-      id: 'materialize',
-      label: '落盘产物',
-      status: 'ok',
-      output: `wrote ${String(written.length)} top-level files, ${String(writtenBytes)} bytes to ${artifactPath} (${written.join(', ')})`,
-    }
+      const verifyStage = this.verifyArtifact(id, artifactPath, { requireClosure: true })
+      // 桌面形态：发行流水线的前置检查 + `prepare-profile` 暂存（PRD-11 FR-DEP-006）。
+      // 发行封装本身（打包 exe/安装包）由发行流水线执行，本请求只做到暂存。
+      const desktop = desktopRequest === undefined ? undefined : await this.stageDesktop(published.dir, artifactPath, desktopRequest)
+      const desktopStage: PackagingStage | undefined = desktop === undefined ? undefined : {
+        id: 'desktop',
+        label: '桌面发行暂存',
+        status: 'ok',
+        output: desktop.output,
+      }
 
-    return {
-      id,
-      status: 'completed',
-      form,
-      stages: [compileStage, profileStage, materializeStage, verifyStage, ...desktopStage === undefined ? [] : [desktopStage]],
-      artifactPath,
-      profilePath: published.dir,
-      presetIds: published.presetIds,
-      entryPresetId: published.entryPresetId,
-      ...desktop === undefined ? {} : { desktop },
+      const written = listRegularFiles(artifactPath)
+      const writtenBytes = written.reduce((sum, file) => sum + statSync(join(artifactPath, file)).size, 0)
+      const materializeStage: PackagingStage = {
+        id: 'materialize',
+        label: '落盘产物',
+        status: 'ok',
+        output: `wrote ${String(written.length)} top-level files, ${String(writtenBytes)} bytes to ${artifactPath} (${written.join(', ')})`,
+      }
+
+      return {
+        id,
+        status: 'completed',
+        form,
+        stages: [compileStage, profileStage, materializeStage, verifyStage, ...desktopStage === undefined ? [] : [desktopStage]],
+        artifactPath,
+        profilePath: published.dir,
+        presetIds: published.presetIds,
+        entryPresetId: published.entryPresetId,
+        ...desktop === undefined ? {} : { desktop },
+      }
+    } catch (error) {
+      // 发布之后的读回校验/桌面暂存失败：产物目录已经存在但调用方拿不到 id，
+      // 留着会变成不可见的孤儿（含完整 node_modules）。
+      rmSync(artifactPath, { recursive: true, force: true })
+      throw error
     }
   }
 
@@ -1121,6 +1134,10 @@ export class PackagingService {
         ...process.env,
         DSH_DESKTOP_APP_ID: desktop.appId,
         DSH_DESKTOP_PROFILE_SEED: desktop.profileDir,
+        // 发行脚本把首启载荷暂存到 `$DSH_HOME/profiles/desktop-seed`（先删后拷）：默认的
+        // data/dsh-home 是全实例共用的，两个运行并发封装会互相删掉对方的载荷。指到本次
+        // 运行的私有 home，载荷与产物都按运行隔离。
+        DSH_HOME: this.desktopHome(artifactPath),
         // 产物落进本次运行的私有 home：重复封装不覆盖上一次的免安装目录（那台机器上可能正
         // 开着它——Windows 会拒绝替换被占用的文件），页面也按真实路径回报。
         DSH_DESKTOP_ARTIFACT_ROOT: this.desktopHome(artifactPath),
@@ -1129,7 +1146,8 @@ export class PackagingService {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     if (child.pid !== undefined) state.pid = child.pid
-    this.writeDesktopBuild(id, state)
+    // 先挂监听再落进度：首次落盘失败时若管道还没有读者，子进程会写满缓冲后卡死，
+    // 而 pid 也没持久化，重试会在同一目录再起一份构建。
     child.stdout.on('data', append)
     child.stderr.on('data', append)
     child.on('error', (error) => {
@@ -1150,6 +1168,13 @@ export class PackagingService {
         process.stderr.write(`packaging: could not persist the desktop build state of run ${id}: ${String(error)}\n`)
       }
     })
+    try {
+      this.writeDesktopBuild(id, state)
+    } catch (error) {
+      // 进度无法落盘就没有可恢复的 pid：结束已拉起的子进程，避免留下无主的并发构建。
+      child.kill('SIGKILL')
+      throw error
+    }
     return this.readRun(id, requester)
   }
 
@@ -1346,8 +1371,11 @@ export class PackagingService {
     const desktopStage: PackagingStage | undefined = desktop === undefined ? undefined : {
       id: 'desktop',
       label: '桌面发行封装',
-      status: buildStatus === undefined ? 'ok' : buildStatus === 'completed' ? 'ok' : buildStatus,
-      output: [desktop.output, ...buildStatus === undefined ? [] : [buildOutput]].filter(output => output !== '').join('\n'),
+      // 尚未触发封装时不能显示「完成」：没有任何安装包产物，阶段仍是未开始。
+      status: buildStatus === undefined ? 'pending' : buildStatus === 'completed' ? 'ok' : buildStatus,
+      output: buildStatus === undefined
+        ? 'desktop packaging has not been started yet'
+        : [desktop.output, buildOutput].filter(output => output !== '').join('\n'),
     }
     // 运行状态覆盖封装进度：封装失败即整次运行的失败（安装包没有产出），运行中则继续轮询。
     const status: PackagingRunStatus = buildStatus === undefined || buildStatus === 'completed'
@@ -1630,6 +1658,9 @@ export class PackagingService {
         continue
       }
       const rowId = `mcp-${name.toLowerCase().replace(/[^a-z0-9-]/gu, '-')}`
+      const disabledTools = server.disabled_tools === null || server.disabled_tools === undefined || server.disabled_tools === ''
+        ? []
+        : parseJsonArray(server.disabled_tools).filter((item): item is string => typeof item === 'string')
       if (server.transport_type === 'stdio') {
         const stdio = await this.runtime.mcp.stdio(server.id)
         const args = stdio?.args === null || stdio?.args === undefined ? undefined : parseJsonArray(stdio.args)
@@ -1645,6 +1676,11 @@ export class PackagingService {
             command: stdio?.command ?? '',
             ...(args === undefined ? {} : { args }),
             ...(stdio?.working_dir === null || stdio?.working_dir === undefined ? {} : { cwd: stdio.working_dir }),
+            // 与宿主挂载同一换算：秒级存储值 → 毫秒，下限 1 秒；缺省沿用连接器默认。
+            ...(stdio?.timeout === null || stdio?.timeout === undefined
+              ? {}
+              : { toolCallTimeoutMs: Math.max(1000, stdio.timeout * 1000) }),
+            ...(disabledTools.length === 0 ? {} : { disabledTools }),
           },
         })
         if (carriesSecrets) {
@@ -1661,9 +1697,14 @@ export class PackagingService {
         ...(carriesSecrets ? { disabled: true } : {}),
         config: {
           serverName: name,
-          transport: 'http',
+          // 平台的连接器只接受 `streamable-http`（与宿主挂载同一枚举）；写 `http` 会让
+          // 产物在目标机加载期配置校验失败，整份 profile 起不来。
+          transport: 'streamable-http',
           url: http?.url ?? '',
-          ...(http?.timeout === null || http?.timeout === undefined ? {} : { toolCallTimeoutMs: http.timeout * 1000 }),
+          ...(http?.timeout === null || http?.timeout === undefined
+            ? {}
+            : { toolCallTimeoutMs: Math.max(1000, http.timeout * 1000) }),
+          ...(disabledTools.length === 0 ? {} : { disabledTools }),
         },
       })
       if (carriesSecrets) {
