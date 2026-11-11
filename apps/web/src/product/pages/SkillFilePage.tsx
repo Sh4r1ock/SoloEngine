@@ -249,8 +249,10 @@ export function SkillFilePage({ skillId, user }: { skillId: string; user: UserVi
   // FR-SKILL-006：备注改动 800ms 防抖落台账（skills_packages.notes，不改包）。
   const notesTimer = useRef<number | null>(null)
   const notesPending = useRef<Record<string, string> | null>(null)
+  /** 备注写入串行化：同一 version 的并发 PUT 会让后一次必然 409，并整包重载丢掉刚输入的内容。 */
+  const notesChain = useRef<Promise<void>>(Promise.resolve())
   const writeNotes = useCallback((next: Record<string, string>): void => {
-    void (async () => {
+    notesChain.current = notesChain.current.then(async () => {
       try {
         const result = await request<{ ok: true; notes: Record<string, string>; version: number }>(
           `/skills/${skillId}/notes`,
@@ -270,7 +272,7 @@ export function SkillFilePage({ skillId, user }: { skillId: string; user: UserVi
         setNotesState('idle')
         setError({ key: 'errorSave', detail: describeError(failure) })
       }
-    })()
+    })
   }, [skillId, loadTree])
   const saveNotes = useCallback((next: Record<string, string>): void => {
     if (notesTimer.current !== null) window.clearTimeout(notesTimer.current)
@@ -320,6 +322,9 @@ export function SkillFilePage({ skillId, user }: { skillId: string; user: UserVi
   }, [dirty])
 
   const applyEdit = (next: string): void => {
+    // 只读技能（他人公共技能 / 非超管看系统技能）不得进入本地编辑：写入会被后端拒绝，
+    // 但本地历史与 dirty 已改变，页面随后陷入「改不了、也走不掉」的状态。
+    if (!writable) return
     setFileSize(byteLength(next))
     const now = Date.now()
     // 500ms 内的连续输入合并成一步：替换当前历史步，而不是每个键各记一步（原型 flushGroup）。
@@ -775,6 +780,11 @@ export function SkillFilePage({ skillId, user }: { skillId: string; user: UserVi
                     if (gutterRef.current !== null) gutterRef.current.scrollTop = event.currentTarget.scrollTop
                   }}
                   onKeyDown={(event) => {
+                    if (!writable) {
+                      // 只读：Tab 正常移动焦点，撤销/重做不接管；仅拦下浏览器「保存网页」。
+                      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') event.preventDefault()
+                      return
+                    }
                     if (event.key === 'Tab') {
                       event.preventDefault()
                       const element = event.currentTarget
