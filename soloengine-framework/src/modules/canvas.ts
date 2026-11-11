@@ -422,13 +422,18 @@ export class CanvasService {
     const row = await this.byId(userId, id)
     if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${id} not found`)
     const source = CanvasService.parseCanvas(row.canvas_data, id)
-    // 副本重建节点/边 ID，避免与原画布冲突。
+    // 副本重建节点/边 ID，避免与原画布冲突；模型引用必须仍属于**当前用户**——
+    // 复制他人模板时原作者的配置 ID 在本账号下不存在，原样保留会让副本必然编译失败。
     const idMap = new Map<string, string>()
-    const nodes = source.nodes.map(node => {
+    const nodes: CanvasNode[] = []
+    for (const node of source.nodes) {
       const next = newId()
       idMap.set(node.node_id, next)
-      return { ...node, node_id: next }
-    })
+      const { model_ref: modelRef, ...rest } = node
+      const keepsModel = modelRef !== undefined && modelRef !== ''
+        && await this.runtime.models.byId(userId, modelRef) !== undefined
+      nodes.push({ ...rest, node_id: next, ...(keepsModel ? { model_ref: modelRef } : {}) })
+    }
     const edges = source.edges.map(edge => ({
       edge_id: newId(),
       from: idMap.get(edge.from) ?? edge.from,
@@ -493,7 +498,11 @@ export class CanvasService {
       assignments.push(`${column} = ?`)
       values.push(value)
     }
-    if (patch.name !== undefined) set('name', patch.name)
+    if (patch.name !== undefined) {
+      const name = patch.name.trim()
+      if (name === '') throw new FrameworkError(400, 'NAME_REQUIRED', 'name must not be empty')
+      set('name', name)
+    }
     if (patch.description !== undefined) set('description', patch.description)
     if (patch.icon !== undefined) set('icon', patch.icon)
     if (patch.tags !== undefined) set('tags', JSON.stringify(patch.tags))
@@ -763,7 +772,14 @@ export class CanvasService {
     const row = await this.byId(userId, canvasId)
     if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} not found`)
     const project = await this.projectById(userId, projectId)
-    if (project === undefined) throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${projectId} not found`)
+    if (project === undefined) {
+      throw new FrameworkError(404, 'PROJECT_NOT_FOUND', `run project ${projectId} not found`)
+    }
+    // 运行项目绑定一张画布：拿 B 项目的目录/版本编译 A 会产出 cwd 与 revision 都不对的团队。
+    if (project.agentic_flow_id !== canvasId) {
+      throw new FrameworkError(422, 'PROJECT_CANVAS_MISMATCH',
+        `run project ${project.id} belongs to canvas ${project.agentic_flow_id}, not ${canvasId}`)
+    }
     const canvas = CanvasService.parseCanvas(row.canvas_data, canvasId)
     // 节点未声明插件时回落到该用户的默认插件表（与运行编译、打包同一处规则）。
     canvas.nodes = await this.runtime.plugins.applyNodeDefaults(userId, canvas.nodes)
