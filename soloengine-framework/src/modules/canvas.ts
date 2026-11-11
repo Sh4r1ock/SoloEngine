@@ -681,7 +681,15 @@ export class CanvasService {
       }
     }
     // 沙箱根在首次使用时创建（与「先选目录再运行」同一结果）；到这里归属已经判定通过。
-    if (!existsSync(candidate)) mkdirSync(candidate, { recursive: true })
+    if (!existsSync(candidate)) {
+      try {
+        mkdirSync(candidate, { recursive: true })
+      } catch (error) {
+        // 父路径是文件（ENOTDIR）等确定性客户端错误不能漏成裸 500。
+        throw new FrameworkError(400, 'FOLDER_NOT_CREATABLE',
+          `folder_path ${candidate} cannot be created: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
     return real
   }
 
