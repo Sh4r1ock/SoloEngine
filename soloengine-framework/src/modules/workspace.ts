@@ -382,6 +382,12 @@ export class WorkspaceService {
     if (gated.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${target} already exists; refusing to merge into it`)
     }
+    // 单层创建（不 recursive）：父目录缺失/父路径是文件时 mkdirSync 会抛 ENOENT/ENOTDIR，
+    // 变成裸 500。与写入同一判据给出可处置的 400。
+    const parent = dirname(gated.path)
+    if (!existsDirectory(parent)) {
+      throw new FrameworkError(400, 'PARENT_MISSING', `parent directory ${parent} does not exist; create it first`)
+    }
     mkdirSync(gated.path)
     return { path: toWorkspacePath(gated.root, gated.path) }
   }
@@ -413,6 +419,11 @@ export class WorkspaceService {
     const destination = await this.gate(userId, projectId, to, { remoteAddress: options.remoteAddress })
     if (destination.exists) {
       throw new FrameworkError(409, 'PATH_EXISTS', `${to} already exists; refusing to overwrite it`)
+    }
+    // 目标父目录缺失时 renameSync 抛 ENOENT（裸 500）；与写入/建目录同一判据给 400。
+    const destinationParent = dirname(destination.path)
+    if (!existsDirectory(destinationParent)) {
+      throw new FrameworkError(400, 'PARENT_MISSING', `parent directory ${destinationParent} does not exist; create it first`)
     }
     renameSync(source.path, destination.path)
     return { from: toWorkspacePath(source.root, source.path), to: toWorkspacePath(destination.root, destination.path) }
