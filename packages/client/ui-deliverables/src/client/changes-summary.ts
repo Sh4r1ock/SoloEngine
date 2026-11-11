@@ -14,6 +14,9 @@ export class ChangesSummaryStore extends HostReadStore<ChangesSummaryState> {
       failed: 'missing',
       retryable: () => false,
       decode: async (response) => {
+        // `204 No Content` is the Host stating that a disposed Session no longer
+        // holds this summary; it is an expected missing answer, not a failure.
+        if (response.status === 204) return 'missing'
         if (!response.ok) return 'missing'
         const value: unknown = await response.json()
         return isChangesSummary(value) ? value : 'missing'

@@ -127,14 +127,23 @@ async function handlePresentOpen(ctx: Context, request: Request): Promise<Respon
   }
 }
 
-/** The summary one `workspace/changes` event announced, without the Host working directory; 404 once the Host no longer serves it. */
+/**
+ * The summary one `workspace/changes` event announced, without the Host working
+ * directory.
+ *
+ * A disposed Session (for example after a Host restart) no longer holds its
+ * recorder, so the request succeeds with `204 No Content` rather than a `404`
+ * that the browser records as a failed resource. The client renders the same
+ * "no longer available" state for both.
+ * @returns the summary, `204` when the Host no longer serves it, or `400`.
+ */
 function handleChangesSummary(ctx: Context, request: Request): Response {
   const query = new URL(request.url).searchParams
   const id = query.get('sessionId')
   const seq = coordinate(query.get('seq'))
   if (!id || seq === undefined) return new Response('Invalid change summary coordinates.', { status: 400 })
   const summary = ctx.workspaceChanges.summary(id as SessionId, seq)
-  if (summary === undefined) return new Response('Change summary unavailable.', { status: 404 })
+  if (summary === undefined) return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
   const { turn, files, total, added, deleted } = summary
   return Response.json({ turn, files, total, added, deleted } satisfies ChangesSummary, { headers: { 'cache-control': 'no-store' } })
 }
