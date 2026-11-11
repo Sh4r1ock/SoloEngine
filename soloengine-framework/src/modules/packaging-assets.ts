@@ -80,6 +80,28 @@ export interface PackageResolver {
 }
 
 /**
+ * 手写的 `node_modules` 上溯查找：从目录逐层向上找 `node_modules/<name>/package.json`。
+ *
+ * `createRequire` 解析不到时（pnpm 的严格布局把包只链接在直接依赖方的 `node_modules`，
+ * 或入口解析被包的 `exports` 挡住），按 Node 的目录回溯规则再找一遍。
+ * @param anchorDir - 发起查找的目录。
+ * @param name - 包名。
+ * @returns 包目录；找不到时 undefined。
+ */
+function findInNodeModules(anchorDir: string, name: string): string | undefined {
+  let dir = anchorDir
+  for (;;) {
+    if (basename(dir) !== 'node_modules') {
+      const candidate = join(dir, 'node_modules', ...name.split('/'))
+      if (existsSync(join(candidate, 'package.json'))) return candidate
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
+/**
  * 构造包解析器。
  *
  * pnpm 的严格布局下，一个包的依赖只从它自己的目录可解析（`node_modules/.pnpm/<pkg>/node_modules`），
@@ -119,21 +141,7 @@ export function packageResolver(root: string, profileDir: string, index?: Readon
       }
       if (found !== undefined) break
     }
-    if (found === undefined) {
-      let dir = anchorDir
-      for (;;) {
-        if (basename(dir) !== 'node_modules') {
-          const candidate = join(dir, 'node_modules', ...name.split('/'))
-          if (existsSync(join(candidate, 'package.json'))) {
-            found = candidate
-            break
-          }
-        }
-        const parent = dirname(dir)
-        if (parent === dir) break
-        dir = parent
-      }
-    }
+    if (found === undefined) found = findInNodeModules(anchorDir, name)
     cache.set(key, found)
     return found
   }
@@ -333,24 +341,25 @@ function assertRuntimeEntry(name: string, packageDir: string): void {
   }
 }
 
-/**
- * 平台包的清单版本（平台包不复制进产物，但预览要给出目标机需提供的版本）。
- * @param name - 包名（错误定位）。
- * @param packageDir - 解析到的包目录。
- * @returns 清单版本；清单没写版本时与随包复制同一口径取 `0.0.0`。
- */
-function platformPackageVersion(name: string, packageDir: string): string {
-  const manifest = readManifest(packageDir, name)
-  return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
+/** 产物里的一个解析作用域（一个 `node_modules` 目录）。 */
+interface CopyScope {
+  /** 作用域目录（绝对路径）。 */
+  dir: string
+  /** 上层作用域：Node 解析从最近的 `node_modules` 逐层向上找。 */
+  parent?: CopyScope
+  /** 本作用域内已放置的包（顶层作用域的条目即产物闭包清单）。 */
+  entries: Map<string, MaterializedPackage>
 }
 
 /**
  * 把组合里非平台的插件包及其依赖闭包复制进产物 profile 的 `node_modules`。
  *
  * 起点 = profile 的 bundle 包 + 实例组合行声明的包；沿每个待复制包的 `dependencies`
- * 递归收集（`peerDependencies` 属目标机运行时契约，不复制）。闭包内的平台包记录在
- * `platform` 中供核对；复制完成后重新读取产物，逐个校验非平台依赖在产物内可解析，
- * 缺失即拒绝打包（PACKAGING_DEPENDENCY_UNRESOLVED）。
+ * 递归收集（`peerDependencies` 属目标机运行时契约，不复制）。同名依赖解析到不同版本时
+ * 不折叠成一份：后一份放进发起方自己的 `node_modules`（`<pkg>/node_modules/<name>`），
+ * 与 pnpm 的逐包解析一致。闭包内的平台包记录在 `platform` 中供核对；复制完成后重新
+ * 读取产物，逐个校验非平台依赖在它自己的解析链上可解析，缺失即拒绝打包
+ * （PACKAGING_DEPENDENCY_UNRESOLVED）。
  * @param options - 仓库根、产物 profile、bundle 名与组合行包名。
  * @returns 复制结果（包清单 + 平台包清单）。
  */
@@ -375,60 +384,132 @@ export function materializeDependencies(options: {
   const resolve = packageResolver(root, sourceProfileDir, workspacePackageIndex(root))
   const vendorNames = vendorPackageNames(root)
   const nodeModules = join(targetProfileDir, 'node_modules')
-  const copied = new Map<string, MaterializedPackage>()
+  const top: CopyScope = { dir: nodeModules, entries: new Map<string, MaterializedPackage>() }
   const platform = new Map<string, MaterializedPlatformPackage>()
   const missing: string[] = []
+  /** 产物内落下的每一份包（顶层 + 嵌套），读回校验逐份核对。 */
+  const placed: MaterializedPackage[] = []
 
-  const visit = (rawName: string, fromDir?: string): void => {
+  /**
+   * 在一个作用域里落一份包：复制（或只校验）后按产物内的相对路径登记。
+   * @param name - 包名。
+   * @param version - 包版本。
+   * @param source - 来源包目录。
+   * @param target - 产物内目标目录。
+   * @returns 登记项（`path` 相对产物 profile）。
+   */
+  const place = (name: string, version: string, source: string, target: string): MaterializedPackage => {
+    if (mode === 'copy') {
+      copyPackageDir(source, target, isWorkspacePackage(root, source))
+      assertRuntimeEntry(name, target)
+    } else {
+      assertRuntimeEntry(name, source)
+    }
+    const entry = { name, version, source, path: relative(targetProfileDir, target).split(sep).join('/') }
+    placed.push(entry)
+    return entry
+  }
+
+  /**
+   * 沿作用域链查找已放置的包（Node 解析先看最近的 `node_modules`）。
+   * @param scope - 发起解析的作用域。
+   * @param name - 包名。
+   * @returns 已放置的登记项，链上没有时 undefined。
+   */
+  const lookup = (scope: CopyScope, name: string): MaterializedPackage | undefined => {
+    for (let current: CopyScope | undefined = scope; current !== undefined; current = current.parent) {
+      const found = current.entries.get(name)
+      if (found !== undefined) return found
+    }
+    return undefined
+  }
+
+  /**
+   * 读包清单里的版本（清单没写版本时取 `0.0.0`）。
+   * @param dir - 包目录。
+   * @param name - 包名（错误定位）。
+   * @returns 版本。
+   */
+  const versionOf = (dir: string, name: string): string => {
+    const manifest = readManifest(dir, name)
+    return typeof manifest.version === 'string' ? manifest.version : '0.0.0'
+  }
+
+  /**
+   * 沿一个包的 `dependencies` 递归固化闭包。
+   * @param name - 发起依赖的包名（错误定位）。
+   * @param fromDir - 发起依赖的包目录。
+   * @param scope - 该包自己的 `node_modules` 作用域。
+   */
+  function visitDependencies(name: string, fromDir: string, scope: CopyScope): void {
+    const dependencies = readManifest(fromDir, name).dependencies
+    if (dependencies === null || typeof dependencies !== 'object') return
+    for (const dependency of Object.keys(dependencies as Record<string, unknown>)) visit(dependency, fromDir, scope)
+  }
+
+  /**
+   * 固化一个包及其依赖闭包。
+   * @param rawName - 依赖名（可带子路径）。
+   * @param fromDir - 发起解析的包目录（起点为 profile 与仓库根）。
+   * @param scope - 发起方自己的作用域：版本与已有副本不同的依赖落在这里。
+   */
+  function visit(rawName: string, fromDir: string | undefined, scope: CopyScope): void {
     const name = rootPackageName(rawName)
     if (name.startsWith('node:') || BUILTINS.has(name)) return
     // 类型声明包只在编译期使用，运行期不解析。
     if (name.startsWith('@types/')) return
-    if (copied.has(name) || platform.has(name)) return
+    if (platform.has(name)) return
+    const existing = lookup(scope, name)
+    if (existing !== undefined) {
+      const again = resolve(name, fromDir)
+      if (again === undefined) return
+      if (isPlatformPackage(root, vendorNames, name, again)) return
+      const version = versionOf(again, name)
+      // 同版本的不同物理副本（pnpm 的每包依赖目录）可以安全合并成一份。
+      if (version === existing.version) return
+      // 版本不同：平铺到顶层会让其中一方拿到另一方的版本。产物沿用 pnpm 的逐包解析——
+      // 把这一份放进发起方自己的作用域（`<pkg>/node_modules/<name>`），
+      // Node 先找最近的作用域，两边各自看见声明的版本。
+      const target = join(scope.dir, ...name.split('/'))
+      scope.entries.set(name, place(name, version, again, target))
+      visitDependencies(name, again, { dir: join(target, 'node_modules'), parent: scope, entries: new Map() })
+      return
+    }
     const dir = resolve(name, fromDir)
     if (dir === undefined) {
       missing.push(fromDir === undefined ? name : `${name} (required by ${fromDir})`)
       return
     }
     if (isPlatformPackage(root, vendorNames, name, dir)) {
-      platform.set(name, { name, version: platformPackageVersion(name, dir) })
+      platform.set(name, { name, version: versionOf(dir, name) })
       return
     }
-    const manifest = readManifest(dir, name)
-    const version = typeof manifest.version === 'string' ? manifest.version : '0.0.0'
+    // 首次出现的包平铺到产物顶层；只有版本不同的一份才嵌进发起方的作用域。
     const target = join(nodeModules, ...name.split('/'))
-    if (mode === 'copy') {
-      copyPackageDir(dir, target, isWorkspacePackage(root, dir))
-      assertRuntimeEntry(name, target)
-    } else {
-      assertRuntimeEntry(name, dir)
-    }
-    copied.set(name, { name, version, source: dir, path: `node_modules/${name}` })
-    const dependencies = manifest.dependencies
-    if (dependencies !== null && typeof dependencies === 'object') {
-      for (const dependency of Object.keys(dependencies as Record<string, unknown>)) visit(dependency, dir)
-    }
+    top.entries.set(name, place(name, versionOf(dir, name), dir, target))
+    visitDependencies(name, dir, { dir: join(target, 'node_modules'), parent: top, entries: new Map() })
   }
 
-  for (const bundle of options.bundles) visit(bundle)
-  for (const row of options.rowPackages) visit(row)
+  for (const bundle of options.bundles) visit(bundle, undefined, top)
+  for (const row of options.rowPackages) visit(row, undefined, top)
   if (missing.length > 0) {
     throw new FrameworkError(500, 'PACKAGING_DEPENDENCY_UNRESOLVED',
       `packaging refused: these composition packages do not resolve on this installation: ${[...new Set(missing)].sort().join(', ')}`)
   }
 
-  // 复制后重新读取产物：每个已复制包的非平台运行时依赖必须在产物内可解析。
+  // 复制后重新读取产物：每份包的非平台运行时依赖必须在它自己的解析链上落到产物里。
   const unresolved: string[] = []
   if (mode === 'copy') {
-    for (const entry of copied.values()) {
-      const manifest = readManifest(join(targetProfileDir, entry.path), entry.name)
+    for (const entry of placed) {
+      const packageDir = join(targetProfileDir, entry.path)
+      const manifest = readManifest(packageDir, entry.name)
       const dependencies = manifest.dependencies
       if (dependencies === null || typeof dependencies !== 'object') continue
       for (const dependency of Object.keys(dependencies as Record<string, unknown>)) {
         const depName = rootPackageName(dependency)
         if (depName.startsWith('node:') || BUILTINS.has(depName) || depName.startsWith('@types/')) continue
-        if (platform.has(depName) || copied.has(depName)) continue
-        unresolved.push(`${entry.name} → ${depName}`)
+        if (platform.has(depName)) continue
+        if (findInNodeModules(packageDir, depName) === undefined) unresolved.push(`${entry.name} → ${depName}`)
       }
     }
   }
@@ -438,7 +519,7 @@ export function materializeDependencies(options: {
   }
 
   return {
-    packages: [...copied.values()].sort((left, right) => left.name.localeCompare(right.name)),
+    packages: [...top.entries.values()].sort((left, right) => left.name.localeCompare(right.name)),
     platform: [...platform.values()].sort((left, right) => left.name.localeCompare(right.name)),
     nodeModules,
   }
