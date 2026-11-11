@@ -286,6 +286,7 @@ export class RunService {
         canvas: canvasData as never,
         cwd,
         platform: this.runtime.executionPlatform,
+        ...this.runtime.toolVocabulary === undefined ? {} : { knownTools: this.runtime.toolVocabulary() },
         resolveModelRoute: (modelRef) => {
           if (modelRef === '') return { route: '', valid: false }
           return modelRoutes.get(modelRef) ?? { route: '', valid: false }

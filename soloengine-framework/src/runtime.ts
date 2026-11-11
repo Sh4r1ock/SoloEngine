@@ -115,6 +115,11 @@ export class FrameworkRuntime {
     readonly trustedHosts: readonly string[]
   }
   /**
+   * harness 实时注册的工具名（画布工具多选的同一份数据源，FR-CANVAS-014）。
+   * 由 host 插件在驱动就绪时绑定；未绑定时画布编译只接受编译器词汇表（无 host 的形态）。
+   */
+  toolVocabulary: (() => readonly string[]) | undefined = undefined
+  /**
    * 会话日志只读来源（`ctx.sessionPersistence`，由 host 在挂载时绑定）。
    * 未绑定时会话导出退回 JSONL 目录扫描——那只是旧形态，不是默认通路。
    */

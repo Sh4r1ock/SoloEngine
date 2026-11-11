@@ -6,7 +6,7 @@
  *   指明节点与原因（问题暴露在设计期）；
  * - 唯一入口判定：零/多协调者（coordinator）歧义；多协调者取最后创建的节点并提示；
  * - 每条委派边 = 父节点工具表里的一个 Task 工具；子节点提示词作 persona 注入；
- * - 工具名经 tool-map 映射为 dsh 真实工具名（未映射项编译期报错）。
+ * - 工具名经 tool-map 映射为 dsh 真实工具名；实时注册里的名字按原名通过，两处都没有的编译期报错。
  *
  * 编译是运行时即时行为，不产生中间产物文件。
  *
@@ -80,6 +80,13 @@ export interface CompileParams {
   platform?: NodeJS.Platform
   /** 代际（递增的不可变版本）。 */
   revision?: number
+  /**
+   * harness 实时注册的工具名（画布工具多选的同一份数据源，FR-CANVAS-014）。
+   *
+   * 画布词汇表之外的工具名按原名通过：编辑器只提供实时注册里的名字，选中后必须能编译；
+   * 缺省时只接受词汇表（无 host 的形态），未映射项照旧 fail loud。
+   */
+  knownTools?: readonly string[]
 }
 
 /** 编译失败（fail loud）。 */
@@ -179,7 +186,9 @@ export function compileCanvas(params: CompileParams): CompileResult {
     mainId = (roots[0] as CanvasNodeInput).node_id
   }
 
-  // 工具映射进每个节点（未映射项 fail loud）。
+  // 工具映射进每个节点：词汇表别名换成真实工具名；实时注册里的名字按原名通过；
+  // 两处都没有的 fail loud（编辑器只提供实时注册，编制外的名字是调用方错误）。
+  const knownTools = new Set(params.knownTools ?? [])
   const resolved = realNodes.map((node) => {
     const rawTools = node.tools ?? []
     const resolvedTools: string[] = []
@@ -189,7 +198,7 @@ export function compileCanvas(params: CompileParams): CompileResult {
         resolvedTools.push(canonical)
         continue
       }
-      const mapped = TOOL_MAP[raw]
+      const mapped = TOOL_MAP[raw] ?? (knownTools.has(raw) ? raw : undefined)
       if (mapped === undefined) {
         missing.push(raw)
         continue

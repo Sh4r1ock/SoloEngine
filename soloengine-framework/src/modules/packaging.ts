@@ -1566,16 +1566,26 @@ export class PackagingService {
    * 精细到工具级的收紧是运行期 `tools.restrict` 步骤，无声明式等价物）。
    * @param tools - 编译产物里该节点的真实工具名。
    * @param delegationTools - 委派边工具名（由运行时按 `edges` 表注册，不是任何插件行注册的）。
+   * @param knownTools - harness 实时注册的工具名（画布可选集合的同一份数据源）。
    * @returns 覆盖到的行 id。
    */
-  private coveredRowIds(tools: readonly string[], delegationTools: ReadonlySet<string>): Set<string> {
+  private coveredRowIds(
+    tools: readonly string[],
+    delegationTools: ReadonlySet<string>,
+    knownTools: ReadonlySet<string>,
+  ): Set<string> {
     const ids = new Set<string>()
     const uncovered: string[] = []
     for (const tool of tools) {
       if (HOST_PLANE_TOOLS.includes(tool) || delegationTools.has(tool)) continue
       const rowId = TOOL_ROW[tool]
-      if (rowId === undefined) uncovered.push(tool)
-      else ids.add(rowId)
+      if (rowId === undefined) {
+        // 实时注册里的工具由产物组合层（bundle / 实例行）全局挂载，不按节点重述；
+        // 连实时注册都没有的名字才是编制错误。
+        if (!knownTools.has(tool)) uncovered.push(tool)
+        continue
+      }
+      ids.add(rowId)
     }
     if (uncovered.length > 0) {
       throw new FrameworkError(500, 'PACKAGING_TOOL_UNCOVERED',
@@ -1775,10 +1785,12 @@ export class PackagingService {
 
     const notes: string[] = []
     const delegationTools = new Set(compiled.edges.map(edge => edge.toolName))
+    // 实时注册的工具（画布可选集合）在产物组合层已全局挂载，不算「无行可归」。
+    const knownTools = new Set(this.runtime.toolVocabulary?.() ?? [])
     /** 每节点一条平台预设行（`@deepseek-ai/dsh-agent-preset` 的 config 即该节点的组合行）。 */
     const presetInserts: Record<string, unknown>[] = []
     for (const spec of compiled.agents) {
-      const covered = this.coveredRowIds(spec.tools, delegationTools)
+      const covered = this.coveredRowIds(spec.tools, delegationTools, knownTools)
       // persona 行由 `personaRowFor` 按节点重建（含随附前缀 + 该节点提示词），随附那行不再重复带走。
       const rows = this.filterPresetRows(templateRows.filter(row => row.id !== 'persona'), covered)
       // 随附组合里没有行、但平台确有该包的行（当前只有 tool-lsp）。

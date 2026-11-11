@@ -829,6 +829,12 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         // **实时注册**（全局注册表；fs/命令类工具注册在各 agent 作用域，全局面不重复出现）
         // 与**编译器画布词汇表**（TOOL_MAP 的画布工具名 + run_command，编译契约的同一张表）
         // 的并集，经原生注入点挂进同一条 REST 前缀（机制一份，前端不另立静态清单）。
+        // 编译接受同一份实时工具名：编辑器只提供它，选中后就该能编译（词汇表外按原名通过）。
+        const toolVocabulary = (): readonly string[] => driverCtx.tools.schemas().map(schema => schema.name)
+        runtime.toolVocabulary = toolVocabulary
+        driverCtx.effect(() => () => {
+          if (runtime.toolVocabulary === toolVocabulary) runtime.toolVocabulary = undefined
+        }, 'soloengine-host.toolVocabulary')
         runtime.mountAuthenticated(
           { id: 'tools-list', method: 'get', path: '/tools', summary: 'harness 工具清单（实时注册 ∪ 编译器画布词汇表；FR-CANVAS-014）' },
           () => {

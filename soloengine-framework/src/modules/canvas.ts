@@ -807,6 +807,7 @@ export class CanvasService {
         cwd: project.folder_path,
         revision: Number(row.version),
         platform: this.runtime.executionPlatform,
+        ...this.runtime.toolVocabulary === undefined ? {} : { knownTools: this.runtime.toolVocabulary() },
         resolveModelRoute: (modelRef) => {
           // 缺模型引用 = 编译期 fail loud（PRD-02 §2：不带入运行期，也不静默用默认模型代替）。
           if (modelRef === '') return { route: '', valid: false }
