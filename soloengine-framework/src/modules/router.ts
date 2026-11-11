@@ -436,7 +436,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
 
   route('skills-list', 'get', '/skills', '列当前用户技能（含公共）', [authenticate], async (req, res) => {
     const user = req.soloUser as UserRow
-    res.json({ ok: true, skills: (await runtime.skills.list(user.id)).map(row => runtime.skills.view(row)) })
+    res.json({ ok: true, skills: (await runtime.skills.list(user.id)).map(row => runtime.skills.view(row, user.id)) })
   })
 
   route('skills-create', 'post', '/skills', '创建技能包骨架（SKILL.md + 标准目录）', [authenticate], async (req, res) => {
@@ -459,7 +459,7 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   route('skills-notes-get', 'get', '/skills/:id/notes', '文件备注读取（PRD-04 FR-SKILL-006：存台账不改包）', [authenticate], async (req, res) => {
     try {
       const user = req.soloUser as UserRow
-      res.json({ ok: true, notes: await runtime.skills.getNotes(user.id, String(req.params.id)) })
+      res.json({ ok: true, notes: await runtime.skills.getNotes(user.id, String(req.params.id), { isSuperuser: user.is_superuser === 1 }) })
     } catch (error) {
       failure(res, error)
     }

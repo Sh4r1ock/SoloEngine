@@ -194,11 +194,21 @@ export class SkillService {
     return this.runtime.userDirs.sub(username, 'skills')
   }
 
-  /** 行 → 视图。 */
-  view(row: SkillPackageRow): SkillPackageView {
+  /**
+   * 行 → 视图。
+   *
+   * 非本人拥有的可见行（他人发布的公共技能）不得带出内部目录与文件备注：`folder_path`
+   * 含他人账号的隔离目录，`notes` 是他人写给自己看的批注；文件操作另有概览接口。
+   * @param row - 技能行。
+   * @param requesterId - 读取者；省略表示内部调用（保留完整字段）。
+   * @returns 对外视图。
+   */
+  view(row: SkillPackageRow, requesterId?: string): SkillPackageView {
     const { user_id, is_active, is_public, tags, ...rest } = row
+    const foreign = requesterId !== undefined && row.user_id !== null && row.user_id !== requesterId
     return {
       ...rest,
+      ...(foreign ? { folder_path: null, notes: null } : {}),
       user_id,
       is_active: is_active === 1,
       is_public: is_public === 1,
@@ -650,7 +660,7 @@ export class SkillService {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'import', ?, ?, 1)`,
       ).run(id, userId, name, welcome.version, welcome.description, null, welcome.author, null,
         targetRoot, now, now)
-      return this.view(await this.byIdScoped(userId, id) as SkillPackageRow)
+      return this.view(await this.byIdScoped(userId, id) as SkillPackageRow, userId)
     } catch (error) {
       // 目录由本次调用原子抢占，登记失败时删掉它不会误伤并发赢家。
       rmSync(targetRoot, { recursive: true, force: true })
@@ -704,7 +714,7 @@ export class SkillService {
            is_active, is_public, source, created_at, updated_at, version)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'local', ?, ?, 1)`,
       ).run(id, userId, clean, ver, description, null, username, JSON.stringify(tags), targetRoot, now, now)
-      return this.view(await this.byIdScoped(userId, id) as SkillPackageRow)
+      return this.view(await this.byIdScoped(userId, id) as SkillPackageRow, userId)
     } catch (error) {
       // 目录由本次调用原子抢占，登记失败时删掉它不会误伤并发赢家。
       rmSync(targetRoot, { recursive: true, force: true })
@@ -722,23 +732,14 @@ export class SkillService {
     active: boolean,
     actor: { isSuperuser?: boolean } = {},
   ): Promise<SkillPackageView> {
-    await this.mutableRow(userId, id, actor.isSuperuser === true)
+    const row = await this.mutableRow(userId, id, actor.isSuperuser === true)
     await this.db.prepare('UPDATE skills_packages SET is_active = ?, updated_at = ?, version = version + 1 WHERE id = ? AND (user_id = ? OR user_id IS NULL)')
       .run(active ? 1 : 0, new Date().toISOString(), id, userId)
-    // 热生效（PRD-04 FR-SKILL-005）：把该用户**全部活跃运行项目**的项目层技能根重同步一遍。
-    // junction 的增删由 dsh skill-filesystem 的目录观察转成失效事件——模型下一步即见/不见。
-    const projects = await this.db.prepare(
-      'SELECT folder_path FROM run_projects WHERE user_id = ? AND is_active = 1',
-    ).all<{ folder_path: string }>(userId)
-    for (const project of projects) {
-      try {
-        await this.syncProjectSkills(userId, project.folder_path)
-      } catch (error) {
-        // 单项目同步失败不吞错：显式打行（台账里可见），继续同步其余项目。
-        console.log(`soloengine: syncing skills into project ${project.folder_path} failed: ${String(error)}`)
-      }
-    }
-    return this.view(await this.byIdScoped(userId, id) as SkillPackageRow)
+    // 热生效（PRD-04 FR-SKILL-005）：junction 的增删由 dsh skill-filesystem 的目录观察转成
+    // 失效事件——模型下一步即见/不见。系统技能影响所有账号，同步全部活跃项目；停用时把
+    // 该技能目录当作「已退役根」，否则行已不在启用集合，指向它的链接会被当成外部链接留下。
+    await this.resyncActiveProjects(row.user_id, active || row.folder_path === null ? [] : [row.folder_path])
+    return this.view(await this.byIdScoped(userId, id) as SkillPackageRow, userId)
   }
 
   /**
@@ -762,9 +763,9 @@ export class SkillService {
   }
 
   /** 文件备注读取（PRD-04 FR-SKILL-006：备注存台账列、不改包；返回 path → note map）。 */
-  async getNotes(userId: string, id: string): Promise<Record<string, string>> {
-    const row = await this.byIdVisible(userId, id)
-    if (row === undefined) throw new FrameworkError(404, 'SKILL_NOT_FOUND', `skill ${id} not found`)
+  async getNotes(userId: string, id: string, actor: { isSuperuser?: boolean } = {}): Promise<Record<string, string>> {
+    // 备注是归属者自己的批注：他人的公共技能只读可见，但不能读出对方的文件备注。
+    const row = await this.mutableRow(userId, id, actor.isSuperuser === true)
     return SkillService.decodeNotes(row.notes)
   }
 
@@ -817,8 +818,10 @@ export class SkillService {
    *
    * @param userId - 归属用户。
    * @param projectFolderPath - 运行项目目录（沙箱根）。
+   * @param retiredRoots - 刚被删除/停用的技能目录：行已不在启用集合里，但指向它们的链接
+   *   仍须视为「我们的」并移除，否则项目里会留下悬空 junction。
    */
-  async syncProjectSkills(userId: string, projectFolderPath: string): Promise<void> {
+  async syncProjectSkills(userId: string, projectFolderPath: string, retiredRoots: readonly string[] = []): Promise<void> {
     if (String(projectFolderPath ?? '').trim() === '') return
     // 同名时用户自己的技能胜过系统技能：系统行在前、用户行在后，Map 后者覆盖前者。
     const enabled = await this.db.prepare(
@@ -833,8 +836,12 @@ export class SkillService {
     mkdirSync(targetRoot, { recursive: true })
     const wanted = new Map(projectSkillNames(enabled))
     // 只移除**我们自己创建的 junction**：链接目标必须落在一条已登记技能目录上，否则保留并报行。
-    const registeredRoots = [...new Set([...owned.map(row => row.folder_path), ...enabled.map(row => row.folder_path)])]
-      .filter((folder): folder is string => folder !== null)
+    const registeredRoots = [...new Set([
+      ...owned.map(row => row.folder_path),
+      ...enabled.map(row => row.folder_path),
+      ...retiredRoots,
+    ])]
+      .filter((folder): folder is string => folder !== null && folder !== '')
       .map(folder => resolve(folder))
     for (const entry of readdirSync(targetRoot)) {
       const full = join(targetRoot, entry)
@@ -885,10 +892,35 @@ export class SkillService {
   }
 
   /**
+   * 把一次技能变更热应用到运行项目。
+   *
+   * 系统技能（`user_id IS NULL`）影响每个账号，必须同步**全部**活跃项目；自有技能只同步
+   * 本人的项目。此前系统技能停用只重同步操作者自己的项目，其他用户运行中的项目仍挂着
+   * 已停用技能的 junction，直到他们下次发起运行。
+   * @param scopeUserId - 技能归属；`null` 表示系统技能（全部用户）。
+   */
+  private async resyncActiveProjects(scopeUserId: string | null, retiredRoots: readonly string[] = []): Promise<void> {
+    const projects = scopeUserId === null
+      ? await this.db.prepare('SELECT user_id, folder_path FROM run_projects WHERE is_active = 1')
+        .all<{ user_id: string; folder_path: string }>()
+      : await this.db.prepare('SELECT user_id, folder_path FROM run_projects WHERE user_id = ? AND is_active = 1')
+        .all<{ user_id: string; folder_path: string }>(scopeUserId)
+    for (const project of projects) {
+      try {
+        await this.syncProjectSkills(project.user_id, project.folder_path, retiredRoots)
+      } catch (error) {
+        // 单项目同步失败不吞错：显式打行（台账里可见），继续同步其余项目。
+        console.log(`soloengine: syncing skills into project ${project.folder_path} failed: ${String(error)}`)
+      }
+    }
+  }
+
+  /**
    * 删除技能（先删目录，再删记录）。
    *
    * 目录删不掉时**保留记录**并报 409：记录先删会让残留目录挡住同名重建（`SKILL_EXISTS`），
    * 且用户已无从重试。`rmSync(force)` 对已不存在的目录是空操作，因此部分失败后重试仍收敛。
+   * 删除成功后重同步运行项目：否则项目里的 junction 会指向已删除目录，直到下次发起运行。
    * @param userId - 归属用户。
    * @param id - 技能 ID。
    * @param actor - 操作者（系统技能只有超管可删）。
@@ -904,6 +936,7 @@ export class SkillService {
       }
     }
     await this.db.prepare('DELETE FROM skills_packages WHERE id = ? AND (user_id = ? OR user_id IS NULL)').run(id, userId)
+    await this.resyncActiveProjects(row.user_id, row.folder_path === null ? [] : [row.folder_path])
   }
 
   /**
