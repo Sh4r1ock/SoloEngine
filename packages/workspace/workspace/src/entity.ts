@@ -144,6 +144,23 @@ export class WorkspaceEntity implements Workspace {
       }
       this.host.rememberSessionPath(sessionId, cwd)
     }
+    // A Session belongs to exactly one Workspace: move the membership out of any
+    // other record instead of counting it twice. Duplicate accounting makes the
+    // next registry load reject the whole domain.
+    const table = this.host.table()
+    const otherHolders = [...table.entries()]
+      .filter(([id, record]) => id !== this.id && record.sessionIds.includes(sessionId))
+      .map(([id]) => id)
+    for (const id of otherHolders) {
+      await table.update(id, (record) => {
+        if (!record.sessionIds.includes(sessionId)) return record
+        return {
+          ...record,
+          sessionIds: record.sessionIds.filter(candidate => candidate !== sessionId),
+          updatedAt: new Date().toISOString(),
+        }
+      })
+    }
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record
       : { ...record, sessionIds: [sessionId, ...record.sessionIds] })

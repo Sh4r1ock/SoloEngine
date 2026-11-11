@@ -160,6 +160,10 @@ const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): b
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
+/** Compare two stored directory spellings under the host's path-case rules. */
+const samePath = (left: string, right: string): boolean =>
+  process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
+
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
  * one canonical-cwd header index, and completes the one-time history
@@ -204,13 +208,16 @@ export class WorkspaceRegistry extends Service {
     this.state = domain.global.get()
 
     await this.recoverPendingMutation()
-    this.validateStoredState(this.state)
     if (!this.state.initialized) {
       const headers = await this.listStoredHeaders()
       await this.replaceHeaderIndex(headers)
+      await this.reconcileMembership()
+      this.validateStoredState(this.requireState())
       await this.bootstrap(headers)
     } else if (this.table.size > 0) {
       await this.replaceHeaderIndex(await this.listStoredHeaders())
+      await this.reconcileMembership()
+      this.validateStoredState(this.requireState())
     }
 
     await this.indexLiveSessions()
@@ -739,6 +746,59 @@ export class WorkspaceRegistry extends Service {
       archivedSessionIds: state.archivedSessionIds,
       pinnedSessionIds: state.pinnedSessionIds,
     })
+  }
+
+  /**
+   * Repair durable membership where one Session is accounted by several
+   * Workspaces.
+   *
+   * A Session belongs to the Workspace that matches its canonical header cwd,
+   * and `attachSession` moves that membership. Records written before this
+   * invariant was enforced can still carry the same Session in two records;
+   * rejecting the whole domain would disable every service that injects
+   * `workspaceRegistry`, so the duplicate is resolved from the same cwd canon
+   * used everywhere else. The preferred holder is the record whose path equals
+   * the Session's canonical cwd, then its stored cwd spelling, then registry
+   * order. Missing directories keep the first holder because only a definite
+   * cwd identifies the owner.
+   *
+   * @returns completion after every extra membership is removed durably.
+   */
+  private async reconcileMembership(): Promise<void> {
+    const table = this.requireTable()
+    const holders = new Map<SessionId, WorkspaceId[]>()
+    for (const [id, record] of table.entries()) {
+      for (const sessionId of record.sessionIds) {
+        const list = holders.get(sessionId)
+        if (list === undefined) holders.set(sessionId, [id])
+        else list.push(id)
+      }
+    }
+    for (const [sessionId, ids] of holders) {
+      if (ids.length < 2) continue
+      const canonical = this.sessionPaths.get(sessionId)
+      const cwd = this.headers.get(sessionId)?.cwd
+      const preferred = ids.find((id) => {
+        const path = (table.get(id) as WorkspaceRecord).path
+        if (canonical !== undefined) return path === canonical
+        return cwd !== undefined && samePath(path, cwd)
+      }) ?? ids[0]
+      for (const id of ids) {
+        if (id === preferred) continue
+        await table.update(id, (record) => {
+          if (!record.sessionIds.includes(sessionId)) return record
+          return {
+            ...record,
+            sessionIds: record.sessionIds.filter(candidate => candidate !== sessionId),
+            updatedAt: new Date().toISOString(),
+          }
+        })
+      }
+      this.ctx.logger.warn(
+        `workspace domain repaired: session '${sessionId}' was accounted by `
+        + `${ids.map(id => `'${id}'`).join(' and ')}; kept '${preferred}'`,
+      )
+    }
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
