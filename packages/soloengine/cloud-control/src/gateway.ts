@@ -82,6 +82,13 @@ export interface CloudGatewayOptions {
   cacheTtlMs?: number
   /** 未落租约的放置结果缓存 TTL（毫秒，默认 500）。 */
   pendingTtlMs?: number
+  /**
+   * 无会话键的产品面（浏览器入口）放置结果的粘滞 TTL（毫秒，默认 30_000）。
+   *
+   * 产品页首帧、静态资源与面板 RPC 不带会话键；同一实例（`dsh-instance`）的请求在 TTL 内
+   * 恒定落在同一节点，信任门引导的 303 与令牌兑换才不会跨节点（各节点的进程令牌互不相同）。
+   */
+  entryTtlMs?: number
   /** 当前时间。 */
   now?: () => Date
   /**
@@ -216,6 +223,7 @@ export class CloudGateway {
   private readonly control: ControlApi
   private readonly cacheTtlMs: number
   private readonly pendingTtlMs: number
+  private readonly entryTtlMs: number
   private readonly now: () => Date
   private readonly authorize: (request: IncomingMessage) => boolean
   private readonly sessionOwnership: GatewaySessionOwnership | undefined
@@ -228,6 +236,7 @@ export class CloudGateway {
     this.control = options.control
     this.cacheTtlMs = options.cacheTtlMs ?? 2_000
     this.pendingTtlMs = options.pendingTtlMs ?? 500
+    this.entryTtlMs = options.entryTtlMs ?? 30_000
     this.now = options.now ?? (() => new Date())
     this.authorize = options.authorize ?? loopbackOnly
     this.sessionOwnership = options.sessionOwnership
@@ -257,11 +266,12 @@ export class CloudGateway {
 
   /**
    * 解析会话的目标节点。
-   * @param sessionKey - 会话键。
+   * @param sessionKey - 会话键或产品面的放置键。
    * @param userId - 已验证的归属用户（会话归属校验开启时给出；配额闸门据此统计）。
+   * @param cacheTtlMs - 本次放置结果的缓存时长（产品面入口用更长的粘滞窗口）。
    * @returns 路由结果（无容量或超配额时 `ok: false`）。
    */
-  async route(sessionKey: string, userId?: string): Promise<GatewayRoute> {
+  async route(sessionKey: string, userId?: string, cacheTtlMs = this.cacheTtlMs): Promise<GatewayRoute> {
     const nowMs = this.now().getTime()
     const cached = this.cache.get(sessionKey)
     if (cached !== undefined && cached.expiresAt > nowMs) {
@@ -272,7 +282,7 @@ export class CloudGateway {
       const node = await this.control.node(lease.nodeId)
       if (node !== undefined) {
         this.cache.set(sessionKey, {
-          endpoint: node.endpoint, nodeId: node.nodeId, epoch: lease.epoch, expiresAt: nowMs + this.cacheTtlMs,
+          endpoint: node.endpoint, nodeId: node.nodeId, epoch: lease.epoch, expiresAt: nowMs + cacheTtlMs,
         })
         return { ok: true, nodeId: node.nodeId, endpoint: node.endpoint, epoch: lease.epoch, placed: null }
       }
@@ -286,7 +296,7 @@ export class CloudGateway {
     const node = await this.control.node(decision.nodeId)
     if (node === undefined) return { ok: false, code: 'NO_CAPACITY', decision }
     this.cache.set(sessionKey, {
-      endpoint: node.endpoint, nodeId: node.nodeId, epoch: 0, expiresAt: nowMs + this.pendingTtlMs,
+      endpoint: node.endpoint, nodeId: node.nodeId, epoch: 0, expiresAt: nowMs + Math.max(this.pendingTtlMs, cacheTtlMs),
     })
     return { ok: true, nodeId: node.nodeId, endpoint: node.endpoint, epoch: 0, placed: decision }
   }
@@ -330,6 +340,44 @@ export class CloudGateway {
         : { ok: false, code: 'NO_CAPACITY', message: 'no node can take this session' }))
       return
     }
+    this.pipeHttp(request, response, route, ownership.userId)
+  }
+
+  /**
+   * 转发一次产品面入口请求（无会话键：首帧、静态资源与面板 RPC）。
+   *
+   * 不做网关侧归属判定：请求里没有会话可归属，账号与信任门由节点按同一份 shared 凭据判定
+   * （网关只是入口，不代替节点鉴权）。放置结果按 {@link CloudGatewayOptions.entryTtlMs}
+   * 粘滞，保证信任门引导的 303 与令牌兑换落在同一节点。
+   * @param request - 入站请求。
+   * @param response - 出站响应。
+   * @param placementKey - 产品面放置键（同一浏览器实例稳定即可）。
+   */
+  async forwardEntry(request: IncomingMessage, response: ServerResponse, placementKey: string): Promise<void> {
+    if (!this.authorize(request)) {
+      response.writeHead(401, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ ok: false, code: 'UNAUTHORIZED', message: 'gateway rejected the request' }))
+      return
+    }
+    const route = await this.route(placementKey, undefined, this.entryTtlMs)
+    if (!route.ok) {
+      const quota = route.code === 'QUOTA_EXCEEDED'
+      response.writeHead(quota ? 429 : 503, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify(quota
+        ? { ok: false, code: 'QUOTA_EXCEEDED', message: 'the account has reached its concurrent-session quota' }
+        : { ok: false, code: 'NO_CAPACITY', message: 'no node can take this request' }))
+      return
+    }
+    this.pipeHttp(request, response, route, undefined)
+  }
+
+  /** 把一次已路由的 HTTP 请求流式转发到目标节点。 */
+  private pipeHttp(
+    request: IncomingMessage,
+    response: ServerResponse,
+    route: Extract<GatewayRoute, { ok: true }>,
+    userId: string | undefined,
+  ): void {
     const target = new URL(route.endpoint)
     // 逐项复制并跳过客户端自带的身份头：只有网关写入的已验证账号能到达节点。
     const headers: IncomingHttpHeaders = {}
@@ -341,7 +389,7 @@ export class CloudGateway {
     // 节点回环地址会让带 Origin 的浏览器请求一律 403，引导也会指向浏览器不可达的节点。
     // 部署侧把网关对外 authority 声明进节点的 `--trusted-host`（回环入口无需声明）。
     if (route.placed !== null) headers['x-soloengine-placement'] = route.nodeId
-    if (ownership.userId !== undefined) headers[GATEWAY_USER_HEADER] = ownership.userId
+    if (userId !== undefined) headers[GATEWAY_USER_HEADER] = userId
     const upstream = httpRequest({
       protocol: target.protocol,
       hostname: target.hostname,
@@ -394,6 +442,29 @@ export class CloudGateway {
     }, () => { clientSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n') })
   }
 
+  /**
+   * 转发一次无会话键的 WebSocket 升级（面板 RPC）。
+   * @param request - 入站升级请求。
+   * @param clientSocket - 客户端套接字。
+   * @param head - 已读的头部字节。
+   * @param placementKey - 产品面放置键。
+   */
+  forwardEntryUpgrade(request: IncomingMessage, clientSocket: Duplex, head: Buffer, placementKey: string): void {
+    if (!this.authorize(request)) {
+      clientSocket.end('HTTP/1.1 401 Unauthorized\r\n\r\n')
+      return
+    }
+    void this.route(placementKey, undefined, this.entryTtlMs).then((route) => {
+      if (!route.ok) {
+        clientSocket.end(route.code === 'QUOTA_EXCEEDED'
+          ? 'HTTP/1.1 429 Too Many Requests\r\n\r\n'
+          : 'HTTP/1.1 503 Service Unavailable\r\n\r\n')
+        return
+      }
+      this.pipeUpgrade(request, clientSocket, head, route, undefined)
+    }, () => { clientSocket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n') })
+  }
+
   /** 建立到目标节点的原始 TCP 连接并重放握手（用户身份头由网关独占写入）。 */
   private pipeUpgrade(
     request: IncomingMessage,
@@ -432,9 +503,17 @@ export class CloudGateway {
  */
 export function createGatewayServer(gateway: CloudGateway, options: {
   requireSession?: boolean
+  /**
+   * 无会话键的产品面入口路由（首帧、静态资源与面板 RPC）。
+   *
+   * 开启后缺会话键不再 400，而是按实例键（`dsh-instance`）或固定入口键短粘滞到节点；
+   * 账号与信任门由节点判定。省略时保持「缺会话键 400」的 API 网关语义。
+   */
+  allowEntry?: boolean
   objects?: StaticObjectSource
 } = {}): Server {
   const requireSession = options.requireSession ?? true
+  const allowEntry = options.allowEntry ?? false
   const server = createServer((request, response) => {
     void (async () => {
       try {
@@ -450,6 +529,10 @@ export function createGatewayServer(gateway: CloudGateway, options: {
         }
         const header = request.headers['x-soloengine-session']
         const sessionKey = (Array.isArray(header) ? header[0] : header) ?? url.searchParams.get('session') ?? ''
+        if (sessionKey === '' && allowEntry) {
+          await gateway.forwardEntry(request, response, entryKeyOf(url))
+          return
+        }
         if (sessionKey === '' && requireSession) {
           response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
           response.end(JSON.stringify({ ok: false, code: 'SESSION_REQUIRED', message: 'x-soloengine-session header or session query is required' }))
@@ -472,9 +555,23 @@ export function createGatewayServer(gateway: CloudGateway, options: {
     const url = new URL(request.url ?? '/', 'http://gateway.local')
     const header = request.headers['x-soloengine-session']
     const sessionKey = (Array.isArray(header) ? header[0] : header) ?? url.searchParams.get('session') ?? ''
+    if (sessionKey === '' && allowEntry) {
+      gateway.forwardEntryUpgrade(request, socket, head, entryKeyOf(url))
+      return
+    }
     gateway.forwardUpgrade(request, socket, head, sessionKey)
   })
   return server
+}
+
+/**
+ * 产品面入口的放置键：同一面板实例（`dsh-instance`）恒定落在同一节点。
+ * @param url - 入站请求 URL。
+ * @returns 放置键。
+ */
+function entryKeyOf(url: URL): string {
+  const instance = url.searchParams.get('dsh-instance')?.trim() ?? ''
+  return instance === '' ? 'gateway:entry' : `gateway:instance:${instance}`
 }
 
 /**

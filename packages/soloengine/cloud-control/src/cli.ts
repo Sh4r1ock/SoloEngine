@@ -16,6 +16,8 @@
  *   SOLOENGINE_GATEWAY_PORT        网关监听端口（默认 8994）
  *   SOLOENGINE_GATEWAY_SECRET      网关共享签名密钥（设置即要求 `x-soloengine-timestamp` +
  *                                  `x-soloengine-signature`；未设置只放行回环对端）
+ *   SOLOENGINE_GATEWAY_ENTRY       设为 `1` 时开启无会话键的产品面入口路由（浏览器首帧、
+ *                                  静态资源与面板 RPC 按实例键短粘滞到节点；账号与信任门由节点判定）
  *   SOLOENGINE_STATIC_OBJECTS_DIR  网关静态对象根目录（`/objects/<key>`，不可变首帧资源）
  *   SOLOENGINE_KEYS_DIR            主密钥目录（网关与节点共用同一份；设置即启用会话归属校验）
  *   SOLOENGINE_DATABASE_URL        共享业务库连接串（归属真源 `sessions.user_id`；与
@@ -69,7 +71,10 @@ if (role === 'gateway') {
     ...(secret === '' ? {} : { authorize: sharedKeyAuthorizer({ secret }) }),
     ...(ownership === undefined ? {} : { sessionOwnership: ownership.ownership }),
   })
-  const server = createGatewayServer(gateway, objectsDir === '' ? {} : { objects: directoryObjects(objectsDir) })
+  const server = createGatewayServer(gateway, {
+    ...objectsDir === '' ? {} : { objects: directoryObjects(objectsDir) },
+    ...(process.env.SOLOENGINE_GATEWAY_ENTRY ?? '').trim() === '1' ? { allowEntry: true } : {},
+  })
   server.listen(port, host, () => {
     process.stdout.write(
       `soloengine-cloud-gateway: http://${host}:${String(port)}`

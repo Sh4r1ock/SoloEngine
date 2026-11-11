@@ -88,6 +88,9 @@ services:
       SOLOENGINE_CONTROL_URL: http://127.0.0.1:8992
       # 云池唯一对外入口：与产品同端口 8991（演练期间停本机主实例，结束后恢复）。
       SOLOENGINE_GATEWAY_PORT: "8991"
+      # 浏览器入口：无会话键的首帧/静态资源/面板 RPC 按实例键短粘滞到节点（Plan W6 要点 3）；
+      # 账号与信任门由节点判定，会话范围请求仍过网关归属闸门。
+      SOLOENGINE_GATEWAY_ENTRY: "1"
       # 归属校验（需求 §0.1.4）：共享业务库的 sessions.user_id 是真源；两项必须同时给出。
       SOLOENGINE_KEYS_DIR: /data/home/keys
       SOLOENGINE_DATABASE_URL: postgres://postgres:soloengine@127.0.0.1:55432/cloud
