@@ -274,6 +274,11 @@ export class LlmConfigService {
     this.assertProvider(provider)
     this.assertExtraParams(input.extra_params)
     this.assertNumeric(input)
+    // 与 update 同一判据：停用行不能同时被标成默认，否则「已有默认」会挡住后续补默认，
+    // 用户实际没有任何可用的默认路由。
+    if (input.is_default === true && input.is_active === false) {
+      throw new FrameworkError(400, 'DEFAULT_REQUIRES_ACTIVE', 'an inactive model cannot be the default')
+    }
 
     const now = new Date().toISOString()
     const id = newId()
