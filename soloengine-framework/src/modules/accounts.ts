@@ -9,7 +9,7 @@
 
 import type { BusinessDatabase } from '../db/port.ts'
 import { isUniqueViolation } from '../db/port.ts'
-import { hashPassword, newId, newUserId, verifyPassword } from '../auth/index.ts'
+import { DUMMY_PASSWORD_HASH, hashPassword, newId, newUserId, verifyPassword } from '../auth/index.ts'
 import type { FrameworkRuntime } from '../runtime.ts'
 
 /** users 表行（真实列）。 */
@@ -157,7 +157,7 @@ export class AccountService {
       id: newUserId(),
       username,
       email: input.email === undefined || input.email === '' ? null : input.email,
-      hashed_password: hashPassword(input.password),
+      hashed_password: await hashPassword(input.password),
       is_active: 1,
       is_superuser: 0,
       created_at: now,
@@ -197,8 +197,13 @@ export class AccountService {
     // 登录名按大小写折叠匹配：注册的唯一性判据就是折叠后的名字（同一物理目录只允许一个账号），
     // 精确匹配会让 `Alice` 注册后无法用 `alice` 登录（两处判据必须同一套）。
     const row = await this.byUsernameFolded(username.trim())
-    if (row === undefined) throw new FrameworkError(401, 'INVALID_CREDENTIALS', 'username or password is incorrect')
-    if (!verifyPassword(password, row.hashed_password)) {
+    if (row === undefined) {
+      // 查无此人也要做一次同参数哈希校验：两条失败路径（无此账号 / 口令错）的耗时必须一致，
+      // 否则用户名可被枚举。
+      await verifyPassword(password, DUMMY_PASSWORD_HASH)
+      throw new FrameworkError(401, 'INVALID_CREDENTIALS', 'username or password is incorrect')
+    }
+    if (!await verifyPassword(password, row.hashed_password)) {
       throw new FrameworkError(401, 'INVALID_CREDENTIALS', 'username or password is incorrect')
     }
     if (row.is_active !== 1) throw new FrameworkError(403, 'USER_DISABLED', `user ${username} is disabled`)
@@ -243,15 +248,18 @@ export class AccountService {
     const row = await this.byId(id)
     if (row === undefined) throw new FrameworkError(404, 'USER_NOT_FOUND', `user ${id} not found`)
     // 先跑完全部前置校验再写：邮箱先落库、口令校验随后失败会留下半更新（用户以为整次修改失败）。
+    // 口令哈希也在事务外算：scrypt 是异步且耗时，不能占着写事务。
+    let nextHash: string | undefined
     if (patch.password !== undefined) {
       // 改密必须证明持有当前口令：仅凭被盗的 access token 不能改密（R006）。
       if (patch.currentPassword === undefined || patch.currentPassword === '') {
         throw new FrameworkError(400, 'CURRENT_PASSWORD_REQUIRED', 'currentPassword is required to change the password')
       }
-      if (!verifyPassword(patch.currentPassword, row.hashed_password)) {
+      if (!await verifyPassword(patch.currentPassword, row.hashed_password)) {
         throw new FrameworkError(403, 'CURRENT_PASSWORD_INVALID', 'currentPassword is incorrect')
       }
       if (patch.password.length < 4) throw new FrameworkError(400, 'PASSWORD_TOO_SHORT', 'password must be at least 4 characters')
+      nextHash = await hashPassword(patch.password)
     }
     if (patch.email !== undefined) {
       const existing = await this.byEmail(patch.email)
@@ -265,12 +273,12 @@ export class AccountService {
         await tx.prepare('UPDATE users SET email = ?, updated_at = ?, version = version + 1 WHERE id = ?')
           .run(patch.email === '' ? null : patch.email, now, id)
       }
-      if (patch.password !== undefined) {
+      if (nextHash !== undefined) {
         // 自助改密同样撤销已签发令牌（与超管重置同一语义 R007）：旧访问/刷新令牌不得在
         // 口令已变之后继续代表该账号。改密成功后调用方需要重新登录。
         await tx.prepare(
           'UPDATE users SET hashed_password = ?, token_version = token_version + 1, updated_at = ?, version = version + 1 WHERE id = ?',
-        ).run(hashPassword(patch.password), now, id)
+        ).run(nextHash, now, id)
       }
     })
     return toView(await this.byId(id) as UserRow)
@@ -290,10 +298,11 @@ export class AccountService {
     const row = await this.byId(id)
     if (row === undefined) throw new FrameworkError(404, 'USER_NOT_FOUND', `user ${id} not found`)
     if (password.length < 4) throw new FrameworkError(400, 'PASSWORD_TOO_SHORT', 'password must be at least 4 characters')
+    const hashed = await hashPassword(password)
     const now = new Date().toISOString()
     await this.db.prepare(
       'UPDATE users SET hashed_password = ?, token_version = token_version + 1, updated_at = ?, version = version + 1 WHERE id = ?',
-    ).run(hashPassword(password), now, id)
+    ).run(hashed, now, id)
     await this.audit(actorId, 'admin.user.password', { target: id, username: row.username })
     return toView(await this.byId(id) as UserRow)
   }

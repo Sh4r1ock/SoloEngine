@@ -8,7 +8,7 @@
  * @module @soloengine/framework/auth
  */
 
-import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto'
 import { safeEqual, type MasterKey } from '../crypto/index.ts'
 
 /** scrypt 参数（N=16384, r=8, p=1 → 32 字节派生）。 */
@@ -17,15 +17,34 @@ const SCRYPT_R = 8
 const SCRYPT_P = 1
 const SCRYPT_KEYLEN = 32
 
+/**
+ * 派生口令哈希（异步 scrypt）。
+ *
+ * 用异步实现是硬要求：32MB 的请求体上限下，同步 scrypt 会把事件循环按住几十毫秒，
+ * 同进程的所有会话一起排队。
+ * @param password - 明文口令。
+ * @param salt - 16 字节盐。
+ * @param keylen - 派生字节数。
+ * @returns 派生结果。
+ */
+function derive(password: string, salt: Buffer, keylen: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, keylen, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
+      if (error !== null) reject(error)
+      else resolve(derived)
+    })
+  })
+}
+
 /** 口令哈希格式：`scrypt$<salt-hex>$<hash-hex>`。 */
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16)
-  const derived = scryptSync(password, salt, SCRYPT_KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
+  const derived = await derive(password, salt, SCRYPT_KEYLEN)
   return `scrypt$${salt.toString('hex')}$${derived.toString('hex')}`
 }
 
 /** 校验口令；格式非法一律视为不匹配（不抛错）。 */
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$')
   if (parts.length !== 3 || parts[0] !== 'scrypt') return false
   const saltText = parts[1]
@@ -37,10 +56,18 @@ export function verifyPassword(password: string, stored: string): boolean {
   const salt = Buffer.from(saltText, 'hex')
   const expected = Buffer.from(expectedText, 'hex')
   if (salt.length !== 16 || expected.length !== 32) return false
-  const derived = scryptSync(password, salt, expected.length, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P })
+  const derived = await derive(password, salt, expected.length)
   if (derived.length !== expected.length) return false
   return timingSafeEqual(derived, expected)
 }
+
+/**
+ * 账号不存在时用于等时校验的固定哈希（口令 `soloengine-dummy-password` 从不被验证通过）。
+ *
+ * 登录失败的两条路径（查无此人 / 口令错）都必须做一次同参数 scrypt：否则不存在的用户名
+ * 会明显更快返回，用户名可被枚举。
+ */
+export const DUMMY_PASSWORD_HASH = 'scrypt$9f1b23e85fa8e9fc3dfdc360ce2f9e64$dc81e66c6783ac7a5e901205d4573f6e911259ad2852e1e0438b4af7c154009b'
 
 /** 令牌载荷。 */
 export interface TokenPayload {
