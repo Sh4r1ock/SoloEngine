@@ -159,7 +159,36 @@ export class FrameworkRuntime {
       ...(options.databaseForm === undefined ? {} : { form: options.databaseForm }),
       ...(options.databaseUrl === undefined ? {} : { url: options.databaseUrl }),
     })
-    return new FrameworkRuntime(options, db)
+    const runtime = new FrameworkRuntime(options, db)
+    try {
+      await runtime.assertMasterKeyMatchesDatabase()
+    } catch (error) {
+      // 启动自检失败：先关掉已打开的业务库再抛（Windows 上未释放的句柄会留住 DB 文件）。
+      await runtime.close()
+      throw error
+    }
+    return runtime
+  }
+
+  /**
+   * 主密钥一致性自检：密钥文件本次新建、而库里已有加密的模型密钥时 fail loud。
+   *
+   * `MasterKey` 在文件缺失时会新建一把（首次启动的正常路径）；但若业务库里已经有
+   * `llm_configs.api_key` 密文，新密钥永远解不开它们——静默继续会把问题拖到第一次调用
+   * 模型时才暴露，而现场此时已被改写成新密钥。这里在启动点按模块头的「缺失一律阻断启动」
+   * 口径拒绝；全新库（没有任何密钥行）不受影响。
+   */
+  async assertMasterKeyMatchesDatabase(): Promise<void> {
+    if (!this.masterKey.created) return
+    const row = await this.db.prepare(
+      'SELECT COUNT(*) AS total FROM llm_configs WHERE api_key IS NOT NULL',
+    ).get<{ total: number }>()
+    const total = Number(row?.total ?? 0)
+    if (total > 0) {
+      throw new MasterKeyError('missing',
+        `the master key file was missing while ${String(total)} encrypted model credential(s) already exist; `
+        + 'refusing to start with a newly generated key (restore the key file or clear the stored credentials)')
+    }
   }
 
   /**
