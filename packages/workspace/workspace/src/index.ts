@@ -11,7 +11,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { WorkspaceEntity } from './entity.ts'
+import { detachSessionElsewhere, WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
@@ -778,22 +778,14 @@ export class WorkspaceRegistry extends Service {
       if (ids.length < 2) continue
       const canonical = this.sessionPaths.get(sessionId)
       const cwd = this.headers.get(sessionId)?.cwd
+      const firstHolder = ids[0]
+      if (firstHolder === undefined) continue
       const preferred = ids.find((id) => {
         const path = (table.get(id) as WorkspaceRecord).path
         if (canonical !== undefined) return path === canonical
         return cwd !== undefined && samePath(path, cwd)
-      }) ?? ids[0]
-      for (const id of ids) {
-        if (id === preferred) continue
-        await table.update(id, (record) => {
-          if (!record.sessionIds.includes(sessionId)) return record
-          return {
-            ...record,
-            sessionIds: record.sessionIds.filter(candidate => candidate !== sessionId),
-            updatedAt: new Date().toISOString(),
-          }
-        })
-      }
+      }) ?? firstHolder
+      await detachSessionElsewhere(table, sessionId, preferred)
       this.ctx.logger.warn(
         `workspace domain repaired: session '${sessionId}' was accounted by `
         + `${ids.map(id => `'${id}'`).join(' and ')}; kept '${preferred}'`,

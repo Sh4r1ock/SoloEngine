@@ -396,9 +396,9 @@
       "version": "0.2.1-rc.2",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/client/ui-deliverables @ 0.2.1-rc.2",
-      "note": "测试适配：`tests/present-open.host.spec.ts` 增加文件符号链接能力探针，无 SeCreateSymbolicLinkPrivilege 的 Windows 主机（EPERM）只跳过「拒绝最终符号链接」一条，其余 29 条照常运行；Linux 车道仍覆盖该拒绝用例。运行时代码零改动。",
+      "note": "测试适配：`tests/present-open.host.spec.ts` 增加文件符号链接能力探针，无 SeCreateSymbolicLinkPrivilege 的 Windows 主机（EPERM）只跳过「拒绝最终符号链接」一条，其余 29 条照常运行；Linux 车道仍覆盖该拒绝用例。运行期适配：会话已销毁（例如进程重启）后变更摘要改为 `204 No Content`，客户端把 204 解码为「摘要不可用」的既有空态，面板不再把每次加载记成失败资源。",
       "fileCount": 47,
-      "digest": "sha256:9e09afaf360578612914c6926bb79428ad7d44a950f06a53f930935b3d41481e"
+      "digest": "sha256:493d64d5961bcf7a35ca84a2df7a6b4ee891f848fac5cca0c10a93cb1b0bc768"
     },
     {
       "dir": "packages/client/ui-directory-picker-browse",
@@ -2784,11 +2784,11 @@
       "dir": "packages/workspace/workspace",
       "name": "@deepseek-ai/dsh-workspace",
       "version": "0.2.1-rc.2",
-      "decision": "reuse",
+      "decision": "adapted",
       "upstream": "deepseek_harness/packages/workspace/workspace @ 0.2.1-rc.2",
-      "note": "",
+      "note": "运行期适配：一个 Session 只属于一个 Workspace——`attachSession` 把它从其它记录里移出后再挂到新记录；启动时按会话头的 canonical cwd（再退回记录里的 cwd 拼写、注册表顺序）修复历史重复，而不是拒绝整个 workspace 域（拒绝会让 session-controller、schedule 与 ui-deliverables 全部不启动）。重复路径与顺序漂移仍 fail loud。对应测试随包更新（重复拒绝改为「重复被修复」）。",
       "fileCount": 13,
-      "digest": "sha256:99bf4f91ea7bbf185c33f58f8c508d0b3f5054956530acb7b33f4cdcb3e773b1"
+      "digest": "sha256:91da28ad75b97636e9e8b33ae4b5e4ada35615a17d64601de3ff3d69fc5003bd"
     }
   ],
   "product": [
