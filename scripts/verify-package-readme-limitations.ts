@@ -18,6 +18,7 @@ const CANONICAL = '## Known Limitations and Deferred Work'
 /** Packages audited as having no limitations section, keyed by repo-relative directory. */
 const NO_LIMITATIONS: Readonly<Record<string, string>> = {
   'packages/util/brand': 'Stateless nominal-string and canonical-key helpers have no deferred work.',
+  'packages/util/error': 'HarnessError is a small typed error base with no configuration or deferred behavior.',
 }
 
 /** A heading that reads as a limitations section — canonical or drifted. */

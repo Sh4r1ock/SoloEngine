@@ -1251,6 +1251,16 @@
       "digest": "sha256:ece04797152f90428cb0b906922e6f08374cfe72ed29985c5f0369c1a3e49c67"
     },
     {
+      "dir": "packages/fs/fs-patch",
+      "name": "@deepseek-ai/dsh-fs-patch",
+      "version": "0.2.2-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/fs/fs-patch @ 0.2.2-rc.2",
+      "note": "",
+      "fileCount": 12,
+      "digest": "sha256:4cb0f95ac20c991e06254ff6699c35d3bd36862c111c3b820d3c797f99a423e0"
+    },
+    {
       "dir": "packages/fs/fs-observation-policy",
       "name": "@deepseek-ai/dsh-fs-observation-policy",
       "version": "0.2.1-rc.2",
@@ -2569,6 +2579,16 @@
       "note": "",
       "fileCount": 7,
       "digest": "sha256:2fc3b64db4fa372698ac943e1cf979403d7a00d354a08a4c1a2c7b761bed749c"
+    },
+    {
+      "dir": "packages/util/error",
+      "name": "@deepseek-ai/dsh-error",
+      "version": "0.2.2-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/util/error @ 0.2.2-rc.2",
+      "note": "",
+      "fileCount": 7,
+      "digest": "sha256:23b533917d97c43068da0931aa605473bb73fa8cfb0a8e802ac39ecc30293542"
     },
     {
       "dir": "packages/util/http-proxy",

@@ -283,6 +283,7 @@
       "@deepseek-ai/dsh-util-crypto": ["./packages/util/crypto/src"],
       "@deepseek-ai/dsh-util-values": ["./packages/util/values/src"],
       "@deepseek-ai/dsh-util-code-language": ["./packages/util/code-language/src"],
+      "@deepseek-ai/dsh-error": ["./packages/util/error/src"],
       // util/ folders are role-named without the util- prefix their npm names carry,
       // so these aliases stay hand-written like dsh-util-crypto above.
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
@@ -346,6 +347,7 @@
       "@deepseek-ai/dsh-file-reference-local": ["./packages/context/file-reference-local/src"],
       "@deepseek-ai/dsh-fs": ["./packages/fs/fs/src"],
       "@deepseek-ai/dsh-fs-local": ["./packages/fs/fs-local/src"],
+      "@deepseek-ai/dsh-fs-patch": ["./packages/fs/fs-patch/src"],
       "@deepseek-ai/dsh-fs-observation-policy": ["./packages/fs/fs-observation-policy/src"],
       "@deepseek-ai/dsh-fs-sandbox": ["./packages/fs/fs-sandbox/src"],
       "@deepseek-ai/dsh-goal": ["./packages/goal/goal/src"],

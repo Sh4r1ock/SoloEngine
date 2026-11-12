@@ -37,6 +37,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
   'packages/util/code-language': 'The package only maps a filename suffix to a syntax-highlighting language id; the read consumer owns the persisted hint.',
+  'packages/fs/fs-patch': 'The package only parses patch syntax and matches hunks on caller-supplied text; the fs tool consumer owns every model-visible render.',
+  'packages/util/error': 'The package only supplies a base error class; consumers that record tool results or render failures own every model-facing effect.',
 }
 
 /**
