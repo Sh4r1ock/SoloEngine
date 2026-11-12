@@ -501,6 +501,8 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     ...(launchProfileDir === undefined ? {} : { profileDir: launchProfileDir }),
     executor: resolveExecutorMode(config),
   })
+  // 云形态：启动对账必须按控制面的租约真相收敛（台账跨节点共享，本进程的 live() 只覆盖自己）。
+  if (cloud !== undefined) runtime.runs.setLeaseProbe(key => cloud.leaseLive(key))
 
   // 模型路由回调：harness 侧适配器只向管理层要「路由事实 + 已解密密钥」，
   // 不读业务库、不持有主密钥（《框架设计》§四）。**按用户归属收敛**（需求 §0.1.4）：

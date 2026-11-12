@@ -88,6 +88,15 @@ export class RemoteControl implements ControlApi, NodeControlApi {
   }
 
   /**
+   * 读会话租约（节点面的同名读法，供启动对账使用）。
+   * @param sessionKey - 会话键。
+   * @returns 租约或 undefined。
+   */
+  async getLease(sessionKey: string): Promise<SessionLease | undefined> {
+    return await this.lease(sessionKey)
+  }
+
+  /**
    * 读节点视图。
    * @param nodeId - 节点标识。
    * @returns 节点视图或 undefined。

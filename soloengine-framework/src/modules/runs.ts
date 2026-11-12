@@ -137,6 +137,12 @@ export class RunService {
   private agentResolver: ((sessionKey: string) => string | undefined) | undefined
   /** 无台账行会话的归属回退（由 host 注入：按会话树根解析用户与运行项目）。 */
   private ownershipResolver: ((sessionKey: string) => Promise<{ userId: string; projectId: string } | undefined>) | undefined
+  /**
+   * 启动对账的租约探针（云形态由 host 注入控制面查询）。
+   *
+   * 单机形态下省略：本进程的 `live()` 就是全部运行事实。
+   */
+  private leaseProbe: ((sessionKey: string) => Promise<boolean>) | undefined
   /** 会话 → 回合级恢复点 id（主干 changeLedger 产出）。 */
   private readonly restorePoints = new Map<string, string>()
 
@@ -152,6 +158,14 @@ export class RunService {
   /** 注入运行驱动（由 host 插件在挂载时调用；未注入即运行接口不可用，直接报错）。 */
   setDriver(driver: RunDriver): void {
     this.driver = driver
+  }
+
+  /**
+   * 登记启动对账的租约探针（云形态由 host 注入；单机形态省略）。
+   * @param probe - 会话键 → 是否有任一节点持有未过期租约。
+   */
+  setLeaseProbe(probe: (sessionKey: string) => Promise<boolean>): void {
+    this.leaseProbe = probe
   }
 
   /**
@@ -504,6 +518,19 @@ export class RunService {
     let settled = 0
     for (const row of await this.ledger.inFlight()) {
       if (this.driver?.live(row.session_key).live === true) continue
+      // 云形态的台账跨节点共享：别的节点仍在跑时，本进程的 live() 看不到它。租约探针给出
+      // 「任一节点仍持有未过期租约」的事实，此时不得把它改写成失败。
+      if (this.leaseProbe !== undefined) {
+        let live: boolean
+        try {
+          live = await this.leaseProbe(row.session_key)
+        } catch (error) {
+          // 控制面不可达时不能猜：整体停止对账（行保持原状），由下一次启动重试。
+          console.log(`soloengine: startup reconcile stopped: the lease probe for ${row.session_key} failed (${String(error)})`)
+          return settled
+        }
+        if (live) continue
+      }
       await this.ledger.setStatus(row.id, 'failed', {
         error: 'host restarted before the run finished',
         completedAt: Date.now(),
@@ -541,12 +568,8 @@ export class RunService {
     const result = await driver.prompt(sessionKey, text)
     // 续跑同一条会话：启动对账会把上一进程留下的行收敛为 failed，恢复后的新回合必须把
     // 折叠缓存扳回 running（否则画布列表在整轮期间显示「失败/已完成」），并清掉旧错误。
-    if (row.status !== 'running') {
-      await this.ledger.setStatus(row.id, 'running', {
-        ...(row.started_at === null ? { startedAt: Date.now() } : {}),
-        error: null,
-      })
-    }
+    // 走条件更新：只从 pending/failed/stopped 进入，迟到的调用不会把已完成的回合改回运行中。
+    await this.ledger.markRunning(row.id)
     return result
   }
 

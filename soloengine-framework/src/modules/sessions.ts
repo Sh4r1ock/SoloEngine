@@ -161,6 +161,25 @@ export class SessionLedger {
   }
 
   /**
+   * 把归属行扳回 running（续跑闸门）。
+   *
+   * 只允许从 `pending` / `failed` / `stopped` 进入：回合收尾的 `completed` 是终态，
+   * 一次迟到的「准备续跑」不得把它改回运行中（本进程的写入是异步的，快照可能已过期）。
+   * @param id - 归属行主键。
+   * @returns 是否有行被更新（终态行返回 false）。
+   */
+  async markRunning(id: number): Promise<boolean> {
+    const now = Date.now()
+    const updated = await this.db.prepare(
+      `UPDATE sessions
+          SET status = 'running', error = NULL, started_at = COALESCE(started_at, ?),
+              completed_at = NULL, duration_ms = NULL, updated_at = ?, version = version + 1
+        WHERE id = ? AND status IN ('pending', 'failed', 'stopped')`,
+    ).run(now, now, id)
+    return updated.changes === 1
+  }
+
+  /**
    * 追加一条事件归属行。
    * @param sessionId - 归属行主键。
    * @param seq - 事件序列号（与 dsh 事件同值）。

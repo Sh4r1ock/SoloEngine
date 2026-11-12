@@ -347,6 +347,20 @@ export class CloudNodeRuntime {
   }
 
   /**
+   * 该会话当前是否由**任一**节点持有未过期的租约（启动对账用）。
+   *
+   * 云形态的台账由多节点共享：一个节点重启时，本进程的 `live()` 看不到另一节点上仍在跑的
+   * 会话。对账必须问控制面的租约真相，否则会把别人的运行改写成失败。
+   * @param sessionKey - 会话键。
+   * @returns 存在未过期租约时为 true。
+   */
+  async leaseLive(sessionKey: string): Promise<boolean> {
+    const lease = await this.control.getLease(sessionKey)
+    if (lease === undefined) return false
+    return Date.parse(lease.expiresAt) > Date.now()
+  }
+
+  /**
    * 主动释放会话写租约，并归还准入计数（会话结束/被驱逐时调用）。
    * @param sessionKey - 会话键。
    */

@@ -62,6 +62,12 @@ export interface NodeControlApi {
    */
   heartbeat(nodeId: string, load: NodeLoad): Promise<NodeView | undefined>
   /**
+   * 读会话当前租约（启动对账的跨节点事实来源）。
+   * @param sessionKey - 会话键。
+   * @returns 租约；未被租用时为 undefined。
+   */
+  getLease(sessionKey: string): Promise<SessionLease | undefined>
+  /**
    * 获取（或接管）会话租约。
    * @param input - 会话键、节点、持有者、可选 TTL 与归属用户。
    * @returns 租约结果。
