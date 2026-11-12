@@ -115,8 +115,15 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
   const ledger: ChangeLedgerService = runtime.changes
   /** 会话 → (callId → 归属)。 */
   const calls = new Map<string, Map<string, CallAttribution>>()
-  /** 目标键 → 待落账抓拍（同一目标串行覆盖，写入是单写者）。 */
-  const pending = new Map<string, PendingCapture>()
+  /**
+   * 目标键 → 待落账抓拍队列。
+   *
+   * 同一目标可能被不同会话/工具调用并发写入（父会话与子代理、两个画布共用目录），
+   * 因此不能「后写覆盖前写」：写后观测按 `(sessionKey, callId)` 精确配对，未配对的抓拍
+   * 只由该调用的 `tool/result`、回合收尾或会话销毁清理——失败/被拒的写入不会借下一次
+   * 读取或别的会话的写入落成幻影变更。
+   */
+  const pending = new Map<string, PendingCapture[]>()
   /** 撤回写回的目标键 → 撤回上下文（让写回落 `origin='revert'`）。 */
   const revertTargets = new Map<string, { sessionKey: string; userId: string; agentId: string | null; of: readonly string[] }>()
   /**
@@ -130,6 +137,23 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
   /** 最近一次同步给主干的自动检查点模式（避免每次工具调用都写配置）。 */
   let lastTrunkMode: 'off' | 'auto' | null = null
 
+  /**
+   * 丢弃匹配的待落账抓拍（写入失败/被拒、撤回失败、工具收尾与会话销毁后的清理）。
+   *
+   * 抓拍只在两种情形下失去写后观测：写入没有成功（守卫拒绝、工具在写前抛错、撤回写回失败），
+   * 或观测来自别的调用。前者若不清理，会在之后任意一次同目标观测（含 `read` 的观测）上
+   * 落成「before 是旧内容、callId 是失败调用」的幻影变更。
+   * @param matches - 命中判定。
+   */
+  const dropPending = (matches: (item: PendingCapture) => boolean): void => {
+    for (const [targetKey, queue] of pending) {
+      const kept = queue.filter(item => !matches(item))
+      if (kept.length === queue.length) continue
+      if (kept.length === 0) pending.delete(targetKey)
+      else pending.set(targetKey, kept)
+    }
+  }
+
   /** 原生 `tool/call` → callId 归属表（turn/step 来自事件本身）。 */
   ctx.on('session/event', (session, event) => {
     // 本监听器**同步**运行在 `Session.append` 的广播路径内：任何抛出都会打断 agent 的工具调用，
@@ -142,8 +166,16 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
         return
       }
       if (event.type === 'turn/end') {
-        // 回合收尾：本回合不再需要检查点，释放边界占用（其它工作区立刻恢复 auto）。
+        // 回合收尾：本回合不再需要检查点，释放边界占用（其它工作区立刻恢复 auto）；
+        // 本回合未等到写后观测的抓拍随回合结束失效（失败/被中断的写入不会再有观测）。
         if (runningTurns.delete(key)) syncTrunkCheckpointMode()
+        dropPending(item => item.sessionKey === key)
+        return
+      }
+      if (event.type === 'tool/result') {
+        // 工具已收尾：写后观测在工具返回前同步发出，仍未配对的抓拍属于失败/被拒的写入。
+        const callId = (event.data as { message?: { source?: { callId?: unknown } } }).message?.source?.callId
+        if (typeof callId === 'string') dropPending(item => item.sessionKey === key && item.callId === callId)
         return
       }
       if (event.type !== 'tool/call') return
@@ -157,11 +189,15 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
     }
   })
 
-  /** 会话销毁：释放在飞回合的边界状态。 */
+  /** 会话销毁：释放在飞回合的边界状态与未落账的抓拍。 */
   ctx.on('session/disposed', (session: SessionEventsFace & { id: unknown }) => {
     try {
       const key = String(session.id)
       runningTurns.delete(key)
+      dropPending(item => item.sessionKey === key)
+      for (const [targetKey, context] of revertTargets) {
+        if (context.sessionKey === key) revertTargets.delete(targetKey)
+      }
       syncTrunkCheckpointMode()
     } catch (error) {
       console.log(`soloengine: releasing the change-ledger boundary state for ${String(session.id)} failed (${String(error)})`)
@@ -229,7 +265,8 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
     try {
       const attribution = await attributeOf(actor, runtime, calls)
       const before = await readTarget(ctx, target)
-      pending.set(target.targetKey, {
+      const queue = pending.get(target.targetKey) ?? []
+      queue.push({
         targetKey: target.targetKey,
         filePath: fileUrlPath(ctx, target),
         before,
@@ -241,6 +278,7 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
         origin: attribution.origin,
         ...attribution.revertOf === undefined ? {} : { revertOf: attribution.revertOf },
       })
+      pending.set(target.targetKey, queue)
     } catch (error) {
       // 抓拍失败不得影响写入路径（记录是观测能力，非门禁）：结构化告警 + 放行。
       console.log(`soloengine: file-change capture failed for ${target.displayPath} (${String(error)}); the write proceeds unrecorded`)
@@ -252,13 +290,20 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
   ctx.on('fs/edit-intent', (target, actor, next) => captureIntent(target, actor, next as () => Promise<unknown>) as Promise<{ version: FsVersion } | undefined>, true)
 
   /**
-   * 写后观测：`fs/observed` 是同步记录器（返回的 promise 不被等待）——落账读盘必须异步进行，
-   * 且同一目标的多次写入按调用顺序串行（避免后一次观测读到前一次的内容）。
+   * 写后观测：`fs/observed` 是同步记录器（返回的 promise 不被等待）——落账读盘必须异步进行。
+   *
+   * 观测必须与写前抓拍**按 `(会话, callId)` 精确配对**：`read`/`read_image` 也会发同一事件，
+   * 失败写入遗留的抓拍若被下一次读取消费，会记出 before 是旧内容、归属是失败调用的变更。
    */
   ctx.on('fs/observed', (target, observation, actor) => {
-    const capture = pending.get(target.targetKey)
-    if (capture === undefined) return
-    pending.delete(target.targetKey)
+    const queue = pending.get(target.targetKey)
+    if (queue === undefined) return
+    const observed = actorIdentity(actor)
+    const index = queue.findIndex(item => item.sessionKey === observed.sessionKey && item.callId === observed.callId)
+    if (index < 0) return
+    const capture = queue[index] as PendingCapture
+    queue.splice(index, 1)
+    if (queue.length === 0) pending.delete(target.targetKey)
     const revertContext = revertTargets.get(target.targetKey)
     if (revertContext !== undefined) revertTargets.delete(target.targetKey)
     void (async () => {
@@ -285,7 +330,6 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
         console.log(`soloengine: file-change ledger write failed for ${target.displayPath} (${String(error)})`)
       }
     })()
-    void actor
   })
 
   /**
@@ -348,8 +392,12 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
       )
     }
     for (const item of plan.restores) {
+      let targetKey: string | undefined
       try {
         const target = await ctx.fs.resolve(absoluteOf(project.folder_path, item.filePath), {})
+        targetKey = target.targetKey
+        // 上一次失败撤回残留的抓拍不得被下面这次「先读」观测消费（那会落成幻影 revert 记录）。
+        dropPending(pending => pending.targetKey === target.targetKey && pending.sessionKey === sessionKey && pending.callId === null)
         // 撤回写回也走「先读后写」门禁：先读一次并把观测记到会话归属上，再申请写入意图（CAS）。
         await readTarget(ctx, target)
         const stat = await ctx.fs.stat(target)
@@ -377,7 +425,13 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
         restored.push(item.filePath)
         revertedChangeIds.push(...item.changeIds)
       } catch (error) {
-        // 逐文件提交：失败的文件保持原状并记入失败清单（其余文件照常），不整体回滚。
+        // 失败的文件保持原状并记入失败清单（其余文件照常），不整体回滚；
+        // 同时清掉本次写回登记：否则之后对该文件的任意写入都会被标成 `origin='revert'`
+        // 并归到撤回者名下，且因 `revertRows` 只收 agent 记录而永久不可撤回。
+        if (targetKey !== undefined) {
+          revertTargets.delete(targetKey)
+          dropPending(pending => pending.targetKey === targetKey && pending.sessionKey === sessionKey && pending.callId === null)
+        }
         failures.push({ filePath: item.filePath, reason: error instanceof Error ? error.message : String(error) })
       }
     }
@@ -546,6 +600,24 @@ function absoluteOf(root: string, path: string): string {
   return `${root.replace(/[\\/]+$/u, '')}/${path}`
 }
 
+/**
+ * 从 actor（原生工具执行对象）取配对的 `(会话键, 调用 id)`。
+ *
+ * 写前抓拍与写后观测必须用同一份归一化结果比较：非工具写入（撤回写回、无会话上下文）
+ * 两者的 `callId` 都是 `null`，仍能按会话配对。
+ * @param actor - `fs/*` 事件携带的参与者。
+ * @returns 归一化后的会话键与调用 id。
+ */
+function actorIdentity(actor: object | undefined): { sessionKey: string | null; callId: string | null } {
+  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- `object` has no properties; the cast supplies them
+  const exec = actor as { callId?: unknown; agent?: { session?: { id?: unknown } } } | undefined
+  const sessionId = exec?.agent?.session?.id
+  return {
+    sessionKey: typeof sessionId === 'string' ? sessionId : null,
+    callId: typeof exec?.callId === 'string' ? exec.callId : null,
+  }
+}
+
 /** 归属派生：actor（工具执行对象）→ 会话/回合/画布节点/用户/来源。 */
 async function attributeOf(
   actor: object | undefined,
@@ -560,15 +632,13 @@ async function attributeOf(
   origin: 'agent' | 'revert' | 'user'
   revertOf?: readonly string[]
 }> {
-  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- `object` has no properties; the cast supplies them
-  const exec = actor as { callId?: string; agent?: { session?: { id?: unknown }; ctx?: unknown } } | undefined
-  const sessionId = exec?.agent?.session?.id
-  const sessionKey = typeof sessionId === 'string' ? sessionId : null
+  const identity = actorIdentity(actor)
+  const sessionKey = identity.sessionKey
   if (sessionKey === null) {
     // 无会话上下文（例如人经产品写路由直接写盘）：归属用户、来源 user。
     return { sessionKey: null, agentId: null, userId: null, turn: null, callId: null, origin: 'user' }
   }
-  const callId = exec?.callId === undefined ? null : exec.callId
+  const callId = identity.callId
   const turn = callId === null ? null : calls.get(sessionKey)?.get(callId)?.turn ?? null
   // 归属用户走运行域的同一份解析：分支/草稿会话与子代理子会话没有自己的台账行，
   // 只认 `ledger.byKey` 会让它们的 agent 写入落成 `user_id=null`——台账可见性按用户过滤，
