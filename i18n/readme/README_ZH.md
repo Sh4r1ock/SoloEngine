@@ -16,7 +16,7 @@
 <div align="center">
 
 [![Stars](https://img.shields.io/github/stars/Sh4r1ock/SoloEngine?style=flat-square\&label=stars\&color=FB6A76)](https://github.com/Sh4r1ock/SoloEngine)
-[![Node](https://img.shields.io/badge/Node-22.19%2B%20%7C%20%3E%3D24-339933?style=flat-square\&logo=node.js\&logoColor=white)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-%3E%3D24.9-339933?style=flat-square\&logo=node.js\&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220?style=flat-square\&logo=pnpm\&logoColor=white)](https://pnpm.io/)
 [![React](https://img.shields.io/badge/React-18.2-61DAFB?style=flat-square\&logo=react\&logoColor=white)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square\&logo=typescript\&logoColor=white)](https://www.typescriptlang.org/)
@@ -77,7 +77,7 @@ Agentic AI 与 Harness Engineering 正在重塑软件开发的格局——一名
 git clone https://github.com/Sh4r1ock/SoloEngine.git
 cd SoloEngine
 
-# 依赖（Node 22.19+ 或 >=24，pnpm 工作区）
+# 依赖（Node >=24.9，pnpm 工作区）
 pnpm install
 
 # 自检后启动单端口运行时（8991）
