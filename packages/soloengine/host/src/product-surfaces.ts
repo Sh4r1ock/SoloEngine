@@ -127,60 +127,70 @@ export function mountProductSettings(ctx: Context, runtime: FrameworkRuntime): v
  * @param runtime - 框架层运行时（审计落库与归属解析）。
  */
 export function attachCreatorAudit(ctx: Context, runtime: FrameworkRuntime): void {
-  ctx.on('cordis/request-run', (request) => {
+  /**
+   * 后台落一条审计。
+   *
+   * `cordis/*` 事件是同步广播，监听器不返回 Promise；落库失败必须在这里收敛为日志，
+   * 不能让未处理的 rejection 升级为进程退出。
+   * @param kind - 审计动作名。
+   * @param payload - 取归属与详情的回调（同步或异步）。
+   */
+  const submit = (
+    kind: string,
+    payload: () => Promise<{ userId: string | null; ok: boolean; detail: string }> | { userId: string | null; ok: boolean; detail: string },
+  ): void => {
     void (async () => {
-      await runtime.runs.recordCreatorAudit({
-        kind: 'request-run',
-        userId: await runtime.runs.ownerOf(String(request.agentId)),
-        ok: !request.requiresApproval,
-        detail: JSON.stringify({
-          requestId: String(request.requestId),
-          pluginId: String(request.pluginId),
-          packageId: String(request.packageId),
-          mode: request.mode,
-          name: request.name,
-          requiresApproval: request.requiresApproval,
-        }),
-      })
+      try {
+        const entry = await payload()
+        await runtime.runs.recordCreatorAudit({ kind, ...entry })
+      } catch (error) {
+        ctx.logger.error(`soloengine: creator audit "${kind}" failed`)
+        ctx.logger.error(error)
+      }
     })()
+  }
+  ctx.on('cordis/request-run', (request) => {
+    submit('request-run', async () => ({
+      userId: await runtime.runs.ownerOf(String(request.agentId)),
+      ok: !request.requiresApproval,
+      detail: JSON.stringify({
+        requestId: String(request.requestId),
+        pluginId: String(request.pluginId),
+        packageId: String(request.packageId),
+        mode: request.mode,
+        name: request.name,
+        requiresApproval: request.requiresApproval,
+      }),
+    }))
   })
   ctx.on('cordis/request-run-resolved', (resolved) => {
-    void (async () => {
-      await runtime.runs.recordCreatorAudit({
-        kind: 'request-run-resolved',
-        userId: null,
-        ok: resolved.outcome === 'completed',
-        detail: JSON.stringify({ requestId: String(resolved.requestId), outcome: resolved.outcome }),
-      })
-    })()
+    submit('request-run-resolved', () => ({
+      userId: null,
+      ok: resolved.outcome === 'completed',
+      detail: JSON.stringify({ requestId: String(resolved.requestId), outcome: resolved.outcome }),
+    }))
   })
   ctx.on('cordis/dynamic-package', (pkg) => {
-    void (async () => {
-      await runtime.runs.recordCreatorAudit({
-        kind: 'dynamic-package',
-        userId: null,
-        ok: true,
-        detail: JSON.stringify({
-          pluginId: String(pkg.pluginId),
-          packageId: String(pkg.packageId),
-          pluginRunId: String(pkg.pluginRunId),
-          name: pkg.name,
-        }),
-      })
-    })()
+    submit('dynamic-package', () => ({
+      userId: null,
+      ok: true,
+      detail: JSON.stringify({
+        pluginId: String(pkg.pluginId),
+        packageId: String(pkg.packageId),
+        pluginRunId: String(pkg.pluginRunId),
+        name: pkg.name,
+      }),
+    }))
   })
   ctx.on('cordis/dynamic-retract', (retracted) => {
-    void (async () => {
-      await runtime.runs.recordCreatorAudit({
-        kind: 'dynamic-retract',
-        userId: null,
-        ok: true,
-        detail: JSON.stringify({
-          pluginId: String(retracted.pluginId),
-          packageId: String(retracted.packageId),
-          pluginRunId: String(retracted.pluginRunId),
-        }),
-      })
-    })()
+    submit('dynamic-retract', () => ({
+      userId: null,
+      ok: true,
+      detail: JSON.stringify({
+        pluginId: String(retracted.pluginId),
+        packageId: String(retracted.packageId),
+        pluginRunId: String(retracted.pluginRunId),
+      }),
+    }))
   })
 }

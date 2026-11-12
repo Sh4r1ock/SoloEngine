@@ -166,16 +166,36 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   }
 
   /**
+   * 已挂载的原生注入路由：id → 当前处理器。
+   *
+   * host 侧的 `ctx.inject` 在依赖服务重启时会重跑挂载：同一 id 必须复用同一条 Express
+   * 路由，只把处理器换成最新一份——否则先注册的旧处理器（持有已拆除的上下文）会继续应答。
+   */
+  const mountedHandlers = new Map<string, Parameters<RouterBundle['mountAuthenticated']>[1]>()
+
+  /**
    * 追加一条「需请求级身份」的路由（原生注入点：host 插件把 harness 侧能力挂进同一条 REST 前缀）。
    * 走同一条 api 路由器、同样登记进 routes 描述表、同样经过 authenticate 中间件；
    * handler 抛 FrameworkError 时仍走 failure()。
    */
   const mountAuthenticated: RouterBundle['mountAuthenticated'] = (descriptor, handler) => {
+    const existing = mountedHandlers.get(descriptor.id)
+    if (existing !== undefined) {
+      // 同一 id 的重复挂载只替换处理器：Express 栈与描述表都不再增长。
+      mountedHandlers.set(descriptor.id, handler)
+      return
+    }
+    mountedHandlers.set(descriptor.id, handler)
     route(descriptor.id, descriptor.method, descriptor.path, descriptor.summary, [authenticate], async (req, res) => {
       try {
         const user = req.soloUser
         if (user === undefined) throw new FrameworkError(401, 'UNAUTHENTICATED', 'a valid access token is required')
-        const result = await handler({
+        const current = mountedHandlers.get(descriptor.id)
+        if (current === undefined) {
+          throw new FrameworkError(503, 'ROUTE_NOT_MOUNTED',
+            `the harness route ${descriptor.id} has no mounted handler in this composition`)
+        }
+        const result = await current({
           params: req.params as Record<string, string>,
           query: req.query as unknown as Record<string, string>,
           body: req.body,

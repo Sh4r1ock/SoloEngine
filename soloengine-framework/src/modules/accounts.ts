@@ -189,7 +189,9 @@ export class AccountService {
    * @returns 令牌与用户视图。
    */
   async login(username: string, password: string): Promise<{ accessToken: string; refreshToken: string; user: UserView }> {
-    const row = await this.byUsername(username)
+    // 登录名按大小写折叠匹配：注册的唯一性判据就是折叠后的名字（同一物理目录只允许一个账号），
+    // 精确匹配会让 `Alice` 注册后无法用 `alice` 登录（两处判据必须同一套）。
+    const row = await this.byUsernameFolded(username.trim())
     if (row === undefined) throw new FrameworkError(401, 'INVALID_CREDENTIALS', 'username or password is incorrect')
     if (!verifyPassword(password, row.hashed_password)) {
       throw new FrameworkError(401, 'INVALID_CREDENTIALS', 'username or password is incorrect')
@@ -259,8 +261,11 @@ export class AccountService {
           .run(patch.email === '' ? null : patch.email, now, id)
       }
       if (patch.password !== undefined) {
-        await tx.prepare('UPDATE users SET hashed_password = ?, updated_at = ?, version = version + 1 WHERE id = ?')
-          .run(hashPassword(patch.password), now, id)
+        // 自助改密同样撤销已签发令牌（与超管重置同一语义 R007）：旧访问/刷新令牌不得在
+        // 口令已变之后继续代表该账号。改密成功后调用方需要重新登录。
+        await tx.prepare(
+          'UPDATE users SET hashed_password = ?, token_version = token_version + 1, updated_at = ?, version = version + 1 WHERE id = ?',
+        ).run(hashPassword(patch.password), now, id)
       }
     })
     return toView(await this.byId(id) as UserRow)
@@ -419,7 +424,10 @@ export class AccountService {
     const existing = await this.byUsername('system')
     if (existing !== undefined) {
       if (existing.is_superuser !== 1) {
-        return { user: await this.setSuperuser(existing.id, existing.id, true), created: false }
+        // 种子账号在本次启动前就已存在、却不是超管：注册是开放的，同名行可能来自第三方
+        // 抢注。静默提权会把别人的账号变成超管；这里 fail loud，由部署者显式处理该行。
+        throw new FrameworkError(409, 'SEED_ACCOUNT_CONFLICT',
+          'a non-superuser account named "system" already exists; refusing to elevate an account this seed did not create')
       }
       return { user: toView(existing), created: false }
     }

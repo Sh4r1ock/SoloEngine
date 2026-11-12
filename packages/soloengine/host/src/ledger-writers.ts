@@ -40,14 +40,16 @@ export function attachLedgerWriters(
   ctx.on('session/event', (session: Session, event: SessionEvent) => {
     void (async () => {
       const key = String(session.id)
-      const ledgerRow = await ledger.byKey(key)
-      if (ledgerRow === undefined) return
-      if (event.type === 'assistant/message') lastAssistantSeq.set(key, Number(event.seq))
-      const node = attribution.get(key) ?? {
-        agentId: session.header.parentSession === undefined ? key : String(session.header.parentSession),
-        parentAgentId: session.header.parentSession === undefined ? null : String(session.header.parentSession),
-      }
+      // 归属台账查找也在守卫之内：库在收尾期关闭/抖动时，这个后台任务不能以未处理的
+      // rejection 拖垮整个进程（事件广播是同步的，调用方不会等这个 Promise）。
       try {
+        const ledgerRow = await ledger.byKey(key)
+        if (ledgerRow === undefined) return
+        if (event.type === 'assistant/message') lastAssistantSeq.set(key, Number(event.seq))
+        const node = attribution.get(key) ?? {
+          agentId: session.header.parentSession === undefined ? key : String(session.header.parentSession),
+          parentAgentId: session.header.parentSession === undefined ? null : String(session.header.parentSession),
+        }
         const parentSeq = lastAssistantSeq.get(key)
         await ledger.appendEvent(ledgerRow.id, Number(event.seq), {
           agent_id: node.agentId,
@@ -68,10 +70,16 @@ export function attachLedgerWriters(
   })
   ctx.on('session/disposed', (session: Session) => {
     void (async () => {
-      const row = await ledger.byKey(String(session.id))
-      if (row === undefined) return
-      if (row.status === 'running' || row.status === 'pending') {
-        await ledger.setStatus(row.id, 'completed', { completedAt: Date.now() })
+      const key = String(session.id)
+      try {
+        const row = await ledger.byKey(key)
+        if (row === undefined) return
+        if (row.status === 'running' || row.status === 'pending') {
+          await ledger.setStatus(row.id, 'completed', { completedAt: Date.now() })
+        }
+      } catch (error) {
+        ctx.logger.error(`soloengine: closing the event ledger row for ${key} failed`)
+        ctx.logger.error(error)
       }
     })()
   })

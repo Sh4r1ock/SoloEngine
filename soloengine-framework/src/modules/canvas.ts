@@ -788,6 +788,41 @@ export class CanvasService {
       throw new FrameworkError(422, 'PROJECT_CANVAS_MISMATCH',
         `run project ${project.id} belongs to canvas ${project.agentic_flow_id}, not ${canvasId}`)
     }
+    return await this.compileRow(userId, canvasId, row, project.folder_path)
+  }
+
+  /**
+   * 以运行目录现场编译一张画布（**运行路径**用；与 {@link compile} 同一份实现）。
+   *
+   * 运行准入阶段已校验项目与画布的绑定，这里只做归属与编译：两条路径共用同一份解析、
+   * 归一与模型解析，避免「预览能编译、运行却报缺模型」这类两套实现的分歧
+   * （需求 §0.1.2「运行与打包使用同一份编译结果」）。
+   * @param userId - 归属用户。
+   * @param canvasId - 画布 ID。
+   * @param cwd - 运行项目目录（沙箱根）。
+   * @returns 编译产物与画布全局设置。
+   */
+  async compileForDirectory(
+    userId: string,
+    canvasId: string,
+    cwd: string,
+  ): Promise<{ compiled: CompileResult; settings: CanvasSettings }> {
+    const row = await this.byId(userId, canvasId)
+    if (row === undefined) throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} not found`)
+    const canvas = CanvasService.parseCanvas(row.canvas_data, canvasId)
+    const compiled = await this.compileRow(userId, canvasId, row, cwd)
+    return { compiled, settings: canvas.settings ?? {} }
+  }
+
+  /**
+   * 编译一张已按归属读出的画布行（预览、运行与打包的唯一实现）。
+   * @param userId - 归属用户。
+   * @param canvasId - 画布 ID（错误定位）。
+   * @param row - 画布行（归属已校验）。
+   * @param cwd - 运行目录。
+   * @returns 编译产物。
+   */
+  private async compileRow(userId: string, canvasId: string, row: CanvasRow, cwd: string): Promise<CompileResult> {
     const canvas = CanvasService.parseCanvas(row.canvas_data, canvasId)
     // 节点未声明插件时回落到该用户的默认插件表（与运行编译、打包同一处规则）。
     canvas.nodes = await this.runtime.plugins.applyNodeDefaults(userId, canvas.nodes)
@@ -812,7 +847,7 @@ export class CanvasService {
     try {
       return compileCanvas({
         canvas: canvas as never,
-        cwd: project.folder_path,
+        cwd,
         revision: Number(row.version),
         platform: this.runtime.executionPlatform,
         ...this.runtime.toolVocabulary === undefined ? {} : { knownTools: this.runtime.toolVocabulary() },

@@ -494,6 +494,14 @@ export interface MaterializedProfile {
 /** 打包与部署服务。 */
 export class PackagingService {
   private readonly runtime: FrameworkRuntime
+  /**
+   * 读回校验的阶段缓存：运行 ID →（产物目录签名, 已算出的阶段）。
+   *
+   * 页面在桌面封装期间每 1.5s 轮询一次读回接口；每次重扫整棵产物树（含闭包摘要与密钥
+   * 扫描）会与封装子进程抢磁盘并拖慢整个服务。缓存只在**同一目录内容签名**下复用：
+   * 目录被重新发布（顶层 mtime 变化）后重新校验，校验结论不属于跨发布的安全承诺。
+   */
+  private readonly verifyCache = new Map<string, { key: string; stage: PackagingStage }>()
 
   /**
    * @param runtime - 框架层运行时（画布服务与数据根）。
@@ -1385,7 +1393,8 @@ export class PackagingService {
       id,
       status,
       form: desktop === undefined ? 'profile' : 'desktop',
-      stages: [compileStage, profileStage, materializeStage, this.verifyArtifact(id, artifactPath),
+      stages: [compileStage, profileStage, materializeStage,
+        buildStatus === 'running' ? this.verifyArtifactCached(id, artifactPath) : this.verifyArtifact(id, artifactPath),
         ...desktopStage === undefined ? [] : [desktopStage]],
       artifactPath,
       profilePath: profile.dir,
@@ -1398,6 +1407,28 @@ export class PackagingService {
         },
       },
     }
+  }
+
+  /**
+   * 轮询期的读回校验：同一产物目录（目录签名未变）只算一次。
+   *
+   * 只在桌面封装进行时使用——那是唯一持续轮询的长窗口；普通读回仍每次重扫，
+   * 读回的安全承诺不因缓存放宽。
+   * @param id - 打包运行 ID。
+   * @param artifactPath - 产物目录。
+   * @returns 校验阶段（同一目录可复用上次结论）。
+   */
+  private verifyArtifactCached(id: string, artifactPath: string): PackagingStage {
+    const key = `${artifactPath}:${statSync(artifactPath).mtimeMs}`
+    const hit = this.verifyCache.get(id)
+    if (hit !== undefined && hit.key === key) return hit.stage
+    const stage = this.verifyArtifact(id, artifactPath)
+    if (this.verifyCache.size >= 32) {
+      const oldest = this.verifyCache.keys().next().value
+      if (oldest !== undefined) this.verifyCache.delete(oldest)
+    }
+    this.verifyCache.set(id, { key, stage })
+    return stage
   }
 
   /**

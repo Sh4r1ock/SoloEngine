@@ -1022,9 +1022,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           const owned = 'peer' in admission
             ? await routeCtx.connection.ownedSessionIdsOf(admission.peer)
             : []
-          // 实例组合的读取同样按调用方账号收窄：未绑定账号（原生/未登录）保持原生行为，
-          // 已绑定账号只能解析自己可见的画布（他人画布按不存在处理，与列表口径一致）。
+          // 实例组合的读取同样按调用方账号收窄：已绑定账号只能解析自己可见的画布（他人画布按
+          // 不存在处理，与列表口径一致）。两档例外各自保持原语义：
+          // - 原生/未装载账号作用域（`owned` 为 undefined）：原生行为，按 flow id 读取；
+          // - 浏览器 cookie 存在但尚未登录（`owned` 是空数组、账号为 undefined）：不拥有任何
+          //   画布，实例组合一律为空，绝不退化成按 flow id 读他人画布。
           const accountId = 'peer' in admission ? routeCtx.connection.accountIdOf(admission.peer) : undefined
+          const unboundBrowser = 'peer' in admission && accountId === undefined && owned !== undefined
           const latest = await runtime.runs.latestSessionKeyOfFlow(
             flowSegment,
             owned === undefined ? undefined : new Set(owned),
@@ -1036,7 +1040,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           // 组合错误（未知行、包不可解析、依赖被关闭）一律整页报错（加载期报错，不静默降级）。
           let selection: { enabled: string[]; disabled: string[] }
           try {
-            selection = await runtime.plugins.clientSelection(flowSegment, accountId)
+            selection = unboundBrowser
+              ? { enabled: [], disabled: [] }
+              : await runtime.plugins.clientSelection(flowSegment, accountId)
           } catch (error) {
             res.writeHead(500, { 'content-type': 'text/html; charset=utf-8' })
             res.end(clientTreeErrorPage(flowSegment, [error instanceof Error ? error.message : String(error)]))

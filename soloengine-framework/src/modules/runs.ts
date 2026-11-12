@@ -15,7 +15,6 @@
 
 import type { BusinessDatabase } from '../db/port.ts'
 import { isUniqueViolation } from '../db/port.ts'
-import { compileCanvas, CompileError, type CanvasNodeInput } from '@soloengine/agent-compiler'
 import type { CompileResult } from '@soloengine/types'
 import type { FrameworkRuntime } from '../runtime.ts'
 import { FrameworkError } from './accounts.ts'
@@ -45,8 +44,6 @@ export interface RunStartInput {
   sessionKey: string
   /** 归属用户。 */
   userId: string
-  /** 画布数据（已校验归属）。 */
-  canvasData: unknown
   /** 运行项目目录（沙箱根 / agent cwd）。 */
   cwd: string
   /** 编译产物（现场生成，不落文件）。 */
@@ -246,59 +243,10 @@ export class RunService {
    * @param cwd - 运行项目目录。
    * @returns 编译产物与画布行。
    */
-  async compile(userId: string, canvasId: string, cwd: string): Promise<{ compiled: CompileResult; settings: { run_mode?: string; live_follow?: boolean }; canvasData: unknown }> {
-    const canvas = await this.runtime.canvas.byId(userId, canvasId)
-    if (canvas === undefined) {
-      throw new FrameworkError(404, 'CANVAS_NOT_FOUND', `canvas ${canvasId} not found`)
-    }
-    let parsed: unknown
-    try {
-      parsed = canvas.canvas_data === null ? { nodes: [], edges: [], settings: {} } : JSON.parse(canvas.canvas_data)
-    } catch (error) {
-      throw new FrameworkError(422, 'CANVAS_CORRUPT', `canvas ${canvasId} data is not valid JSON: ${String(error)}`)
-    }
-    const canvasData = parsed as { nodes?: unknown; edges?: unknown; settings?: { run_mode?: string; live_follow?: boolean } }
-    // 节点未声明插件时回落到该用户的默认插件表（与画布编译、打包同一处规则）。
-    canvasData.nodes = await this.runtime.plugins.applyNodeDefaults(userId, (canvasData.nodes ?? []) as CanvasNodeInput[])
-    // 画布节点存的是技能**行 id**；运行时按技能**名**寻址（`skill` 工具与挂载守卫都用名字）。
-    // 在编译边界统一翻译，未知引用保留原值，由 noticeUnavailableRefs 报出。
-    const skillRows = await this.runtime.skills.listMountable(userId)
-    const skillNameOf = new Map<string, string>()
-    for (const row of skillRows) skillNameOf.set(row.id, row.name)
-    for (const node of (canvasData.nodes ?? []) as { skills?: unknown }[]) {
-      if (!Array.isArray(node.skills)) continue
-      node.skills = node.skills.map(ref => skillNameOf.get(String(ref)) ?? String(ref))
-    }
-    // `compileCanvas` 的 `resolveModelRoute` 是同步回调，模型行必须先在此处解析完。
-    const modelRoutes = new Map<string, { route: string; valid: boolean }>()
-    for (const node of (canvasData.nodes ?? []) as { model_ref?: string }[]) {
-      const modelRef = node.model_ref ?? ''
-      if (modelRef === '' || modelRoutes.has(modelRef)) continue
-      const row = await this.runtime.models.byId(userId, modelRef)
-      modelRoutes.set(modelRef, row === undefined
-        ? { route: '', valid: false }
-        : { route: `soloengine-${row.id}`, valid: row.is_active === 1 })
-    }
-    // 节点没有显式模型时**不**落到默认模型：缺模型引用是编译期 fail loud（PRD-02 §2）。
-    let compiled: CompileResult
-    try {
-      compiled = compileCanvas({
-        canvas: canvasData as never,
-        cwd,
-        platform: this.runtime.executionPlatform,
-        ...this.runtime.toolVocabulary === undefined ? {} : { knownTools: this.runtime.toolVocabulary() },
-        resolveModelRoute: (modelRef) => {
-          if (modelRef === '') return { route: '', valid: false }
-          return modelRoutes.get(modelRef) ?? { route: '', valid: false }
-        },
-      })
-    } catch (error) {
-      if (error instanceof CompileError) {
-        throw new FrameworkError(422, error.code, error.message)
-      }
-      throw error
-    }
-    return { compiled, settings: canvasData.settings ?? {}, canvasData: parsed }
+  async compile(userId: string, canvasId: string, cwd: string): Promise<{ compiled: CompileResult; settings: { run_mode?: string; live_follow?: boolean } }> {
+    // 唯一实现在 `CanvasService.compileRow`（预览、运行与打包同源）；这里保留运行域入口的
+    // 名字，避免运行路径另写一套解析/归一/模型解析（曾导致预览可编译、运行却报缺模型）。
+    return await this.runtime.canvas.compileForDirectory(userId, canvasId, cwd)
   }
 
   /**
@@ -432,7 +380,7 @@ export class RunService {
     project: { id: string; folder_path: string },
     sessionKey: string,
   ): Promise<{ startInput: RunStartInput; llmConfigId: string }> {
-    const { compiled, settings, canvasData } = await this.compile(userId, canvasId, project.folder_path)
+    const { compiled, settings } = await this.compile(userId, canvasId, project.folder_path)
     const mainSpec = compiled.agents.find(spec => spec.agentId === compiled.mainAgentId)
     if (mainSpec === undefined) {
       throw new FrameworkError(422, 'MAIN_AGENT_MISSING', `compiled product has no agent for entry ${compiled.mainAgentId}`)
@@ -451,7 +399,6 @@ export class RunService {
       startInput: {
         sessionKey,
         userId,
-        canvasData,
         cwd: project.folder_path,
         compiled,
         settings,

@@ -601,7 +601,7 @@ export class ChangeLedgerService {
   // ── 查询（FR-FC-011）──────────────────────────────────────────────────────
 
   /**
-   * 按会话 / 回合 / 文件过滤查询（归属按当前用户过滤；公共资产行 `user_id` 为空时对所有人可见）。
+   * 按会话 / 回合 / 文件过滤查询（归属按当前用户过滤：记录行属于该用户，或属于该用户名下的会话）。
    * @param userId - 请求级用户。
    * @param query - 过滤条件。
    * @returns 变更记录（按创建时间与 id 稳定排序）。
@@ -636,6 +636,12 @@ export class ChangeLedgerService {
    * @returns 按文件分组的净变更条目。
    */
   async turnView(userId: string, sessionKey: string, turn: number): Promise<TurnViewEntry[]> {
+    // 回合号只在单个会话内唯一：没有会话键的回合视图会把同一用户名下多个画布的同号回合
+    // 合并成一份净变更（flow 隔离破裂），因此这里明确拒绝，而不是退化成跨会话查询。
+    if (sessionKey.trim() === '') {
+      throw new FrameworkError(400, 'SESSION_KEY_REQUIRED',
+        'the turn view needs a session key: a turn number is only unique within one session')
+    }
     const rows = (await this.list(userId, { sessionKey, turn, limit: 5000 }))
       .filter(row => row.origin === 'agent')
     const byFile = new Map<string, FileChangeView[]>()
@@ -653,8 +659,23 @@ export class ChangeLedgerService {
       const netChange = beforeHash !== afterHash
       const operation: ChangeOperation = beforeHash === null ? 'created' : afterHash === null ? 'deleted' : 'modified'
       // 净变更为空时按「无净变更」呈现，行数统计归零（不误报）。
-      const linesAdded = netChange ? process.reduce((sum, row) => sum + (row.linesAdded ?? 0), 0) : 0
-      const linesRemoved = netChange ? process.reduce((sum, row) => sum + (row.linesRemoved ?? 0), 0) : 0
+      // 行数按「轮首 → 轮末」的净变更统计（FR-FC-004）：逐条求和会把「创建后再修改」
+      // 重复计成新增+删除；正文缺失（大文件/二进制）时退回逐条求和。
+      let linesAdded = 0
+      let linesRemoved = 0
+      if (netChange) {
+        const textual = process.every(row => (row.contentType ?? 'text') === 'text')
+        const beforeContent = beforeHash === null ? '' : textual ? await this.readBlob(beforeHash) : null
+        const afterContent = afterHash === null ? '' : textual ? await this.readBlob(afterHash) : null
+        if (beforeContent !== null && afterContent !== null) {
+          const net = computeDiff(beforeContent, afterContent)
+          linesAdded = net.linesAdded ?? 0
+          linesRemoved = net.linesRemoved ?? 0
+        } else {
+          linesAdded = process.reduce((sum, row) => sum + (row.linesAdded ?? 0), 0)
+          linesRemoved = process.reduce((sum, row) => sum + (row.linesRemoved ?? 0), 0)
+        }
+      }
       const rejected = process.some(row => row.status === 'rejected')
       const accepted = process.every(row => row.status === 'accepted')
       entries.push({
@@ -912,12 +933,14 @@ export class ChangeLedgerService {
         targetContent = running
       }
 
-      // 还原目标是「该轮开始前的内容」：该文件最早一条记录之前不存在即删除（created 的反向）。
-      const deleteTarget = head.before_content_hash === null
+      // 还原目标是「该轮开始前的内容」：该文件最早一条**参与还原**的记录之前不存在即删除
+      // （created 的反向）。被丢弃（rejected）的首条记录不参与还原，不能用它判定「本就存在」。
+      const firstLive = live[0] as FileChangeRow
+      const deleteTarget = firstLive.before_content_hash === null
       if (!deleteTarget && current !== null && targetContent === current.content) {
         // 净变更为空（先增后删回到原内容）：无写入可做，如实标注而不制造一次空写（FR-FC-004）。
         skipped.push({
-          changeId: head.id, filePath, code: 'NO_NET_CHANGE',
+          changeId: firstLive.id, filePath, code: 'NO_NET_CHANGE',
           reason: '该文件在本轮结束时与轮首内容一致（无净变更），无需还原',
         })
         continue
@@ -957,6 +980,18 @@ export class ChangeLedgerService {
       }
       if (rows.length !== changeIds.length) {
         throw new FrameworkError(404, 'CHANGE_NOT_FOUND', 'one or more requested file changes do not exist for this user')
+      }
+      // 显式记录集合只用于「对撤回记录再撤回」：记录必须属于本次撤回的会话（跨会话记录会在
+      // 本会话的沙箱根按别人的文件路径回放，flow 隔离破裂），且人的手动写入
+      // （`origin='user'`）不属于撤回记录集合（FR-FC-007）。
+      if (rows.some(row => row.session_id !== sessionKey)) {
+        throw new FrameworkError(404, 'CHANGE_NOT_FOUND',
+          `one or more requested file changes do not belong to session ${sessionKey}`)
+      }
+      const userWrites = rows.filter(row => row.origin === 'user')
+      if (userWrites.length > 0) {
+        throw new FrameworkError(400, 'REVERT_SCOPE_INVALID',
+          `file changes ${userWrites.map(row => row.id).join(', ')} record a person's own write (origin='user'); they never participate in a revert`)
       }
       return this.sortRows(rows)
     }

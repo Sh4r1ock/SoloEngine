@@ -24,6 +24,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { assertSupportedJsonSchema, validateJsonSchemaValue, type JsonSchemaNode } from '@deepseek-ai/dsh-tools'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { newId } from '../auth/index.ts'
+import { decryptSecret, encryptSecret } from '../crypto/index.ts'
 import type { FrameworkRuntime } from '../runtime.ts'
 import { looksTextual } from '../util/text.ts'
 import { FrameworkError } from './accounts.ts'
@@ -783,14 +784,44 @@ export class McpService {
     return row
   }
 
-  /** stdio 子表。 */
+  /** stdio 子表（`env` 解密后返回；历史明文行原样返回）。 */
   async stdio(id: string): Promise<McpStdioRow | undefined> {
-    return await this.db.prepare('SELECT * FROM mcp_stdio_configs WHERE mcp_server_id = ?').get<McpStdioRow>(id)
+    const row = await this.db.prepare('SELECT * FROM mcp_stdio_configs WHERE mcp_server_id = ?').get<McpStdioRow>(id)
+    return row === undefined ? undefined : { ...row, env: this.open(row.env) }
   }
 
-  /** HTTP 子表。 */
+  /** HTTP 子表（`headers` 解密后返回；历史明文行原样返回）。 */
   async http(id: string): Promise<McpHttpRow | undefined> {
-    return await this.db.prepare('SELECT * FROM mcp_http_configs WHERE mcp_server_id = ?').get<McpHttpRow>(id)
+    const row = await this.db.prepare('SELECT * FROM mcp_http_configs WHERE mcp_server_id = ?').get<McpHttpRow>(id)
+    return row === undefined ? undefined : { ...row, headers: this.open(row.headers) }
+  }
+
+  /**
+   * 把传输凭据（env/headers）加密后入库：与模型密钥同一判据（PRD-12 FR-STO-009），
+   * 库文件被读走时不暴露明文凭据。
+   * @param value - 已通过 JSON 校验的文本；空值保持 null。
+   * @returns 可入库的密文封包，或 null。
+   */
+  private seal(value: string | undefined | null): string | null {
+    if (value === undefined || value === null || value === '') return null
+    return encryptSecret(this.runtime.masterKey, value)
+  }
+
+  /**
+   * 解密入库的传输凭据。
+   *
+   * 历史行（本改动之前写入的是明文）解不开时按原值返回，不让旧配置变成不可用；
+   * 下一次 update 会以密文重写该列。
+   * @param value - 库里的列值。
+   * @returns 明文 JSON 文本，或 null。
+   */
+  private open(value: string | null): string | null {
+    if (value === null || value === '') return null
+    try {
+      return decryptSecret(this.runtime.masterKey, value)
+    } catch {
+      return value
+    }
   }
 
   /** 校验名称约束与跨实例唯一。 */
@@ -831,6 +862,37 @@ export class McpService {
   }
 
   /**
+   * 校验 HTTP 传输地址。
+   *
+   * 只允许 http/https；**拒绝链路本地地址**——云元数据服务（`169.254.169.254`、
+   * `metadata.google.internal`、阿里云/腾讯云的 `100.100.100.200`、AWS IPv6 元数据）都落在
+   * 这类地址上，平台代用户发起连接时会把节点凭据带出去（SSRF）。回环与普通私网地址保留：
+   * 本地/内网 MCP 服务器是产品的正常用法，不属于元数据入口。
+   * @param url - 待写入的地址。
+   */
+  private assertHttpUrl(url: string): void {
+    let parsed: URL
+    try {
+      parsed = new URL(url)
+    } catch (error) {
+      throw new FrameworkError(400, 'INVALID_MCP_URL', `url is not a valid absolute URL: ${String(error)}`)
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new FrameworkError(400, 'INVALID_MCP_URL', `url protocol ${parsed.protocol} is not allowed; use http or https`)
+    }
+    const host = parsed.hostname.replace(/^\[|\]$/gu, '').toLowerCase()
+    const linkLocal = /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(host)
+      ? host.split('.')[0] === '169' && host.split('.')[1] === '254'
+      : host === 'fd00:ec2::254'
+        || host.startsWith('fe80:')
+        || host.includes('169.254.')
+    if (linkLocal || host === 'metadata.google.internal' || host === '100.100.100.200') {
+      throw new FrameworkError(400, 'MCP_URL_BLOCKED',
+        `url host ${host} is a link-local metadata endpoint; the platform refuses to send requests there`)
+    }
+  }
+
+  /**
    * 注册服务器（含传输子表）。
    * @param userId - 归属用户。
    * @param input - 服务器与传输参数。
@@ -851,6 +913,7 @@ export class McpService {
       if (String(input.url ?? '').trim() === '') {
         throw new FrameworkError(400, 'URL_REQUIRED', 'http transport requires a non-empty url')
       }
+      this.assertHttpUrl(String(input.url))
       this.assertJson('headers', input.headers, 'object')
     }
     if (input.timeout !== undefined) this.assertTimeout(input.timeout)
@@ -870,13 +933,13 @@ export class McpService {
           await tx.prepare(
             'INSERT INTO mcp_stdio_configs (mcp_server_id, command, args, env, folder_path, working_dir, timeout) VALUES (?, ?, ?, ?, NULL, ?, ?)',
           ).run(
-            id, String(input.command ?? ''), input.args ?? null, input.env ?? null,
+            id, String(input.command ?? ''), input.args ?? null, this.seal(input.env as string | undefined),
             input.working_dir ?? null, input.timeout ?? DEFAULT_TIMEOUT_SECONDS,
           )
         } else {
           await tx.prepare(
             'INSERT INTO mcp_http_configs (mcp_server_id, url, headers, timeout, session_id) VALUES (?, ?, ?, ?, NULL)',
-          ).run(id, String(input.url ?? ''), input.headers ?? null, input.timeout ?? DEFAULT_TIMEOUT_SECONDS)
+          ).run(id, String(input.url ?? ''), this.seal(input.headers as string | undefined), input.timeout ?? DEFAULT_TIMEOUT_SECONDS)
         }
         return await tx.prepare('SELECT * FROM mcp_servers WHERE id = ? AND (user_id = ? OR user_id IS NULL)')
           .get<McpServerRow>(id, userId) as McpServerRow
@@ -908,6 +971,10 @@ export class McpService {
     this.assertJson('args', patch.args, 'array')
     this.assertJson('env', patch.env, 'object')
     this.assertJson('headers', patch.headers, 'object')
+    if (row.transport_type === 'http' && patch.url !== undefined) {
+      if (patch.url.trim() === '') throw new FrameworkError(400, 'URL_REQUIRED', 'http transport requires a non-empty url')
+      this.assertHttpUrl(patch.url)
+    }
     if (patch.timeout !== undefined) this.assertTimeout(patch.timeout)
 
     const now = new Date().toISOString()
@@ -946,7 +1013,7 @@ export class McpService {
           }
           if (patch.command !== undefined) set2('command', patch.command)
           if (patch.args !== undefined) set2('args', patch.args)
-          if (patch.env !== undefined) set2('env', patch.env)
+          if (patch.env !== undefined) set2('env', this.seal(patch.env))
           if (patch.working_dir !== undefined) set2('working_dir', patch.working_dir)
           if (patch.timeout !== undefined) set2('timeout', patch.timeout)
           if (assignments2.length > 0) {
@@ -962,7 +1029,7 @@ export class McpService {
             values2.push(value)
           }
           if (patch.url !== undefined) set2('url', patch.url)
-          if (patch.headers !== undefined) set2('headers', patch.headers)
+          if (patch.headers !== undefined) set2('headers', this.seal(patch.headers))
           if (patch.timeout !== undefined) set2('timeout', patch.timeout)
           if (assignments2.length > 0) {
             values2.push(id)

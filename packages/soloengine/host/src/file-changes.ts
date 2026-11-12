@@ -28,6 +28,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -399,7 +400,15 @@ export function mountFileChanges(ctx: Context, runtime: FrameworkRuntime, option
         // 上一次失败撤回残留的抓拍不得被下面这次「先读」观测消费（那会落成幻影 revert 记录）。
         dropPending(pending => pending.targetKey === target.targetKey && pending.sessionKey === sessionKey && pending.callId === null)
         // 撤回写回也走「先读后写」门禁：先读一次并把观测记到会话归属上，再申请写入意图（CAS）。
-        await readTarget(ctx, target)
+        // 这次读同时复核计划期的磁盘哈希：计划生成到执行之间若有人写入，内容漂移即中止该文件
+        // （FR-FC-008 的判据在执行点再成立一次，不靠毫秒级的窗口假设）。
+        const before = await readTarget(ctx, target)
+        const beforeHash = before === null ? '' : hashText(before)
+        if (beforeHash !== item.currentHash) {
+          throw new Error(
+            `the file changed after the revert plan was computed (expected ${item.currentHash === '' ? 'absent' : `${item.currentHash.slice(0, 12)}…`}), so it is left untouched`,
+          )
+        }
         const stat = await ctx.fs.stat(target)
         if (stat !== undefined) ctx.emit(carrier, 'fs/observed', target, { kind: 'present', version: stat.version }, writeActor)
         else ctx.emit(carrier, 'fs/observed', target, { kind: 'absent' }, writeActor)
@@ -571,6 +580,15 @@ async function readTarget(ctx: Context, target: FsTarget): Promise<string | null
 }
 
 /**
+ * 内容哈希（与框架层台账的漂移判据同算法：UTF-8 上的 sha256）。
+ * @param content - 文本内容。
+ * @returns 十六进制摘要。
+ */
+function hashText(content: string): string {
+  return createHash('sha256').update(content, 'utf8').digest('hex')
+}
+
+/**
  * 删除目标（补齐 dsh 写入守卫缺失的删除原语；失败即抛，由调用方按文件记录）。
  * @param ctx - 插件上下文。
  * @param target - 已解析目标。
@@ -609,11 +627,14 @@ function absoluteOf(root: string, path: string): string {
  * @returns 归一化后的会话键与调用 id。
  */
 function actorIdentity(actor: object | undefined): { sessionKey: string | null; callId: string | null } {
-  const exec = actor as { callId?: unknown; agent?: { session?: { id?: unknown } } } | undefined
-  const sessionId = exec?.agent?.session?.id
+  if (actor === undefined) return { sessionKey: null, callId: null }
+  const callId: unknown = Reflect.get(actor, 'callId')
+  const agent: unknown = Reflect.get(actor, 'agent')
+  const session: unknown = typeof agent === 'object' && agent !== null ? Reflect.get(agent, 'session') : undefined
+  const sessionId: unknown = typeof session === 'object' && session !== null ? Reflect.get(session, 'id') : undefined
   return {
     sessionKey: typeof sessionId === 'string' ? sessionId : null,
-    callId: typeof exec?.callId === 'string' ? exec.callId : null,
+    callId: typeof callId === 'string' ? callId : null,
   }
 }
 

@@ -141,7 +141,19 @@ export function compileCanvas(params: CompileParams): CompileResult {
   // 还会把目标节点从入口候选里错误排除（`incoming` 直接按原始边计算）。画布保存不拦这类
   // 残留边，编译期必须 fail loud，不能让「团队与画布不一致」静默通过。
   const noteIds = new Set(canvas.nodes.filter(node => node.kind === 'note').map(node => node.node_id))
+  // 重复的 from→to 会生成两个同名 `Task_<to>` 工具，运行期按名注册直接抛错（工具表按名唯一）。
+  const seenPairs = new Set<string>()
   for (const edge of canvas.edges) {
+    const pair = `${edge.from}\u0000${edge.to}`
+    if (seenPairs.has(pair)) {
+      throw new CompileError({
+        code: 'EDGE_INVALID',
+        nodeId: edge.from,
+        message: `delegation edge ${edge.edge_id} duplicates another edge ${edge.from} -> ${edge.to}; `
+          + `a duplicate edge would register the same Task_${edge.to} tool twice`,
+      })
+    }
+    seenPairs.add(pair)
     if (edge.from === edge.to) {
       throw new CompileError({
         code: 'EDGE_INVALID',
