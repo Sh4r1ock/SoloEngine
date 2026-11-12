@@ -14,7 +14,7 @@
  */
 
 import type { BusinessDatabase } from '../db/port.ts'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import type { Dirent } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, relative as relativePath, resolve, sep } from 'node:path'
@@ -125,7 +125,6 @@ export interface McpHttpRow {
 /** 对外视图（布尔归一化 + 传输子表 + 停用工具清单）。 */
 export interface McpServerView extends Omit<McpServerRow, 'is_active' | 'is_public' | 'last_test_ok'> {
   is_active: boolean
-  is_public: boolean
   /** 最近一次连接测试结果（null = 从未测试）。 */
   last_test_ok: boolean | null
   /** 已停用的工具名（空数组即全部启用）。 */
@@ -175,7 +174,6 @@ export interface McpServerInput {
   tags?: string
   source_type?: string
   is_active?: boolean
-  is_public?: boolean
   /** stdio 参数。 */
   command?: string
   args?: string
@@ -277,12 +275,12 @@ export class McpService {
 
   /** 行 → 对外视图（布尔归一化 + 传输子表 + 停用工具清单 + 可解析的包版本）。 */
   async view(row: McpServerRow): Promise<McpServerView> {
-    const { is_active, is_public, last_test_ok, ...rest } = row
+    // `is_public` 是无人读取的历史列：从视图里剔除，不把无产品语义的字段继续下发。
+    const { is_active, last_test_ok, is_public: _legacyPublic, ...rest } = row
     const stdio = await this.stdio(row.id) ?? null
     return {
       ...rest,
       is_active: is_active === 1,
-      is_public: is_public === 1,
       last_test_ok: last_test_ok === null ? null : last_test_ok === 1,
       disabledTools: parseJsonArray(row.disabled_tools),
       package_version: packageVersion(row, stdio),
@@ -395,7 +393,12 @@ export class McpService {
       return created
     } catch (error) {
       // 落盘与登记不是同一事务：任一步失败都清掉刚建立的目录，同名重试不会被 409 卡死。
-      rmSync(dir, { recursive: true, force: true })
+      // 安装超时刚结束的进程可能还握着文件（Windows 尤甚）：小步重试后再放弃。
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+      } catch (cleanupError) {
+        console.log(`soloengine: removing the failed upload directory ${dir} failed (${String(cleanupError)})`)
+      }
       throw error
     }
   }
@@ -566,7 +569,13 @@ export class McpService {
       })
       let stderr = ''
       const timer = setTimeout(() => {
-        child.kill()
+        if (process.platform === 'win32' && child.pid !== undefined) {
+          // npm 在 Windows 上是 .cmd：`kill()` 只结束外壳，真正的 node 子进程仍在写目录，
+          // 随后的回滚会 EBUSY。按进程树结束，安装才真的停下。
+          spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true })
+        } else {
+          child.kill()
+        }
         finish(new FrameworkError(504, 'MCP_INSTALL_TIMEOUT',
           `installing dependencies for "${name}" exceeded ${String(DEPENDENCY_INSTALL_TIMEOUT_MS / 1000)}s`))
       }, DEPENDENCY_INSTALL_TIMEOUT_MS)
@@ -953,11 +962,11 @@ export class McpService {
       return await this.runtime.db.transaction(async tx => {
         await tx.prepare(
           `INSERT INTO mcp_servers
-            (id, user_id, name, transport_type, source_type, description, icon, is_active, is_public,
+            (id, user_id, name, transport_type, source_type, description, icon, is_active,
              author, tags, tools, source, created_at, updated_at, version)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1)`,
         ).run(id, userId, name, transport, input.source_type ?? 'manual', input.description ?? null, input.icon ?? null,
-          input.is_active === false ? 0 : 1, input.is_public === true ? 1 : 0,
+          input.is_active === false ? 0 : 1,
           input.author ?? null, input.tags ?? null, input.source_type ?? 'manual', now, now)
         if (transport === 'stdio') {
           await tx.prepare(
@@ -1022,7 +1031,6 @@ export class McpService {
         if (patch.author !== undefined) set('author', patch.author)
         if (patch.tags !== undefined) set('tags', patch.tags)
         if (patch.is_active !== undefined) set('is_active', patch.is_active ? 1 : 0)
-        if (patch.is_public !== undefined) set('is_public', patch.is_public ? 1 : 0)
         set('updated_at', now)
         assignments.push('version = version + 1')
         values.push(id, userId, Number(patch.version))
