@@ -793,7 +793,7 @@ export class PackagingService {
     const bundles = this.readBundles()
     const layers = this.readLayers()
     // 预览即产物清单：与打包运行同一份闭包解析，不落盘。
-    const planned = materializeDependencies({
+    const planned = await materializeDependencies({
       root: this.runtime.root,
       sourceProfileDir: dirname(this.profilePath()),
       targetProfileDir: join(this.runtime.dataDir, 'packaging', 'preview'),
@@ -1925,7 +1925,7 @@ export class PackagingService {
 
     // 自包含（Plan W5）：把非平台插件包及其依赖闭包复制进 profile/node_modules，
     // 目标机无需安装 @soloengine/*；平台包由目标机的 dsh 安装提供并在清单中列明。
-    const dependencies = materializeDependencies({
+    const dependencies = await materializeDependencies({
       root: this.runtime.root,
       sourceProfileDir: dirname(this.profilePath()),
       targetProfileDir: dir,

@@ -15,7 +15,8 @@
 
 import { builtinModules, createRequire } from 'node:module'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from 'node:fs'
+import { cp, mkdir, readdir } from 'node:fs/promises'
+import { existsSync, readFileSync, readdirSync, readlinkSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep, basename } from 'node:path'
 import { FrameworkError } from './accounts.ts'
 
@@ -284,37 +285,37 @@ function isWorkspacePackage(root: string, dir: string): boolean {
 }
 
 /** 递归复制一个包目录，跳过依赖树、仓库内源码/测试与 sourcemap。 */
-function copyPackageDir(from: string, to: string, workspace: boolean): void {
-  mkdirSync(to, { recursive: true })
-  for (const entry of readdirSync(from, { withFileTypes: true })) {
+async function copyPackageDir(from: string, to: string, workspace: boolean): Promise<void> {
+  await mkdir(to, { recursive: true })
+  for (const entry of await readdir(from, { withFileTypes: true })) {
     if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue
     const source = join(from, entry.name)
     const target = join(to, entry.name)
     if (entry.isDirectory() && workspace && SOURCE_DIRS.has(entry.name)) {
       // 源码/测试目录只保留运行期数据资产（`node_modules` 明细另行跳过）。
-      if (entry.name === 'src') copySourceAssets(source, target)
+      if (entry.name === 'src') await copySourceAssets(source, target)
       continue
     }
     if (entry.isFile() && SKIP_SUFFIXES.some(suffix => entry.name.endsWith(suffix))) continue
-    if (entry.isDirectory()) copyPackageDir(source, target, workspace)
-    else if (entry.isFile()) cpSync(source, target)
+    if (entry.isDirectory()) await copyPackageDir(source, target, workspace)
+    else if (entry.isFile()) await cp(source, target)
   }
 }
 
 /** 复制 `src/` 树里的运行期数据资产（见 {@link SOURCE_ASSET_SUFFIXES}），不复制源码与测试。 */
-function copySourceAssets(from: string, to: string): void {
-  for (const entry of readdirSync(from, { withFileTypes: true })) {
+async function copySourceAssets(from: string, to: string): Promise<void> {
+  for (const entry of await readdir(from, { withFileTypes: true })) {
     if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue
     const source = join(from, entry.name)
     const target = join(to, entry.name)
     if (entry.isDirectory()) {
-      copySourceAssets(source, target)
+      await copySourceAssets(source, target)
       continue
     }
     if (!SOURCE_ASSET_SUFFIXES.some(suffix => entry.name.endsWith(suffix))) continue
     // 目录按需创建：没有运行期资产的包不该在产物里留下空的 `src/`。
-    mkdirSync(dirname(target), { recursive: true })
-    cpSync(source, target)
+    await mkdir(dirname(target), { recursive: true })
+    await cp(source, target)
   }
 }
 
@@ -363,7 +364,7 @@ interface CopyScope {
  * @param options - 仓库根、产物 profile、bundle 名与组合行包名。
  * @returns 复制结果（包清单 + 平台包清单）。
  */
-export function materializeDependencies(options: {
+export async function materializeDependencies(options: {
   root: string
   /** 当前实例的 profile 目录（第三方 bundle 的安装位置）。 */
   sourceProfileDir: string
@@ -378,7 +379,7 @@ export function materializeDependencies(options: {
    * @default 'copy'
    */
   mode?: 'copy' | 'plan'
-}): MaterializedDependencies {
+}): Promise<MaterializedDependencies> {
   const { root, sourceProfileDir, targetProfileDir } = options
   const mode = options.mode ?? 'copy'
   const resolve = packageResolver(root, sourceProfileDir, workspacePackageIndex(root))
@@ -398,9 +399,9 @@ export function materializeDependencies(options: {
    * @param target - 产物内目标目录。
    * @returns 登记项（`path` 相对产物 profile）。
    */
-  const place = (name: string, version: string, source: string, target: string): MaterializedPackage => {
+  const place = async (name: string, version: string, source: string, target: string): Promise<MaterializedPackage> => {
     if (mode === 'copy') {
-      copyPackageDir(source, target, isWorkspacePackage(root, source))
+      await copyPackageDir(source, target, isWorkspacePackage(root, source))
       assertRuntimeEntry(name, target)
     } else {
       assertRuntimeEntry(name, source)
@@ -441,10 +442,12 @@ export function materializeDependencies(options: {
    * @param fromDir - 发起依赖的包目录。
    * @param scope - 该包自己的 `node_modules` 作用域。
    */
-  function visitDependencies(name: string, fromDir: string, scope: CopyScope): void {
+  async function visitDependencies(name: string, fromDir: string, scope: CopyScope): Promise<void> {
     const dependencies = readManifest(fromDir, name).dependencies
     if (dependencies === null || typeof dependencies !== 'object') return
-    for (const dependency of Object.keys(dependencies as Record<string, unknown>)) visit(dependency, fromDir, scope)
+    for (const dependency of Object.keys(dependencies as Record<string, unknown>)) {
+      await visit(dependency, fromDir, scope)
+    }
   }
 
   /**
@@ -453,7 +456,7 @@ export function materializeDependencies(options: {
    * @param fromDir - 发起解析的包目录（起点为 profile 与仓库根）。
    * @param scope - 发起方自己的作用域：版本与已有副本不同的依赖落在这里。
    */
-  function visit(rawName: string, fromDir: string | undefined, scope: CopyScope): void {
+  async function visit(rawName: string, fromDir: string | undefined, scope: CopyScope): Promise<void> {
     const name = rootPackageName(rawName)
     if (name.startsWith('node:') || BUILTINS.has(name)) return
     // 类型声明包只在编译期使用，运行期不解析。
@@ -471,8 +474,8 @@ export function materializeDependencies(options: {
       // 把这一份放进发起方自己的作用域（`<pkg>/node_modules/<name>`），
       // Node 先找最近的作用域，两边各自看见声明的版本。
       const target = join(scope.dir, ...name.split('/'))
-      scope.entries.set(name, place(name, version, again, target))
-      visitDependencies(name, again, { dir: join(target, 'node_modules'), parent: scope, entries: new Map() })
+      scope.entries.set(name, await place(name, version, again, target))
+      await visitDependencies(name, again, { dir: join(target, 'node_modules'), parent: scope, entries: new Map() })
       return
     }
     const dir = resolve(name, fromDir)
@@ -486,12 +489,12 @@ export function materializeDependencies(options: {
     }
     // 首次出现的包平铺到产物顶层；只有版本不同的一份才嵌进发起方的作用域。
     const target = join(nodeModules, ...name.split('/'))
-    top.entries.set(name, place(name, versionOf(dir, name), dir, target))
-    visitDependencies(name, dir, { dir: join(target, 'node_modules'), parent: top, entries: new Map() })
+    top.entries.set(name, await place(name, versionOf(dir, name), dir, target))
+    await visitDependencies(name, dir, { dir: join(target, 'node_modules'), parent: top, entries: new Map() })
   }
 
-  for (const bundle of options.bundles) visit(bundle, undefined, top)
-  for (const row of options.rowPackages) visit(row, undefined, top)
+  for (const bundle of options.bundles) await visit(bundle, undefined, top)
+  for (const row of options.rowPackages) await visit(row, undefined, top)
   if (missing.length > 0) {
     throw new FrameworkError(500, 'PACKAGING_DEPENDENCY_UNRESOLVED',
       `packaging refused: these composition packages do not resolve on this installation: ${[...new Set(missing)].sort().join(', ')}`)
