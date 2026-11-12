@@ -82,6 +82,8 @@ function categoryLabel(value: string): string {
 export function MarketPage() {
   const locale = useLocale()
   const [kind, setKind] = useState<'skill' | 'mcp'>('skill')
+  /** 安装成功后的刷新令牌：刷新必须走**当前**筛选条件，不能复用点击时的闭包。 */
+  const [reloadToken, setReloadToken] = useState(0)
   // 搜索输入与生效值分离：`load` 依赖 search，不分离时每个按键都会重跑一次请求；
   // 停顿 300ms 才把输入落到 search（实测连打 4 键只发 1 个 /market 请求）。
   const [searchInput, setSearchInput] = useState('')
@@ -170,7 +172,7 @@ export function MarketPage() {
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
-  }, [kind, search, category, sort, featuredOnly])
+  }, [kind, search, category, sort, featuredOnly, reloadToken])
 
   // 筛选条件（kind/搜索/分类/排序/精选）任一变化 → 中止上一请求再发起新请求：
   // 无中止时快速连续切换会用「后返回的旧响应」覆盖新结果（边界条件竞态）。
@@ -445,7 +447,7 @@ export function MarketPage() {
                             await request(`/market/${entry.id}/install`, { method: 'POST' })
                             toast.show(t('market', 'installSuccess', { name: entry.name }), 'success')
                             setInstalledNames(previous => new Set(previous).add(entry.name))
-                            await load()
+                            setReloadToken(token => token + 1)
                           } catch (failure) {
                             setError({
                               text: installFailureText(failure, entry.name),

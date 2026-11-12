@@ -136,8 +136,9 @@ export function ModelsPage() {
   const [usageWindow, setUsageWindow] = useState<ModelUsageWindow | null>(null)
   const [loading, setLoading] = useState(true)
   /** 列表与用量各自失败：任一份失败都不把另一份清空成「还没有模型」。 */
-  const [modelsError, setModelsError] = useState<string | null>(null)
-  const [usageError, setUsageError] = useState<string | null>(null)
+  // 文案存「词典键 + 细节」，渲染时翻译：切换语言后错误行不能停在旧语种。
+  const [modelsError, setModelsError] = useState<{ key: string; detail: string } | null>(null)
+  const [usageError, setUsageError] = useState<{ key: string; detail: string } | null>(null)
   /** 行内动作（测试/启停/设默认/删除）的忙碌态：动作分开，测试按钮不再被启停误标成「测试中」。 */
   const [busy, setBusy] = useState<{ id: string; action: 'test' | 'toggle' | 'default' | 'delete' } | null>(null)
   /** 页内错误与它的重试动作（重试必须重跑刚失败的动作，而不是只刷新列表）。 */
@@ -169,14 +170,14 @@ export function ModelsPage() {
       setModels(modelResult.value.models)
       setModelsError(null)
     } else {
-      setModelsError(`${t('models', 'errorLoad')} — ${describeError(modelResult.reason)}`)
+      setModelsError({ key: 'errorLoad', detail: describeError(modelResult.reason) })
     }
     if (usageResult.status === 'fulfilled') {
       setUsage(usageResult.value.byModel)
       setUsageWindow(usageResult.value.window)
       setUsageError(null)
     } else {
-      setUsageError(`${t('models', 'errorUsage')} — ${describeError(usageResult.reason)}`)
+      setUsageError({ key: 'errorUsage', detail: describeError(usageResult.reason) })
     }
     setLoading(false)
   }, [])
@@ -336,12 +337,12 @@ export function ModelsPage() {
       />
       <NoticeLine
         tone="error"
-        text={modelsError}
+        text={modelsError === null ? null : `${t('models', modelsError.key)} — ${modelsError.detail}`}
         action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
       />
       <NoticeLine
         tone="error"
-        text={usageError}
+        text={usageError === null ? null : `${t('models', usageError.key)} — ${usageError.detail}`}
         action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
       />
       {lastTestedId !== null && (() => {

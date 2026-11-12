@@ -76,12 +76,14 @@ export function CanvasesPage({ user }: { user: UserView }) {
   const [canvases, setCanvases] = useState<CanvasView[]>([])
   const [projects, setProjects] = useState<RunProjectView[]>([])
   const [sessions, setSessions] = useState<RunSessionView[]>([])
-  const [sessionsError, setSessionsError] = useState<string | null>(null)
+  // 错误存「词典键 + 动态细节」，渲染时才翻译：本页带语言切换入口，
+  // 存已翻译字符串会让错误行在切换语言后残留旧语种（与技能/MCP 页同一规则）。
+  const [sessionsError, setSessionsError] = useState<{ key: string; detail: string } | null>(null)
   /** 运行项目列表失败：只在项目相关区域呈现，不阻断画布列表。 */
-  const [projectsError, setProjectsError] = useState<string | null>(null)
+  const [projectsError, setProjectsError] = useState<{ key: string; detail: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<{ text: string; retry: () => void } | null>(null)
+  const [error, setError] = useState<{ key: string; detail: string; retry: () => void } | null>(null)
   const [search, setSearch] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
@@ -90,11 +92,14 @@ export function CanvasesPage({ user }: { user: UserView }) {
   const [templateOpen, setTemplateOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<CanvasView | null>(null)
   /** 删除失败原因：必须显示在确认弹窗内，页面层的错误会被遮罩挡住。 */
-  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<{ key: string; detail: string } | null>(null)
   /** 打包抽屉的来源画布（null = 关闭）；打包不是页面，只在画布上下文里打开。 */
   const [packageTarget, setPackageTarget] = useState<CanvasView | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
+  /** 词典键 + 细节 → 展示文案（渲染时翻译，切换语言即时生效）。 */
+  const failureText = (failure: { key: string; detail: string }): string =>
+    `${t('canvases', failure.key)} — ${failure.detail}`
 
   // Ctrl/Cmd+K 聚焦搜索（原型搜索框右端的键位提示必须真的可用）。
   useSearchShortcut(searchRef)
@@ -111,13 +116,13 @@ export function CanvasesPage({ user }: { user: UserView }) {
       setError(null)
     } else {
       // 重试必须重跑失败的那个动作：列表加载失败时重试 load，删除/复制失败时重试原动作。
-      setError({ text: `${t('canvases', 'errorLoad')} — ${describeError(canvasResult.reason)}`, retry: () => { void load() } })
+      setError({ key: 'errorLoad', detail: describeError(canvasResult.reason), retry: () => { void load() } })
     }
     if (projectResult.status === 'fulfilled') {
       setProjects(projectResult.value.projects)
       setProjectsError(null)
     } else {
-      setProjectsError(`${t('canvases', 'errorLoadProjects')} — ${describeError(projectResult.reason)}`)
+      setProjectsError({ key: 'errorLoadProjects', detail: describeError(projectResult.reason) })
     }
     setLoading(false)
   }, [])
@@ -128,7 +133,7 @@ export function CanvasesPage({ user }: { user: UserView }) {
       setSessions(result.sessions)
       setSessionsError(null)
     } catch (failure) {
-      setSessionsError(`${t('canvases', 'errorLoad')} — ${describeError(failure)}`)
+      setSessionsError({ key: 'errorLoad', detail: describeError(failure) })
     }
   }, [])
 
@@ -194,11 +199,13 @@ export function CanvasesPage({ user }: { user: UserView }) {
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
         setError({
-          text: `${t('canvases', failureKey)} — ${describeError(failure)}`,
+          key: failureKey,
+          detail: describeError(failure),
           retry: () => { runAction(id, action, failureKey, successText) },
         })
       } finally {
-        setBusyId(null)
+        // 只清掉自己那一格：另一行的动作若已开始，不能被先返回的请求提前解禁。
+        setBusyId(current => current === id ? null : current)
       }
     })()
   }
@@ -279,7 +286,7 @@ export function CanvasesPage({ user }: { user: UserView }) {
 
           <NoticeLine
             tone="error"
-            text={error === null ? null : error.text}
+            text={error === null ? null : failureText(error)}
             {...(error === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: error.retry } })}
           />
 
@@ -468,12 +475,12 @@ export function CanvasesPage({ user }: { user: UserView }) {
             {/* 运行项目失败只影响本栏的项目名与删除级联提示，列表照常可用。 */}
             {projectsError !== null && (
               <div className={css.panelNotice}>
-                <NoticeLine tone="error" text={projectsError} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
+                <NoticeLine tone="error" text={failureText(projectsError)} action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }} />
               </div>
             )}
             {sessionsError !== null && (
               <div className={css.panelNotice}>
-                <NoticeLine tone="error" text={sessionsError} action={{ label: t('common', 'actionRetry'), onClick: () => { void loadSessions() } }} />
+                <NoticeLine tone="error" text={failureText(sessionsError)} action={{ label: t('common', 'actionRetry'), onClick: () => { void loadSessions() } }} />
               </div>
             )}
             {sessions.length === 0 && sessionsError === null && <p className={css.recentEmpty}>{t('canvases', 'recentEmpty')}</p>}
@@ -548,38 +555,41 @@ export function CanvasesPage({ user }: { user: UserView }) {
           ? (
             <NoticeLine
               tone="error"
-              text={error.text}
+              text={failureText(error)}
               action={{ label: t('common', 'actionRetry'), onClick: error.retry }}
             />
           )
-          : templates.length === 0
-            ? <p className={common.empty}>{t('canvases', 'templateEmpty')}</p>
-            : (
-              <div className={css.templateList}>
-                {templates.map(template => (
-                  <div key={template.id} className={css.templateRow}>
-                    <div className={css.rowMain}>
-                      <div className={css.rowTitleLine}>
-                        <span className={css.rowName}>{template.name}</span>
-                        <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>
-                        {template.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
+          : loading
+            // 列表还在加载：不能先报「没有可用模板」（加载失败/加载中/真空是三件事）。
+            ? <p className={common.empty}>{t('common', 'stateLoading')}</p>
+            : templates.length === 0
+              ? <p className={common.empty}>{t('canvases', 'templateEmpty')}</p>
+              : (
+                <div className={css.templateList}>
+                  {templates.map(template => (
+                    <div key={template.id} className={css.templateRow}>
+                      <div className={css.rowMain}>
+                        <div className={css.rowTitleLine}>
+                          <span className={css.rowName}>{template.name}</span>
+                          <Tag tone="outline">{t('canvases', 'templateBadge')}</Tag>
+                          {template.canvas_error !== undefined && <Tag tone="danger">{t('canvases', 'brokenBadge')}</Tag>}
+                        </div>
+                        {template.description !== null && template.description !== '' && (
+                          <p className={css.rowDesc}>{template.description}</p>
+                        )}
                       </div>
-                      {template.description !== null && template.description !== '' && (
-                        <p className={css.rowDesc}>{template.description}</p>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        disabled={busyId === template.id || template.canvas_error !== undefined}
+                        onClick={() => { setTemplateOpen(false); duplicate(template, true) }}
+                      >
+                        {t('canvases', 'templateUse')}
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      disabled={busyId === template.id || template.canvas_error !== undefined}
-                      onClick={() => { setTemplateOpen(false); duplicate(template, true) }}
-                    >
-                      {t('canvases', 'templateUse')}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
       </Modal>
 
       <Modal
@@ -591,10 +601,10 @@ export function CanvasesPage({ user }: { user: UserView }) {
         {...((deleteError === null && projectsError === null) ? {} : {
           children: (
             <>
-              <NoticeLine tone="error" text={deleteError} />
+              <NoticeLine tone="error" text={deleteError === null ? null : failureText(deleteError)} />
               <NoticeLine
                 tone="error"
-                text={projectsError}
+                text={projectsError === null ? null : failureText(projectsError)}
                 action={{ label: t('common', 'actionRetry'), onClick: () => { void load() } }}
               />
             </>
@@ -621,7 +631,7 @@ export function CanvasesPage({ user }: { user: UserView }) {
                     await Promise.all([load(), loadSessions()])
                     toast.show(t('canvases', 'toastDeleted'), 'success')
                   } catch (failure) {
-                    setDeleteError(`${t('canvases', 'errorDelete')} — ${describeError(failure)}`)
+                    setDeleteError({ key: 'errorDelete', detail: describeError(failure) })
                   } finally {
                     setBusyId(null)
                   }
@@ -664,18 +674,19 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
   const [icon, setIcon] = useState(canvas?.icon ?? '')
   const [tags, setTags] = useState((canvas?.tags ?? []).join(', '))
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [nameError, setNameError] = useState<string | null>(null)
+  // 文案同样存「键 + 细节」：对话框开着时切语言，错误行要跟着变。
+  const [error, setError] = useState<{ key: string; detail: string } | null>(null)
+  const [nameError, setNameError] = useState(false)
 
   const submit = (): void => {
     if (busy) return
     if (name.trim() === '') {
-      setNameError(t('canvases', 'errorNameRequired'))
+      setNameError(true)
       return
     }
     setBusy(true)
     setError(null)
-    setNameError(null)
+    setNameError(false)
     void (async () => {
       try {
         const target = canvas
@@ -709,10 +720,10 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
         }
         onSaved(result.canvas)
       } catch (failure) {
-        const detail = failure instanceof ApiError && failure.code === 'VERSION_CONFLICT'
-          ? t('canvases', 'errorVersionConflict')
-          : describeError(failure)
-        setError(`${t('canvases', editing ? 'errorUpdate' : 'errorCreate')} — ${detail}`)
+        const conflict = failure instanceof ApiError && failure.code === 'VERSION_CONFLICT'
+        setError(conflict
+          ? { key: 'errorVersionConflict', detail: '' }
+          : { key: editing ? 'errorUpdate' : 'errorCreate', detail: describeError(failure) })
       } finally {
         setBusy(false)
       }
@@ -748,13 +759,18 @@ function CanvasMetaDialog({ open, canvas, onClose, onSaved }: {
         onSubmit={(event) => { event.preventDefault(); submit() }}
         onKeyDown={submitFormOnEnter}
       >
-        <NoticeLine tone="error" text={error} />
-        <Field label={t('common', 'labelName')} error={nameError}>
+        <NoticeLine
+          tone="error"
+          text={error === null
+            ? null
+            : error.detail === '' ? t('canvases', error.key) : `${t('canvases', error.key)} — ${error.detail}`}
+        />
+        <Field label={t('common', 'labelName')} error={nameError ? t('canvases', 'errorNameRequired') : null}>
           <Input
             data-modal-autofocus
-            aria-invalid={nameError === null ? undefined : true}
+            aria-invalid={nameError ? true : undefined}
             value={name}
-            onChange={(event) => { setName(event.currentTarget.value); setNameError(null) }}
+            onChange={(event) => { setName(event.currentTarget.value); setNameError(false) }}
           />
         </Field>
         <Field label={t('common', 'labelDescription')} meta={t('common', 'labelOptional')}>

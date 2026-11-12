@@ -532,7 +532,11 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
       setAuxiliaryErrors(auxiliaryFailures)
       request<{ ok: true } & CanvasAvailability>(`/canvases/${canvasId}/availability`)
         .then((result) => { setAvailability(result) })
-        .catch(() => { setAvailability(null) })
+        .catch((failure: unknown) => {
+          // 可用性读不到时不能装作「没有失效引用」（R26 不得静默失败）：置空并在辅助错误行点名。
+          setAvailability(null)
+          setAuxiliaryErrors(previous => [...previous, { key: 'auxAvailability', detail: describeError(failure) }])
+        })
       setConflict(false)
       setError(null)
     } finally {
@@ -1719,6 +1723,8 @@ export function CanvasEditorPage({ canvasId, user }: { canvasId: string; user: U
               className={editor.canvasName}
               value={meta.name}
               aria-label={t('editor', 'canvasName')}
+              // 公共模板只读：改名必须走「复制为我的画布」，否则会进入永远落不了库的未保存态。
+              readOnly={readOnly}
               onChange={(event) => { setMeta({ ...meta, name: event.currentTarget.value }) }}
             />
             {canvas !== null && (
@@ -3124,6 +3130,9 @@ function CanvasPreview({ canvasId, projects, onError, collapsed, onToggleCollaps
   const inputWrapRef = useRef<HTMLSpanElement | null>(null)
   /** 已处理的顶栏预览信号：输入框只在预览标签内挂载，切标签后补一次聚焦。 */
   const focusedSignalRef = useRef(0)
+  /** 错误回传只用于提示：放进 ref，父级每次重渲染（如拖动节点）都不重置轮询周期。 */
+  const onErrorRef = useRef(onError)
+  useEffect(() => { onErrorRef.current = onError }, [onError])
 
   // 顶栏「预览」：切到预览标签（原型 editor.js:1070-1074）。
   useEffect(() => {
@@ -3160,11 +3169,11 @@ function CanvasPreview({ canvasId, projects, onError, collapsed, onToggleCollaps
         setRunning(false)
       }
     } catch (failure) {
-      onError(describeError(failure))
+      onErrorRef.current(describeError(failure))
       activeRef.current = false
       setRunning(false)
     }
-  }, [sessionKey, onError])
+  }, [sessionKey])
 
   // 运行期间按短周期增量读取；停止后自然退出轮询（不另建推送通道）。
   useEffect(() => {

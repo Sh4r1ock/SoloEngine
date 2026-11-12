@@ -74,6 +74,8 @@ export function SkillsPage({ user }: { user: UserView }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<SkillView | null>(null)
+  /** 删除失败细节：页面级错误行会被弹窗遮住，失败原因必须在弹窗内同屏可见。 */
+  const [deleteFailure, setDeleteFailure] = useState<string | null>(null)
   const [menuId, setMenuId] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement | null>(null)
   // 成功反馈走 Toast（原型 skills.js:200/312/334/342/350/367 的 App.toast）。
@@ -132,7 +134,13 @@ export function SkillsPage({ user }: { user: UserView }) {
   )
   const groupMine = useMemo(() => visible.filter(skill => skill.user_id === user.id), [visible, user.id])
 
-  const act = (id: string, action: () => Promise<void>, failureKey: string, successText?: string): void => {
+  const act = (
+    id: string,
+    action: () => Promise<void>,
+    failureKey: string,
+    successText?: string,
+    onFailure?: (failure: unknown) => void,
+  ): void => {
     setBusyId(id)
     setError(null)
     void (async () => {
@@ -140,7 +148,8 @@ export function SkillsPage({ user }: { user: UserView }) {
         await action()
         if (successText !== undefined) toast.show(successText, 'success')
       } catch (failure) {
-        setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText) } })
+        onFailure?.(failure)
+        setError({ key: failureKey, detail: describeError(failure), retry: () => { act(id, action, failureKey, successText, onFailure) } })
       } finally {
         // 只清自己那一槽：另一行的动作可能仍在途，无条件置空会让它提前解禁并被重复提交。
         setBusyId(current => current === id ? null : current)
@@ -314,13 +323,13 @@ export function SkillsPage({ user }: { user: UserView }) {
 
       <Modal
         open={deleteTarget !== null}
-        onClose={() => { setDeleteTarget(null) }}
+        onClose={() => { setDeleteTarget(null); setDeleteFailure(null) }}
         title={t('common', 'deleteNamedTitle', { name: deleteTarget?.name ?? '' })}
         closeLabel={t('common', 'actionClose')}
         description={t('common', 'confirmDeleteDescription')}
         footer={(
           <>
-            <Button variant="outline" onClick={() => { setDeleteTarget(null) }}>{t('common', 'actionCancel')}</Button>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteFailure(null) }}>{t('common', 'actionCancel')}</Button>
             <Button
               variant="ghost"
               className={css.dangerButton}
@@ -328,11 +337,15 @@ export function SkillsPage({ user }: { user: UserView }) {
               onClick={() => {
                 const target = deleteTarget
                 if (target === null) return
+                setDeleteFailure(null)
                 act(target.id, async () => {
                   await request(`/skills/${target.id}`, { method: 'DELETE' })
                   setDeleteTarget(null)
                   await load()
-                }, 'errorDelete', t('skills', 'toastDeleted'))
+                }, 'errorDelete', t('skills', 'toastDeleted'), (failure) => {
+                  // 失败时弹窗保持打开：原因写在弹窗内，页面级错误行在遮罩之下看不见。
+                  setDeleteFailure(describeError(failure))
+                })
               }}
             >
               {t('common', 'actionDelete')}
@@ -346,6 +359,9 @@ export function SkillsPage({ user }: { user: UserView }) {
             {' — '}
             {t('skills', 'deleteNote')}
           </p>
+        )}
+        {deleteFailure !== null && (
+          <NoticeLine tone="error" text={`${t('skills', 'errorDelete')} — ${deleteFailure}`} />
         )}
       </Modal>
     </div>
@@ -432,7 +448,10 @@ export function SkillsPage({ user }: { user: UserView }) {
                   await load()
                 }, 'errorPublic', skill.is_public ? t('skills', 'toastPrivate') : t('skills', 'toastPublic'))
               }
-              if (id === 'delete') setDeleteTarget(skill)
+              if (id === 'delete') {
+                setDeleteFailure(null)
+                setDeleteTarget(skill)
+              }
             }}
             onClose={() => { setMenuId(null) }}
             anchor={(

@@ -189,6 +189,8 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
     appId: null,
   })
   const [error, setError] = useState<string | null>(null)
+  /** 页面错误的原地重试动作：读取预览失败时可重跑，其它来源（表单校验等）没有可重试的动作。 */
+  const [errorRetry, setErrorRetry] = useState<(() => void) | null>(null)
   /** 列表数据（项目 / 部署指引）的加载与失败态：首屏必须有加载态，失败后可原地重试。 */
   const [listsLoading, setListsLoading] = useState(true)
   /** 列表加载失败与预览/运行失败各占一行：共用一行会让「重试」指向与失败无关的动作。 */
@@ -266,6 +268,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
   const loadPreview = useCallback(async (silent = true): Promise<void> => {
     if (selectedCanvas === null || selectedProject === null) {
       setError(t('packaging', 'needCanvas'))
+      setErrorRetry(null)
       return
     }
     previewController.current?.abort()
@@ -280,12 +283,14 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
       if (controller.signal.aborted) return
       setPreview(result.preview)
       setError(null)
+      setErrorRetry(null)
       // 原型 packaging.js:244-257：手动「读取预览」在完成后弹 Toast；进入页面/切换画布
       // 的自动读取保持静默，否则每次进页都先弹一条。
       if (!silent) toast.show(t('packaging', 'toastPreviewLoaded'), 'success')
     } catch (failure) {
       if (controller.signal.aborted) return
       setError(packagingFailureText(failure, 'errorPreview'))
+      setErrorRetry(() => () => { void loadPreview(false) })
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
@@ -317,6 +322,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
           setRun(result.run)
         } catch (failure) {
           setError(packagingFailureText(failure, 'errorRun'))
+          setErrorRetry(null)
           window.clearInterval(timer)
         }
       })()
@@ -381,6 +387,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
   const openConfirm = (): void => {
     if (preview?.containsSecrets === true) {
       setError(t('packaging', 'errorSecrets'))
+      setErrorRetry(null)
       return
     }
     if (form === 'desktop') {
@@ -491,7 +498,11 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
         text={listsError}
         {...(listsError === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: () => { void loadLists() } } })}
       />
-      <NoticeLine tone="error" text={error} />
+      <NoticeLine
+        tone="error"
+        text={error}
+        {...(errorRetry === null ? {} : { action: { label: t('common', 'actionRetry'), onClick: errorRetry } })}
+      />
 
       <div className={pkgCss.layout}>
         <div className={pkgCss.main}>
@@ -851,6 +862,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
                           const id = run.id
                           setDesktopBusy(true)
                           setError(null)
+                          setErrorRetry(null)
                           void (async () => {
                             try {
                               const result = await request<{ ok: true; run: PackagingRun }>(
@@ -860,6 +872,7 @@ export function PackagingPage({ canvasId, canvasName }: { canvasId: string | nul
                               setRun(result.run)
                             } catch (failure) {
                               setError(packagingFailureText(failure, 'errorDesktopBuild'))
+                              setErrorRetry(null)
                             } finally {
                               setDesktopBusy(false)
                             }

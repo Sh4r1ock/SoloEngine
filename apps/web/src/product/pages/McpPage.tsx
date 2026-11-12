@@ -1210,6 +1210,8 @@ function ServerFormDialog({ variant, target, onReload, onClose, onSaved }: {
   const [uploadName, setUploadName] = useState('')
   const [uploadBytes, setUploadBytes] = useState(0)
   const [uploadBase64, setUploadBase64] = useState<string | null>(null)
+  /** 压缩包正在读成 base64：此时 `uploadBase64` 仍为 null，但不能报「未选择压缩包」。 */
+  const [uploadReading, setUploadReading] = useState(false)
   const [transport, setTransport] = useState<'stdio' | 'http'>('stdio')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -1344,6 +1346,10 @@ function ServerFormDialog({ variant, target, onReload, onClose, onSaved }: {
       return
     }
     if (variant === 'package') {
+      if (uploadReading) {
+        setError(t('mcp', 'errorPackageReading'))
+        return
+      }
       if (uploadBase64 === null) {
         setError(t('mcp', 'errorPackageRequired'))
         return
@@ -1560,13 +1566,19 @@ function ServerFormDialog({ variant, target, onReload, onClose, onSaved }: {
                   onFile={(file) => {
                     setUploadName(file.name)
                     setUploadBytes(file.size)
+                    setUploadBase64(null)
+                    setUploadReading(true)
                     const reader = new FileReader()
                     reader.onload = () => {
                       const text = typeof reader.result === 'string' ? reader.result : ''
                       const comma = text.indexOf(',')
                       setUploadBase64(comma < 0 ? text : text.slice(comma + 1))
+                      setUploadReading(false)
                     }
-                    reader.onerror = () => { setError(`${t('mcp', 'errorCreate')} — ${reader.error?.message ?? 'failed'}`) }
+                    reader.onerror = () => {
+                      setUploadReading(false)
+                      setError(`${t('mcp', 'errorCreate')} — ${reader.error?.message ?? 'failed'}`)
+                    }
                     reader.readAsDataURL(file)
                   }}
                 />
