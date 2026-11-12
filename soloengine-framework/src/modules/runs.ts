@@ -143,6 +143,14 @@ export class RunService {
    * 单机形态下省略：本进程的 `live()` 就是全部运行事实。
    */
   private leaseProbe: ((sessionKey: string) => Promise<boolean>) | undefined
+  /**
+   * 取消前的「租约是否在别的节点」探针（云形态由 host 注入控制面查询）。
+   *
+   * 与 {@link leaseProbe} 的差别：这里只认**其他节点**持有的未过期租约。取消经网关按租约
+   * 路由到持有节点；直连非持有节点时本进程没有可停的循环，把台账改成 stopped 会让另一节点
+   * 上的运行失去记录，必须拒绝。
+   */
+  private remoteLeaseProbe: ((sessionKey: string) => Promise<boolean>) | undefined
   /** 会话 → 回合级恢复点 id（主干 changeLedger 产出）。 */
   private readonly restorePoints = new Map<string, string>()
 
@@ -166,6 +174,14 @@ export class RunService {
    */
   setLeaseProbe(probe: (sessionKey: string) => Promise<boolean>): void {
     this.leaseProbe = probe
+  }
+
+  /**
+   * 登记取消前的「租约在别的节点」探针（云形态由 host 注入；单机形态省略）。
+   * @param probe - 会话键 → 未过期租约是否由其他节点持有。
+   */
+  setRemoteLeaseProbe(probe: (sessionKey: string) => Promise<boolean>): void {
+    this.remoteLeaseProbe = probe
   }
 
   /**
@@ -598,6 +614,21 @@ export class RunService {
   async cancel(userId: string, sessionKey: string, reason = 'user request'): Promise<RunSessionView> {
     const driver = this.requireDriver()
     const row = await this.requireOwned(userId, sessionKey)
+    // 云形态的台账跨节点共享：直连非持有节点时本进程没有可停的循环，静默把行改成 stopped
+    // 会让另一节点上的运行失去记录（网关会把正常入口路由到持有节点，故这里只拦截直连）。
+    if (this.remoteLeaseProbe !== undefined && !driver.live(sessionKey).live) {
+      let remote: boolean
+      try {
+        remote = await this.remoteLeaseProbe(sessionKey)
+      } catch (error) {
+        throw new FrameworkError(503, 'CONTROL_UNAVAILABLE',
+          `cannot confirm which node runs session ${sessionKey}: ${String(error)}`)
+      }
+      if (remote) {
+        throw new FrameworkError(409, 'SESSION_NOT_LOCAL',
+          `session ${sessionKey} is running on another node; route the cancel through the gateway`)
+      }
+    }
     await driver.cancel(sessionKey, reason)
     await this.ledger.setStatus(row.id, 'stopped', { completedAt: Date.now() })
     return this.view(await this.requireOwned(userId, sessionKey))

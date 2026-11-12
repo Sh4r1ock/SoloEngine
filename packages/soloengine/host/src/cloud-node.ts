@@ -361,6 +361,20 @@ export class CloudNodeRuntime {
   }
 
   /**
+   * 该会话的未过期租约是否由**另一个**节点持有。
+   *
+   * 取消请求经网关按租约路由到持有节点；只有绕过网关直连非持有节点时才为 true。此时本进程
+   * 没有可停的循环，把台账改写为 stopped 会让另一个节点上的运行失去记录，必须拒绝。
+   * @param sessionKey - 会话键。
+   * @returns 租约由其他节点持有且未过期时为 true。
+   */
+  async leasedElsewhere(sessionKey: string): Promise<boolean> {
+    const lease = await this.control.getLease(sessionKey)
+    if (lease === undefined) return false
+    return Date.parse(lease.expiresAt) > Date.now() && lease.nodeId !== this.nodeId
+  }
+
+  /**
    * 主动释放会话写租约，并归还准入计数（会话结束/被驱逐时调用）。
    * @param sessionKey - 会话键。
    */
