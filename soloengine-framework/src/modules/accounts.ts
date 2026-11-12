@@ -56,8 +56,13 @@ export interface UserAssetCounts {
 /** 登录名约束：登录名直接成为用户隔离目录名，只允许目录安全字符（与 `safeDirectoryName` 同一集合）。 */
 export const USERNAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u
 
-/** Windows 设备名：同名目录无法创建，注册时直接拒绝。 */
-const WINDOWS_RESERVED_NAMES = /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu
+/**
+ * Windows 设备名：同名目录无法创建，注册时直接拒绝。
+ *
+ * 设备名判据只看**第一个点之前**的部分：`CON.txt` 与 `CON` 一样无法创建（Windows 的
+ * 保留名规则），而 `CONSOLE` 是普通名字，不能误伤。
+ */
+const WINDOWS_RESERVED_NAMES = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/iu
 
 /** 结构化业务错误（fail loud：错误直接报出，不回退默认值）。 */
 export class FrameworkError extends Error {
