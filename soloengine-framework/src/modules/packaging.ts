@@ -508,6 +508,27 @@ export class PackagingService {
    */
   constructor(runtime: FrameworkRuntime) {
     this.runtime = runtime
+    this.sweepStagingDirectories()
+  }
+
+  /**
+   * 启动清扫：上次进程崩溃留下的 `.staging-<id>` 目录不会再被任何构建复用。
+   *
+   * 暂存目录里是完整的产物树（含 `node_modules`），一次崩溃就会长期占盘；本进程此时
+   * 尚未开始任何构建，可以安全删除。
+   */
+  private sweepStagingDirectories(): void {
+    const root = join(this.runtime.dataDir, 'packaging')
+    if (!existsSync(root)) return
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('.staging-')) continue
+      try {
+        rmSync(join(root, entry.name), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+        console.log(`soloengine: removed a stale packaging staging directory (${entry.name})`)
+      } catch (error) {
+        console.log(`soloengine: removing the stale packaging staging directory ${entry.name} failed (${String(error)})`)
+      }
+    }
   }
 
   /** profile 清单绝对路径。 */
