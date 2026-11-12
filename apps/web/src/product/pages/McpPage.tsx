@@ -2071,7 +2071,9 @@ function ServerFiles({ server, onError, onSaved }: {
         <p className={css.emptyDesc}>
           {listing.reason === 'http_transport'
             ? t('mcp', 'filesNoLocalHttp')
-            : t('mcp', 'filesNoLocalDirectory')}
+            : listing.reason === 'directory_outside_tenant'
+              ? t('mcp', 'filesNoLocalOutsideTenant')
+              : t('mcp', 'filesNoLocalDirectory')}
         </p>
         <Button size="sm" variant="outline" disabled={busy} onClick={loadFiles}>{t('common', 'actionRefresh')}</Button>
       </div>

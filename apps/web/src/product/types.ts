@@ -225,7 +225,7 @@ export interface McpServerView {
 export type McpFilesMode = 'editable' | 'readonly' | 'none'
 
 /** 文件清单为空或只读的原因（码值由页面本地化）。 */
-export type McpFilesReason = 'http_transport' | 'directory_missing'
+export type McpFilesReason = 'http_transport' | 'directory_missing' | 'directory_outside_tenant'
 
 /** 服务器文件条目。 */
 export interface McpServerFileEntry {

@@ -140,7 +140,7 @@ export interface McpServerView extends Omit<McpServerRow, 'is_active' | 'is_publ
 export type McpFilesMode = 'editable' | 'readonly' | 'none'
 
 /** 文件清单为空或只读的原因（码值由前端本地化）。 */
-export type McpFilesReason = 'http_transport' | 'directory_missing'
+export type McpFilesReason = 'http_transport' | 'directory_missing' | 'directory_outside_tenant'
 
 /** 服务器文件条目。 */
 export interface McpServerFileEntry {
@@ -425,10 +425,17 @@ export class McpService {
       // 解压预算按中央目录声明的原始大小在**解压前**执行：zip 炸弹（几 MB 压缩包展开成 GB）
       // 不能等到解压完再量——那一步就已经把内存吃光，后面的条目/字节上限根本到不了。
       let declaredTotal = 0
+      let declaredEntries = 0
       const overflow: string[] = []
       try {
         files = unzipSync(new Uint8Array(Buffer.from(input.archiveBase64, 'base64')), {
           filter: (file) => {
+            // 条目数也在解压前拒绝：十万个小条目的包会先把整棵树解进内存，事后再数就晚了。
+            declaredEntries += 1
+            if (declaredEntries > MAX_UPLOAD_ENTRIES) {
+              overflow.push(file.name)
+              return false
+            }
             declaredTotal += file.originalSize
             if (file.originalSize > MAX_UPLOAD_ENTRY_BYTES || declaredTotal > MAX_UPLOAD_BYTES) {
               overflow.push(file.name)
@@ -628,8 +635,31 @@ export class McpService {
     if (dir === null) {
       return { mode: 'none', reason: 'directory_missing', directory: null, truncated: false, files: [] }
     }
+    // 目录列举是跨用户可见面：只允许该账号自己的租户目录（运行项目 / 上传服务器根）。
+    // 指向他人项目或系统目录的 `working_dir` 一律不列举（文件名也不外泄）。
+    if (!this.insideTenant(username, dir)) {
+      return { mode: 'none', reason: 'directory_outside_tenant', directory: null, truncated: false, files: [] }
+    }
     const walked = walkTree(dir, MAX_READONLY_FILES)
     return { mode: 'readonly', reason: null, directory: dir, truncated: walked.truncated, files: walked.files }
+  }
+
+  /**
+   * 路径是否落在该账号的租户目录内（运行项目或 MCP 上传根）。
+   * @param username - 登录名。
+   * @param dir - 绝对目录。
+   * @returns 在租户内为 true。
+   */
+  private insideTenant(username: string, dir: string): boolean {
+    for (const kind of ['projects', 'mcp'] as const) {
+      try {
+        this.runtime.userDirs.within(username, kind, dir)
+        return true
+      } catch {
+        // 试下一个子根。
+      }
+    }
+    return false
   }
 
   /**
