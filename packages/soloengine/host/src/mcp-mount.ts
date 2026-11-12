@@ -155,8 +155,10 @@ export class McpMountSupervisor {
     for (const name of target.serverNames) {
       const row = await this.runtime.mcp.byNameScoped(target.userId, name)
       if (row === undefined) {
-        // 编译产物引用了本用户看不到的服务器：这是组合不一致，按无回退纪律直接报出。
-        throw new Error(`agent scope ${label} references MCP server "${name}", which is not visible to this user`)
+        // 与框架层编译期提示同口径：引用不存在/不可见的服务器只影响该节点的能力面，
+        // 不阻断运行（`RunService.noticeUnavailableRefs`：运行仍应可发起）。
+        this.log(`soloengine: mcp server ${name} referenced by ${label} does not exist or is not visible; it is not mounted`)
+        continue
       }
       if (row.is_active !== 1) continue // 停用即不挂（PRD-05 §5：该服务器工具世代回滚）。
       const disabled = new Set(await this.runtime.mcp.disabledTools(row.id))

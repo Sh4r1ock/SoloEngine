@@ -111,18 +111,34 @@ export interface FlowRuntimeOptions {
 
 interface Record {
   readonly instance: FlowInstance
-  readonly signature: string
   users: number
   disposing?: Promise<void>
 }
 
 /**
+ * 一份 flow 实例的持有租约。
+ *
+ * 同一 flow 的并发运行在组合签名相同时共享一份实例；画布的实例插件行改动后签名不同，
+ * 新运行取得**另一份**实例并沿用新组合——已开的会话保持启动时的组合，不会被中途换装，
+ * 也不会因为「组合不同」把整张画布锁死到旧会话结束（FR-DEP-004 的活组合边界）。
+ */
+export interface FlowLease {
+  /** 本租约取得的实例。 */
+  readonly instance: FlowInstance
+  /** 本租约在装配层里的记录键（同一 flow 的不同组合各占一条）。 */
+  readonly key: string
+  /** 释放这一份持有；最后一个持有者释放时实例整体卸载。 */
+  release(): Promise<void>
+}
+
+/**
  * 按 flow 持有实例的装配层。
  *
- * 引用计数让同一 flow 的并发运行共享一份实例；最后一个持有者释放时卸载，
+ * 引用计数让同一 flow、同一组合的并发运行共享一份实例；最后一个持有者释放时卸载，
  * 从而保证「进入装载、切出卸载恢复」。实例创建失败不留下半棵树。
  */
 export class FlowInstanceRuntime {
+  /** 记录键 = flowId（缺省组合）或 `flowId\0signature`（有组合签名时）。 */
   private readonly records = new Map<string, Record>()
   private disposed = false
 
@@ -140,48 +156,59 @@ export class FlowInstanceRuntime {
   /**
    * 获取或创建一份 flow 实例，并增加一个持有者。
    * @param flowId - agenticflow 标识。
-   * @param signature - 组合签名；同一 flow 的并发持有者必须给出相同签名。
-   * @returns 共享的实例。
+   * @param signature - 组合签名；签名相同的并发持有者共享实例，不同的各占一份。
+   * @returns 实例租约（释放必须走 {@link FlowLease.release}）。
    */
-  acquire(flowId: string, signature = ''): FlowInstance {
+  acquire(flowId: string, signature = ''): FlowLease {
     if (this.disposed) throw new Error('soloengine: flow instance runtime is disposed')
-    const existing = this.records.get(flowId)
+    const key = signature === '' ? flowId : `${flowId}\u0000${signature}`
+    const existing = this.records.get(key)
     if (existing !== undefined) {
-      if (existing.signature !== signature) {
-        throw new Error(`soloengine: flow ${flowId} is already mounted with a different composition`)
-      }
       existing.users += 1
-      return existing.instance
+      return this.leaseOf(key, existing)
     }
     const scope = createScope(this.owner, { flowId })
     const instance = new Instance(flowId, scope, this.options.baseUrl ?? this.owner.baseUrl)
-    const record: Record = { instance, signature, users: 1 }
-    this.records.set(flowId, record)
-    return instance
+    const record: Record = { instance, users: 1 }
+    this.records.set(key, record)
+    return this.leaseOf(key, record)
   }
 
   /**
-   * 释放一个持有者；最后一个持有者释放时卸载实例。
-   * @param flowId - agenticflow 标识。
-   * @returns 卸载完成（仍有其他持有者时立即返回）。
+   * 构造一份租约（同一记录的多次取得各自释放一次）。
+   * @param key - 记录键。
+   * @param record - 记录。
+   * @returns 租约。
    */
-  async release(flowId: string): Promise<void> {
-    const record = this.records.get(flowId)
-    if (record === undefined) return
-    record.users -= 1
-    if (record.users > 0) return
-    this.records.delete(flowId)
-    record.disposing ??= record.instance.dispose()
-    await record.disposing
+  private leaseOf(key: string, record: Record): FlowLease {
+    let released = false
+    return {
+      instance: record.instance,
+      key,
+      release: async () => {
+        if (released) return
+        released = true
+        record.users -= 1
+        if (record.users > 0) return
+        if (this.records.get(key) === record) this.records.delete(key)
+        record.disposing ??= record.instance.dispose()
+        await record.disposing
+      },
+    }
   }
 
   /**
    * 读取当前存活的实例（诊断用）。
    * @param flowId - agenticflow 标识。
-   * @returns 实例，或未装载时的 undefined。
+   * @returns 该 flow 的第一份活实例，或未装载时的 undefined。
    */
   get(flowId: string): FlowInstance | undefined {
-    return this.records.get(flowId)?.instance
+    const direct = this.records.get(flowId)
+    if (direct !== undefined) return direct.instance
+    for (const record of this.records.values()) {
+      if (record.instance.flowId === flowId) return record.instance
+    }
+    return undefined
   }
 
   /**

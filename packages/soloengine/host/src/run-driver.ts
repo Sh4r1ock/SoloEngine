@@ -15,8 +15,9 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import { FlowInstanceRuntime, type FlowInstance } from '@soloengine/instance-runtime'
+import { defineTool, RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
+import { FlowInstanceRuntime, type FlowInstance, type FlowLease } from '@soloengine/instance-runtime'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
@@ -244,7 +245,7 @@ export function createRunDriver(
     projectId: string
     llmConfigId: string | null
   }>()
-  const { attribution } = options
+  const { attribution, lastAssistantSeq } = options
   const cloud = options.cloud
   const sessionContainers = options.containers
   const sessionVms = options.vms
@@ -294,13 +295,20 @@ export function createRunDriver(
    * 组合在实例内装载、随实例卸载级联撤销；基线全局注册不受影响。
    */
   const flows = new FlowInstanceRuntime(ctx)
-  /** 会话 → 所属 flow 实例 id（会话销毁时释放该会话的持有）。 */
-  const flowOfSession = new Map<string, string>()
+  /** 会话 → 所属 flow 实例租约（会话销毁时释放该会话的持有）。 */
+  const flowOfSession = new Map<string, FlowLease>()
+  /** 实例 → 首次条目树装载的完成 promise（并发运行共享同一次装载，实例销毁即随 WeakMap 回收）。 */
+  const mountedTrees = new WeakMap<FlowInstance, Promise<void>>()
 
   // 会话销毁即释放持有；最后一个持有者释放时实例整体卸载，实例内注册随作用域撤销。
   ctx.on('session/disposed', (session: Session) => {
     const key = String(session.id)
     usageCache.delete(key)
+    // 内存派生索引随会话销毁回收：长跑的节点不该按已销毁会话线性增长，
+    // 也不该让已销毁会话继续通过 live() 报出节点归属。
+    attribution.delete(key)
+    runContext.delete(key)
+    lastAssistantSeq.delete(key)
     // 销毁前把工作区最终状态提交到对象存储（W10.12）；恢复时只补缺失文件。
     const workspaceDir = workspaceOfSession.get(key)
     if (workspaceSync !== undefined && workspaceDir !== undefined) {
@@ -313,10 +321,10 @@ export function createRunDriver(
     if (cloud !== undefined && !cloud.isPaused(key)) void cloud.release(key)
     if (sessionContainers !== undefined) void sessionContainers.pause(key)
     if (sessionVms !== undefined) void sessionVms.pause(key)
-    const flowId = flowOfSession.get(key)
-    if (flowId === undefined) return
+    const lease = flowOfSession.get(key)
+    if (lease === undefined) return
     flowOfSession.delete(key)
-    void flows.release(flowId).catch((error: unknown) => { ctx.logger.warn(error) })
+    void lease.release().catch((error: unknown) => { ctx.logger.warn(error) })
   })
 
   if (workspaceSync !== undefined) {
@@ -389,9 +397,10 @@ export function createRunDriver(
     }
     cloud.setEvictor(detach)
     cloud.setPauser(detach)
-    // 最近活跃时间：会话事件是唯一真源，不另设心跳。
+    // 最近活跃时间：会话事件是唯一真源，不另设心跳。子代理的事件也刷新**根会话**的活跃时间——
+    // 长委派期间只有子会话产生事件，按子键记账会让根会话被判空闲而暂停/驱逐（在飞回合被打断）。
     ctx.on('session/event', (session: Session, event) => {
-      cloud.noteActivity(String(session.id), Date.now())
+      cloud.noteActivity(rootSessionKey(ctx, session), Date.now())
       // 计量（W10.10）：provider 的一次回复对应一条 `assistant/message`，token 只取它上报的值。
       // 子代理子会话的用量归属根会话（一个画布运行 = 一个计费会话）。
       if (event.type !== 'assistant/message' || event.data.usage === undefined) return
@@ -626,9 +635,22 @@ export function createRunDriver(
         agentCtx.tools.restrict({ allow: inherited })
       } else {
         // 节点只勾选了委派工具：把继承面全部关掉（deny 是唯一能表达「什么都不继承」的形式）。
-        agentCtx.tools.restrict({ deny: ctx.tools.schemas().map(schema => schema.name) })
+        //
+        // 名单必须按**本 agent 作用域**的可见面枚举：无 scope 的 `schemas()` 只返回全局层，
+        // 预设作用域提供的 bash/fs/search/subagent 等属于**继承面**（可见、可调用），
+        // 漏掉它们会让「节点一个工具都没勾」反而保留整份预设工具集（白名单 fail-open）。
+        const scope = scopeOf(agentCtx)
+        if (scope === undefined) {
+          throw new FrameworkError(500, 'NODE_SCOPE_UNAVAILABLE',
+            `node ${spec.agentId} has no agent scope; its tool selection cannot be enforced`)
+        }
+        const deniable = ctx.tools.schemas(scope)
+          .map(schema => schema.name)
+          .filter(name => name !== RUN_CODE_NAME && !ownToolNames.has(name))
+        if (deniable.length > 0) agentCtx.tools.restrict({ deny: deniable })
       }
     } catch (error) {
+      if (error instanceof FrameworkError) throw error
       throw new FrameworkError(
         422,
         'NODE_TOOLS_UNKNOWN',
@@ -640,16 +662,24 @@ export function createRunDriver(
     // 目录与调用是同一个判据：原生 `SkillRegistry.restrict()` 把本作用域的模型可见目录
     // 收窄到勾选集合，`snapshot()/list()` 不出现未勾选项，`get()` 也拒绝它们——
     // 不再另加一层调用期 guard（同一功能只保留一个实现）。
-    if (spec.skills.length > 0) {
+    //
+    // 空勾选同样是「可见集合 = 空」：`restrict([])` 才是这个语义，跳过调用等于放开整个目录
+    // （`skills.restrict` 的契约：没有限制的作用域保留完整目录）。
+    {
       // 作用域 ctx 未把 skills 列入 inject（它由预设组合挂载），这里取绑定到本作用域的服务句柄。
       const skills = agentCtx.get('skills')
       if (skills === undefined) {
-        throw new FrameworkError(500, 'NODE_SKILLS_UNAVAILABLE',
-          `node ${spec.agentId} selects skills but this composition provides no skills service`)
+        if (spec.skills.length > 0) {
+          throw new FrameworkError(500, 'NODE_SKILLS_UNAVAILABLE',
+            `node ${spec.agentId} selects skills but this composition provides no skills service`)
+        }
+      } else {
+        if (spec.skills.length > 0) {
+          console.log(`soloengine: node ${spec.agentId} skill scope restricted to (skills: ${[...spec.skills].join(', ')});`
+            + ' the model-visible catalog and skill loader are both limited to this set (PRD-04 FR-SKILL-007)')
+        }
+        agentCtx.effect(() => skills.restrict(spec.skills), 'soloengine:node-skill-scope')
       }
-      console.log(`soloengine: node ${spec.agentId} skill scope restricted to (skills: ${[...spec.skills].join(', ')});`
-        + ' the model-visible catalog and skill loader are both limited to this set (PRD-04 FR-SKILL-007)')
-      agentCtx.effect(() => skills.restrict(spec.skills), 'soloengine:node-skill-scope')
     }
     // 该节点引用的 MCP 服务器挂进**本作用域**（PRD-05 FR-MCP-006）：只有名单里的服务器出现，
     // 池外的一概不进（同一服务器名可被不同 agent 各自挂载）。
@@ -702,6 +732,10 @@ export function createRunDriver(
         // 跨节点配额拒绝是用户可见的业务结论（429），不降级成 500。
         if (error instanceof CloudLeaseError && error.code === 'QUOTA_EXCEEDED') {
           throw new FrameworkError(429, 'QUOTA_EXCEEDED', error.message)
+        }
+        // 租约被其他节点持有是并发冲突（409），让客户端重试/改投而不是收到 500。
+        if (error instanceof CloudLeaseError && error.code === 'LEASE_HELD') {
+          throw new FrameworkError(409, 'LEASE_HELD', error.message)
         }
         throw error
       }
@@ -769,8 +803,9 @@ export function createRunDriver(
     const additions = instanceRows
       .map(row => ({ id: row.id, name: row.name, ...(row.config === undefined ? {} : { config: row.config }) }))
     const isolateNames = [...new Set(instanceRows.flatMap(row => row.isolate ?? []))]
-    const flow = flows.acquire(flowId, JSON.stringify({ preset: options.agentPreset, additions, isolateNames }))
-    flowOfSession.set(input.sessionKey, flowId)
+    const lease = flows.acquire(flowId, JSON.stringify({ preset: options.agentPreset, additions, isolateNames }))
+    const flow = lease.instance
+    flowOfSession.set(input.sessionKey, lease)
     let handle: Awaited<ReturnType<typeof ctx.agents.create>>
     try {
       // 隔离必须先于任何插件装载：预设与新增行都从这里派生，已激活的插件读不到后设的隔离。
@@ -778,7 +813,19 @@ export function createRunDriver(
       // 该 flow 的组合基线只挂一次：同一画布的并发会话共享实例，preset 绑定按 flowKey 去重。
       await ctx.agentPresets.mount(flow.ctx, options.agentPreset)
       // 实例新增行随实例装载一次；装载失败（导入/激活）即拒绝本次运行，不静默降级。
-      if (additions.length > 0 && flow.tree === undefined) await flow.mountEntries(additions)
+      // 并发运行按**实例**共享同一次装载：`mountEntries` 对已装载的实例会抛错，
+      // 「先看 tree 再装载」的检查与动作之间没有原子性。
+      if (additions.length > 0) {
+        let mounted = mountedTrees.get(flow)
+        if (mounted === undefined) {
+          mounted = flow.mountEntries(additions).then(() => undefined, (error: unknown) => {
+            mountedTrees.delete(flow)
+            throw error
+          })
+          mountedTrees.set(flow, mounted)
+        }
+        await mounted
+      }
       const nodeMaxTokens = mainSpec.sampling?.max_tokens ?? input.mainAgent.maxTokens
       const agentOptions = {
         provider: input.mainAgent.provider,
@@ -786,14 +833,28 @@ export function createRunDriver(
         ...nodeMaxTokens === null ? {} : { maxTokens: nodeMaxTokens },
         ...mainSpec.sampling?.temperature === undefined ? {} : { temperature: mainSpec.sampling.temperature },
       }
-      const setup = (agentCtx: Context, agent: Agent): Promise<void> => composeNode(
-        agentCtx,
-        agent,
-        mainSpec,
-        input.compiled,
-        { sessionKey: input.sessionKey, userId: input.userId },
-        flow,
-      )
+      const setup = async (agentCtx: Context, agent: Agent): Promise<void> => {
+        // 被委派的子会话不是画布入口：它的节点归属写在会话日志里（`soloengine/node-attribution`），
+        // 由父会话经 `send_message` 唤醒并按该节点的组合重放。把它当成根会话冷恢复会用入口节点的
+        // persona/工具/模型继续跑，并把归属改写成「入口节点的根」——语义错误，明确拒绝。
+        const childRecord = ctx.sessionProjections.stateOf(agent.session, 'soloengine.nodeAttribution') ?? undefined
+        if (childRecord !== undefined) {
+          throw new FrameworkError(
+            409,
+            'SESSION_IS_SUBAGENT',
+            `session ${input.sessionKey} is node ${childRecord.agentId} of a delegated run; `
+            + 'delegated sessions are driven through their parent (send_message), not by direct prompts',
+          )
+        }
+        await composeNode(
+          agentCtx,
+          agent,
+          mainSpec,
+          input.compiled,
+          { sessionKey: input.sessionKey, userId: input.userId },
+          flow,
+        )
+      }
       handle = mode === 'create'
         ? await ctx.agents.create({
           sessionId: SessionId(input.sessionKey),
@@ -808,7 +869,7 @@ export function createRunDriver(
         })
     } catch (error) {
       flowOfSession.delete(input.sessionKey)
-      await flows.release(flowId)
+      await lease.release()
       await rollbackWorld(input.sessionKey)
       if (cloud !== undefined) await cloud.release(input.sessionKey)
       throw error
@@ -820,7 +881,7 @@ export function createRunDriver(
     } catch (error) {
       flowOfSession.delete(input.sessionKey)
       await handle.dispose()
-      await flows.release(flowId)
+      await lease.release()
       await rollbackWorld(input.sessionKey)
       if (cloud !== undefined) await cloud.release(input.sessionKey)
       throw error
@@ -878,12 +939,17 @@ export function createRunDriver(
     prompt(sessionKey, text) {
       // 云形态先确认本节点仍持有写租约：被接管/续约失败的节点不再接受推进请求
       // （写入侧另有 PG 后端的租约围栏兜底）。
-      if (cloud !== undefined && !cloud.holds(sessionKey)) {
-        throw new CloudLeaseError(
-          sessionKey,
-          'LEASE_HELD',
-          `session ${sessionKey} is not leased to node ${cloud.nodeId}; refusing to prompt it`,
-        )
+      // 租约按**根会话**取得：驻留/冷恢复的子代理会话属于同一运行，按会话键判会恒为「不持有」。
+      if (cloud !== undefined) {
+        const session = ctx.sessions.get(SessionId(sessionKey))
+        const leaseKey = session === undefined ? sessionKey : rootSessionKey(ctx, session)
+        if (!cloud.holds(leaseKey)) {
+          throw new FrameworkError(
+            409,
+            'LEASE_HELD',
+            `session ${sessionKey} (run ${leaseKey}) is not leased to node ${cloud.nodeId}; refusing to prompt it`,
+          )
+        }
       }
       const agent = ctx.agents.get(SessionId(sessionKey))
       if (agent === undefined) {
@@ -895,7 +961,10 @@ export function createRunDriver(
     async cancel(sessionKey, reason) {
       const agent = ctx.agents.get(SessionId(sessionKey))
       if (agent === undefined) {
-        throw new Error(`session ${sessionKey} has no live agent in this process`)
+        // 进程重启/节点接管后本进程没有活 agent：停止是幂等的（框架层仍把台账收敛为 stopped），
+        // 不能把「已经不在跑」报成 500。
+        ctx.logger.info(`soloengine: cancel ${sessionKey} is a no-op: no live agent in this process (${reason})`)
+        return
       }
       ctx.logger.info(`soloengine: cancelling session ${sessionKey} (${reason})`)
       agent.cancel({ kind: 'user' })
