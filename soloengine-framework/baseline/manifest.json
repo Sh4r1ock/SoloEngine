@@ -196,9 +196,9 @@
       "version": "0.2.1-rc.2",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/bundle/base @ 0.2.1-rc.2",
-      "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；其余组合行未改",
+      "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；`fs-observation-policy` 行按 DSH 0.2.2 默认关闭（先读后写改为部署可选的显式开启项）；其余组合行未改",
       "fileCount": 9,
-      "digest": "sha256:29042b34097c89e7cb14a7eeb854cd294ae350550d01a48a4442b39f7bce21d8"
+      "digest": "sha256:f5eb572b89f246299d0b8c6e534abb919c46a010acc4737f3b72a1c4c96b857b"
     },
     {
       "dir": "packages/bundle/headless",

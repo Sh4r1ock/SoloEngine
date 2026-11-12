@@ -304,6 +304,9 @@
 
     - id: fs-observation-policy
       name: '@deepseek-ai/dsh-fs-observation-policy'
+      # 0.2.2 起默认关闭：文件修改不再要求先读；需要严格「先读后写」的部署在
+      # profile patch 里显式打开该行即可。
+      disabled: true
 
     - id: tool-fs
       name: '@deepseek-ai/dsh-tool-fs'
