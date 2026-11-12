@@ -1017,18 +1017,8 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
     return value === undefined || value === null ? null : String(value)
   })
 
-  // ── 变更台账：撤回记录链（框架层专有；其余台账操作见共享操作表）──────────────
-
-  route('changes-mark-reverted', 'post', '/changes/mark-reverted', '把已还原的记录标记为 reverted（撤回记录链的一环）', [authenticate], async (req, res) => {
-    try {
-      const user = req.soloUser as UserRow
-      const body = req.body as { changeIds?: string[] }
-      const ids = Array.isArray(body.changeIds) ? body.changeIds.map(String) : []
-      res.json({ ok: true, updated: await runtime.changes.markReverted(user.id, ids) })
-    } catch (error) {
-      failure(res, error)
-    }
-  })
+  // ── 变更台账：撤回记录链的标记只由撤回执行器内部调用（`file-changes.ts`）──────
+  // 不提供公开的「标记已撤回」路由：没有写回的翻转会让台账与实际磁盘状态脱节。
 
   // ── 多用户隔离（三层隔离的第 2 层：用户目录物理隔离）────────────────────────
   route('tenancy-me', 'get', '/tenancy/me', '当前用户的隔离目录（技能/MCP/项目）', [authenticate], (req, res) => {
