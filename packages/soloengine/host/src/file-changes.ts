@@ -609,7 +609,6 @@ function absoluteOf(root: string, path: string): string {
  * @returns 归一化后的会话键与调用 id。
  */
 function actorIdentity(actor: object | undefined): { sessionKey: string | null; callId: string | null } {
-  // oxlint-disable-next-line typescript/no-unnecessary-type-assertion -- `object` has no properties; the cast supplies them
   const exec = actor as { callId?: unknown; agent?: { session?: { id?: unknown } } } | undefined
   const sessionId = exec?.agent?.session?.id
   return {
