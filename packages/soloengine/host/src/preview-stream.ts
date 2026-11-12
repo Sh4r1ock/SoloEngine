@@ -73,6 +73,35 @@ interface PreviewBuffer {
  */
 export class PreviewStream {
   private readonly buffers = new Map<string, PreviewBuffer>()
+  /** 会话 → 折叠链尾（归属判定是异步的，同一会话的事件必须按到达顺序折叠）。 */
+  private readonly chains = new Map<string, Promise<void>>()
+
+  /**
+   * 按到达顺序折叠一条事件（归属判定异步完成后再落缓冲）。
+   *
+   * `session/event` 的广播是同步的，而归属校验（`ledger.byKey`）是异步的；每条事件各自
+   * `await` 再 `record` 时，共享关系库（连接池）下解析顺序不定，缓冲会乱序写入——
+   * 水位线取到较小的 seq 后，客户端按 `after` 轮询会重复收取并漏掉两端之间的事件。
+   * 这里以会话为粒度串行化，保证 `record` 顺序等于事件顺序。
+   *
+   * @param sessionKey - 会话键。
+   * @param event - 原生会话事件。
+   * @param accept - 归属判定（异步；返回 false 时不落缓冲）。
+   * @returns 本条事件的折叠完成（含此前排队的同会话事件）。
+   */
+  enqueue(sessionKey: string, event: SessionEvent, accept: () => Promise<boolean>): Promise<void> {
+    const previous = this.chains.get(sessionKey) ?? Promise.resolve()
+    const next = previous
+      .then(async () => {
+        if (!await accept()) return
+        this.record(sessionKey, event)
+      })
+      .catch((error: unknown) => {
+        console.log(`soloengine: preview folding for ${sessionKey} failed (${String(error)}); this entry is skipped`)
+      })
+    this.chains.set(sessionKey, next)
+    return next
+  }
 
   /**
    * 折叠一条原生会话事件。
@@ -193,7 +222,8 @@ export class PreviewStream {
     const buffer = this.buffers.get(sessionKey)
     if (buffer === undefined) return { entries: [], lastSeq: after, status: 'unknown' }
     const entries = buffer.entries.filter(entry => entry.seq > after)
-    const lastSeq = buffer.entries.at(-1)?.seq ?? after
+    // 水位线是「已观测到的最大序号」，不是数组末项：任何乱序都不得让水位线回退（回退即重放）。
+    const lastSeq = buffer.entries.reduce((max, entry) => entry.seq > max ? entry.seq : max, after)
     return { entries, lastSeq, status: buffer.status }
   }
 
@@ -203,6 +233,7 @@ export class PreviewStream {
    */
   drop(sessionKey: string): void {
     this.buffers.delete(sessionKey)
+    this.chains.delete(sessionKey)
   }
 }
 
@@ -218,11 +249,9 @@ export class PreviewStream {
  */
 export function mountPreviewStream(ctx: Context, runtime: FrameworkRuntime, stream: PreviewStream): void {
   ctx.on('session/event', (session: Session, event: SessionEvent) => {
-    void (async () => {
-      // 只为本实例发起的会话记账：归属台账是唯一判据，避免为无关会话白攒内存。
-      if (await runtime.runs.ledger.byKey(String(session.id)) === undefined) return
-      stream.record(String(session.id), event)
-    })()
+    const key = String(session.id)
+    // 只为本实例发起的会话记账：归属台账是唯一判据，避免为无关会话白攒内存。
+    void stream.enqueue(key, event, async () => await runtime.runs.ledger.byKey(key) !== undefined)
   })
   // 会话销毁即丢弃缓冲：否则每个跑过的会话都永久留下最多 500 条文本条目（内存单调增长）。
   ctx.on('session/disposed', (session: Session) => {
