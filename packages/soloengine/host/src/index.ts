@@ -551,8 +551,21 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   ctx.effect(() => {
     const fiber = ctx.inject(['connection'], (guardCtx) => {
       guardCtx.effect(() => {
+        /**
+         * 账号是否仍可用。
+         *
+         * Bearer 通道每请求都查 `is_active`（router 的 authenticate）；浏览器 cookie 通道走的是
+         * 本作用域，两处必须同一口径——否则被禁用的账号只要不清 cookie 就能继续用运行面板。
+         * @param userId - 签名 cookie 里的账号。
+         * @returns 账号存在且启用时为 true。
+         */
+        const active = async (userId: string): Promise<boolean> => {
+          const row = await runtime.accounts.byId(userId)
+          return row !== undefined && row.is_active === 1
+        }
         const dispose = guardCtx.connection.setAccountScope({
           authorize: async ({ userId, sessionIds, instance }) => {
+            if (!await active(userId)) return false
             for (const sessionId of sessionIds) {
               // 真源只有一份：`sessions` 台账（归属用户 + 归属画布），会话自己的行或会话树根的行。
               // 分支/草稿会话由会话引擎直接创建，没有自己的台账行；沿父链归到已登记的
@@ -570,6 +583,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           },
           // 会话列表 / 检索 / 实时投影的收窄集合：台账根 + 其全部分支/草稿后代。
           ownedSessions: async (userId, instance) => {
+            if (!await active(userId)) return []
             const roots = await runtime.runs.ledger.sessionKeysOf(userId, instance)
             const persistence = guardCtx.get('sessionPersistence')
             if (persistence === undefined || roots.length === 0) return roots
@@ -600,7 +614,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           },
           // 模型目录的收窄集合：只给本人启用中的配置路由名。
           ownedModelRoutes: async userId =>
-            (await runtime.models.listActive(userId)).map(row => `soloengine-${row.id}`),
+            (await active(userId) ? await runtime.models.listActive(userId) : []).map(row => `soloengine-${row.id}`),
         })
         return () => { dispose() }
       }, 'soloengine-host.accountScope')
