@@ -48,6 +48,7 @@ kind: "package-reference"
 
 真实 API 测试要求同时设置 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_SEARCH_API_TEST_BASE_URL`，后者包含 API 路径前缀。
 
+<a id="authentication"></a>
 ### 鉴权
 
 使用 `deepseek-account` 路由的会话向账号服务请求已授权用于解析后端点的令牌，并通过 `x-dsh-auth-token` 发送；2026-10-16 公网 Search 与 Fetch 路由已接受该令牌。其他情况下，非空的字面 `apiKey` 优先于 `apiKeyEnv`；凭据引用通过 `ctx.credentials` 解析，该服务缺省时使用启动环境。API 密钥使用 `Authorization: Bearer`。凭据解析和端点选择使用同一份设置快照。

@@ -25,9 +25,9 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-New Sessions, including ordinary forks, default to Team mode off. See the [Session-mode upgrade guide](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.md). Select **Use Agent Teams** in the root Session’s model and reasoning menu. Turning it off hides Team tools and guidance from subsequent steps throughout the tree while retaining tasks and subagents. The saved selection survives restart; a historical task board without a saved selection remains enabled.
+New Sessions, including ordinary forks, default to Team mode off. See the Session-mode upgrade guide. Select **Use Agent Teams** in the root Session’s model and reasoning menu. Turning it off hides Team tools and guidance from subsequent steps throughout the tree while retaining tasks and subagents. The saved selection survives restart; a historical task board without a saved selection remains enabled.
 
-Set `defaultEnabled: true` to enable new root Sessions, including ordinary forks, before their first model step. Initialization saves the selection as `team/mode`; a save failure rejects Agent creation. Existing selections take precedence, and resuming a Session never applies the default, including when no selection was saved. Descendants use their live root's mode. The [SDK configuration guide](../../../docs/user/guide/python-sdk.md#enable-team-mode) includes a ready-to-use patch; the standard bundle keeps this option off.
+Set `defaultEnabled: true` to enable new root Sessions, including ordinary forks, before their first model step. Initialization saves the selection as `team/mode`; a save failure rejects Agent creation. Existing selections take precedence, and resuming a Session never applies the default, including when no selection was saved. Descendants use their live root's mode. The SDK configuration guide includes a ready-to-use patch; the standard bundle keeps this option off.
 
 Mode changes take effect without waiting for queued task mutations. Each mutation checks the current mode when it starts: an admitted operation finishes, while queued work is rejected if Team is still off when it starts. Enabling again permits subsequent operations. A failed save leaves an appended selection active; retrying the same selection saves without another mode record.
 
@@ -56,7 +56,7 @@ For example, ask the model to start a subagent to review the diff and track its 
 | `maxTasks` | `256` | Maximum non-deleted tasks on the board |
 | `defaultEnabled` | `false` | Save Team mode on for new roots without an existing selection |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-team) is the exhaustive source for every accepted field and its JSDoc. A row that sets `maxMembers`, `maxMessageBytes`, or `disposalTimeoutMs` does not activate, and dsh names the key in its startup warning; the [upgrade guide](../../../docs/upgrade-guide/v0.2.1-rc.2/agent-team-subagents/guide.md) lists the replacements.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-team) is the exhaustive source for every accepted field and its JSDoc. A row that sets `maxMembers`, `maxMessageBytes`, or `disposalTimeoutMs` does not activate, and dsh names the key in its startup warning; the upgrade guide lists the replacements.
 
 ### Teammates
 
@@ -139,7 +139,7 @@ Team requires `sessionPersistence` before activation. `Service.init` awaits regi
 
 Task mutations honor cancellation before appending `team/task` to the exact live root Session, then await the flush. Cancellation cannot retract an appended record. A failed flush or one with no participating listener raises `TEAM_TASK_PERSISTENCE_UNCONFIRMED` with the task id and revision: the task is already visible, but durability is unknown. Read that task before retrying. Task records remain log-only. No committed task or historical payload generation is rewritten.
 
-The projection ignores historical roster and mailbox records without validating or retaining their payloads. It stores only the task board, saved mode, and recovery metadata. Version-7 checkpoints without `ownerName` remain usable; suffix replay records names from later task events without backfilling historical tasks. Incompatible projection checkpoints rebuild from the unchanged Session log; see the [upgrade guide](../../../docs/upgrade-guide/v0.2.1-rc.3/team-projection/guide.md).
+The projection ignores historical roster and mailbox records without validating or retaining their payloads. It stores only the task board, saved mode, and recovery metadata. Version-7 checkpoints without `ownerName` remain usable; suffix replay records names from later task events without backfilling historical tasks. Incompatible projection checkpoints rebuild from the unchanged Session log; see the upgrade guide.
 
 ### Disposal
 
@@ -149,7 +149,7 @@ Unloading the service unregisters the projection. The retained handle remains re
 
 The `agentTeam` projection publishes non-deleted task views and any failure beside the last valid state. Historical roster and mailbox records cannot cause a task-board projection failure. A failed projection rejects task reads and mutations without appending task events. Mode selections can still be saved and applied, including disabling Team; the projection failure remains visible. Invalid mode payloads retain the last valid selection and publish a projection failure. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types.
 
-The [Web UI](../../client/ui-agent-team/README.md) displays tasks only. Ordinary subagent navigation owns the member list; task owner labels display the owner's full name, or its Session id when the owner has no name.
+The Web UI displays tasks only. Ordinary subagent navigation owns the member list; task owner labels display the owner's full name, or its Session id when the owner has no name.
 
 </details>
 
@@ -164,7 +164,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [tool-agent-team package](../tool-agent-team/README.md) — task tools and shared-board policy.
 - [Subagent runtime](../../subagent/subagent/README.md) — continuable children, messaging, interruption, and lifecycle that teammates use.
 - [Subagent teammates Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.md) — why teammates are subagents and what Team keeps.
-- [Upgrade guide](../../../docs/upgrade-guide/v0.2.1-rc.2/agent-team-subagents/guide.md) — replacements for the removed Team tools, service methods, and configuration keys.
+- Upgrade guide — replacements for the removed Team tools, service methods, and configuration keys.
 
 -----
 

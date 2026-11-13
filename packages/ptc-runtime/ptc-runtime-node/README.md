@@ -121,13 +121,13 @@ Source execution loads an erasable-only bootstrap closure without relying on sib
 |---|---|
 | [`src/index.ts`](src/index.ts) | Node provider: mode selection, per-call resolution, policy and managed execution |
 | [`src/config.ts`](src/config.ts) | Execution mode, validated limits and defaults |
-| [`src/persistent.ts`](src/persistent.ts) | In-memory process ownership, evaluation deadlines and cleanup |
+| [`src/execution.ts`](src/execution.ts) | Syntax selection plus temporary or retained Node process ownership |
 | [`src/persistent-process.ts`](src/persistent-process.ts) | Child REPL, retained declarations and current binding dispatch |
 | [`src/output-stream.ts`](src/output-stream.ts) | Bounded stream capture and process-output draining |
 | [`src/launch.ts`](src/launch.ts) | Executable/bootstrap arguments and execution-world asset mapping |
 | [`src/process.ts`](src/process.ts) | Child handshake, environment clearing and program lifecycle |
 | [`src/bootstrap.ts`](src/bootstrap.ts) | Program evaluation, binding proxies and output capture |
-| [`src/channel.ts`](src/channel.ts) | Framing, bounded writes and protocol failures |
+| [`src/rpc.ts`](src/rpc.ts) | birpc over newline-delimited JSON on the bounded private process channel |
 | [`src/output-ledger.ts`](src/output-ledger.ts) | Host accounting for the outer result |
 
 </details>

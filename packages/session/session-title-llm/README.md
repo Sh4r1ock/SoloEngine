@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-As a deployment, configure this policy through the [first-prompt](../session-title-first-prompt-llm/README.md) or [all-prompts](../../experimental/session-title-all-prompts-llm/README.md) provider plugin. As a provider author, build your own prepared input and execute it through the shared function.
+As a deployment, configure this policy through the [first-prompt](../session-title-first-prompt-llm/README.md) or all-prompts provider plugin. As a provider author, build your own prepared input and execute it through the shared function.
 
 ### Executing a provider request
 
@@ -86,7 +86,7 @@ Read these pages when the generation policy is not enough. They move from the se
 - [Session title service](../session-title/README.md) — the title service, fallback behavior, and provider registration contract.
 - [Session title subsystem](../../../docs/subsystems/session-title.md) — durable title state and the auxiliary request record.
 - [First-message title provider](../session-title-first-prompt-llm/README.md) — titles from the first eligible human message.
-- [All-messages title provider](../../experimental/session-title-all-prompts-llm/README.md) — titles from every eligible human message.
+- All-messages title provider — titles from every eligible human message.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 
 -----
@@ -98,7 +98,7 @@ Read these pages when the generation policy is not enough. They move from the se
 
 #### What the model sees
 
-The title model receives the provider-owned system instruction and one user message containing the provider-owned input. The executor records and dispatches those exact values without reconstruction; the framing and the output instruction belong to each provider, which the [first-prompt](../session-title-first-prompt-llm/README.md) and [all-prompts](../../experimental/session-title-all-prompts-llm/README.md) READMEs document.
+The title model receives the provider-owned system instruction and one user message containing the provider-owned input. The executor records and dispatches those exact values without reconstruction; the framing and the output instruction belong to each provider, which the [first-prompt](../session-title-first-prompt-llm/README.md) and all-prompts READMEs document.
 
 #### Token effect
 

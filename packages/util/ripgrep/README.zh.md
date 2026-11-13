@@ -48,7 +48,7 @@ kind: "package-library"
 
 - [子进程提供方约定](../../subprocess/subprocess/README.zh.md)——显式启动规格与托管进程范围。
 - [模型搜索工具](../../fs/tool-fs-search/README.zh.md)——输出收集、工具错误与结果保留。
-- [工作区文件搜索](../../api/workspace-files/README.zh.md#search)——原生忽略规则与浅层优先的文件及祖先目录匹配。
+- [工作区文件搜索](../../api/workspace-files/README.zh.md)——原生忽略规则与浅层优先的文件及祖先目录匹配。
 
 -----
 

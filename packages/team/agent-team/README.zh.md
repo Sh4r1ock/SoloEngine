@@ -25,9 +25,9 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-新 Session（包括普通分叉）默认关闭 Team 模式。参见[会话模式升级指南](../../../docs/upgrade-guide/v0.2.1-rc.2/session-team-mode/guide.md)。在根 Session 的模型与推理等级菜单中打开**使用智能体团队**。关闭开关后，整棵树的后续步骤不再显示 Team 工具和提示词，同时保留任务与子代理。选择重启后仍有效；没有保存选择的历史任务板保持开启。
+新 Session（包括普通分叉）默认关闭 Team 模式。参见会话模式升级指南。在根 Session 的模型与推理等级菜单中打开**使用智能体团队**。关闭开关后，整棵树的后续步骤不再显示 Team 工具和提示词，同时保留任务与子代理。选择重启后仍有效；没有保存选择的历史任务板保持开启。
 
-设置 `defaultEnabled: true` 可在首次模型步骤之前启用新根 Session，包括普通分叉。初始化将选择保存为 `team/mode`；保存失败会拒绝 Agent 创建。已有选择优先，恢复 Session 时始终不应用默认值，包括从未保存选择的会话。后代使用其存活根节点的模式。[SDK 配置指南](../../../docs/user/guide/python-sdk.md#enable-team-mode)提供可直接使用的 patch；标准 bundle 保持此选项关闭。
+设置 `defaultEnabled: true` 可在首次模型步骤之前启用新根 Session，包括普通分叉。初始化将选择保存为 `team/mode`；保存失败会拒绝 Agent 创建。已有选择优先，恢复 Session 时始终不应用默认值，包括从未保存选择的会话。后代使用其存活根节点的模式。SDK 配置指南提供可直接使用的 patch；标准 bundle 保持此选项关闭。
 
 模式切换无需等待排队中的任务修改即可生效。每项修改在开始时检查当前模式：已经进入执行的操作继续完成，仍在排队的操作若开始时 Team 仍关闭则被拒绝。重新开启允许后续操作继续。保存失败时，已经追加的选择仍然有效；重试同一选择会再次保存，不重复记录模式。
 
@@ -56,7 +56,7 @@ kind: "package-reference"
 | `maxTasks` | `256` | 任务板上最多的未删除任务数 |
 | `defaultEnabled` | `false` | 为没有已有选择的新根会话保存 Team 模式开启状态 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-team)是每个受支持字段及其 JSDoc 的穷尽式真源。设置 `maxMembers`、`maxMessageBytes` 或 `disposalTimeoutMs` 的配置行不会激活，dsh 会在启动警告中指出该键；[升级指南](../../../docs/upgrade-guide/v0.2.1-rc.2/agent-team-subagents/guide.md)列出替代方式。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-team)是每个受支持字段及其 JSDoc 的穷尽式真源。设置 `maxMembers`、`maxMessageBytes` 或 `disposalTimeoutMs` 的配置行不会激活，dsh 会在启动警告中指出该键；升级指南列出替代方式。
 
 ### Teammate
 
@@ -105,7 +105,7 @@ kind: "package-reference"
 - **显式权限。** 每个服务方法都接收确切的 live 调用方 `Agent`；任务 owner 或 Lead 可以变更任务，只有 Lead 可以 reassign。
 - **超出上限时明确失败。** `maxTasks` 是经过校验的部署值，耗尽时报告类型化错误，而不是复用 id。
 
-[仅等待收件箱的决策](../../../.agents/notes/implemented/simplification/2026-10-29-inbox-only-agent-wait.md)区分任务提交与 Agent 输入等待。
+[仅等待收件箱的决策](../../../.agents/notes/implemented/simplification/2026-10-29-inbox-only-agent-wait.zh.md)区分任务提交与 Agent 输入等待。
 
 ### 源码地图
 
@@ -139,7 +139,7 @@ Team 在激活前要求 `sessionPersistence` 可用。`Service.init` 等待 `age
 
 任务修改在向当前在线根 Session 追加 `team/task` 前响应取消，随后等待刷盘完成。取消不能撤回已追加的记录。刷盘失败或没有监听器参与时，以 `TEAM_TASK_PERSISTENCE_UNCONFIRMED` 报告任务 id 和修订号：任务已可见，但持久性未知。重试前先读取该任务。任务记录仅保留在日志中。不重写已提交任务或历史载荷代次。
 
-投影忽略历史名册与邮箱记录，不校验或保留其载荷。投影仅保存任务板、模式选择和恢复元数据。缺少 `ownerName` 的第 7 版检查点仍可复用；后缀回放从后续任务事件记录名称，不回填历史任务。不兼容的投影检查点从未改写的 Session 日志重建；参见[升级指南](../../../docs/upgrade-guide/v0.2.1-rc.3/team-projection/guide.md)。
+投影忽略历史名册与邮箱记录，不校验或保留其载荷。投影仅保存任务板、模式选择和恢复元数据。缺少 `ownerName` 的第 7 版检查点仍可复用；后缀回放从后续任务事件记录名称，不回填历史任务。不兼容的投影检查点从未改写的 Session 日志重建；参见升级指南。
 
 ### Dispose
 
@@ -149,7 +149,7 @@ Team 在激活前要求 `sessionPersistence` 可用。`Service.init` 等待 `age
 
 `agentTeam` 投影发布未删除任务视图，并在最后有效状态旁报告失败。历史名册与邮箱记录不会导致任务板投影失败。投影失败后，任务读取和修改均报错，不再追加任务事件。模式选择仍可保存并生效，包括关闭 Team；投影错误持续可见。无效模式载荷保留最后有效选择，并发布投影错误。[子系统参考](../../../docs/subsystems/agent-team.zh.md#web-projection)定义线上的类型。
 
-[Web UI](../../client/ui-agent-team/README.md)仅展示任务。普通 subagent 导航负责成员列表；任务所有者标签显示所有者的完整名称，所有者没有名称时显示其 Session id。
+Web UI仅展示任务。普通 subagent 导航负责成员列表；任务所有者标签显示所有者的完整名称，所有者没有名称时显示其 Session id。
 
 </details>
 
@@ -163,8 +163,8 @@ Team 在激活前要求 `sessionPersistence` 可用。`Service.init` 等待 `age
 - [Agent Teams 子系统](../../../docs/subsystems/agent-team.zh.md)——持久 Team 类型与 `ctx.agentTeams` 服务 API。
 - [tool-agent-team 包](../tool-agent-team/README.zh.md) — 任务工具和共享任务板策略。
 - [Subagent 运行时](../../subagent/subagent/README.zh.md)——teammate 使用的可继续子级、消息、中断与生命周期。
-- [subagent teammate Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.md)——为何 teammate 是subagent，以及 Team 保留了什么。
-- [升级指南](../../../docs/upgrade-guide/v0.2.1-rc.2/agent-team-subagents/guide.md)——已移除的 Team 工具、服务方法与配置键的替代方式。
+- [subagent teammate Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.zh.md)——为何 teammate 是subagent，以及 Team 保留了什么。
+- 升级指南——已移除的 Team 工具、服务方法与配置键的替代方式。
 
 -----
 

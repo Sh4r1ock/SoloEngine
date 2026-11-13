@@ -49,7 +49,7 @@ Desktop downloads follow Chromium’s session and network policy. Only clipboard
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client selects browser or native operations once per plugin lifetime. [Client implementation](src/client/files.ts) owns MIME normalization and clipboard conversion. [Desktop adapter](../../../apps/desktop/src/file-actions.ts) validates IPC inputs and revalidates the trusted window before returning the completed destination path.
+The Client selects browser or native operations once per plugin lifetime. [Client implementation](src/client/files.ts) owns MIME normalization and clipboard conversion. Desktop adapter validates IPC inputs and revalidates the trusted window before returning the completed destination path.
 
 </details>
 

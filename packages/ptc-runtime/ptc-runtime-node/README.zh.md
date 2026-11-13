@@ -121,13 +121,13 @@ Host 擦除可擦除类型，在配置的执行世界中解析可执行文件与
 |---|---|
 | [`src/index.ts`](src/index.ts) | 默认提供方的解析、策略、绑定与受管执行 |
 | [`src/config.ts`](src/config.ts) | 执行模式、限制校验与默认值 |
-| [`src/persistent.ts`](src/persistent.ts) | 内存保留模式的进程所有权、执行截止与清理 |
+| [`src/execution.ts`](src/execution.ts) | 语法选择与临时或保留的 Node 进程所有权 |
 | [`src/persistent-process.ts`](src/persistent-process.ts) | 子进程 REPL、保留声明与当前绑定分派 |
 | [`src/output-stream.ts`](src/output-stream.ts) | 有界流捕获与进程输出排空 |
 | [`src/launch.ts`](src/launch.ts) | 可执行文件／bootstrap 参数与执行世界资源映射 |
 | [`src/process.ts`](src/process.ts) | 子进程握手、环境清空与程序生命周期 |
 | [`src/bootstrap.ts`](src/bootstrap.ts) | 程序求值、绑定代理与输出捕获 |
-| [`src/channel.ts`](src/channel.ts) | 分帧、有界写入与协议失败 |
+| [`src/rpc.ts`](src/rpc.ts) | 有界私有进程通道上的换行分隔 JSON birpc 调用 |
 | [`src/output-ledger.ts`](src/output-ledger.ts) | Host 外层结果计量 |
 
 </details>

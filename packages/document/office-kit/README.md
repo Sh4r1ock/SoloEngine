@@ -25,7 +25,7 @@ Render Office documents as PDFs or PNG images, convert them between formats, and
 <a id="use-this-package"></a>
 ## Use this package
 
-The [Web bundle](../../bundle/web-app/README.md) and the [SDK bundle](../../bundle/sdk-app/README.md) mount this provider as `office-kit`; the [Office tools](../tool-office/README.md) are its model-facing consumers. Independent compositions mount `@deepseek-ai/dsh-office-kit` as a `cordis.yml` row.
+The [Web bundle](../../bundle/web-app/README.md) and the SDK bundle mount this provider as `office-kit`; the Office tools are its model-facing consumers. Independent compositions mount `@deepseek-ai/dsh-office-kit` as a `cordis.yml` row.
 
 Callers submit authorized source identity, version, optional byte size, a deferred bounded read, and input extension; PDF conversions also name a scheduling priority, and image rendering, format conversion, and recalculation run at foreground priority. A changed source version rejects the operation. Cancellation rejects with its reason; failures use `OfficeKitError`. Every result carries the missing fonts; PDF results also carry the conversion generation, which changes on configuration replacement.
 
@@ -94,7 +94,7 @@ Remote file reads recheck content authorization and source version before consul
 ## Further Exploration
 
 - [Office Kit](../../../docs/subsystems/office-kit.md) — composition and input/result ownership.
-- [Office tool](../tool-office/README.md) — the model-facing render, convert, and recalculate tool.
+- Office tool — the model-facing render, convert, and recalculate tool.
 - [Workspace Files](../../api/workspace-files/README.md) — Session file authorization and bounded reads.
 
 -----
@@ -102,7 +102,7 @@ Remote file reads recheck content authorization and source version before consul
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through [the Office tools](../tool-office/README.md#model-experience), which return rendered images and converted files from this service.
+Indirectly, through the Office tools, which return rendered images and converted files from this service.
 
 #### KV Cache effect
 

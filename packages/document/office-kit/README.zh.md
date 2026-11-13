@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-[Web bundle](../../bundle/web-app/README.zh.md)和 [SDK bundle](../../bundle/sdk-app/README.md)以 `office-kit` 条目挂载此提供方；[Office 工具](../tool-office/README.md)是其面向模型的消费方。独立组合通过 `cordis.yml` 条目挂载 `@deepseek-ai/dsh-office-kit`。
+[Web bundle](../../bundle/web-app/README.zh.md)和 SDK bundle以 `office-kit` 条目挂载此提供方；Office 工具是其面向模型的消费方。独立组合通过 `cordis.yml` 条目挂载 `@deepseek-ai/dsh-office-kit`。
 
 调用方提交已授权源的标识、版本、可选字节数、延迟的有界读取、输入扩展名；PDF 转换还指定调度优先级，图片渲染、格式转换和重算以前台优先级运行。源版本变化会拒绝操作。取消以原因为拒绝值，失败使用 `OfficeKitError`。每个结果都携带缺失字体；PDF 结果还携带转换 generation（配置替换后随之改变）。
 
@@ -94,7 +94,7 @@ Remote 文件读取在查询转换缓存前重新检查内容读取授权和源�
 ## 延伸阅读
 
 - [Office Kit](../../../docs/subsystems/office-kit.zh.md) — 组合与输入、结果所有权。
-- [Office 工具](../tool-office/README.md) — 面向模型的渲染、转换和重算工具。
+- Office 工具 — 面向模型的渲染、转换和重算工具。
 - [工作区文件](../../api/workspace-files/README.zh.md) — Session 文件授权与有界读取。
 
 -----
@@ -102,7 +102,7 @@ Remote 文件读取在查询转换缓存前重新检查内容读取授权和源�
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过 [Office 工具](../tool-office/README.md#model-experience)，这些工具返回此服务渲染的图片和转换的文件。
+间接地，通过 Office 工具，这些工具返回此服务渲染的图片和转换的文件。
 
 #### KV Cache effect
 

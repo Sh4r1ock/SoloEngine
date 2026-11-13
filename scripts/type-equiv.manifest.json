@@ -258,171 +258,6 @@
       "source": "packages/goal/goal/src/domain.ts"
     },
     {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "AfterScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "AtScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "EveryScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "DailyInput",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "DailyScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "RecurringScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "LegacyScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "LocalAtInput",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "AtInput",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "OneShotScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeliveryReceipt",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeliveryRecord",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleTimingChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleUpdateRequest",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleUpdateResult",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeliveryHistoryRequest",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "DeliveryRetentionBounds",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeliveryHistoryResult",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleCatalogEntry",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleCreateChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeleteChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "OneShotScheduleDispatchChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "EveryScheduleDispatchChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDispatchChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleChange",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleState",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeliveryMode",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleView",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleCreateRequest",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleListRequest",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeleteRequest",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
-      "doc": "docs/subsystems/schedule.md",
-      "symbol": "ScheduleDeleteResult",
-      "source": "packages/schedule/schedule/src/types.ts"
-    },
-    {
       "doc": "docs/subsystems/commands.md",
       "symbol": "CommandInputDescriptor",
       "source": "packages/interaction/commands/src/types.ts"
@@ -854,12 +689,12 @@
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolOutputDefinition",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolDefinition",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
@@ -889,82 +724,82 @@
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionToken",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionInput",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecution",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolDispatchExecution",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionMode",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "PtcDispatchLog",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tool-executor-ptc/src/runtime-types.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolRunContext",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolGuard",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolErrorInfo",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolRestriction",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolFailure",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionSuccess",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionFailure",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "ToolExecutionResult",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "PreToolDecision",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
       "symbol": "PostToolDecision",
-      "source": "packages/core/tools/src/index.ts"
+      "source": "packages/core/tools/src/contracts.ts"
     },
     {
       "doc": "docs/subsystems/tools.md",
@@ -2345,6 +2180,36 @@
       "doc": "docs/subsystems/boot.md",
       "symbol": "PendingModule",
       "source": "packages/boot/hmr/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamTaskView",
+      "source": "packages/team/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamProjection",
+      "source": "packages/team/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMemberSnapshot",
+      "source": "packages/team/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMessageSnapshot",
+      "source": "packages/team/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamMessageSource",
+      "source": "packages/team/agent-team/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/agent-team.md",
+      "symbol": "TeamTaskSnapshot",
+      "source": "packages/team/agent-team/src/types.ts"
     }
   ]
 }

@@ -48,7 +48,7 @@ The resolver selects the executable's existing `-rg` sidecar in a single-file ru
 
 - [Subprocess provider contract](../../subprocess/subprocess/README.md) — explicit spawn specifications and managed process ranges.
 - [Model search tools](../../fs/tool-fs-search/README.md) — collected output, tool errors and result retention.
-- [Workspace file search](../../api/workspace-files/README.md#search) — native ignore rules and shallow-first file/ancestor matching.
+- [Workspace file search](../../api/workspace-files/README.md) — native ignore rules and shallow-first file/ancestor matching.
 
 -----
 

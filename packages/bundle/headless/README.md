@@ -97,7 +97,7 @@ A supervisor that interrupts a process must await its exit before resuming its S
 
 ### Experimental Auto review
 
-For model-reviewed full-access execution, explicitly enable [Auto review for headless supervision](../../experimental/auto-review/README.md#headless-supervision), select `--permission-mode auto --approval-policy never`, and use native tools. Auto reviews supported calls before execution and has no file sandbox. Its JSON denials let a supervisor inspect the failure and send scoped revision instructions through `--session-id`. Headless has no live approval-response channel.
+For model-reviewed full-access execution, explicitly enable Auto review for headless supervision, select `--permission-mode auto --approval-policy never`, and use native tools. Auto reviews supported calls before execution and has no file sandbox. Its JSON denials let a supervisor inspect the failure and send scoped revision instructions through `--session-id`. Headless has no live approval-response channel.
 
 ### Machine-readable output
 
@@ -129,7 +129,7 @@ The runner awaits the complete application (`ctx.get('loader')?.await()`) so the
 
 ### Patch surface over base
 
-The patch rides over `dsh-base`: it inherits the projection cache and shared PTC runtime, sets the coding persona prefix and separate cwd suffix on the base `system-prompt` row, inherits native tool execution and accepts a [PTC overlay](../../../apps/cli/config/examples/ptc.yml), disables the shared HMR row, and mounts the startup provider and the runner. The cache checkpoints each persisted one-shot session for later consumers; its durability barrier flushes each covered log prefix before publishing the cache row and may split otherwise coalesced JSONL runs. The startup provider ([`src/startup.ts`](src/startup.ts)) injects `ctx.cmdlineArgs` ([`dsh-cmdline`](../../boot/cmdline/README.md)), reads the task and invocation options, prints the app's `--help`, and provides `headlessStartup`; the runner reads its task, Session identity, and output mode from lazy config. It reads the explicit CLI permission preset and approval policy directly from `headlessStartup`, with runner config as the default. The sandbox-policy row also waits for this service, retaining the base mode and workspace defaults while receiving the explicit directory grants.
+The patch rides over `dsh-base`: it inherits the projection cache and shared PTC runtime, sets the coding persona prefix and separate cwd suffix on the base `system-prompt` row, inherits native tool execution and accepts a PTC overlay, disables the shared HMR row, and mounts the startup provider and the runner. The cache checkpoints each persisted one-shot session for later consumers; its durability barrier flushes each covered log prefix before publishing the cache row and may split otherwise coalesced JSONL runs. The startup provider ([`src/startup.ts`](src/startup.ts)) injects `ctx.cmdlineArgs` ([`dsh-cmdline`](../../boot/cmdline/README.md)), reads the task and invocation options, prints the app's `--help`, and provides `headlessStartup`; the runner reads its task, Session identity, and output mode from lazy config. It reads the explicit CLI permission preset and approval policy directly from `headlessStartup`, with runner config as the default. The sandbox-policy row also waits for this service, retaining the base mode and workspace defaults while receiving the explicit directory grants.
 
 ### Exit mapping
 
@@ -182,7 +182,7 @@ These limits tell you when headless does not fit and what it needs from the `dsh
 
 - **One task per run** — after the task is answered the process exits; there is no interactive follow-up, so split multi-step work into separate runs.
 - **Final background-job settlement may be absent from persisted history** — process teardown can end Session routing or close its writer before an owned job settles, including normal completion and signal shutdown; the [job lifecycle contract](../../../docs/subsystems/jobs.md#session-lifecycle-records) defines how consumers retain incomplete intervals.
-- **Custom startup** — compositions that disable `headless-startup` must [configure the policy directly](../../../docs/upgrade-guide/v0.2.1-rc.2/headless-policy-composition/guide.md).
+- **Custom startup** — compositions that disable `headless-startup` must configure the policy directly.
 - **Windows extra roots** — the ACL backend rejects subprocess calls with extra roots when a tool executes; it does not stop the model request. Filesystem tools enforce the grants independently. See [platform limits](../../sandbox/sandbox-local/README.md).
 - **Runs through the `dsh` launcher** — starting the headless profile another way fails at startup, because only the launcher can request the process exit.
 - **No pre-token heartbeat** — in default mode stderr stays silent until the provider emits a non-empty reasoning delta; a delayed first token exposes no earlier progress signal.

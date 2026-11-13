@@ -49,7 +49,7 @@ Desktop 下载遵循 Chromium 会话及网络策略。只有剪贴板回退读�
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-客户端在插件生命周期开始时选择浏览器或原生操作。[客户端实现](src/client/files.ts) 管理 MIME 归一化与剪贴板转换。[Desktop 适配器](../../../apps/desktop/src/file-actions.ts) 验证 IPC 输入，并在返回完成后的目标路径前重新验证可信窗口。
+客户端在插件生命周期开始时选择浏览器或原生操作。[客户端实现](src/client/files.ts) 管理 MIME 归一化与剪贴板转换。Desktop 适配器 验证 IPC 输入，并在返回完成后的目标路径前重新验证可信窗口。
 
 </details>
 

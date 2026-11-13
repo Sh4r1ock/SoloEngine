@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Library without state for plugin detail documents, the long Markdown description a plugin's page shows. It owns the order in which a package's document is chosen, the language fallback, image destinations beside a document, and two read-only file sources: a local package directory and a published npm version on public file CDNs. [`plugin-manager`](../../boot/plugin-manager/README.md#bundle-detail-documents) reads profile bundles with it, and [`plugin-market`](../../boot/plugin-market/README.md#plugin-detail-documents) reads market entries with it and adds repository sources.
+Library without state for plugin detail documents, the long Markdown description a plugin's page shows. It owns the order in which a package's document is chosen, the language fallback, image destinations beside a document, and two read-only file sources: a local package directory and a published npm version on public file CDNs. [`plugin-manager`](../../boot/plugin-manager/README.md) reads profile bundles with it, and [`plugin-market`](../../boot/plugin-market/README.md) reads market entries with it and adds repository sources.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ A plugin's detail document is the first that exists, in this order:
 
 1. **Locale `meta.detail`.** For each language of the chain, the package's `locale/<language>.json` is read, or, when that file does not exist, the same name with an upper-case two-letter region such as `locale/zh-CN.json`. When the file read declares `meta.detail`, that Markdown file is the document; otherwise the next language is tried.
 2. **Package README.** `README.md`, `readme.md`, `Readme.md`, `README.markdown`, or `README`. A source that lists directories takes any letter case of `README`, `README.md`, and `README.markdown`.
-3. **Repository README, market entries only.** The README of the repository directory that the market entry's `repository` names, otherwise the one that the package's `package.json` `repository` names, at the default branch. [`plugin-market`](../../boot/plugin-market/README.md#plugin-detail-documents) reads it; bundle pages in **Plugins** never read a repository.
+3. **Repository README, market entries only.** The README of the repository directory that the market entry's `repository` names, otherwise the one that the package's `package.json` `repository` names, at the default branch. [`plugin-market`](../../boot/plugin-market/README.md) reads it; bundle pages in **Plugins** never read a repository.
 
 `readPackageDocument(files, dir, languages, maxBytes, signal)` implements steps 1 and 2 and returns `undefined` when neither applies. `meta.detail` must be a `/`-separated path relative to the package root that ends in `.md` or `.markdown` and has no empty, `.`, or `..` segment, backslash, or URL scheme. A malformed locale file, a malformed `meta.detail`, and a named file that does not exist fail with `DetailFailure` `invalid`; the README is not read in their place.
 

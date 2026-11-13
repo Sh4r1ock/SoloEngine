@@ -97,7 +97,7 @@ dsh headless --permission-mode workspace-write --add-dir "$git_dir" --json - < t
 
 ### Experimental Auto review
 
-如需由模型审查后以完全访问权限执行，请显式启用[无界面监督流程的 Auto review](../../experimental/auto-review/README.md#headless-supervision)，选择 `--permission-mode auto --approval-policy never` 并使用原生工具。Auto 在支持的调用执行前进行审查，不提供文件沙箱。其 JSON 拒绝结果让监督者检查失败并通过 `--session-id` 发送限定范围的修订指令。Headless 没有实时审批响应通道。
+如需由模型审查后以完全访问权限执行，请显式启用无界面监督流程的 Auto review，选择 `--permission-mode auto --approval-policy never` 并使用原生工具。Auto 在支持的调用执行前进行审查，不提供文件沙箱。其 JSON 拒绝结果让监督者检查失败并通过 `--session-id` 发送限定范围的修订指令。Headless 没有实时审批响应通道。
 
 ### 机器可读输出
 
@@ -129,7 +129,7 @@ runner 等待整个应用结算（`ctx.get('loader')?.await()`），确保已组
 
 ### 基于 base 的 patch 内容
 
-patch 叠加在 `dsh-base` 之上：继承投影缓存与共享 PTC 运行时，在基础 `system-prompt` 行上设置编码 persona 前缀与独立的 cwd 后缀，继承原生工具执行，并支持 [PTC overlay](../../../apps/cli/config/examples/ptc.yml)，禁用共享的 HMR（热模块替换）行，并挂载启动提供方与 runner。缓存为每个已持久化的一次性会话写入检查点，供后续消费方使用；其持久性屏障会在发布缓存行前 flush 所覆盖的日志前缀，因此可能拆分原本会合并的 JSONL 连续段。启动提供方（[`src/startup.ts`](src/startup.ts)）注入 `ctx.cmdlineArgs`（[`dsh-cmdline`](../../boot/cmdline/README.zh.md)），读取任务和调用选项、打印应用自己的 `--help`，并提供 `headlessStartup`；runner 从延迟配置读取任务、Session 标识与输出模式。它直接从 `headlessStartup` 读取显式 CLI 权限预设与审批策略，以 runner 配置作为默认值。sandbox-policy 行也等待此服务，在保留基础模式和工作区默认值的同时接收显式目录授权。
+patch 叠加在 `dsh-base` 之上：继承投影缓存与共享 PTC 运行时，在基础 `system-prompt` 行上设置编码 persona 前缀与独立的 cwd 后缀，继承原生工具执行，并支持 PTC overlay，禁用共享的 HMR（热模块替换）行，并挂载启动提供方与 runner。缓存为每个已持久化的一次性会话写入检查点，供后续消费方使用；其持久性屏障会在发布缓存行前 flush 所覆盖的日志前缀，因此可能拆分原本会合并的 JSONL 连续段。启动提供方（[`src/startup.ts`](src/startup.ts)）注入 `ctx.cmdlineArgs`（[`dsh-cmdline`](../../boot/cmdline/README.zh.md)），读取任务和调用选项、打印应用自己的 `--help`，并提供 `headlessStartup`；runner 从延迟配置读取任务、Session 标识与输出模式。它直接从 `headlessStartup` 读取显式 CLI 权限预设与审批策略，以 runner 配置作为默认值。sandbox-policy 行也等待此服务，在保留基础模式和工作区默认值的同时接收显式目录授权。
 
 ### 退出映射
 
@@ -182,7 +182,7 @@ runner 不向请求前缀添加任何内容；它只是驱动组合出的配置�
 
 - **每次运行一个任务**——任务得到回答后进程即退出；没有交互式后续，因此多步工作请拆成多次运行。
 - **持久化历史可能缺少后台 job 的最后一条结算**——进程销毁可能在有主 job 结算前停止 Session 路由或关闭写句柄，正常结束和信号关停也可能如此；[job 生命周期约定](../../../docs/subsystems/jobs.zh.md#session-lifecycle-records)说明消费方如何保留不完整区间。
-- **自定义 startup**——禁用 `headless-startup` 的组合必须[直接配置策略](../../../docs/upgrade-guide/v0.2.1-rc.2/headless-policy-composition/guide.md)。
+- **自定义 startup**——禁用 `headless-startup` 的组合必须直接配置策略。
 - **Windows 额外根目录**——ACL 后端在工具执行时拒绝带额外根目录的子进程调用，不会阻止模型请求。文件系统工具独立执行这些授权。参见[平台限制](../../sandbox/sandbox-local/README.zh.md)。
 - **通过 `dsh` 启动器运行**——以其他方式启动 headless profile 会在启动时失败，因为只有启动器能请求进程退出。
 - **首个 token 前没有心跳**——默认模式下，提供方发出第一个非空推理增量前，stderr 保持静默；延迟首个 token 的提供方不会更早给出进度信号。

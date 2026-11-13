@@ -87,7 +87,7 @@ The oldest balanced span is replaced by one summary message and the recent tail 
 
 Before a changed provider/model request is committed, automatic compaction measures the existing history against the destination model's capacity, output reservation, and pressure policy. When condensation is needed, it uses the previous routed model and its summary settings; an explicitly configured summary target still takes precedence. The destination request proceeds only after history falls below its threshold. Failure reports `MODEL_SWITCH_COMPACTION_FAILED` and leaves the previous request header intact; select a larger model or retry after correcting the reported cause. Completed pruning or condensation remains in the session even when a later attempt fails. The check runs when the next request is prepared, and `auto: false` disables it.
 
-The destination must have a registered adapter, declared context capacity, and a valid pressure budget even for short history. The default 65,536-token headroom does not fit a window of that size or smaller; set `modelPolicies[].headroomTokens` for that route as in the example above. See the [upgrade guide](../../../docs/upgrade-guide/v0.2.1-alpha.4/model-switch-compaction/guide.md) for migration.
+The destination must have a registered adapter, declared context capacity, and a valid pressure budget even for short history. The default 65,536-token headroom does not fit a window of that size or smaller; set `modelPolicies[].headroomTokens` for that route as in the example above. See the upgrade guide for migration.
 
 ### On-demand condensation with /compact
 
