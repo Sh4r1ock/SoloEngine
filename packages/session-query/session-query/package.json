@@ -30,15 +30,15 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-title": "workspace:*",
+    "@deepseek-ai/dsh-tool-todo": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-session-projection-cache": "workspace:*",
-    "@deepseek-ai/dsh-session-title": "workspace:*",
-    "@deepseek-ai/dsh-tool-todo": "workspace:*"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-session-persistence": {
@@ -52,15 +52,15 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-title": "workspace:*",
+    "@deepseek-ai/dsh-tool-todo": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-session-projection-cache": "workspace:*",
-    "@deepseek-ai/dsh-session-title": "workspace:*",
-    "@deepseek-ai/dsh-tool-todo": "workspace:*"
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "dependencies": {
     "@deepseek-ai/dsh-session-format-catalog": "workspace:*"

@@ -345,7 +345,7 @@ const TOOL_ROW: Record<string, string> = {
   lsp: 'tool-lsp',
   send_message: 'tool-subagent-control',
   interrupt_agent: 'tool-subagent-control',
-  list_agents: 'tool-subagent-list-agents',
+  list_agents: 'tool-subagent-control',
 }
 
 /** 宿主平面（组合层已插入）承载的工具：产物不再按节点重述。 */

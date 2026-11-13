@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-subagent-control` lets agents discover and message their subagent tree by name, interrupt descendants, and wait for their own next-step inbox. One plugin instance registers `send_message`, `interrupt_agent`, and `wait_agent`; the separately loaded `./list-agents` entry registers `list_agents`, so discovery can be mounted without messaging. Members inherit the same definitions and ordering.
+`dsh-tool-subagent-control` lets agents discover and message their subagent tree by name, interrupt descendants, and wait for their own next-step inbox. By default, one plugin instance registers all four tools; members inherit the same definitions and ordering.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this package once per tool scope. It requires `tools`, `subagents`, `agents`, and `systemPrompt`; the `./list-agents` entry requires `tools`, `subagents`, and `agents`.
+Mount this package once per tool scope. It requires `tools`, `subagents`, `agents`, and `systemPrompt`.
 
 ### Minimal configuration
 
-With the required services available, load the subagent service, a backend, the delegation tool, and this package to expose the control and discovery tools:
+With the required services available, load the subagent service, a backend, the delegation tool, and this package to expose all four control and discovery tools:
 
 ```yaml
 - name: '@deepseek-ai/dsh-subagent'
@@ -38,10 +38,9 @@ With the required services available, load the subagent service, a backend, the 
   config:
     provider: spawn
 - name: '@deepseek-ai/dsh-tool-subagent-control'
-- name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 ```
 
-Set `config.interrupt: false` to omit `interrupt_agent`. The default is `true`. `send_message`, `wait_agent`, and `ctx.subagents.interrupt()` remain available. `list_agents` is registered by the separately loaded [`@deepseek-ai/dsh-tool-subagent-control/list-agents`](#list_agents) entry, so a deployment can mount discovery independently of messaging. See the generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-subagent-control).
+Set `config.interrupt: false` to omit `interrupt_agent`. The default is `true`. The other three tools and `ctx.subagents.interrupt()` remain available. See the generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-subagent-control).
 
 ### send_message
 
@@ -126,7 +125,7 @@ Prefix-stable; the schemas do not change at runtime, and a parent and its contin
 
 #### What the model sees
 
-Required `subagent:identity` runtime context identifies each agent by name. It is independent of Team mode and tool filtering. When the live root is available, identity context reports the messaging instruction when `send_message` is admitted. The root sees `You are the root agent. Your name is "lead".` followed by the same guidance. A missing live root is reported with the agent's Session id, without preventing independent work. Automatic result delivery remains owned by the subagent service. A child of the root named `reviewer`, with messaging admitted, sees:
+Required `subagent:identity` runtime context identifies each agent by name. It is independent of Team mode and tool filtering. When the live root is available, identity context includes messaging and discovery instructions independently for each admitted standard tool. The root sees `You are the root agent. Your name is "lead".` followed by the same guidance. A missing live root is reported with the agent's Session id, without preventing independent work. Automatic result delivery remains owned by the subagent service. A child of the root named `reviewer`, with both tools admitted, sees:
 
 ##### Subagent identity
 
@@ -136,6 +135,7 @@ Your name is "reviewer".
 The root agent of your collaboration tree is "lead".
 
 To message other agents, use send_message({ agent: "<agent-name>", message: "..." }).
+Use list_agents({}) to find your collaborator agents and their names.
 ```
 
 #### Token effect

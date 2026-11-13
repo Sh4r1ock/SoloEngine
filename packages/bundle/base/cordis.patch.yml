@@ -386,12 +386,12 @@
         providerName: fork
 
     # Continuable background children are selected per delegation tool. The
-    # separately loaded follow-up tool registers the one global `send_message`.
+    # control plugin owns the one global `send_message`, `list_agents`, and
+    # `wait_agent`; built-in configurations keep interruption off by default.
     - id: tool-subagent-control
       name: '@deepseek-ai/dsh-tool-subagent-control'
-
-    - id: tool-subagent-list-agents
-      name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+      config:
+        interrupt: false
 
     - id: tool-subagent
       name: '@deepseek-ai/dsh-tool-subagent'

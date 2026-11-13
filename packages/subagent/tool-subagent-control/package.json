@@ -20,12 +20,7 @@
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json",
-    "./list-agents": {
-      "types": "./lib/types/list-agents.d.ts",
-      "default": "./lib/types/list-agents.js"
-    },
-    "./list-agents/locale/*.json": "./locale/list-agents/*.json"
+    "./locale/*.json": "./locale/*.json"
   },
   "files": [
     "locale/*.json",
@@ -33,19 +28,17 @@
     "lib/types/**/*.d.ts",
     "lib/types/**/*.d.ts.map",
     "lib/**/*.js.map",
-    "src",
-    "locale/list-agents/*.json",
-    "lib/types/**/*.js"
+    "src"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
-    "@deepseek-ai/dsh-system-prompt": "workspace:*",
-    "@deepseek-ai/dsh-tools": "workspace:*"
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -66,7 +59,7 @@
     "@deepseek-ai/dsh-tools": "workspace:*"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-util-values": "workspace:*",
-    "@deepseek-ai/schemastery": "workspace:~"
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@deepseek-ai/dsh-util-values": "workspace:*"
   }
 }

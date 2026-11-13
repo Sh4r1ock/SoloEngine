@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-subagent-control` 让 agent（智能体）按名称发现和联系其 subagent（子智能体）树、中断后代，并等待自身下一步收件箱。一个插件实例注册 `send_message`、`interrupt_agent` 和 `wait_agent`；单独加载的 `./list-agents` 条目注册 `list_agents`，因此发现工具可以脱离消息工具单独挂载。成员继承相同定义和顺序。
+`dsh-tool-subagent-control` 让 agent（智能体）按名称发现和联系其 subagent（子智能体）树、中断后代，并等待自身下一步收件箱。默认情况下，一个插件实例注册全部四个工具；成员继承相同定义和顺序。
 
 ## 目录
 
@@ -25,11 +25,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-每个工具作用域挂载一次此包。它需要 `tools`、`subagents`、`agents` 和 `systemPrompt`；`./list-agents` 条目需要 `tools`、`subagents` 和 `agents`。
+每个工具作用域挂载一次此包。它需要 `tools`、`subagents`、`agents` 和 `systemPrompt`。
 
 ### 最小配置
 
-所需服务可用后，加载 subagent 服务、一个后端、委派工具和此包，即可提供控制与发现工具：
+所需服务可用后，加载 subagent 服务、一个后端、委派工具和此包，即可提供全部四个控制与发现工具：
 
 ```yaml
 - name: '@deepseek-ai/dsh-subagent'
@@ -38,10 +38,9 @@ kind: "package-reference"
   config:
     provider: spawn
 - name: '@deepseek-ai/dsh-tool-subagent-control'
-- name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
 ```
 
-设置 `config.interrupt: false` 可省略 `interrupt_agent`。默认值为 `true`。`send_message`、`wait_agent` 和 `ctx.subagents.interrupt()` 仍然可用。`list_agents` 由单独加载的 [`@deepseek-ai/dsh-tool-subagent-control/list-agents`](#list_agents) 条目注册，因此部署可以独立于消息工具挂载发现工具。参见生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-subagent-control)。
+设置 `config.interrupt: false` 可省略 `interrupt_agent`。默认值为 `true`。其余三个工具和 `ctx.subagents.interrupt()` 仍然可用。参见生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-subagent-control)。
 
 ### send_message
 
@@ -126,7 +125,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-必需的 `subagent:identity` 运行时上下文按名称标识每个 agent。该上下文独立于 Team 模式和工具过滤。活动根可用时，身份上下文在 `send_message` 获准时报告消息指引。根看到 `You are the root agent. Your name is "lead".`，后接相同指引。活动根缺失时，上下文使用该 agent 的 Session id 明确报告，但不阻止独立工作。自动结果交付仍由 subagent 服务负责。根的子级名为 `reviewer`、消息工具获准时，它看到：
+必需的 `subagent:identity` 运行时上下文按名称标识每个 agent。该上下文独立于 Team 模式和工具过滤。活动根可用时，身份上下文会分别根据标准工具的获准情况提供通信与发现指引。根看到 `You are the root agent. Your name is "lead".`，后接相同指引。活动根缺失时，上下文使用该 agent 的 Session id 明确报告，但不阻止独立工作。自动结果交付仍由 subagent 服务负责。根的子级名为 `reviewer`、两个工具均获准时，它看到：
 
 ##### Subagent 身份
 
@@ -136,6 +135,7 @@ Your name is "reviewer".
 The root agent of your collaboration tree is "lead".
 
 To message other agents, use send_message({ agent: "<agent-name>", message: "..." }).
+Use list_agents({}) to find your collaborator agents and their names.
 ```
 
 #### Token 影响

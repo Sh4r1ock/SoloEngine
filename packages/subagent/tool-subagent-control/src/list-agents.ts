@@ -1,4 +1,4 @@
-/** Discover the caller's entire subagent tree; this separately loaded plugin owns registration. */
+/** Discover the caller's entire subagent tree; the control plugin owns registration. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -94,15 +94,4 @@ export function registerListAgents(ctx: Context): ToolDefinition {
   })
   ctx.tools.register(definition)
   return definition
-}
-
-export const name = 'tool-subagent-list-agents'
-export const inject = ['tools', 'subagents', 'agents']
-
-/**
- * Register the separately loadable `list_agents` tool.
- * @param ctx - context carrying the tool registry, subagent service, and live Agent registry.
- */
-export function apply(ctx: Context): void {
-  registerListAgents(ctx)
 }

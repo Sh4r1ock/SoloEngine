@@ -13,8 +13,8 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { ROOT_AGENT_NAME } from '@deepseek-ai/dsh-subagent'
-import { markAdjacentAgentSendMessageTool } from '@deepseek-ai/dsh-subagent/internal'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { registerListAgents } from './list-agents.ts'
 import { registerWaitAgent } from './wait-agent.ts'
 
 export const name = 'tool-subagent-control'
@@ -38,8 +38,9 @@ export const Config: z<Config> = z.object({
  */
 export function apply(ctx: Context, config: Config = {}): void {
   const interrupt = config.interrupt !== false
+  const listAgents = registerListAgents(ctx)
   registerWaitAgent(ctx)
-  const sendMessage = markAdjacentAgentSendMessageTool(defineTool({
+  const sendMessage = defineTool({
     name: 'send_message',
     description:
       'Send a message to an agent. A working agent receives it at its next step; an idle agent starts a new turn with it. '
@@ -79,7 +80,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const messageId = await ctx.subagents.sendMessage(sender, targetId, message, { signal: exec.signal })
       return { messageId }
     },
-  }))
+  })
   ctx.tools.register(sendMessage)
   ctx.systemPrompt.context({
     name: 'subagent:identity',
@@ -98,6 +99,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         const guidance: string[] = []
         if (ctx.tools.get(sendMessage.name, scope, toolSet) === sendMessage) {
           guidance.push('To message other agents, use send_message({ agent: "<agent-name>", message: "..." }).')
+        }
+        if (ctx.tools.get(listAgents.name, scope, toolSet) === listAgents) {
+          guidance.push('Use list_agents({}) to find your collaborator agents and their names.')
         }
         if (guidance.length > 0) identity += '\n\n' + guidance.join('\n')
         return identity

@@ -183,12 +183,12 @@
     {
       "dir": "packages/bundle/base",
       "name": "@deepseek-ai/dsh-base",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/bundle/base @ 0.2.1-rc.2",
-      "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；`fs-observation-policy` 行按 DSH 0.2.2 默认关闭（先读后写改为部署可选的显式开启项）；其余组合行未改",
+      "upstream": "deepseek_harness/packages/bundle/base @ 0.2.2-rc.2",
+      "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；0.2.2 起移除 tool-subagent-list-agents 行（list_agents 由控制插件注册）、tool-subagent-control 显式 interrupt:false",
       "fileCount": 9,
-      "digest": "sha256:b94b4a769ee1450c37964ffe46050aaa5654c287722a6fad3beca47549411ef7"
+      "digest": "sha256:91d26c3434c89ca66009ce9c07dd753194e1e12473b852896cdb853d43f655bc"
     },
     {
       "dir": "packages/bundle/headless",
@@ -203,12 +203,12 @@
     {
       "dir": "packages/bundle/web-app",
       "name": "@deepseek-ai/dsh-web-app",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.1-rc.2",
-      "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言（`(SOLOENGINE_EXECUTOR ?? 'local') !== 'local'` ⇒ Linux 镜像，其余跟宿主平台），不再只看宿主 `process.platform`；容器/microVM 形态里模型看到的 shell 工具与执行环境内真实存在的 shell 因此一致（R201）",
+      "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.2-rc.2",
+      "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言；0.2.2 同步子代理行（移除 list-agents、interrupt:false、modelSelection/modelDiscovery）",
       "fileCount": 26,
-      "digest": "sha256:aeaa581d4d05d0c9c4c35c9ce515434e4674c5d64f058baee03e374d60cec669"
+      "digest": "sha256:3b15065de8200e4eee1eccf5e25cdb287ae7ce68d1a386b48fdde1a92cc2688d"
     },
     {
       "dir": "packages/client/connection",
@@ -1063,12 +1063,12 @@
     {
       "dir": "packages/core/session",
       "name": "@deepseek-ai/dsh-session",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/core/session @ 0.2.1-rc.2",
-      "note": "仅 GENERATED known-event-types.ts 不同（gen-persistence-catalog 复现）",
-      "fileCount": 36,
-      "digest": "sha256:7106c7a9fcf8ef61a109b6a1af4e5f8f01d89e0776e18115c1f3698de490b99f"
+      "upstream": "deepseek_harness/packages/core/session @ 0.2.2-rc.2",
+      "note": "GENERATED known-event-types.ts 含本产品 soloengine/* 日志事件（gen-persistence-catalog 扫描全仓自然产出）；其余与上游逐字一致",
+      "fileCount": 46,
+      "digest": "sha256:10570fd188196814336664490e21c8265e353676f6480fe82e1375b83f467bea"
     },
     {
       "dir": "packages/core/system-prompt",
@@ -1523,12 +1523,12 @@
     {
       "dir": "packages/interaction/permission-presets",
       "name": "@deepseek-ai/dsh-permission-presets",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/interaction/permission-presets @ 0.2.1-rc.2",
-      "note": "新增第四档预设 approve-for-me 与确定性准入门（approve-for-me.ts + index 接线：工具名单/命令前缀/固定高风险检查/可选复核，未命中回原生审批）；原三档、2 种策略与既有契约不变（R186）",
-      "fileCount": 14,
-      "digest": "sha256:6bec4b9922185c011a7e3f2b71486ff95e86850dd6ad67a20618e27d084aec53"
+      "upstream": "deepseek_harness/packages/interaction/permission-presets @ 0.2.2-rc.2",
+      "note": "新增第四档预设 approve-for-me 与确定性准入门（approve-for-me.ts + index 接线）；0.2.2 起默认值改在 agent/created 钉入",
+      "fileCount": 21,
+      "digest": "sha256:c773a5519b20aa70fcfd12c0dfc8195274b3715606ee877e98b23434f7de7fa6"
     },
     {
       "dir": "packages/interaction/tool-ask-user",
@@ -1543,12 +1543,12 @@
     {
       "dir": "packages/interaction/user-approval",
       "name": "@deepseek-ai/dsh-user-approval",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/interaction/user-approval @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 11,
-      "digest": "sha256:038f377b5a642dbce5e5834784f73493054e3f6170972785630fac0cec1fbb9b"
+      "version": "0.2.2-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/interaction/user-approval @ 0.2.2-rc.2",
+      "note": "仅 package.json 依赖排序与上游不同（无语义差异）；源码/测试/语言包逐字一致",
+      "fileCount": 18,
+      "digest": "sha256:3e8e8beaa69678c780a6630df2831d10553b1ba6e35320679ccc90378900c084"
     },
     {
       "dir": "packages/interaction/user-questions",
@@ -1863,22 +1863,22 @@
     {
       "dir": "packages/session-query/session-query",
       "name": "@deepseek-ai/dsh-session-query",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session-query/session-query @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/session-query/session-query @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 22,
-      "digest": "sha256:fbcb5086cfa2fb1fff12018a05907a26e8e696483bf6b447781c0d116838b052"
+      "digest": "sha256:946387422beeaa614b39c41a70add777c28b908c80b634d017185336a4dfc0fd"
     },
     {
       "dir": "packages/session-query/session-query-sqlite",
       "name": "@deepseek-ai/dsh-session-query-sqlite",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/session-query/session-query-sqlite @ 0.2.1-rc.2",
-      "note": "新增 `Config.colocated`：同一实现把派生索引建在共享业务库内（不写 application_id/user_version，版本记入 schema_versions）；默认独立派生索引行为不变（R1/R204，2026-10-31 收口）",
-      "fileCount": 13,
-      "digest": "sha256:3f5de4e0ac6baf47e7af06cc6ea9e3236fe39d380d0ddac7bd9fe4f2506aac51"
+      "upstream": "deepseek_harness/packages/session-query/session-query-sqlite @ 0.2.2-rc.2",
+      "note": "新增 `Config.colocated`：同一实现把派生索引建在共享业务库内（不写 application_id/user_version，版本记入 schema_versions）",
+      "fileCount": 19,
+      "digest": "sha256:b286b7c12d580bbfb21208fce49a665bcbbab5768e0801d5ae9325df3d0a720f"
     },
     {
       "dir": "packages/session/message-quotes",
@@ -1923,12 +1923,12 @@
     {
       "dir": "packages/session/session-format-v0-to-v1",
       "name": "@deepseek-ai/dsh-session-format-v0-to-v1",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session/session-format-v0-to-v1 @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/session/session-format-v0-to-v1 @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 21,
-      "digest": "sha256:b6e587b4a76b95d31e634822c1844b5cda4eba506101c7bce9eff60e4c48f6d4"
+      "digest": "sha256:2385c6d654546cb43026d56ff38d60a3f0ff28326911727751d926685dca045c"
     },
     {
       "dir": "packages/session/session-format-v1-to-v2",
@@ -1953,12 +1953,12 @@
     {
       "dir": "packages/session/session-format-v3-to-v4",
       "name": "@deepseek-ai/dsh-session-format-v3-to-v4",
-      "version": "0.2.1-rc.2",
-      "decision": "adapted",
-      "upstream": "deepseek_harness/packages/session/session-format-v3-to-v4 @ 0.2.1-rc.2",
-      "note": "测试的 EXPECTED_CONFLICTS 删除 8 条 D16 已裁剪的 SDK subagent fixture；产品代码与上游逐字一致。",
+      "version": "0.2.2-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/session/session-format-v3-to-v4 @ 0.2.2-rc.2",
+      "note": "",
       "fileCount": 43,
-      "digest": "sha256:fced606df078f55baa578020584d2eaac1c00ecda6c9ade6933bdcc75f88cecd"
+      "digest": "sha256:6c176407bf3049abe89d7322d5e681495581096e86d05ab3836d3b1a2a347637"
     },
     {
       "dir": "packages/session/session-log-deepseek",
@@ -1983,12 +1983,12 @@
     {
       "dir": "packages/session/session-persistence-jsonl",
       "name": "@deepseek-ai/dsh-session-persistence-jsonl",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session/session-persistence-jsonl @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 47,
-      "digest": "sha256:c7031a3f5fa745ac75d8019940702be9b78f551ee55b786f65d6811b090de933"
+      "version": "0.2.2-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/session-persistence-jsonl @ 0.2.2-rc.2",
+      "note": "tests/generation.spec.ts 在 win32 跳过文件符号链接用例（需开发者模式；同冲突类由其余目标与硬链接用例覆盖）",
+      "fileCount": 54,
+      "digest": "sha256:a6e8e2000a93275b82381a1443d6ce5dc431fc41fa432089e34dd01e73091066"
     },
     {
       "dir": "packages/session/session-projection",
@@ -2023,12 +2023,12 @@
     {
       "dir": "packages/session/session-telemetry",
       "name": "@deepseek-ai/dsh-session-telemetry",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session/session-telemetry @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/session/session-telemetry @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 9,
-      "digest": "sha256:4aa1124c368f023daa08b4cc6673a03928372592d50caa660b46fb9dadda5b38"
+      "digest": "sha256:874a098cf928e974ad204ffb1cf5ee3947186914253420d1939e7dc80ceefe77"
     },
     {
       "dir": "packages/session/session-telemetry-otel",
@@ -2053,12 +2053,12 @@
     {
       "dir": "packages/session/session-title-first-prompt-llm",
       "name": "@deepseek-ai/dsh-session-title-first-prompt-llm",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/session/session-title-first-prompt-llm @ 0.2.1-rc.2",
-      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
-      "fileCount": 11,
-      "digest": "sha256:d37daf1e6630bb6ae0567955455dcebeeeda5983ba6ba811b3d1a556967e1ac2"
+      "upstream": "deepseek_harness/packages/session/session-title-first-prompt-llm @ 0.2.2-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致",
+      "fileCount": 17,
+      "digest": "sha256:9fc85cdc084cfa9df71747574fc63eedf7bd1a5fc8324eeaaa7a662db1c16b9b"
     },
     {
       "dir": "packages/session/session-title-llm",
@@ -2083,22 +2083,22 @@
     {
       "dir": "packages/session/tool-working-directory",
       "name": "@deepseek-ai/dsh-tool-working-directory",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session/tool-working-directory @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 6,
-      "digest": "sha256:4e45983237829443dcb8361c8ec7e44facccc62f2349ba1213efd1ce14f61330"
+      "version": "0.2.2-rc.2",
+      "decision": "adapted",
+      "upstream": "deepseek_harness/packages/session/tool-working-directory @ 0.2.2-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；源码与上游逐字一致",
+      "fileCount": 14,
+      "digest": "sha256:4db3fa8156af070be5cbfb5cb81ad79a226afde3e972af2eeabc88305a8ec679"
     },
     {
       "dir": "packages/session/working-directory",
       "name": "@deepseek-ai/dsh-working-directory",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/session/working-directory @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/session/working-directory @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 9,
-      "digest": "sha256:244476bb3693490bd3b5a74268d2e0ce1253afc66c22012a9c3436e08dfbc67c"
+      "fileCount": 17,
+      "digest": "sha256:3ec28bd46deadc4238038397027f401969041732c681586da4b0a6b42c763393"
     },
     {
       "dir": "packages/settings/settings",
@@ -2333,12 +2333,12 @@
     {
       "dir": "packages/subagent/subagent",
       "name": "@deepseek-ai/dsh-subagent",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/subagent/subagent @ 0.2.1-rc.2",
-      "note": "增：`SubagentStartRequest.setup`（本地子代理在预设挂载之后、首个回合之前执行产品侧组合；外部后端拒绝该字段）与 `SubagentStartRequest.scopeParent`（把子代理作用域挂到产品实例作用域之下，实例插件/隔离服务与预设服务同时可达）；manager 在本地物化时透传。另增 `SubagentResumeComposition` 与 `SubagentRuntime.registerResumeComposition(parent, composition)`：冷恢复（`send_message` 唤醒已持久化子会话）没有启动请求可携带产品组合，由产品在每个活跃父 agent 上登记一次，manager 在描述符之后、恢复后首个回合之前重放 `setup` 与 `scopeParent`。SoloEngine 画布用它把节点级 persona/工具/技能/MCP/插件注入被委派节点、让子代理留在该 flow 实例内，并在进程重启后的冷恢复中按子会话日志里的节点归属重放同一组合（PRD-01 §每节点一个完整 agent、§实例隔离）",
-      "fileCount": 66,
-      "digest": "sha256:19b0468d1c64720a546e4aba812c258914e5c80c9777d28c67d4755aaffef1e7"
+      "upstream": "deepseek_harness/packages/subagent/subagent @ 0.2.2-rc.2",
+      "note": "增：`SubagentStartRequest.setup`/`scopeParent` 与 `registerResumeComposition`（产品冷恢复组合；外部后端拒绝 setup）；其余与上游逐字一致",
+      "fileCount": 71,
+      "digest": "sha256:bdadbc250e60e32f452a8d615acf0b89d9ef78c3a6c38f792c4bb260f6c44359"
     },
     {
       "dir": "packages/subagent/subagent-fork-in-process",
@@ -2373,12 +2373,12 @@
     {
       "dir": "packages/subagent/tool-subagent-control",
       "name": "@deepseek-ai/dsh-tool-subagent-control",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/subagent/tool-subagent-control @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/subagent/tool-subagent-control @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 17,
-      "digest": "sha256:9d744ba8333911b9791a90dab8626b748d2aa9ba39d9cb36ae166189a2dd53d9"
+      "fileCount": 21,
+      "digest": "sha256:7b18f11da81a2155b358ad19a28107c341050da78452cdc1f92c68cf7eda7adb"
     },
     {
       "dir": "packages/subprocess/subprocess",

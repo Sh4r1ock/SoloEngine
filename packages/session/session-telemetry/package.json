@@ -30,13 +30,13 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-session": "workspace:*"
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-session": "workspace:*"
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   }
 }

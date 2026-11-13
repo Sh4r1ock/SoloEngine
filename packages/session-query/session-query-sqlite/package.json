@@ -32,10 +32,10 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
-    "@deepseek-ai/dsh-session-query": "workspace:*"
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-session-persistence": {
@@ -46,12 +46,12 @@
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
-    "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-session-query": "workspace:*"
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   }
 }

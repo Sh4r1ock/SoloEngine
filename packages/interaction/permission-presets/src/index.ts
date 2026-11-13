@@ -229,7 +229,7 @@ export class PermissionPresetService extends TypertRemoteService {
     }).default({ tools: [], commandPrefixes: [], review: false }),
   })
 
-  static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
+  static inject = ['shell', 'approval', 'sessions', 'agents', 'sessionProjections']
 
   private readonly presets: Record<string, PresetSpec>
   private permissionProjectionHandle: ProjectionHandle<PermissionProjectionState> | undefined
@@ -275,6 +275,11 @@ export class PermissionPresetService extends TypertRemoteService {
 
   protected async [Service.init](): Promise<void> {
     const ctx = this.ctx
+    // 0.2.2: defaults are pinned during Agent creation. Session-creation listeners
+    // can no longer append; the Agent factory announces `session/created` first.
+    ctx.on('agent/created', ({ agent }) => {
+      this.pinInitialPermission(agent.session)
+    }, { prepend: true })
     const selectionSchema = zod.object({
       currentValue: zod.string().min(1),
     }) as zod.ZodType<PermissionSelection>
@@ -286,11 +291,8 @@ export class PermissionPresetService extends TypertRemoteService {
       apply: applyPermissionEvent,
       wire: { viewSchema: selectionSchema, view: state => ({ currentValue: this.derive(state) }) },
     })
-    this.ctx.on('session/created', (session) => {
-      this.pinInitialPermission(session)
-    })
-    for (const session of this.ctx.sessions.list()) {
-      this.pinInitialPermission(session)
+    for (const agent of ctx.agents.list()) {
+      this.pinInitialPermission(agent.session)
     }
 
     // The `approve-for-me` gate. The approval request itself carries only the
