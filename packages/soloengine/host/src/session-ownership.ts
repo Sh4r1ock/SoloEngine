@@ -4,9 +4,10 @@
  * 会话有三种来源，归属事实落在不同层：
  * - 画布运行：`runs.start` 在建会话前先写 `sessions` 台账行；
  * - 子代理子会话：运行驱动在创建窗口内写台账行；
- * - 客户端直接创建的会话（分支、面板新会话、草稿）：没有自己的台账行，父指向只在
- *   dsh 会话头（`header.parentSession`）里，归属要么沿父链落到已登记的根，要么落在
- *   会话头 cwd 命中的运行项目目录上。
+ * - 客户端直接创建的会话（分支、面板新会话、草稿）：没有自己的台账行。子代理仍带
+ *   `header.parentSession`，归属沿父链落到已登记的根；0.2.2 起普通 fork 不写父字段，
+ *   只剩与源会话共享的 workspace 绑定（会话头 cwd）可匹配；两者都落空时归到会话头
+ *   cwd 命中的运行项目目录。
  *
  * 本模块把这三条路径收敛成一次解析，供账号作用域、操作区桥与模型路由共用——同一份
  * 归属只此一处派生，避免各入口各写一套判定。
@@ -93,7 +94,11 @@ export async function resolveSessionOwnership(
       return matches(rootRow, query) ? { row: rootRow, rootSessionKey } : undefined
     }
   }
-  if (query.adopt !== true) return undefined
+  if (query.adopt !== true) {
+    // 0.2.2 起普通 fork 不写 `parentSession`：既无父链可沿、也没有自己的台账行时，
+    // 唯一还能证明归属的事实是它与源会话共享的 workspace 绑定（会话头 cwd）。
+    return await adoptSeededForkByCwd(ctx, runtime, rootSessionKey, query)
+  }
   return await adopt(ctx, runtime, rootSessionKey, query)
 }
 
@@ -162,4 +167,69 @@ async function adopt(
   if (!matches(row, query)) return undefined
   console.log(`soloengine: adopted session ${rootSessionKey} into run project ${project.id} (flow ${query.instance})`)
   return { row, rootSessionKey }
+}
+
+/**
+ * 为无台账行、无父链的独立分支（普通 fork）按 cwd 命中恢复台账行。
+ *
+ * fork 与源会话共享 workspace 绑定（会话头 cwd），这是普通 fork 唯一可匹配的归属事实
+ * （0.2.2 起不写 `parentSession`，源会话 id 无法恢复）。同一目录可能被多个运行项目登记：
+ * - 命中跨账号时一律拒绝——租户隔离优先于归属便利；
+ * - 同账号内取**最近访问**的运行项目作为归属画布：同目录多画布时这是产品侧最强的
+ *   可用信号；宁可归到最近使用的画布，也不让分支无归属（无归属会让分支里的写入落成
+ *   `user_id=NULL` 并让撤回找不到沙箱根）。
+ * @param ctx - 能读 `sessionPersistence` 的上下文。
+ * @param runtime - 框架层运行时。
+ * @param sessionKey - 会话键（已是会话树根）。
+ * @param query - 解析选项（可带账号/实例收窄）。
+ * @returns 补登后的归属；不是 fork、目录缺失或跨账号命中时为 `undefined`。
+ */
+async function adoptSeededForkByCwd(
+  ctx: Context,
+  runtime: FrameworkRuntime,
+  sessionKey: string,
+  query: OwnershipQuery,
+): Promise<SessionOwnership | undefined> {
+  const persistence = ctx.get('sessionPersistence')
+  if (persistence === undefined) return undefined
+  const header = (await persistence.stat(SessionId(sessionKey)))?.header
+  if (header?.isSeeded !== true || header.origin === 'subagent') return undefined
+  const cwd = header.cwd
+  if (cwd === undefined || cwd === '') return undefined
+  const clauses = ['folder_path = ?']
+  const params: string[] = [cwd]
+  if (query.userId !== undefined) {
+    clauses.push('user_id = ?')
+    params.push(query.userId)
+  }
+  if (query.instance !== undefined) {
+    clauses.push('agentic_flow_id = ?')
+    params.push(query.instance)
+  }
+  const projects = await runtime.db.prepare(
+    `SELECT id, user_id, agentic_flow_id FROM run_projects WHERE ${clauses.join(' AND ')}
+      ORDER BY COALESCE(last_accessed_at, created_at) DESC`,
+  ).all<{ id: string; user_id: string; agentic_flow_id: string }>(...params)
+  if (projects.length === 0) return undefined
+  if (new Set(projects.map(project => project.user_id)).size !== 1) return undefined
+  const project = projects[0]
+  if (project === undefined) return undefined
+  const createdAt = typeof header.createdAt === 'number' ? header.createdAt : Date.now()
+  let row: SessionLedgerRow | undefined
+  try {
+    row = await runtime.runs.ledger.recover({
+      session_key: sessionKey,
+      user_id: project.user_id,
+      agentic_flow_id: project.agentic_flow_id,
+      run_project_id: project.id,
+      created_at: createdAt,
+    })
+  } catch (error) {
+    // 并发补登会撞 (session_key) 唯一约束；重读一次即可，其他失败如实抛出。
+    row = await runtime.runs.ledger.byKey(sessionKey)
+    if (row === undefined) throw error
+  }
+  if (!matches(row, query)) return undefined
+  console.log(`soloengine: adopted fork session ${sessionKey} into run project ${project.id} by its workspace folder`)
+  return { row, rootSessionKey: sessionKey }
 }

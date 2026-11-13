@@ -92,8 +92,11 @@ async function rebuildOne(
   // 事件归属派生（与 attachLedgerWriters 的增量写同一套规则）：
   // - 归属 agent 是画布节点（attribution）；重建时该映射已不可得，按同样的兜底：
   //   主会话归到会话键自身、子代理子会话归到 parentSession（PRD-12 FR-STO-005 的会话树归属）；
+  //   `origin` 是「是否子代理」的唯一判据——0.2.2 起普通 fork 不写 parentSession，历史 fork 可能保留；
   // - tool/result 的 parent_message_id = 之前最近一条 assistant/message 的 seq。
-  const parent = snapshot.header.parentSession === undefined ? null : String(snapshot.header.parentSession)
+  const parent = snapshot.header.origin === 'subagent' && snapshot.header.parentSession !== undefined
+    ? String(snapshot.header.parentSession)
+    : null
   const agentId = parent ?? key
   const events = await readAllEvents(ctx, snapshot.header.id)
   let lastAssistantSeq: number | undefined

@@ -46,9 +46,12 @@ export function attachLedgerWriters(
         const ledgerRow = await ledger.byKey(key)
         if (ledgerRow === undefined) return
         if (event.type === 'assistant/message') lastAssistantSeq.set(key, Number(event.seq))
+        // 只有子代理会话把 parentSession 当父代理（0.2.2 起普通 fork 不再写该字段；
+        // 历史 fork 可能保留它，但 `origin` 才是「是否子代理」的唯一判据）。
+        const parent = session.header.origin === 'subagent' ? session.header.parentSession : undefined
         const node = attribution.get(key) ?? {
-          agentId: session.header.parentSession === undefined ? key : String(session.header.parentSession),
-          parentAgentId: session.header.parentSession === undefined ? null : String(session.header.parentSession),
+          agentId: parent === undefined ? key : String(parent),
+          parentAgentId: parent === undefined ? null : String(parent),
         }
         const parentSeq = lastAssistantSeq.get(key)
         await ledger.appendEvent(ledgerRow.id, Number(event.seq), {
