@@ -19,9 +19,7 @@
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
-  "dependencies": {
-    "@soloengine/framework": "workspace:*"
-  },
+  "dependencies": {},
   "optionalDependencies": {
     "@soloengine/business-db-postgres": "workspace:*",
     "@soloengine/cloud-control-postgres": "workspace:*"

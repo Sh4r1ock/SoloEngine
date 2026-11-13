@@ -8,28 +8,28 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { BrowserBody, type BrowserBodyProps } from './view/BrowserBody.tsx'
 import { BrowserTitle } from './view/BrowserTitle.tsx'
-import { createBrowserControllers } from './contract/BrowserController.ts'
-import type { BrowserInjected } from './contract/BrowserController.ts'
-import { createIframePage } from './browser/pages.ts'
-import { browserProxy } from './contract/proxy.ts'
+import { createBrowserControllers } from './browser/BrowserController.ts'
+import type { BrowserInjected } from './browser/BrowserController.ts'
+import { createIframePage } from './pages.ts'
+import { browserProxy } from './browser/proxy.ts'
 import { Config } from '../config.ts'
 import { createElectronPage } from './electron/pages.ts'
 import type { DesktopBrowserBridge } from '../types.ts'
 import { browserWorkspace } from './electron/workspace.ts'
-import type { BrowserPageFactory } from './contract/BrowserPage.ts'
+import type { BrowserPageFactory } from './browser/BrowserPage.ts'
 import { BROWSER_ID, browserDefinition } from './definition.tsx'
-import { en, zh } from './locales.ts'
-import { createBrowserStore } from './contract/store.ts'
+import { en, ja, es, fr, de, ru, pt, zh } from './locales.ts'
+import { createBrowserStore } from './browser/store.ts'
 
 export type { BrowserBodyProps } from './view/BrowserBody.tsx'
-export type { BrowserControllerState, BrowserInjected, BrowserMountRequest } from './contract/BrowserController.ts'
-export type { BrowserFrame, BrowserFrameState, BrowserLoadError, BrowserSandboxControl } from './contract/BrowserFrame.ts'
-export type { BrowserPage, BrowserPageFactory, BrowserPageOptions } from './contract/BrowserPage.ts'
-export type { BrowserPresentation } from './contract/BrowserPresentation.ts'
-export type { BrowserFailure, BrowserHistoryEntry, BrowserNavigationStatus, BrowserTabState } from './contract/BrowserPersistence.ts'
+export type { BrowserControllerState, BrowserInjected, BrowserMountRequest } from './browser/BrowserController.ts'
+export type { BrowserFrame, BrowserFrameState, BrowserLoadError, BrowserSandboxControl } from './browser/BrowserFrame.ts'
+export type { BrowserPage, BrowserPageFactory, BrowserPageOptions } from './browser/BrowserPage.ts'
+export type { BrowserPresentation } from './view/BrowserPresentation.ts'
+export type { BrowserFailure, BrowserHistoryEntry, BrowserNavigationStatus, BrowserTabState } from './browser/BrowserPersistence.ts'
 export type { SidebarBrowserKey } from './locales.ts'
-export type { BrowserState } from './contract/store.ts'
-export type { BrowserAddressFailure, BrowserAddressResult, BrowserTarget } from './contract/url.ts'
+export type { BrowserState } from './browser/store.ts'
+export type { BrowserAddressFailure, BrowserAddressResult, BrowserTarget } from './browser/url.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   interface SidebarRightTabParamsMap {
@@ -74,7 +74,7 @@ export function apply(ctx: Context): void {
     dshDesktop?: { readonly protocolVersion: number; readonly browser?: DesktopBrowserBridge }
   }).dshDesktop
   const desktop = carrier?.protocolVersion === 1 ? carrier.browser : undefined
-  ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'ui-sidebar-browser.copy')
+  ctx.effect(() => ctx.locale.register(namespace, { zh, en, ja, es, fr, de, ru, pt }), 'ui-sidebar-browser.copy')
   ctx.effect(() => ctx.sidebarRightTabs.register({ ...browserDefinition(t), keepMounted: desktop !== undefined }), 'ui-sidebar-browser.type')
   const installFrames = (scope: Context, factory: (sessionId: BrowserBodyProps['sessionId']) => BrowserPageFactory): void => {
     const controllers = new Map<BrowserBodyProps['sessionId'], BrowserInjected>()

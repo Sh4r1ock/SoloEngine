@@ -21,12 +21,6 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../core/tools"
-    },
-    {
-      "path": "../../llm/llm"
-    },
-    {
       "path": "../../sandbox/sandbox"
     },
     {
@@ -49,6 +43,12 @@
     },
     {
       "path": "../../settings/settings"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
     }
   ]
 }

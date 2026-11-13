@@ -10,7 +10,7 @@ import { OnboardingCreditStep } from './OnboardingCreditStep.tsx'
 import { OnboardingPurposeStep } from './OnboardingPurposeStep.tsx'
 import { OnboardingProcessStep } from './OnboardingProcessStep.tsx'
 import { OnboardingConfirmation, type OnboardingConfirmationKind } from './OnboardingConfirmation.tsx'
-import backIcon from './onboarding-back.svg'
+import backIcon from './assets/onboarding-back.svg'
 import css from './DesktopOnboarding.module.css'
 
 const onboardingPages = {

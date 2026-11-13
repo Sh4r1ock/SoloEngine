@@ -6,7 +6,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-preset-registry'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 import { SessionQueryError, type SessionRecord, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -16,16 +16,16 @@ import {
   SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS,
 } from './types.ts'
 import type {
-  SessionListMetadata, SessionProjectionHints, SessionProjectionValues, SessionSearchItem,
+  SessionListMetadata, SessionProjectionHints, SessionSearchItem,
   SessionSearchValue, SessionSummary,
 } from './types.ts'
 
 const SEARCH_PROVIDER_CALL_LIMIT = 100
 const SESSION_SEARCH_QUERY_MAX_CHARS = 500
 /**
- * Largest Session identity set pushed into the provider's own filter. A
- * connection account owns a bounded number of Sessions; beyond this bound the
- * query stays unfiltered and the Host keeps filtering result pages, so a large
+ * Largest account-owned identity set pushed into one provider query. The
+ * provider filter keeps other accounts' documents out of ranking entirely;
+ * beyond this bound the authorization check alone narrows the results, so a
  * set never becomes an oversized SQL binding list.
  */
 const SESSION_FILTER_ID_LIMIT = 512
@@ -83,12 +83,20 @@ export function truncateUnicodeCodePoints(value: string, maximum: number): strin
 
 /** Owns list projection registration, bounded cold summaries, and authorized search. */
 export class ApiSessionList {
+  private listMetadata!: ProjectionHandle<SessionListMetadata>
+
   /**
    * @param ctx - Host context carrying Session, query, persistence, and projection services.
    * @param workSliceMs - Resolved positive integral list-work budget in milliseconds.
    */
-  constructor(private readonly ctx: Context, private readonly workSliceMs: number) {
-    ctx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
+  constructor(private readonly ctx: Context, private readonly workSliceMs: number) {}
+
+  /**
+   * Acquire projection readers before exposing dependent operations.
+   * @returns when all required registrations are ready.
+   */
+  async initialize(): Promise<void> {
+    this.listMetadata = await this.ctx.sessionProjections.register<'sessionListMetadata', SessionListMetadata>({
       key: 'sessionListMetadata',
       stateSchema: sessionListMetadataSchema,
       init: () => ({ blank: true, lastPromptAt: null }),
@@ -96,36 +104,41 @@ export class ApiSessionList {
       wire: { viewSchema: sessionListMetadataSchema, view: state => state },
       stateVersion: 1,
     })
-    ctx.inject(['attachments'], (attachmentCtx) => {
-      ctx.sessionProjections.register<'imageLimits', null>({
-        key: 'imageLimits',
-        stateSchema: z.null(),
-        init: () => null,
-        apply: state => state,
-        wire: {
-          viewSchema: imageLimitsSchema,
-          view: () => attachmentCtx.attachments.imageLimits,
-        },
-        stateVersion: 1,
-      })
+    await this.ctx.sessionProjections.register<'imageLimits', null>({
+      key: 'imageLimits',
+      stateSchema: z.null(),
+      init: () => null,
+      apply: state => state,
+      wire: {
+        viewSchema: imageLimitsSchema,
+        view: () => this.ctx.attachments.imageLimits,
+        summary: false,
+      },
+      stateVersion: 1,
     })
   }
 
   /**
    * Build one current attached-Session summary.
+   * Blankness and recency come from the `sessionListMetadata` handle; projection
+   * hints carry every summary key computed through `snapshot`. The first call
+   * for a Session computes these projections over its whole in-memory log, and
+   * later calls advance them incrementally. The handle read and the hint with
+   * the same key come from one cell; the handle read does not depend on any
+   * other unit's view.
    * @param session - attached Session to summarize.
    * @returns current list metadata and available projections.
    */
   summaryFor(session: Session): SessionSummary {
+    const metadata = this.listMetadata.stateOf(session)
     const projections = this.projectionsFor(session.header, session)
-    const metadata = projections?.values.sessionListMetadata
     return {
       sessionId: session.id,
       updatedAt: updatedAt(session.header, metadata),
       agentAvailable: this.ctx.agents.get(session.id)?.session === session,
       formatStatus: 'current',
       running: this.ctx.agents.get(session.id)?.status === 'running',
-      blank: metadata?.blank ?? session.seq === 0,
+      blank: metadata.blank,
       ...listFields(session.header),
       ...(projections === undefined ? {} : { projections }),
     }
@@ -134,11 +147,13 @@ export class ApiSessionList {
   /**
    * Read every visible attached and persisted Session without activating an Agent.
    * @param signal - optional cancellation for persistence reads and summary generation.
+   * @param owned - Session identities the calling connection account owns; omitted without an account scope.
    * @returns visible Session summaries ordered by activity.
    */
-  async list(signal?: AbortSignal): Promise<SessionSummary[]> {
+  async list(signal?: AbortSignal, owned?: ReadonlySet<string>): Promise<SessionSummary[]> {
     signal?.throwIfAborted()
-    const records = await this.ctx.sessionQuery.listSessions(signal)
+    const records = (await this.ctx.sessionQuery.listSessions(signal))
+      .filter(record => owned === undefined || owned.has(record.header.id))
     signal?.throwIfAborted()
     const items: SessionSummary[] = []
     const cold: SessionRecord[] = []
@@ -194,11 +209,7 @@ export class ApiSessionList {
    * @param owned - Session identities the calling connection account owns; omitted without an account scope.
    * @returns authorized bounded Session search results.
    */
-  async search(
-    query: string,
-    signal: AbortSignal,
-    owned?: ReadonlySet<string>,
-  ): Promise<SessionSearchValue> {
+  async search(query: string, signal: AbortSignal, owned?: ReadonlySet<string>): Promise<SessionSearchValue> {
     const normalizedQuery = normalizeSearchQuery(query)
     signal.throwIfAborted()
     const provider = this.ctx.get('sessionQuery')
@@ -243,7 +254,10 @@ export class ApiSessionList {
         try {
           page = await provider.searchSessions({
             query: normalizedQuery,
-            ...sessionFilters.length === 0 ? {} : { sessionFilters },
+            // An empty filter set is omitted: the provider then ranks every
+            // visible document, and the authorization check below still
+            // narrows each hit to the calling account.
+            ...(sessionFilters.length === 0 ? {} : { sessionFilters }),
             eventFilters: [
               { kind: 'type', values: ['user/message', 'assistant/message'] },
               { kind: 'surface', values: ['current'] },
@@ -315,16 +329,21 @@ export class ApiSessionList {
     session: Session | undefined,
   ): SessionProjectionHints | undefined {
     try {
+      // The registry derives the summary key set from its registrations and
+      // hands back one stable set until the key table changes; both faces below
+      // serve only those keys, so a list row cannot carry a unit that declares
+      // itself summary-excluded.
+      const keys = this.ctx.sessionProjections.summaryKeys()
       if (session !== undefined) {
-        // The live registry computed the block for this Session: its watermark
+        // The live registry computes the block for this Session: its watermark
         // shares the sequence space of the Session's baselines and frames.
-        return hintsOf('sequenced', this.ctx.sessionProjections.cachedSnapshot(session))
+        return hintsOf('sequenced', this.ctx.sessionProjections.snapshot(session, keys))
       }
       // A cold row reads the persisted cache by header alone; the cache serves
       // seeded and unseeded lifecycles alike because a listing never seeds a
       // fold. The watermark is the stored record's own.
       const cache = this.ctx.get('sessionProjectionCache')
-      return hintsOf('cached', cache?.cachedSnapshot(header) ?? cache?.cachedPredecessorTitle(header))
+      return hintsOf('cached', cache?.cachedSnapshot(header, keys) ?? cache?.cachedPredecessorTitle(header))
     } catch (error) {
       this.ctx.logger.warn(
         `api-session.list: projection column for "${header.id}" failed; serving the row without it: ${String(error)}`,
@@ -335,7 +354,8 @@ export class ApiSessionList {
 }
 
 /**
- * Wrap one projection block as Session-list hints of the named sequence space.
+ * Wrap one summary projection block as Session-list hints of the named sequence space.
+ * The block is the summary key set's values, not every value the source holds.
  * @param kind - which sequence space the block's watermark belongs to.
  * @param block - the block, or `undefined` when no source served one.
  * @returns the hints, or `undefined` when the block is absent or carries no value.
@@ -345,9 +365,9 @@ function hintsOf(
   block: ProjectionSnapshot | undefined,
 ): SessionProjectionHints | undefined {
   if (block === undefined || Object.keys(block.values).length === 0) return undefined
-  // Listing hints contain every wire value the source currently holds but
-  // remain partial: missing cells and cache rows are never materialized here.
-  return { kind, asOfSeq: block.asOfSeq, values: block.values as SessionProjectionValues }
+  // Listing hints contain every summary wire value the source holds; cached
+  // hints remain partial because missing cache rows are never folded here.
+  return { kind, asOfSeq: block.asOfSeq, values: block.values }
 }
 
 function normalizeSearchQuery(query: string): string {

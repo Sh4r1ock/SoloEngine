@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-hmr",
   "description": "Coordinated module and profile configuration hot reload",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.2-rc.2",
   "publishConfig": {
     "access": "public"
   },
@@ -25,35 +25,38 @@
   "files": [
     "locale/*.json",
     "lib/index.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/types/**/*.d.ts.map",
+    "lib/**/*.js.map",
+    "src"
   ],
   "author": "Shigma <shigma10826@gmail.com>",
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
     "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
     "@deepseek-ai/dsh-app-boot": "workspace:*",
     "@deepseek-ai/dsh-cmdline": "workspace:*"
   },
   "dependencies": {
     "@babel/code-frame": "^7.29.0",
+    "@deepseek-ai/schemastery": "workspace:~",
     "chokidar": "5.0.0",
     "node-addon-require-builtin": "^0.1.9",
-    "picomatch": "^4.0.7",
-    "@deepseek-ai/schemastery": "workspace:~"
+    "picomatch": "^4.0.7"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-atomic-write": "workspace:*",
+    "@deepseek-ai/dsh-cmdline": "workspace:*",
     "@types/babel__code-frame": "^7.27.0",
     "@types/picomatch": "^4.0.3",
-    "esbuild": "^0.28.2",
-    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
-    "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
-    "@deepseek-ai/cordis-plugin-include": "workspace:~",
-    "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-cmdline": "workspace:*",
-    "@deepseek-ai/dsh-atomic-write": "workspace:*"
+    "esbuild": "^0.28.2"
   }
 }

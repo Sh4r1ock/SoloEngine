@@ -10,6 +10,8 @@ import { pathToFileURL } from 'node:url'
 import { readFileSync } from 'node:fs'
 import { inspect, parseEnv } from 'node:util'
 import { basename, dirname, isAbsolute, resolve } from 'node:path'
+import { captureStartupComposition, type StartupCompositionDiagnostic } from './startup-diagnostics.ts'
+export type { StartupCompositionDiagnostic, StartupPluginState, StartupServiceState } from './startup-diagnostics.ts'
 import * as yaml from 'js-yaml'
 import { Context, type Fiber, type FiberState } from '@deepseek-ai/cordis'
 import Loader, { type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
@@ -22,7 +24,7 @@ export { sanitizeProfile } from './profile-sanitize.ts'
 export { getDshRuntimeVersion, evaluatePluginCompatibility, pluginCompatibilityWarning, type PluginCompatibility } from './plugin-compatibility.ts'
 export {
   PROFILE_COMPATIBILITY_FILENAME, readProfileCompatibility, readProfileVersionExemptions,
-  setProfileVersionExemption, type ProfileCompatibility,
+  setProfileVersionExemption, validatePluginVersionExemption, type ProfileCompatibility,
 } from './profile-compatibility.ts'
 import { prepareProfilePatches } from './compatibility-preflight.ts'
 import { ProfileRuntimeResolution, type RuntimeResolution } from './profile.ts'
@@ -55,6 +57,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+export { assertBundlePlatform, UnsupportedBundlePlatformError } from './bundle-platform.ts'
 export {
   composeEntries,
   createRuntimeResolution,
@@ -160,13 +163,30 @@ const BOOTSTRAP_NAMES = new Set([
 const BOOTSTRAP_PREFIXES = ['DSH_', 'XDG_', 'DYLD_', 'BASH_FUNC_']
 
 /**
- * The bootstrap names the Harness-home `.env` alone may set. A proxy chooses the route every
- * request takes, so the invoking directory's file — which arrives with a clone — keeps refusing
- * them; the home file is the user's own, and `DSH_HOME` is itself bootstrap-only, so no `.env` can
- * relocate this exemption. The CA and TLS names in the same group stay refused everywhere: they
- * change what is trusted, not where traffic goes.
+ * DeepSeek endpoint names the Harness-home `.env` may set only as spelled here: their consumers look them up by
+ * exact name on POSIX, so another spelling would load without effect.
+ */
+const HOME_LAYER_ENDPOINT_NAMES = new Set(['DEEPSEEK_BASE_URL', 'DEEPSEEK_SEARCH_BASE_URL'])
+
+/**
+ * The bootstrap names the Harness-home `.env` alone may set. Each such name chooses where requests go: a
+ * proxy for every request, a DeepSeek endpoint for the model or search requests that carry the user's credential.
+ * The invoking directory's file arrives with a clone and keeps refusing them; the home file is the user's own, and
+ * the profile patches beside it can already set these endpoints as plugin `baseURL` fields; `DSH_HOME` is itself
+ * bootstrap-only, so no `.env` can relocate this exemption. The CA and TLS names in the same group stay refused
+ * everywhere: they change what is trusted, not where traffic goes.
  */
 const HOME_LAYER_PROXY_NAMES = new Set(['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'])
+
+/**
+ * Whether the Harness-home `.env` alone may set a bootstrap-only name.
+ * @param name - the variable name as the file spells it.
+ * @returns true for a {@link HOME_LAYER_PROXY_NAMES} entry in any letter case or a
+ *   {@link HOME_LAYER_ENDPOINT_NAMES} entry in its exact spelling.
+ */
+function isHomeLayerRouteName(name: string): boolean {
+  return HOME_LAYER_PROXY_NAMES.has(name.toUpperCase()) || HOME_LAYER_ENDPOINT_NAMES.has(name)
+}
 
 /**
  * Whether a variable may come only from the inherited process environment
@@ -209,12 +229,17 @@ function readEnvLayer(
   const values = parseEnv(content) as Record<string, string>
   for (const name of Object.keys(values)) {
     if (!isBootstrapOnly(name)) continue
-    const proxyName = HOME_LAYER_PROXY_NAMES.has(name.toUpperCase())
-    if (isHome && proxyName) continue
-    // A proxy name has a second way out that the other bootstrap names do not, so its message says so.
-    const remedy = proxyName
-      ? `export ${name}, or put it in ${resolve(home, '.env')}, which does not travel with a repository`
-      : `export ${name} instead of putting it in a .env file`
+    const homeLayerName = isHomeLayerRouteName(name)
+    if (isHome && homeLayerName) continue
+    // A home-layer name, or an endpoint name spelled another way, has a second way out that the other bootstrap names
+    // do not, so its message says so.
+    const homeEnv = resolve(home, '.env')
+    const upper = name.toUpperCase()
+    const remedy = homeLayerName
+      ? `export ${name}, or put it in ${homeEnv}, which does not travel with a repository`
+      : HOME_LAYER_ENDPOINT_NAMES.has(upper)
+        ? `spell it ${upper}, then export it or put it in ${homeEnv}, which does not travel with a repository`
+        : `export ${name} instead of putting it in a .env file`
     throw new Error(
       `${binName}: ${path} sets "${name}", which only the launching environment may set`
       + ' (it decides how this process starts, where its code and instructions load from, or how it'
@@ -342,9 +367,7 @@ async function recompose(
       diagnostic: failure.entry.fiber?.uid ? reloadDiagnostic(failure) : undefined,
     }))
     // Removed entries leave the Loader store before their async disposers finish.
-    const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [{
-      fiber: row.fiber, failed: row.fiber.state === FIBER_FAILED || row.fiber.state === FIBER_DISPOSED,
-    }])
+    const previousFibers = [...ctx.loader.entries()].flatMap(row => row.fiber === undefined ? [] : [row.fiber])
     const { patches: previous = [], ...includeConfig } = entry.options.config as Include.Config
     const current = withResolution ? ctx.get('pluginPackages')?.resolution : undefined
     // A plain-data resolution has no inputs to recompute from.
@@ -388,12 +411,15 @@ async function recompose(
     const prepared = prepareProfilePatches(ctx, patches, parentURL, binName)
     applying = true
     const retried = [...new Set([...running, ...withResolution ? [...ctx.loader.entries()].filter(importFailed) : []])]
+    // Group.update replaces its data array and attempts every row it still lists, including failed imports.
+    const priorData = new Map(retried.map(row => [row, row.parent.data]))
     try {
       await entry.update({ config: { ...includeConfig, patches: prepared } })
     } finally {
-      await resume(ctx, retried)
+      // Only rows whose Group did not update still need an explicit retry after the awaited update.
+      await resume(ctx, retried.filter(row => row.parent.data === priorData.get(row)))
     }
-    const results = await Promise.allSettled(previousFibers.map(({ fiber }) => fiber.await()))
+    await Promise.allSettled(previousFibers.map(fiber => fiber.await()))
     await ctx.loader.await()
     const failures = await inactiveEntries(ctx)
     const introduced = failures.filter((failure) => {
@@ -405,9 +431,6 @@ async function recompose(
       return !previousFailures.some(previous => sameFailure(previous, failure))
     })
     if (introduced.length > 0) throw new Error(activationDiagnostic(binName, introduced, false).trimEnd())
-    for (const [index, result] of results.entries()) {
-      if (result.status === 'rejected' && !previousFibers[index]?.failed) throw result.reason
-    }
     ctx.emit('app-boot/config-reload')
     return { warnings: failures.map(reloadDiagnostic) }
   } finally {
@@ -950,6 +973,8 @@ const FIBER_DISPOSED = 4 as FiberState.DISPOSED
  */
 const requiredStartupEntryIds = new Set<string>([
   'agent-loop',
+  'tool-executor-native',
+  'tool-executor-ptc',
   'webserver',
   'web-runtime',
   'modules',
@@ -1005,6 +1030,8 @@ interface StartupLogRecord {
 
 /** Startup audit failure with non-enumerable metadata and original failures as its cause. */
 export class StartupError extends Error {
+  /** Plugin states captured before disposal, excluding configuration values. */
+  composition?: StartupCompositionDiagnostic
   /** Root configuration and startup logs, attached by boot after disposal. */
   startup?: { configurationPath: string; messages: readonly StartupLogRecord[] }
 
@@ -1018,6 +1045,7 @@ export class StartupError extends Error {
     Object.defineProperties(this, {
       entries: { enumerable: false },
       startup: { enumerable: false },
+      composition: { enumerable: false },
     })
   }
 }
@@ -1221,11 +1249,6 @@ export async function boot(
   try {
     ctx.baseUrl = pathToFileURL(dirname(absoluteConfigPath)).href + '/'
     ctx.provide('dshHomePath', dshHomePath)
-    // Fiber.update() discards the restart promise. Observe it before the
-    // waterfall returns; activation audits still report the failed fiber.
-    ctx.on('internal/update', (_config, _noSave, next: () => unknown) => {
-      void Promise.resolve(next()).catch((error: unknown) => { ctx.logger.error(error) })
-    }, { global: true, prepend: true })
     await ctx.plugin(Loader)
     await prepare?.(ctx)
     stage = 'plugin tree failed to load'
@@ -1240,6 +1263,11 @@ export async function boot(
     await auditStartupEntries(ctx, binName)
     return ctx
   } catch (cause) {
+    if (cause instanceof StartupError) {
+      try { cause.composition = captureStartupComposition(ctx) } catch (error) {
+        ctx.logger.warn('Startup composition diagnostic unavailable', error)
+      }
+    }
     // Root-fiber disposal contains cleanup failures per observer (Cordis
     // fiber.ts hardening) and a repeated call returns the settled single-shot
     // result, so this await cannot reject and replace `cause`.

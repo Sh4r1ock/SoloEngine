@@ -37,6 +37,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   InvokeRemoteRequest,
+  PendingRemoteEventInfo,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -71,6 +72,7 @@ import {
 
 export type {
   InvokeRemoteRequest,
+  PendingRemoteEventInfo,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -159,11 +161,14 @@ export interface Config {
   readonly websocketHeartbeatIntervalMs?: number
   /** Buffered uplink frame bytes one logical stream may hold before it fails with `gateway/uplink-overflow`. @default 262144 */
   readonly streamInboxBytes?: number
+  /** Per-message compression for the Remote stream WebSocket; `'none'` disables the extension. @default 'deflate' */
+  readonly websocketCompression?: 'none' | 'deflate'
 }
 
 interface ResolvedConfig extends Config {
   readonly websocketHeartbeatIntervalMs: number
   readonly streamInboxBytes: number
+  readonly websocketCompression: 'none' | 'deflate'
 }
 
 /**
@@ -213,6 +218,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     websocketHeartbeatIntervalMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS)
       .default(DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS),
     streamInboxBytes: z.number().step(1).min(1).default(DEFAULT_STREAM_INBOX_BYTES),
+    websocketCompression: z.union([z.const('none'), z.const('deflate')]).default('deflate'),
   })
 
   /** Carrier adapter shared by the WebSocket mux and local Host transports. */
@@ -253,8 +259,11 @@ export class TypertGatewayService extends Service implements TypertGateway {
           (endpoint, payload, uplink, peer, control, window) =>
             this.openWireStream(endpoint, payload, uplink, peer, control.signal, control, window),
           this.wireStream.failure,
-          resolved.websocketHeartbeatIntervalMs,
-          resolved.streamInboxBytes,
+          {
+            heartbeatIntervalMs: resolved.websocketHeartbeatIntervalMs,
+            streamInboxBytes: resolved.streamInboxBytes,
+            compression: resolved.websocketCompression === 'deflate',
+          },
         )
         const releases = new Set<Promise<void>>()
         webCtx.effect(function* () {
@@ -325,6 +334,14 @@ export class TypertGatewayService extends Service implements TypertGateway {
       if (client.answers && !client.signal.aborted) return true
     }
     return false
+  }
+
+  /**
+   * Inspect unsettled forwarded events without changing their lifetime.
+   * @returns detached event names and Agent identities.
+   */
+  getPendingRemoteEvents(): readonly PendingRemoteEventInfo[] {
+    return [...this.pendingRemoteEvents.values()].map(({ frame }) => ({ event: frame.event, agentId: frame.agentId }))
   }
 
   /**
@@ -623,11 +640,16 @@ export class TypertGatewayService extends Service implements TypertGateway {
       event: frame.event,
       args: frame.args,
     }
-    const resources = eventResources(frame.resources, frame.args)
+    let resolved = false
+    let resources: readonly RemoteAccessResource[] | undefined
     for (const client of this.remoteEventClients.values()) {
       if (!client.answers) {
         // A non-owner receives the whole notification or nothing: its resources decide, payloads are never trimmed,
         // and a notification with invalid resources reaches no non-owner.
+        if (!resolved) {
+          resources = eventResources(frame.resources, frame.args)
+          resolved = true
+        }
         if (resources === undefined) continue
         if (this.ctx.remoteAccess.decide({ principal: client.principal, action: `event:${frame.event}`, resources }).kind === 'deny') continue
       }

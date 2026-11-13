@@ -10,8 +10,11 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
+import type { PatchHunk } from '@deepseek-ai/dsh-fs-patch'
 import { FsError } from './types.ts'
 import type {
+  FsDeleteOutcome,
+  FsMoveOutcome,
   FsDirEntry,
   FsEditOutcome,
   FsEditRequest,
@@ -24,12 +27,17 @@ import type {
   FsWriteOutcome,
 } from './types.ts'
 
+export { fsErrorFromErrno } from './errno.ts'
 export {
+  FS_ERROR_CODES,
   FsError,
   FsTargetKey,
   FsVersion,
 } from './types.ts'
 export type {
+  FsDeleteOutcome,
+  FsMoveOutcome,
+  FsMoveSourceFailure,
   FsEditOutcome,
   FsEditRequest,
   FsDirEntry,
@@ -66,6 +74,14 @@ declare module '@deepseek-ai/cordis' {
      */
     'fs/edit-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
     /**
+     * Single-slot decision for FileSystem.deleteFile; the first returned guard wins.
+     * Calling next() delegates to an unconditional deletion.
+     * @param target - the resolved source about to be removed.
+     * @param actor - the opaque tool-execution context used to select observed state.
+     * @mode waterfall
+     */
+    'fs/delete-intent'(target: FsTarget, actor: object | undefined, next: () => { version: FsVersion } | undefined | Promise<{ version: FsVersion } | undefined>): Promise<{ version: FsVersion } | undefined>
+    /**
      * Record an authoritative positive or negative observation. Listeners must
      * be synchronous recorders: throws fail the tool call and returned promises
      * are not awaited.
@@ -81,7 +97,8 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Abstract filesystem provider. Targets must preserve identity across aliases;
  * reads expose regular UTF-8 text or typed errors, listings are stable and
- * content-free, and mutations are atomic. Optional guards add stale protection
+ * content-free, and single-file publication is atomic. Moves can retain their
+ * source after publishing the destination. Optional guards add stale protection
  * without changing the unguarded provider contract.
  */
 export abstract class FileSystem extends Service {
@@ -252,71 +269,6 @@ export abstract class FileSystem extends Service {
   abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
 
   /**
-   * Create one directory. Its parent must already exist, and an existing
-   * target is refused with `FS_ALREADY_EXISTS` rather than merged into.
-   *
-   * A provider without directory mutations rejects with `FS_IO_ERROR`, so a
-   * read-only backend refuses at call time instead of pretending success.
-   * @param target - the resolved directory target to create.
-   * @param signal - aborts before the directory is created.
-   * @param sandboxPolicy - the per-call mode and workspace root this creation
-   *   runs under; a sandboxing backend fences it by that policy, the bare
-   *   backend ignores it. Omit to leave the backend its own default.
-   * @returns once the directory exists.
-   */
-  mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
-    void signal
-    void sandboxPolicy
-    return Promise.reject(new FsError(`cannot create directory "${target.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
-  }
-
-  /**
-   * Move one target to a destination that must not exist. The destination is
-   * refused with `FS_ALREADY_EXISTS` instead of being overwritten.
-   * @param from - the resolved source target.
-   * @param to - the resolved destination target.
-   * @param signal - aborts before the move takes effect.
-   * @param sandboxPolicy - the per-call mode and workspace root this move runs
-   *   under; a sandboxing backend fences both sides by it. Omit to leave the
-   *   backend its own default.
-   * @returns once the move completed.
-   */
-  rename(
-    from: FsTarget,
-    to: FsTarget,
-    signal?: AbortSignal,
-    sandboxPolicy?: SandboxExecutionPolicy,
-  ): Promise<void> {
-    void to
-    void signal
-    void sandboxPolicy
-    return Promise.reject(new FsError(`cannot rename "${from.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
-  }
-
-  /**
-   * Remove one file or directory. A directory is removed with its contents only
-   * when `recursive` is true; otherwise a non-empty directory fails.
-   * @param target - the resolved target to remove.
-   * @param recursive - remove a directory's contents as well.
-   * @param signal - aborts before the removal takes effect.
-   * @param sandboxPolicy - the per-call mode and workspace root this removal
-   *   runs under; a sandboxing backend fences it by that policy. Omit to leave
-   *   the backend its own default.
-   * @returns once the target is gone.
-   */
-  remove(
-    target: FsTarget,
-    recursive: boolean,
-    signal?: AbortSignal,
-    sandboxPolicy?: SandboxExecutionPolicy,
-  ): Promise<void> {
-    void recursive
-    void signal
-    void sandboxPolicy
-    return Promise.reject(new FsError(`cannot remove "${target.displayPath}": this provider has no directory mutations`, 'FS_IO_ERROR'))
-  }
-
-  /**
    * Atomically create or replace UTF-8 text. `expected` guards intent and
    * staleness; omission allows unconditional overwrite.
    * @param target - the resolved target to write.
@@ -356,6 +308,74 @@ export abstract class FileSystem extends Service {
     signal?: AbortSignal,
     sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome>
+
+  /**
+   * Atomically apply parsed hunks to the LF-normalized text and restore the
+   * stored line-ending style. A missing or stale target reports
+   * `FS_STALE_VERSION`; an unmatched hunk reports `FS_PATCH_MISMATCH`.
+   * @param target - the resolved regular file to patch.
+   * @param hunks - ordered hunks from `parsePatch`.
+   * @param expected - the version guard; omit for an unconditional patch.
+   * @param signal - aborts before atomic publication takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root this patch runs
+   *   under; a sandboxing backend fences the patch by it, the bare backend
+   *   ignores it. Omit to leave the backend its own default.
+   * @returns the outcome, including the version the patch produced.
+   */
+  abstract patchText(
+    target: FsTarget,
+    hunks: readonly PatchHunk[],
+    expected?: { version: FsVersion },
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsEditOutcome>
+
+  /**
+   * Remove a regular file. A missing or stale target reports `FS_STALE_VERSION`;
+   * a directory or other non-file reports `FS_NOT_REGULAR_FILE`. Resolution has
+   * already followed symlinks, so the target is the real file.
+   * @param target - the resolved file to remove.
+   * @param expected - the version guard; omit for an unconditional removal.
+   * @param signal - aborts before removal.
+   * @param sandboxPolicy - the per-call mode and workspace root this removal
+   *   runs under; a sandboxing backend fences it, the bare backend ignores it.
+   *   Omit to leave the backend its own default.
+   * @returns the bounded LF-normalized removed text, or null when no basis is available.
+   */
+  abstract deleteFile(
+    target: FsTarget,
+    expected?: { version: FsVersion },
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsDeleteOutcome>
+
+  /**
+   * Publish the source text, optionally patched, at the destination, then remove
+   * the source. Both targets stay locked in canonical order. Identical targets
+   * report `FS_SAME_TARGET`; the source guard follows `patchText` and the
+   * destination guard follows `writeText`. The two effects are separate: a
+   * published destination with a retained source is a final outcome reported
+   * through `sourceDeleted: false`.
+   * @param source - the resolved regular source; its line-ending style and mode carry over.
+   * @param destination - the resolved destination within the same provider.
+   * @param options - optional hunks and the source/destination guards; an omitted guard is unconditional.
+   * @param signal - checked before destination staging; the commit then completes both effects.
+   * @param sandboxPolicy - the per-call mode and workspace root both paths run
+   *   under; a sandboxing backend fences them, the bare backend ignores it.
+   *   Omit to leave the backend its own default.
+   * @returns the bounded LF source basis, the destination outcome, and the source-removal status.
+   */
+  abstract moveFile(
+    source: FsTarget,
+    destination: FsTarget,
+    options: {
+      hunks?: readonly PatchHunk[]
+      expectedSource?: { version: FsVersion }
+      expectedDestination?: FsWriteIntent
+    },
+    signal?: AbortSignal,
+    sandboxPolicy?: SandboxExecutionPolicy,
+  ): Promise<FsMoveOutcome>
 }
 
 export default FileSystem

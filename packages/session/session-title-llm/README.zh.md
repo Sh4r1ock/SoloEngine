@@ -25,7 +25,7 @@ kind: "package-library"
 <a id="use-this-package"></a>
 ## 使用本包
 
-作为部署方，通过[首消息](../session-title-first-prompt-llm/README.zh.md)或[全消息](../../../bat/removed-20261031/packages/experimental/session-title-all-prompts-llm/README.md)提供方插件配置此策略。作为提供方作者，构建自己的准备输入，并通过共享函数执行。
+作为部署方，通过[首消息](../session-title-first-prompt-llm/README.zh.md)或[全消息](../../experimental/session-title-all-prompts-llm/README.md)提供方插件配置此策略。作为提供方作者，构建自己的准备输入，并通过共享函数执行。
 
 ### 执行提供方请求
 
@@ -72,7 +72,7 @@ kind: "package-library"
 
 ### 请求流程
 
-调用方构建准备好的输入并进行封装；函数依据 `maxInputBytes` 检查完整输入。提供方的推理选择器在 `ctx.llm.prepareCall()` 期间最多选择一个强度。函数把确切输入、输出上限与解析后的强度记录到 `session/title-llm-request`，然后在共享截止时间内通过同一捕获的适配器代次分发。`purpose: 'session-title'` 仅提供归属标注。请求不带 agent loop 身份，也不进入对话历史。生成失败仍保留请求记录。
+调用方构建准备好的输入并进行封装；函数依据 `maxInputBytes` 检查完整输入。提供方的推理选择器在 `ctx.llm.prepareCall()` 期间最多选择一个强度。函数把确切输入、输出上限与解析后的强度记录到 `session/title-llm-request`，然后在共享截止时间内通过同一捕获的适配器代次分发。`purpose: 'session-title'` 仅提供归属标注。请求不带 agent loop 身份，也不进入对话历史。生成失败仍保留请求记录。 本包在 `LlmRequestPurposeMap` 中声明 `session-title`；导入其公开入口即可加载该声明。
 
 </details>
 
@@ -86,7 +86,7 @@ kind: "package-library"
 - [会话标题服务](../session-title/README.zh.md)——标题服务、回退行为与提供方注册约定。
 - [会话标题子系统](../../../docs/subsystems/session-title.zh.md)——持久标题状态与辅助请求记录。
 - [首消息标题提供方](../session-title-first-prompt-llm/README.zh.md)——根据第一条符合条件的用户消息生成标题。
-- [全消息标题提供方](../../../bat/removed-20261031/packages/experimental/session-title-all-prompts-llm/README.md)——根据所有符合条件的用户消息生成标题。
+- [全消息标题提供方](../../experimental/session-title-all-prompts-llm/README.md)——根据所有符合条件的用户消息生成标题。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 
 -----
@@ -98,7 +98,7 @@ kind: "package-library"
 
 #### 模型看到什么
 
-标题模型会收到由提供方拥有的系统指令，以及一条包含提供方所拥有输入的用户消息。执行器记录并分发这些确切取值，不做重建；封装方式与输出指令都归提供方所有，并由[首消息](../session-title-first-prompt-llm/README.zh.md)与[全消息](../../../bat/removed-20261031/packages/experimental/session-title-all-prompts-llm/README.md) README 记录。
+标题模型会收到由提供方拥有的系统指令，以及一条包含提供方所拥有输入的用户消息。执行器记录并分发这些确切取值，不做重建；封装方式与输出指令都归提供方所有，并由[首消息](../session-title-first-prompt-llm/README.zh.md)与[全消息](../../experimental/session-title-all-prompts-llm/README.md) README 记录。
 
 #### Token 影响
 

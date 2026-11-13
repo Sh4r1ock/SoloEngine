@@ -13,7 +13,7 @@ import {
 } from './theme-settings.ts'
 
 const LIGHT_BACKGROUND = '#fff'
-const DARK_BACKGROUND = '#0f1115'
+const DARK_BACKGROUND = '#151517'
 
 /** CSS that colors the document canvas before any script executes. */
 function bootThemeStyle(preference: ThemePreference): string {

@@ -8,7 +8,6 @@
   "files": [
     "src/boot-theme.ts",
     "src/index.ts",
-    "src/static.ts",
     "src/theme-settings.ts"
   ],
   "references": [

@@ -1,11 +1,11 @@
 /** Iframe navigation provider with bounded application-known history. */
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { IframeObservation, IframePresentation } from './IframePresentation.ts'
-import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError, type BrowserSandboxControl } from '../contract/BrowserFrame.ts'
-import type { BrowserPageOptions } from '../contract/BrowserPage.ts'
+import type { IframeObservation, IframePresentation } from '../view/IframePresentation.ts'
+import { emptyBrowserFrame, type BrowserFrame, type BrowserFrameState, type BrowserLoadError, type BrowserSandboxControl } from './BrowserFrame.ts'
+import type { BrowserPageOptions } from './BrowserPage.ts'
 import { BrowserNavigation } from './BrowserNavigation.ts'
-import type { BrowserTarget } from '../contract/url.ts'
-import type { BrowserProxyRefusal } from '../contract/proxy.ts'
+import type { BrowserProxyRefusal } from './proxy.ts'
+import type { BrowserTarget } from './url.ts'
 
 /** Owns iframe navigation; the view reports loads without reading cross-origin content. */
 export class IframeImpl implements BrowserFrame {
@@ -25,7 +25,7 @@ export class IframeImpl implements BrowserFrame {
   }
 
   /**
-   * Record a controlled load, adopting the address the frame reported.
+   * Record a controlled load or a later navigation to an unreadable address.
    * @param revision - document generation whose iframe emitted load.
    * @param observation - what the same-origin carrier read from the frame.
    */

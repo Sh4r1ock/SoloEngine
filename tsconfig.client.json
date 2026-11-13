@@ -31,6 +31,7 @@
     "packages/extensions/ui-cordis/src/css-modules.d.ts",
     "packages/client/tsdown.client.ts",
     "scripts/client-build-environment.ts",
+    "scripts/shipped-locales.ts",
     "scripts/bundle-input-isolation.ts",
     "scripts/experimental-package-policy.ts",
     "scripts/*.client.spec.ts",
@@ -116,7 +117,7 @@
     { "path": "./packages/client/ui-settings-subagent" },
     { "path": "./packages/client/ui-settings-web-search" },
     { "path": "./packages/client/ui-user-questions" },
-    { "path": "./packages/client/ui-trajectory" },
+    { "path": "./packages/client/ui-trajectory/tsconfig.client.json" },
     { "path": "./packages/session-query/session-log-export/tsconfig.client.json" },
     { "path": "./packages/client/ui-open-in-app" },
     { "path": "./packages/client/ui-theme/tsconfig.client.json" },
@@ -137,6 +138,13 @@
     { "path": "./packages/soloengine/ui-conversation" },
     { "path": "./packages/soloengine/client-bootstrap" },
     { "path": "./packages/soloengine/ui-document-editor" },
-    { "path": "./packages/soloengine/ui-operation-area" }
+    { "path": "./packages/soloengine/ui-operation-area" },
+    { "path": "./packages/client/ui-file-drag" },
+    { "path": "./packages/session/message-quotes" },
+    { "path": "./packages/core/tool-executor-native" },
+    { "path": "./packages/core/tool-executor-ptc" },
+    { "path": "./packages/test-support/tool-testkit" },
+    { "path": "./packages/client/ui-context-menu" },
+    { "path": "./packages/client/ui-file-actions" }
   ]
 }

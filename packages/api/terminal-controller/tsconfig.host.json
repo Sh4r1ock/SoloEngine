@@ -11,7 +11,9 @@
     "src/terminal.ts",
     "src/retention.ts",
     "src/stream.ts",
-    "src/shells.ts"
+    "src/shells.ts",
+    "src/agent.ts",
+    "src/screen.ts"
   ],
   "references": [
     {
@@ -45,9 +47,6 @@
       "path": "../../subprocess/subprocess"
     },
     {
-      "path": "../../terminal/terminal"
-    },
-    {
       "path": "../../typert/protocol"
     },
     {
@@ -61,6 +60,9 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../terminal/terminal"
     }
   ]
 }

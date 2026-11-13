@@ -125,7 +125,7 @@ function exportSource(packageRoot: string, specifier: string): string | undefine
   const subpath = specifier === packageName ? '.' : `.${specifier.slice(packageName.length)}`
   let manifest: unknown
   try {
-    manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
+    manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8').replace(/^\uFEFF/, ''))
   } catch (_unreadableManifest) {
     // The error names the import without a suggested source path.
     return undefined

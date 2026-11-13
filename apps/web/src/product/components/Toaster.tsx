@@ -70,7 +70,7 @@ function ToastItem({ entry, holdMs, onDone }: {
   const done = useCallback(() => { onDone(entry.id) }, [onDone, entry.id])
   // 设计参考 §5.4：role="status" + aria-live="polite"；行由宿主区域的列向堆叠排列，
   // 不在行上做视口定位（原型 .toast-region）。
-  return <Toast text={entry.text} tone={entry.tone} holdMs={holdMs} role="status" stacked onDone={done} />
+  return <Toast text={entry.text} tone={entry.tone} holdMs={holdMs} onDone={done} />
 }
 
 /**

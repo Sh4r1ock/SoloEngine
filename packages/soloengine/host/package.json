@@ -47,12 +47,11 @@
     "@soloengine/cloud-control": "workspace:*",
     "@soloengine/executor-container": "workspace:*",
     "@soloengine/executor-vm": "workspace:*",
-    "@soloengine/framework": "workspace:*",
     "@soloengine/image-distribution": "workspace:*",
     "@soloengine/instance-runtime": "workspace:*",
     "@soloengine/subprocess-container": "workspace:*",
     "@soloengine/types": "workspace:*",
-    "zod": "^4.4.3"
+    "zod": "4.6.6"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

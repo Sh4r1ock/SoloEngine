@@ -89,8 +89,8 @@ export const previewProjectionDefinition = {
  * 注册预览记录投影与 `open_preview` 工具（注册即可逆效果：卸载即撤销）。
  * @param ctx - 插件上下文（必须注入 `sessionProjections` 与 `tools`）。
  */
-export function apply(ctx: Context): void {
-  ctx.sessionProjections.register(previewProjectionDefinition)
+export async function apply(ctx: Context): Promise<void> {
+  await ctx.sessionProjections.register(previewProjectionDefinition)
   registerOpenPreviewTool(ctx)
   // 可取证行走 console：本 profile 未挂 logger-console，logger 输出不进启动日志。
   console.log(`soloengine-open-preview: registered projection "soloengine.openPreview" (limit ${String(PREVIEW_LIMIT)}) and tool "open_preview"`)

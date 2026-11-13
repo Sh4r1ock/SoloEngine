@@ -10,6 +10,9 @@
  *   same path.
  * - `list` speaks workspace paths — the same syntax its `path` argument accepts —
  *   because its consumer is a tree rooted at the workspace root.
+ * - `search` reports `/`-joined workspace-relative paths, and its query and
+ *   exclusions use the same relative syntax, because its consumer is the same
+ *   workspace tree.
  *
  * @module @deepseek-ai/dsh-api-workspace-files/types
  */
@@ -32,6 +35,17 @@ export interface WorkspaceFileStat {
   readonly version: string
   /** Byte size of the complete file, when the backend reports it. */
   readonly bytes?: number
+}
+
+/** Guards one full-file write: create-only, or the version the caller last read. */
+export interface WorkspaceFileWriteOptions {
+  /** Refuse an existing target instead of replacing it. */
+  readonly createOnly?: boolean
+  /**
+   * Refuse the write unless the file is still at this version, as returned by
+   * {@link WorkspaceFileStat.version} or a previous write.
+   */
+  readonly expectedVersion?: string
 }
 
 /**
@@ -122,23 +136,54 @@ export interface WorkspaceDirectoryListing {
   readonly truncated: boolean
 }
 
-/** Guards for one human-driven file write inside the workspace. */
-export interface WorkspaceFileWriteOptions {
-  /** Refuse an existing target instead of replacing it. */
-  readonly createOnly?: boolean
+/** One workspace-wide search by entry name or workspace-relative path. */
+export interface WorkspaceFileSearchRequest {
   /**
-   * Refuse the write unless the file is still at this version, as returned by
-   * {@link WorkspaceFileStat.version} or a previous write.
+   * Case-insensitive substring to find. Surrounding whitespace is trimmed, and
+   * an empty result is refused. Without `/` it matches entry names; with `/` it
+   * matches `/`-joined workspace-relative paths.
    */
-  readonly expectedVersion?: string
+  readonly query: string
+  /**
+   * Literal exclusions passed as escaped rg globs. A value without `/` excludes
+   * that name at any depth; a value with `/` excludes the exact path rooted at
+   * the workspace. Glob metacharacters in names are not interpreted as patterns.
+   */
+  readonly excludedPaths: readonly string[]
+  /** Whether rg includes hidden files and directories; VCS metadata remains excluded. */
+  readonly includeHidden: boolean
+  /**
+   * Whether native rg ignore rules apply, including repository detection,
+   * nested and parent `.gitignore`, `.git/info/exclude`, global Git excludes
+   * and `.ignore`. The service does not read `core.ignorecase`; false passes
+   * `--no-ignore`.
+   */
+  readonly respectGitignore: boolean
 }
 
-/** One completed workspace mutation, named in both path vocabularies. */
-export interface WorkspaceMutationResult {
-  /** Absolute path of the target in the filesystem's execution world. */
-  readonly absolutePath: string
-  /** Whether the target is a directory after the mutation. */
-  readonly type: 'file' | 'directory'
+/** One entry a workspace search found. */
+export interface WorkspaceFileSearchMatch {
+  /** `/`-joined path relative to the workspace root, never empty. */
+  readonly path: string
+  /** What the entry resolves to, as {@link WorkspaceDirectoryEntry.type} reports it. */
+  readonly type: WorkspaceDirectoryEntry['type']
+}
+
+/** The outcome of one workspace search. */
+export interface WorkspaceFileSearchResult {
+  /**
+   * Matching files and inferred ancestor directories from the bounded set of
+   * listed files, sorted by depth then workspace-relative path and cut to the
+   * configured result cap.
+   */
+  readonly matches: readonly WorkspaceFileSearchMatch[]
+  /** Whether matches exceeded the result cap after scanning the bounded file set. */
+  readonly truncated: boolean
+  /**
+   * Whether rg listed more files than the file cap and was terminated early,
+   * or exited with code 2 to report partial discovery.
+   */
+  readonly incomplete: boolean
 }
 
 /**
@@ -171,6 +216,8 @@ export type WorkspaceFileWatchFrame =
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
+    /** Search cannot run: missing subprocess, launch/execution failure, or configured timeout. */
+    'workspace-file/search-failed': Record<string, never>
     /** The filesystem provider cannot initialize a watch for this target. */
     'workspace-file/watch-unsupported': { readonly path: string }
     /** No entry exists at that path inside the workspace. */
@@ -191,20 +238,20 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
       readonly path: string
       readonly kind: 'file' | 'symlink' | 'other'
     }
-    /** A create was refused because the target already exists. */
+    /** A create-only write found the target already present. */
     'workspace-file/already-exists': { readonly path: string }
-    /** A guarded write found the file changed since the caller read it. */
+    /** The write's expected version no longer matches the file. */
     'workspace-file/stale-version': { readonly path: string }
-    /** The mutation's parent directory is absent or is not a directory. */
+    /** The write target's parent directory is absent or is not a directory. */
     'workspace-file/parent-missing': { readonly path: string }
     /** The target is a symbolic link, which mutations refuse to follow. */
     'workspace-file/symlink-refused': { readonly path: string }
-    /** The backend's policy or file permissions refused the mutation. */
+    /** The backend's policy or file permissions refused the write. */
     'workspace-file/denied': {
       readonly path: string
       readonly reason: 'permission' | 'sandbox'
     }
-    /** The backend failed the mutation for any other reason; the message carries its diagnosis. */
+    /** The backend failed the write for any other reason; the message carries its diagnosis. */
     'workspace-file/write-failed': { readonly path: string }
   }
 }

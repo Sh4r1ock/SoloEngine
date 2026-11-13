@@ -29,13 +29,15 @@
     path: ':memory:'
     openAt: never
 
-- id: tools
-  config:
-    # TEMPORARY workaround: DSH_TOOLS_MODE (native|ptc) opts a whole dsh
-    # process into PTC mode while per-session tool-presentation selection is being
-    # designed; unset keeps the schema default (native). Remove the env seam
-    # once the web UI owns the choice per session.
-    mode: !!js process.env.DSH_TOOLS_MODE
+# TEMPORARY workaround: DSH_TOOLS_MODE (native|ptc) opts a whole dsh process
+# into PTC execution while per-session executor selection is being designed;
+# unset keeps the native executor. Remove the env seam once the web UI owns the
+# choice per session.
+- id: tool-executor-native
+  disabled: !!js process.env.DSH_TOOLS_MODE === 'ptc'
+
+- id: tool-executor-ptc
+  disabled: !!js process.env.DSH_TOOLS_MODE !== 'ptc'
 
 # ── web-only host rows, the transport layer, and the browser roster ─────────
 
@@ -143,9 +145,6 @@
     # reports an actionable error when its settings-domain provider is absent.
     - id: ui-settings-account
       name: '@deepseek-ai/dsh-client-ui-settings-account'
-
-    - id: account-controller
-      name: '@deepseek-ai/dsh-api-account-controller'
 
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
@@ -283,6 +282,13 @@
     - id: ui-sidebar-right
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
+    # Shared context-menu service and the drag-and-drop carrier the attachment
+    # and workspace rows inject.
+    - id: ui-context-menu
+      name: '@deepseek-ai/dsh-client-ui-context-menu'
+
+    - id: ui-file-drag
+      name: '@deepseek-ai/dsh-client-ui-file-drag'
 
     - id: office-to-pdf
       name: '@deepseek-ai/dsh-office-to-pdf'

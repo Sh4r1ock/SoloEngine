@@ -11,7 +11,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
-import { detachSessionElsewhere, WorkspaceEntity } from './entity.ts'
+import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
@@ -145,6 +145,22 @@ declare module '@deepseek-ai/cordis' {
      * @mode parallel
      */
     'workspace/session-stop'(request: SessionActivityRequest): Promise<void> | void
+    /**
+     * Admit optional follow-up work after durable archival and any stop requests.
+     * Dispatched inside the registry's write queue: a listener registers its work
+     * and returns, and runs the work and any unbounded I/O afterwards. Listener
+     * failures are logged without undoing archival. Listeners own and drain their background work.
+     * @param request - newly archived Session; repeated archive requests do not dispatch.
+     * @mode parallel
+     */
+    'workspace/session-archived'(request: SessionActivityRequest): Promise<void> | void
+    /**
+     * Cancel or settle archive follow-up work before making a Session available again.
+     * A rejection retains the archived state.
+     * @param request - Session about to leave the archive set.
+     * @mode parallel
+     */
+    'workspace/session-unarchiving'(request: SessionActivityRequest): Promise<void> | void
   }
 }
 
@@ -159,10 +175,6 @@ const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): b
 
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
-
-/** Compare two stored directory spellings under the host's path-case rules. */
-const samePath = (left: string, right: string): boolean =>
-  process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right
 
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
@@ -208,16 +220,13 @@ export class WorkspaceRegistry extends Service {
     this.state = domain.global.get()
 
     await this.recoverPendingMutation()
+    this.validateStoredState(this.state)
     if (!this.state.initialized) {
       const headers = await this.listStoredHeaders()
       await this.replaceHeaderIndex(headers)
-      await this.reconcileMembership()
-      this.validateStoredState(this.requireState())
       await this.bootstrap(headers)
     } else if (this.table.size > 0) {
       await this.replaceHeaderIndex(await this.listStoredHeaders())
-      await this.reconcileMembership()
-      this.validateStoredState(this.requireState())
     }
 
     await this.indexLiveSessions()
@@ -367,7 +376,7 @@ export class WorkspaceRegistry extends Service {
    * resolves without writing, asking, or stopping.
    * @param sessionId - The session to archive.
    * @param options - Whether running work is stopped instead of refusing.
-   * @returns resolution after durability and, with `stopActivity`, after every stop request was issued.
+   * @returns resolution after durability, any stop requests, and follow-up admission.
    */
   archiveSession(sessionId: SessionId, options: ArchiveSessionOptions = {}): Promise<void> {
     return this.enqueueOperation(async () => {
@@ -390,6 +399,11 @@ export class WorkspaceRegistry extends Service {
         pinnedSessionIds: state.pinnedSessionIds.filter(id => id !== sessionId),
       })
       if (options.stopActivity === true) await this.stopSessionActivity(sessionId)
+      try {
+        await this.ctx.parallel('workspace/session-archived', { sessionId })
+      } catch (error) {
+        this.ctx.logger.warn('Session archived, but archive follow-up admission failed: %s', error)
+      }
     })
   }
 
@@ -409,6 +423,7 @@ export class WorkspaceRegistry extends Service {
       // check-then-write pair cannot interleave with a concurrent archive.
       const state = this.requireState()
       if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.ctx.parallel('workspace/session-unarchiving', { sessionId })
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
@@ -746,51 +761,6 @@ export class WorkspaceRegistry extends Service {
       archivedSessionIds: state.archivedSessionIds,
       pinnedSessionIds: state.pinnedSessionIds,
     })
-  }
-
-  /**
-   * Repair durable membership where one Session is accounted by several
-   * Workspaces.
-   *
-   * A Session belongs to the Workspace that matches its canonical header cwd,
-   * and `attachSession` moves that membership. Records written before this
-   * invariant was enforced can still carry the same Session in two records;
-   * rejecting the whole domain would disable every service that injects
-   * `workspaceRegistry`, so the duplicate is resolved from the same cwd canon
-   * used everywhere else. The preferred holder is the record whose path equals
-   * the Session's canonical cwd, then its stored cwd spelling, then registry
-   * order. Missing directories keep the first holder because only a definite
-   * cwd identifies the owner.
-   *
-   * @returns completion after every extra membership is removed durably.
-   */
-  private async reconcileMembership(): Promise<void> {
-    const table = this.requireTable()
-    const holders = new Map<SessionId, WorkspaceId[]>()
-    for (const [id, record] of table.entries()) {
-      for (const sessionId of record.sessionIds) {
-        const list = holders.get(sessionId)
-        if (list === undefined) holders.set(sessionId, [id])
-        else list.push(id)
-      }
-    }
-    for (const [sessionId, ids] of holders) {
-      if (ids.length < 2) continue
-      const canonical = this.sessionPaths.get(sessionId)
-      const cwd = this.headers.get(sessionId)?.cwd
-      const firstHolder = ids[0]
-      if (firstHolder === undefined) continue
-      const preferred = ids.find((id) => {
-        const path = (table.get(id) as WorkspaceRecord).path
-        if (canonical !== undefined) return path === canonical
-        return cwd !== undefined && samePath(path, cwd)
-      }) ?? firstHolder
-      await detachSessionElsewhere(table, sessionId, preferred)
-      this.ctx.logger.warn(
-        `workspace domain repaired: session '${sessionId}' was accounted by `
-        + `${ids.map(id => `'${id}'`).join(' and ')}; kept '${preferred}'`,
-      )
-    }
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {

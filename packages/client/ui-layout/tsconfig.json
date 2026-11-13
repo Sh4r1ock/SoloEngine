@@ -24,9 +24,6 @@
       "path": "../ui-theme/tsconfig.client.json"
     },
     {
-      "path": "../ui-primitives"
-    },
-    {
       "path": "../store"
     },
     {
@@ -37,6 +34,9 @@
     },
     {
       "path": "../shortcuts/tsconfig.client.json"
+    },
+    {
+      "path": "../ui-primitives"
     }
   ]
 }

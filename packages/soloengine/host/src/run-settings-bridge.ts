@@ -18,13 +18,40 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { Session } from '@deepseek-ai/dsh-session'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { FrameworkError, type FrameworkRuntime } from '@soloengine/framework'
-import type {} from '@soloengine/types'
+import type { RunContextRecord } from '@soloengine/types'
 import { resolveSessionOwnership } from './session-ownership.ts'
 import { BridgeFailure, readJsonBody, sendFailure, sendJson } from './bridge-json.ts'
 
 /** 桥前缀（与 /soloengine/workspace、/soloengine/changes 互不遮蔽）。 */
 const RUN_SETTINGS_PREFIX = '/soloengine/run-settings'
+
+/** 宿主侧注册的 run-context 投影句柄，按上下文归属（桥在驱动接线之后挂载）。 */
+const runContextProjections = new WeakMap<Context, ProjectionHandle<RunContextRecord | null>>()
+
+/**
+ * 绑定宿主侧注册的 run-context 投影句柄。
+ * @param ctx - 拥有该注册的上下文。
+ * @param handle - `register` 返回的注册句柄。
+ */
+export function bindRunContextProjection(ctx: Context, handle: ProjectionHandle<RunContextRecord | null>): void {
+  runContextProjections.set(ctx, handle)
+}
+
+/**
+ * 读取运行上下文投影的当前状态。
+ *
+ * 0.2.2 起注册表的同步读取 `sessionProjections.stateOf(session, key)` 返回 `unknown` 并标记废弃；
+ * 这里改读注册句柄，未接线时视为尚未写入。
+ * @param ctx - 含 `sessionProjections` 的上下文。
+ * @param session - 要读取运行上下文的会话。
+ * @returns 当前运行上下文；未注册或尚未写入时为 null/undefined。
+ */
+function runContextState(ctx: Context, session: Session): RunContextRecord | null | undefined {
+  return runContextProjections.get(ctx)?.stateOf(session)
+}
 
 /**
  * 面板发起运行时的受管工作根：`<该账号的隔离项目根>/runs/<canvasId>`。
@@ -142,7 +169,7 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
       if (agent === undefined) {
         throw new BridgeFailure(409, 'SESSION_NOT_LIVE', `session ${sessionKey} is not live in this host; run settings change a running session only`)
       }
-      const current = ctx.sessionProjections.stateOf(agent.session, 'soloengine.runContext')
+      const current = runContextState(ctx, agent.session)
       if (current === null || current === undefined) {
         throw new BridgeFailure(409, 'RUN_CONTEXT_MISSING', `session ${sessionKey} has no run context; start the run before changing live follow`)
       }

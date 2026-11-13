@@ -1,13 +1,12 @@
 {
-  "extends": "../../../tsconfig.base.client.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib/types"
-  },
-  "include": [
-    "src"
-  ],
+  "files": [],
   "references": [
+    {
+      "path": "./tsconfig.host.json"
+    },
+    {
+      "path": "./tsconfig.client.json"
+    },
     {
       "path": "../../../vendor/cordis"
     },
@@ -43,6 +42,9 @@
     },
     {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../../core/tool-executor-ptc"
     },
     {
       "path": "../../compaction/compaction"

@@ -86,6 +86,17 @@ class PostgresKvUnit implements KvUnit {
     )
   }
 
+  /** 批量删除（一次往返）；语义与 {@link deleteRecord} 相同。 */
+  async deleteRecords(table: string, keys: readonly string[]): Promise<void> {
+    this.assertOpen()
+    this.assertTable(table)
+    if (keys.length === 0) return
+    await this.pool.query(
+      'DELETE FROM records WHERE unit = $1 AND table_name = $2 AND key = ANY($3::text[])',
+      [this.descriptor.name, table, [...keys]],
+    )
+  }
+
   /** 把记录移出可读集合、保留字节供取证。 */
   async backupRecord(table: string, key: string): Promise<string> {
     this.assertOpen()

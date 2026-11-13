@@ -11,10 +11,12 @@
     personaPrefix: >-
       You are a coding agent powered by the {{model}} model.
 
-- id: tools
-  config:
-    # Keep the same temporary process-wide PTC mode opt-in as the Web surface.
-    mode: !!js process.env.DSH_TOOLS_MODE
+# Keep the same temporary process-wide PTC executor opt-in as the Web surface.
+- id: tool-executor-native
+  disabled: !!js process.env.DSH_TOOLS_MODE === 'ptc'
+
+- id: tool-executor-ptc
+  disabled: !!js process.env.DSH_TOOLS_MODE !== 'ptc'
 
 - insert:
     - id: headless-startup

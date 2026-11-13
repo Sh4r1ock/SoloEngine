@@ -21,9 +21,9 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ReadDocumentBytes, ReadWorkspaceFilePage, SessionFile } from './rpc.ts'
 import type { TextStore } from './store.ts'
-import type { DocumentLoadMode } from './contract/document/registry.ts'
+import type { DocumentLoadMode } from './document/registry.ts'
 import type { Resources } from '@deepseek-ai/dsh-client-resources/client'
-import { ResourceGroup } from './contract/document/resource-group.ts'
+import { ResourceGroup } from './document/resource-group.ts'
 
 /** The preview's injected business face, as the body receives it. */
 export interface TextInjected {

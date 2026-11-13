@@ -27,38 +27,6 @@ export class WorkspaceMoveInvalidError extends Error {
 }
 
 /**
- * Remove one Session from every Workspace record except `keep`.
- *
- * A Session belongs to exactly one Workspace; `attachSession` detaches before it
- * adds the membership, and startup repair detaches every non-preferred holder.
- * The update predicate rechecks the membership because the table may change
- * between listing holders and applying the write.
- * @param table - Open `workspaces` table.
- * @param sessionId - Session leaving the other records.
- * @param keep - Record that keeps (or receives) the membership.
- * @returns completion after every other record is updated durably.
- */
-export async function detachSessionElsewhere(
-  table: KvTable<WorkspaceId, WorkspaceRecord>,
-  sessionId: SessionId,
-  keep: WorkspaceId,
-): Promise<void> {
-  const otherHolders = [...table.entries()]
-    .filter(([id, record]) => id !== keep && record.sessionIds.includes(sessionId))
-    .map(([id]) => id)
-  for (const id of otherHolders) {
-    await table.update(id, (record) => {
-      if (!record.sessionIds.includes(sessionId)) return record
-      return {
-        ...record,
-        sessionIds: record.sessionIds.filter(candidate => candidate !== sessionId),
-        updatedAt: new Date().toISOString(),
-      }
-    })
-  }
-}
-
-/**
  * The registry-owned machinery an entity mutates through. Entities never see
  * the registry itself — only the open table, the canonical session-path
  * index backing the `sessionIds` projection, and attach-time header reads.
@@ -176,10 +144,6 @@ export class WorkspaceEntity implements Workspace {
       }
       this.host.rememberSessionPath(sessionId, cwd)
     }
-    // A Session belongs to exactly one Workspace: move the membership out of any
-    // other record instead of counting it twice. Duplicate accounting makes the
-    // next registry load reject the whole domain.
-    await detachSessionElsewhere(this.host.table(), sessionId, this.id)
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record
       : { ...record, sessionIds: [sessionId, ...record.sessionIds] })

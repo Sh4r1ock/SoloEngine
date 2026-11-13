@@ -48,6 +48,9 @@
       "path": "../shortcuts/tsconfig.client.json"
     },
     {
+      "path": "../ui-context-menu"
+    },
+    {
       "path": "../../soloengine/types"
     }
   ]

@@ -1,10 +1,8 @@
 /**
  * The seam's consumer-facing contracts: request, result, and capability types
  * for {@link SubagentProvider}, plus the `subagent/start` and `subagent/end`
- * payloads that plugins and hosts observe. Internal control interfaces belong
- * with their implementation — the lifecycle observer in `./lifecycle.ts`, the
- * manager host in `./manager.ts` — so this module stays the published
- * surface rather than a bag of everything type-shaped.
+ * payloads that plugins and hosts observe. Internal control interfaces, such
+ * as the manager host, belong with their implementation.
  *
  * @module @deepseek-ai/dsh-subagent/types
  */
@@ -12,11 +10,11 @@
 import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
-import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
-/** Identifies one accepted subagent run across its lifecycle event pair. */
+/** Identifies one subagent residency epoch across its lifecycle event pair. */
 export type SubagentRunId = Branded<'SubagentRunId'>
 
 /**
@@ -29,15 +27,19 @@ export function SubagentRunId(id: string): SubagentRunId {
 }
 
 /** One managed child execution and its result delivery policy. */
-export interface SubagentActivationSpec {
+export interface SubagentActivationSpec extends Omit<SubagentStartRequest, 'label' | 'signal'> {
   /** Registered backend to use. */
   readonly provider: string
   /** Short task label retained in cataloged child membership. */
   readonly label: string
+  /**
+   * Requested name, unique among the parent's children: 1–32 lower-case
+   * letters, digits, or hyphens starting with a letter, other than `lead`.
+   * Omission selects the first free `agent-N`.
+   */
+  readonly name?: string
   /** Optional reserved identity for a local child; external backends allocate their own ids. */
   readonly childId?: SessionId
-  /** Task, parent, and backend-supported execution options. */
-  readonly request: Omit<SubagentStartRequest, 'label' | 'signal'>
   /** Cancellation before publication; callers own later cancellation through dispose. */
   readonly signal: AbortSignal
   /** Parent delivery notifies the model; caller delivery only returns the result. Local children always enter the parent catalog. */
@@ -48,6 +50,11 @@ export interface SubagentActivationSpec {
 export interface SubagentActivation {
   /** Stable identity of the child. */
   readonly childId: SessionId
+  /**
+   * Model-facing name: slash-separated names from the root when every creator
+   * below the root is named, otherwise the child Session id.
+   */
+  readonly name: string
   /** Accepted inbox message, when the backend has a local inbox. */
   readonly messageId?: MessageId
   /**
@@ -55,20 +62,28 @@ export interface SubagentActivation {
    * Teardown failures are reported by dispose() without replacing a captured result.
    */
   readonly result: Promise<SubagentResult>
-  /** Stop and release this activation and its owned descendants; rejects on teardown failure. */
+  /** Stop and release only this activation; rejects on teardown failure. */
   dispose(): Promise<void>
 }
 
+/** Model-facing names of one live tree member and its direct creator. */
+export interface SubagentMemberNames {
+  /** `lead` for the root, the slash-separated path for a named descendant, otherwise the Session id. */
+  readonly self: string
+  /** The direct creator's name by the same rule; absent for the root. */
+  readonly parent?: string
+}
+
 /**
- * Authority under which one interrupt request is admitted. `user` carries the
- * durable direct-parent address a human client presented; `ancestor` carries
- * the exact live Agent object whose recorded lineage must contain the caller.
+ * Authority under which one interrupt request is admitted. `user` is a trusted
+ * host operation; Remote callers need permission on the target Session before
+ * invoking it. `ancestor` carries an exact live Agent in the target's creation ancestry.
  */
 export type SubagentInterruptAuthority =
-  | { readonly kind: 'user'; readonly parentSessionId: SessionId }
+  | { readonly kind: 'user' }
   | { readonly kind: 'ancestor'; readonly agent: Agent }
 
-/** Options for one model-authored message between adjacent Agents. */
+/** Options for one model-authored message within a subagent tree. */
 export interface SubagentSendMessageOptions {
   /** Caller cancellation, owning the operation only until inbox acceptance. */
   readonly signal: AbortSignal
@@ -76,16 +91,18 @@ export interface SubagentSendMessageOptions {
 
 /**
  * Observe-only identifying detail for a published subagent run, carried by
- * `subagent/start`. Local and external activations share this payload.
+ * `subagent/start` and `subagent/end`. Local and external activations share it.
  */
 export interface SubagentRunInfo {
-  /** Unique identity shared with the paired terminal event. */
+  /** Unique identity shared by one residency epoch's start/end pair. */
   readonly runId: SubagentRunId
   /**
    * Provider name recorded when the child was first created, retained even
    * after that provider is unregistered.
    */
   readonly provider: string
+  /** Durable direct creator, independent of the live subagent tree root. */
+  readonly parentSessionId: SessionId
   /** The child agent's id. */
   readonly id: SessionId
   /** Whether this activation owns a local Agent, fixed at publication. */
@@ -96,15 +113,7 @@ export interface SubagentRunInfo {
  * Observe-only outcome detail for a settled subagent run, carried by
  * `subagent/end` and paired with one {@link SubagentRunInfo} by `runId`.
  */
-export interface SubagentRunEndInfo {
-  /** Unique identity shared with the paired start event. */
-  readonly runId: SubagentRunId
-  /** The same provider name carried by the paired start event. */
-  readonly provider: string
-  /** The child agent's id. */
-  readonly id: SessionId
-  /** Whether this activation owns a local Agent, fixed at publication. */
-  readonly local: boolean
+export interface SubagentRunEndInfo extends SubagentRunInfo {
   /** The terminal stop reason. */
   readonly stopReason: SubagentResult['stopReason']
   /**
@@ -130,9 +139,8 @@ export interface SubagentCapabilities {
 }
 
 /**
- * Task and optional capabilities supplied to a backend. startActivation carries
- * these fields in request while owning its label, cancellation, and delivery
- * policy separately.
+ * Task and optional capabilities supplied to a backend. The activation spec
+ * shares these task options and defines its own label and cancellation policy.
  */
 export interface SubagentStartRequest {
   /** Initial child directory; relative paths resolve against the parent's current directory. Omitted inherits that directory at start. */
@@ -143,6 +151,22 @@ export interface SubagentStartRequest {
    * parent context.
    */
   readonly agentPreset?: string
+  /**
+   * Product-owned composition applied to a local child after its preset mounts
+   * and before its first turn. An external provider owns its own process and
+   * rejects a request carrying this field.
+   */
+  readonly setup?: (child: Agent) => void | Promise<void>
+  /**
+   * Attach the local child's scope beneath this product-owned scope instead of
+   * joining the parent's preset generation directly. The product uses it when
+   * its own instance scope already inherits the composition: the child then
+   * resolves the instance's services as well as the preset's.
+   *
+   * Local backends only; ignored when {@link agentPreset} selects an
+   * independent composition.
+   */
+  readonly scopeParent?: ScopeKey
   /** Optional short display label persisted with a session-backed child. */
   readonly label?: string
   /** Content delivered as the child's user message. */
@@ -181,26 +205,12 @@ export interface SubagentStartRequest {
    * start otherwise.
    */
   readonly maxDepth?: number
-  /**
-   * Product-owned composition applied to a local child before its first turn,
-   * after the selected preset (if any) is mounted. The exact live child is
-   * supplied; use `child.ctx` for scoped registrations and `child.session` for
-   * durable facts. Rejecting fails creation and rolls the child back.
-   *
-   * Local backends only: an external provider owns its own process and rejects
-   * a request carrying this field.
-   */
-  readonly setup?: (child: Agent) => void | Promise<void>
-  /**
-   * Attach the local child's scope beneath this product-owned scope instead of
-   * joining the parent's preset generation directly. The product uses it when
-   * its own instance scope already inherits the composition: the child then
-   * resolves the instance's services as well as the preset's.
-   *
-   * Local backends only; ignored when {@link agentPreset} selects an
-   * independent composition.
-   */
-  readonly scopeParent?: ScopeKey
+}
+
+/** Provider-facing request with an absolute directory selected before startup. */
+export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
+  /** Absolute child directory captured from the parent or explicit request. */
+  readonly cwd: string
 }
 
 /**
@@ -224,12 +234,6 @@ export interface SubagentResumeComposition {
    * selected an independent preset.
    */
   readonly scopeParent?: ScopeKey
-}
-
-/** Provider-facing request with an absolute directory selected before startup. */
-export interface ResolvedSubagentStartRequest extends SubagentStartRequest {
-  /** Absolute child directory captured from the parent or explicit request. */
-  readonly cwd: string
 }
 
 /**

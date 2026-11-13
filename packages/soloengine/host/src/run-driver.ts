@@ -13,7 +13,7 @@ import { z as zod } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
-import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionDefinition, ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool, RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
@@ -183,6 +183,31 @@ export const nodeAttributionProjectionDefinition = {
     }
   },
 } satisfies ProjectionDefinition<'soloengine.nodeAttribution', NodeAttributionRecord | null>
+
+/** 宿主侧注册的节点归属投影句柄，按上下文归属（驱动在注册之后读取）。 */
+const nodeAttributionProjections = new WeakMap<Context, ProjectionHandle<NodeAttributionRecord | null>>()
+
+/**
+ * 绑定宿主侧注册的节点归属投影句柄。
+ * @param ctx - 拥有该注册的上下文。
+ * @param handle - `register` 返回的注册句柄。
+ */
+export function bindNodeAttributionProjection(ctx: Context, handle: ProjectionHandle<NodeAttributionRecord | null>): void {
+  nodeAttributionProjections.set(ctx, handle)
+}
+
+/**
+ * 读取节点归属投影的当前状态。
+ *
+ * 0.2.2 起注册表的同步读取 `sessionProjections.stateOf(session, key)` 返回 `unknown` 并标记废弃，
+ * 推荐读法是注册时拿到的句柄；这里改读注册句柄，未接线时视为尚未写入。
+ * @param ctx - 含 `sessionProjections` 的上下文。
+ * @param session - 要读取归属的子会话。
+ * @returns 已写入的归属；未注册或尚未写入时为 null/undefined。
+ */
+function nodeAttributionState(ctx: Context, session: Session): NodeAttributionRecord | null | undefined {
+  return nodeAttributionProjections.get(ctx)?.stateOf(session)
+}
 
 /**
  * 解析画布全局运行档位：缺省取原生默认档；R186 之前的持久化档位名按等价关系迁移，
@@ -465,7 +490,7 @@ export function createRunDriver(
     ctx.subagents.registerResumeComposition(agent, {
       scopeParent: flow.key,
       setup: async (child) => {
-        const record = ctx.sessionProjections.stateOf(child.session, 'soloengine.nodeAttribution') ?? undefined
+        const record = nodeAttributionState(ctx, child.session) ?? undefined
         if (record === undefined) {
           ctx.logger.warn(
             `soloengine: resumed subagent ${String(child.id)} has no node attribution; its node composition `
@@ -577,32 +602,30 @@ export function createRunDriver(
           const activation = await ctx.subagents.startActivation({
             provider: 'spawn',
             label: child.name,
-            request: {
-              prompt: [{ type: 'text', text: args.task }],
-              parent,
-              // 画布运行声明的委派深度上限必须真正生效：只声明不传会让配置成为死字段。
-              maxDepth: options.maxDepth,
-              agentOptions: {
-                provider: child.modelRoute,
-                model: childModel,
-                ...childMaxTokens === undefined ? {} : { maxTokens: childMaxTokens },
-                ...child.sampling?.temperature === undefined ? {} : { temperature: child.sampling.temperature },
-              },
-              // 子代理挂到本 flow 实例作用域之下：实例插件与隔离服务对它可见；实例已继承预设，
-              // 因此预设服务同样可达（一个画布 = 一个 harness 实例，子代理也在实例内）。
-              scopeParent: flow.key,
-              // 每个被委派节点也是一个完整 agent：在子代理创建时把该节点的 persona/工具/技能/
-              // MCP/插件挂进它的作用域。作用域已由 scopeParent 绑到实例，这里不再重复绑定。
-              setup: async (childAgent) => {
-                attributeChild(childAgent, child, spec.agentId)
-                // 节点归属落进子会话自己的日志：进程重启后 send_message 冷恢复按它重放节点组合。
-                childAgent.session.append('soloengine/node-attribution', {
-                  canvasId: runContext.get(owner.sessionKey)?.canvasId ?? '',
-                  agentId: child.agentId,
-                  parentAgentId: spec.agentId,
-                })
-                await composeNode(childAgent.ctx, childAgent, child, compiled, owner, flow, false)
-              },
+            prompt: [{ type: 'text', text: args.task }],
+            parent,
+            // 画布运行声明的委派深度上限必须真正生效：只声明不传会让配置成为死字段。
+            maxDepth: options.maxDepth,
+            agentOptions: {
+              provider: child.modelRoute,
+              model: childModel,
+              ...childMaxTokens === undefined ? {} : { maxTokens: childMaxTokens },
+              ...child.sampling?.temperature === undefined ? {} : { temperature: child.sampling.temperature },
+            },
+            // 子代理挂到本 flow 实例作用域之下：实例插件与隔离服务对它可见；实例已继承预设，
+            // 因此预设服务同样可达（一个画布 = 一个 harness 实例，子代理也在实例内）。
+            scopeParent: flow.key,
+            // 每个被委派节点也是一个完整 agent：在子代理创建时把该节点的 persona/工具/技能/
+            // MCP/插件挂进它的作用域。作用域已由 scopeParent 绑到实例，这里不再重复绑定。
+            setup: async (childAgent) => {
+              attributeChild(childAgent, child, spec.agentId)
+              // 节点归属落进子会话自己的日志：进程重启后 send_message 冷恢复按它重放节点组合。
+              childAgent.session.append('soloengine/node-attribution', {
+                canvasId: runContext.get(owner.sessionKey)?.canvasId ?? '',
+                agentId: child.agentId,
+                parentAgentId: spec.agentId,
+              })
+              await composeNode(childAgent.ctx, childAgent, child, compiled, owner, flow, false)
             },
             signal: exec.signal,
             delivery: 'parent',
@@ -837,7 +860,7 @@ export function createRunDriver(
         // 被委派的子会话不是画布入口：它的节点归属写在会话日志里（`soloengine/node-attribution`），
         // 由父会话经 `send_message` 唤醒并按该节点的组合重放。把它当成根会话冷恢复会用入口节点的
         // persona/工具/模型继续跑，并把归属改写成「入口节点的根」——语义错误，明确拒绝。
-        const childRecord = ctx.sessionProjections.stateOf(agent.session, 'soloengine.nodeAttribution') ?? undefined
+        const childRecord = nodeAttributionState(ctx, agent.session) ?? undefined
         if (childRecord !== undefined) {
           throw new FrameworkError(
             409,

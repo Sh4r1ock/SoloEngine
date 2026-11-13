@@ -18,7 +18,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 
 import type { Volatile } from '@deepseek-ai/cordis'
 
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { CommandDefinitionId } from '@deepseek-ai/dsh-commands/brand'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
@@ -38,7 +38,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type { ToolExecution } from '@deepseek-ai/dsh-tools'
 // Type-only: resolves the required projection service and optional settings/command children.
-import type {} from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { PermissionCatalog, PermissionSelection, PresetOption } from './types.ts'
 import {
@@ -232,6 +232,7 @@ export class PermissionPresetService extends TypertRemoteService {
   static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
 
   private readonly presets: Record<string, PresetSpec>
+  private permissionProjectionHandle: ProjectionHandle<PermissionProjectionState> | undefined
   private autoAdmit: (() => void) | undefined
   private defaultSettings: () => PermissionSettings
   private readonly admission: ApproveForMeConfig
@@ -270,11 +271,14 @@ export class PermissionPresetService extends TypertRemoteService {
       if (!Object.hasOwn(this.presets, defaultPreset)) throw new Error(`permission: unknown default preset "${defaultPreset}"`)
       return { defaultPreset }
     }
+  }
 
+  protected async [Service.init](): Promise<void> {
+    const ctx = this.ctx
     const selectionSchema = zod.object({
       currentValue: zod.string().min(1),
     }) as zod.ZodType<PermissionSelection>
-    ctx.sessionProjections.register({
+    this.permissionProjectionHandle = await this.ctx.sessionProjections.register({
       key: 'permissions',
       stateVersion: 2,
       stateSchema: permissionStateSchema,
@@ -282,10 +286,10 @@ export class PermissionPresetService extends TypertRemoteService {
       apply: applyPermissionEvent,
       wire: { viewSchema: selectionSchema, view: state => ({ currentValue: this.derive(state) }) },
     })
-    ctx.on('session/created', (session) => {
+    this.ctx.on('session/created', (session) => {
       this.pinInitialPermission(session)
     })
-    for (const session of ctx.sessions.list()) {
+    for (const session of this.ctx.sessions.list()) {
       this.pinInitialPermission(session)
     }
 
@@ -460,9 +464,11 @@ export class PermissionPresetService extends TypertRemoteService {
   }
 
   private permissionState(session: Session): PermissionProjectionState {
-    const state = this.ctx.sessionProjections.stateOf(session, 'permissions')
-    if (state === undefined) throw new Error('permission: permissions session projection is not registered')
-    return state
+    const handle = this.permissionProjectionHandle
+    if (handle === undefined) {
+      throw new Error('permission: presets are not ready; await plugin activation before creating or restoring a session')
+    }
+    return handle.stateOf(session)
   }
 
   /**

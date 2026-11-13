@@ -20,7 +20,7 @@
  */
 
 import type { Context, Fiber } from '@deepseek-ai/cordis'
-import { EntryTree, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { EntryTree, type EntryChange, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { prepareProfileEntries } from '@deepseek-ai/dsh-app-boot'
 import { auditRows } from '@deepseek-ai/dsh-agent-preset-registry'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey } from '@deepseek-ai/dsh-scope'
@@ -49,7 +49,7 @@ class InstanceEntryTree extends EntryTree {
   }
 
   /** 内存树不持久化任何配置。 */
-  override write(): void {}
+  override commit(_change: EntryChange): void {}
 }
 
 /** 一份 flow 实例的可见表面。 */

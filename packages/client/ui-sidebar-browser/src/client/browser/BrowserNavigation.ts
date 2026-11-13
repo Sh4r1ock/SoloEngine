@@ -1,6 +1,6 @@
 /** Bounded, application-known history used only by the iframe provider. */
-import { parseBrowserAddress, type BrowserTarget } from '../contract/url.ts'
-import type { BrowserHistoryEntry, BrowserTabState } from '../contract/BrowserPersistence.ts'
+import { parseBrowserAddress, type BrowserTarget } from './url.ts'
+import type { BrowserHistoryEntry, BrowserTabState } from './BrowserPersistence.ts'
 
 /** Maximum retained application-known navigation entries per tab. */
 export const MAX_BROWSER_HISTORY = 100

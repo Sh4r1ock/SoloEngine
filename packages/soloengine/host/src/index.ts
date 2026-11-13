@@ -49,7 +49,7 @@ import type { BundleInfo, ChangeResult, PluginInstallRequestId, PluginSpecInspec
 import { FrameworkRuntime, BUSINESS_TABLES, FRAMEWORK_VERSION } from '@soloengine/framework'
 import type { ManagedBundleRow, ManagedChangeResult, ManagedInspection } from '@soloengine/framework'
 import { mountOperationAreaBridge } from './ops-bridge.ts'
-import { mountRunSettingsBridge } from './run-settings-bridge.ts'
+import { bindRunContextProjection, mountRunSettingsBridge } from './run-settings-bridge.ts'
 import { resolveSessionOwnership, rootSessionKeyOf } from './session-ownership.ts'
 import { attachFollowLayer, attachLedgerWriters, retireSessionsAfterCanvasDelete } from './ledger-writers.ts'
 import { attachCreatorAudit, mountProductSettings } from './product-surfaces.ts'
@@ -77,6 +77,7 @@ import {
   type Config,
 } from './config.ts'
 import {
+  bindNodeAttributionProjection,
   createRunDriver,
   followIntentProjectionDefinition,
   nodeAttributionProjectionDefinition,
@@ -801,7 +802,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const fiber = ctx.inject(
       ['agents', 'sessions', 'agentPresets', 'tools', 'subagents', 'sessionProjections', 'skills', 'sessionPersistence', 'loader',
         'shellEnv', 'subprocess'],
-      (driverCtx) => {
+      async (driverCtx) => {
         // 远程执行形态必须真的有按会话路由的子进程提供方；否则命令会静默跑在本机（安全边界失效）。
         if ((containers !== undefined || vms !== undefined) && !(driverCtx.subprocess instanceof ContainerSubprocessRuntime)) {
           throw new Error(
@@ -891,9 +892,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         driverCtx.effect(() => () => { clearInterval(mcpTimer) })
         // 运行上下文 / 工具呈现意图 / 节点归属三条投影（会话头、操作区与冷恢复的数据源）：
         // 注册即可逆效果，卸载即撤销。
-        driverCtx.sessionProjections.register(runContextProjectionDefinition)
-        driverCtx.sessionProjections.register(followIntentProjectionDefinition)
-        driverCtx.sessionProjections.register(nodeAttributionProjectionDefinition)
+        const runContextHandle = await driverCtx.sessionProjections.register(runContextProjectionDefinition)
+        await driverCtx.sessionProjections.register(followIntentProjectionDefinition)
+        const nodeAttributionHandle = await driverCtx.sessionProjections.register(nodeAttributionProjectionDefinition)
+        bindRunContextProjection(driverCtx, runContextHandle)
+        bindNodeAttributionProjection(driverCtx, nodeAttributionHandle)
         console.log(
           `soloengine: run driver wired (preset=${agentPreset}, maxDelegationDepth=${String(maxDepth)},`
           + ' projection=soloengine.runContext+soloengine.followIntent+soloengine.nodeAttribution)',
@@ -981,7 +984,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         pendingRunInjections = [...injections]
         let body: string
         try {
-          body = routeCtx.webServer.renderIndex(html)
+          body = routeCtx.webServer.renderIndex(html, routeCtx.connection.browserPeer)
         } finally {
           pendingRunInjections = []
         }

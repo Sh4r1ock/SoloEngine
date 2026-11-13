@@ -1,103 +1,51 @@
-/* 原型 `components.css` `.toast-region` / `.toast` 与设计参考 §5.4：底部居中、
-   反色墨底、12/20、8/16、8px 圆角、最大 520、3.2s 保持后 150ms 退出。
-   保持时长 `--dsh-toast-hold` 由组件写入，退出时长与 Toast.tsx 的 FADE_MS 一致。 */
+/* The fade delay comes from the component as `--dsh-toast-hold`, so one value
+   drives both the unmount timer and this animation; the fallback matches the
+   component's own default. The fade DURATION still has to agree with FADE_MS
+   in Toast.tsx, which no owner varies. */
 
 .toast {
   position: fixed;
-  bottom: 32px;
+  top: 40px;
   left: 50%;
   /* Above the 1000 the image lightbox backdrop uses: a failure reported while
      a preview is open must stay readable. */
   z-index: 1100;
-  /* Announcements never intercept clicks; only action text does (below). */
+  /* Announcements never intercept clicks. */
   pointer-events: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   /* Fixed boxes with `left` set shrink-to-fit against the space RIGHT of
      `left` (the -50% translate happens after sizing), so an anchored banner
      near the window edge would wrap early. max-content sizes the box from
      its text alone, capped by the max-width below. */
   width: max-content;
-  max-width: min(520px, calc(100vw - 32px));
-  padding: 8px 16px;
-  /* Prototype `--line-strong`: muted 42% over the border color in light. */
-  border: 0.5px solid var(--dsw-static-neutral-bluish-400);
-  border-radius: var(--dsw-radius-sm);
-  /* The prototype's inverse surface: ink in light, white in dark. */
-  background: var(--dsw-static-neutral-bluish-1000);
-  color: var(--dsw-static-neutral-bluish-00);
-  font-size: 12px;
-  line-height: 20px;
-  /* Prototype `--shadow-menu`: 0 10px 28px ink at 10%. */
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 10%, transparent);
+  max-width: min(640px, calc(100vw - 48px));
+  padding: 12px 16px;
+  border-radius: var(--dsw-radius-lg);
+  /* The design platform's toast surface is dark in BOTH themes (bluish-800
+     light / bluish-750 dark), so the label and the action text below stay
+     fixed instead of flipping with the theme. */
+  background: var(--dsw-alias-toast-bg);
+  color: var(--dsw-alias-toast-label);
+  font-size: 14px;
+  line-height: 22px;
+  box-shadow: var(--dsw-shadow-lv3);
   transform: translateX(-50%);
   animation:
-    dsh-toast-in 200ms ease-out,
-    dsh-toast-fade 150ms ease-in var(--dsh-toast-hold, 3200ms) forwards;
-  /* Action text stays legible on either surface. */
-  --dsh-toast-action: var(--dsw-static-deepseek-400);
+    dsh-toast-in 160ms ease-out,
+    dsh-toast-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards;
 }
 
-body[data-ds-dark-theme] .toast {
-  /* Prototype dark `--line-strong`: white 30% over ink. */
-  border-color: color-mix(in srgb, var(--dsw-static-neutral-bluish-00) 30%, var(--dsw-static-neutral-bluish-1000));
-  background: var(--dsw-static-neutral-bluish-00);
-  color: var(--dsw-static-neutral-bluish-1000);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--dsw-static-neutral-bluish-1000) 55%, transparent);
-  --dsh-toast-action: var(--dsw-static-deepseek-600);
-}
-
-/* Host-owned stacking region (prototype `.toast-region`): the host places the
-   fixed column and its 8px gap, so the row itself carries no viewport position
-   or horizontal centering. */
-.toast.stacked {
-  position: static;
-  left: auto;
-  bottom: auto;
-  transform: none;
-  animation:
-    dsh-toast-rise 200ms ease-out,
-    dsh-toast-fade-stacked 150ms ease-in var(--dsh-toast-hold, 3200ms) forwards;
-}
-
-@keyframes dsh-toast-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes dsh-toast-fade-stacked {
-  to {
-    opacity: 0;
-    transform: translateY(4px);
-    visibility: hidden;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toast.stacked {
-    animation: dsh-toast-fade-stacked 150ms ease-in var(--dsh-toast-hold, 3200ms) forwards;
-  }
-}
-
-/* The prototype colors every glyph with the banner ink, including `!`. */
 .icon {
   display: grid;
   place-items: center;
   flex: none;
-  color: inherit;
+  color: var(--dsw-alias-state-warn-label);
 }
 
-.icon.success,
-.icon.error {
-  color: inherit;
+.icon.success {
+  color: var(--dsw-alias-state-success-primary);
 }
 
 .text {
@@ -109,7 +57,8 @@ body[data-ds-dark-theme] .toast {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--dsh-toast-action);
+  /* Reads as the action against the always-dark toast surface without an underline. */
+  color: var(--dsw-alias-toast-action);
   font: inherit;
   cursor: pointer;
   /* Breathing room where the action text meets the surrounding copy. */
@@ -119,14 +68,16 @@ body[data-ds-dark-theme] .toast {
   pointer-events: auto;
 }
 
-.action:hover {
-  opacity: 0.8;
+@media (hover: hover) {
+  .action:hover {
+    opacity: 0.8;
+  }
 }
 
 @keyframes dsh-toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 8px);
+    transform: translate(-50%, -6px);
   }
 
   to {
@@ -138,15 +89,14 @@ body[data-ds-dark-theme] .toast {
 @keyframes dsh-toast-fade {
   to {
     opacity: 0;
-    transform: translate(-50%, 4px);
     visibility: hidden;
   }
 }
 
-/* Reduced motion drops the rise; the delayed fade still ends the banner
-   before the timed unmount. */
+/* Reduced motion drops the slide-in; the delayed fade (an opacity change,
+   not movement) still ends the banner before the timed unmount. */
 @media (prefers-reduced-motion: reduce) {
   .toast {
-    animation: dsh-toast-fade 150ms ease-in var(--dsh-toast-hold, 3200ms) forwards;
+    animation: dsh-toast-fade 1000ms ease var(--dsh-toast-hold, 3000ms) forwards;
   }
 }

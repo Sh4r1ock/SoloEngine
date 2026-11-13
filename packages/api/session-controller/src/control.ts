@@ -5,11 +5,11 @@ import { Deque } from '@deepseek-ai/dsh-deque'
 import type {
   Session, SessionId,
 } from '@deepseek-ai/dsh-session'
-import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionControlBaseline,
   SessionControlFrame,
   SessionProjectionBaseline,
+  SessionProjectionUpdate,
   SessionProjectionValues,
 } from './types.ts'
 
@@ -22,13 +22,13 @@ export class SessionControlController {
 
   /** @param ctx - Host context carrying live Agent and projection services. */
   constructor(private readonly ctx: Context) {
-    ctx.sessionProjections.onChanged((session, key, value, seq) => {
+    ctx.sessionProjections.onEventChanged((session, changes, seq) => {
       this.broadcast({
         type: 'projection',
         sessionId: session.id,
-        key,
-        value: value as JsonValue,
         seq,
+        // Every projection definition validates its value before change publication.
+        changes: changes as SessionProjectionUpdate['changes'],
       })
     })
     ctx.effect(() => () => {
@@ -121,10 +121,7 @@ class ControlQueue {
    * @param allowed - account-scope admission for one Session; omitted without an account scope.
    * @returns admitted frames in publication order.
    */
-  async *iterate(
-    signal: AbortSignal,
-    allowed?: SessionAdmission,
-  ): AsyncIterable<SessionControlFrame> {
+  async *iterate(signal: AbortSignal, allowed?: SessionAdmission): AsyncIterable<SessionControlFrame> {
     const onAbort = (): void => { this.end() }
     signal.addEventListener('abort', onAbort, { once: true })
     try {

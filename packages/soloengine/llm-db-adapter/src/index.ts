@@ -17,7 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AdapterRegistrationHandle, GenerateOptions, LlmProviderInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
-import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai'
+import { authContextFrom, credentialStoreFrom } from '@deepseek-ai/dsh-llm-pi-ai/src/auth.ts'
 import { RouteTable, withRowSampling, type ModelRouteSource, type RouteEntry, type RouteSnapshot } from './routes.ts'
 
 export const name = 'soloengine-llm-db-adapter'

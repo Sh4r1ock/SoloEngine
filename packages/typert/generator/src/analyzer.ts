@@ -544,7 +544,7 @@ export class WorkspaceAnalyzer {
           && !(includeVendor && isWithin(realPath(packageRoot), join(this.options.root, 'vendor')))) continue
         const manifestPath = join(packageRoot, 'package.json')
         if (!existsSync(manifestPath)) continue
-        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')) as Record<string, unknown>
         const name = manifest.name
         if (typeof name !== 'string') continue
         const root = realPath(packageRoot)

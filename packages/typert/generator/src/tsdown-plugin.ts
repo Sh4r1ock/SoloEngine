@@ -125,7 +125,7 @@ export function typertPlugin(pluginOptions: TypertPluginOptions = {}): TypertPlu
       }
       const packageDir = packageRoot(bundleOptions.dir, root)
       if (packageDir === undefined) return
-      const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
+      const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8').replace(/^\uFEFF/, '')) as {
         name?: string
         exports?: unknown
       }

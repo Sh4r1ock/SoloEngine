@@ -1,14 +1,14 @@
-/* Badge geometry follows the product design baseline (设计参考 docs/03 §3、§4.3):
- * 20px high, 4px marker radius, 12/20 labels. Palette stays per tone. */
+/* Capsule geometry is fixed: a tag reads as one size everywhere, and only its
+ * palette varies. Tone colors ride background/border/color so a render site can
+ * still position the tag with its own class without touching the palette. */
 .tag {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  border-radius: var(--dsw-radius-xs);
+  border-radius: 999px;
   corner-shape: round;
-  padding: 0 8px;
-  font-size: 12px;
-  line-height: 20px;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 17px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -44,13 +44,6 @@
 .tag[data-tone='info'] {
   background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
   color: var(--dsw-alias-state-business-primary);
-}
-
-/* Dark keeps the prototype accent badge: a solid accent-weak fill (20% brand
- * blue over the ink ground) carrying the primary ink, not a 10% alpha wash. */
-body[data-ds-dark-theme] .tag[data-tone='info'] {
-  background: color-mix(in srgb, var(--dsw-static-deepseek-500) 20%, var(--dsw-static-neutral-bluish-1000));
-  color: var(--dsw-static-neutral-00);
 }
 
 .tag[data-tone='warning'] {

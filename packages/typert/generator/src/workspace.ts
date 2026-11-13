@@ -115,7 +115,7 @@ export class WorkspaceTypertGenerator {
 
   private validateExport(artifact: WorkspaceEmitResult): void {
     const manifestPath = resolve(this.root, artifact.packageRoot, 'package.json')
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, '')) as {
       exports?: unknown
       files?: unknown
     }

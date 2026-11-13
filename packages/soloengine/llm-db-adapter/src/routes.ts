@@ -20,7 +20,8 @@ import type { DeepSeekConnectionOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter as DeepSeekAdapterClass } from '@deepseek-ai/dsh-llm-deepseek'
 import type { GenerateOptions, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import { LlmError } from '@deepseek-ai/dsh-llm'
-import { PiAiAdapter, resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai'
+import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai'
+import { resolveProfiles } from '@deepseek-ai/dsh-llm-pi-ai/src/config.ts'
 import type { PiAiAdapterOptions } from '@deepseek-ai/dsh-llm-pi-ai'
 
 /** 一条模型路由的配置事实（管理层给出的只读视图，不含密钥）。 */
