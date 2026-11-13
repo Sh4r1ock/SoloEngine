@@ -208,7 +208,7 @@
       "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.1-rc.2",
       "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言（`(SOLOENGINE_EXECUTOR ?? 'local') !== 'local'` ⇒ Linux 镜像，其余跟宿主平台），不再只看宿主 `process.platform`；容器/microVM 形态里模型看到的 shell 工具与执行环境内真实存在的 shell 因此一致（R201）",
       "fileCount": 26,
-      "digest": "sha256:156a6eb7d6bb1e082c9c3f6299d07c667ad511921db470dc8d96cd3b4f519407"
+      "digest": "sha256:aeaa581d4d05d0c9c4c35c9ce515434e4674c5d64f058baee03e374d60cec669"
     },
     {
       "dir": "packages/client/connection",

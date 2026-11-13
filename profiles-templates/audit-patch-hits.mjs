@@ -82,6 +82,24 @@ function readLayerPatch() {
 }
 
 /**
+ * 写 profile 的精确版本豁免（`compatibility.json`）。
+ *
+ * 第三方 bundle 自身的 dsh 兼容区间不覆盖当前运行时、但接口已按本产品组合复核时，启动器会把
+ * 豁免写进实例 profile；审计的临时 profile 必须带同一份豁免，否则组合结果会**整层跳过**该
+ * bundle，patch 命中判定随之失真。名单与理由的唯一真源是 `profiles-templates/plugins.json`。
+ * @param dir - 临时 profile 目录。
+ */
+function writeCompatibility(dir) {
+  const manifest = JSON.parse(readFileSync(join(HERE, 'plugins.json'), 'utf8'))
+  const declared = manifest?.compatibilityExemptions ?? []
+  const runtimeVersion = JSON.parse(readFileSync(join(REPO_ROOT, 'packages', 'boot', 'app-boot', 'package.json'), 'utf8'))?.version
+  if (typeof runtimeVersion !== 'string') throw new Error('app-boot package.json declares no version')
+  const exemptions = {}
+  for (const entry of declared) exemptions[String(entry.packageVersion)] = [runtimeVersion]
+  writeFileSync(join(dir, 'compatibility.json'), `${JSON.stringify(exemptions, undefined, 2)}\n`)
+}
+
+/**
  * 建一个临时 profile 并让 bundle 可解析（junction 链入，不复制）。
  * @param name - profile 名。
  * @param bundles - bundle 清单。
@@ -98,6 +116,7 @@ function writeProfile(name, bundles, patchReload) {
   }, undefined, 2)}\n`)
   writeFileSync(join(dir, 'cordis.yml'), '[]\n')
   writeFileSync(join(dir, 'cordis.patch.yml'), '[]\n')
+  writeCompatibility(dir)
 }
 
 /** 把工作区包与第三方层链入临时 home 的 `profiles/node_modules`（与实例同形）。 */
@@ -118,9 +137,14 @@ function wireLinks() {
     symlinkSync(target, link, 'junction')
   }
   const instanceModules = join(REPO_ROOT, 'data', 'dsh-home', 'profiles', 'soloengine', 'node_modules')
-  for (const name of ['@anionex/dsh-turn-rewind']) {
+  // 第三方 bundle 层按 `plugins.json` 声明的依赖逐个链入：少链一个，平台就会**整层跳过**
+  // 它（审计随后按 skip 判据失败），组合结果也不再是部署里的那一份。
+  const pluginManifest = JSON.parse(readFileSync(join(HERE, 'plugins.json'), 'utf8'))
+  for (const name of Object.keys(pluginManifest?.dependencies ?? {})) {
     const target = join(instanceModules, name)
-    if (!existsSync(target)) continue
+    if (!existsSync(target)) {
+      throw new Error(`third-party bundle ${name} is not installed at ${target}; run: node soloengine-launch/bin.mjs install`)
+    }
     const link = join(modules, name)
     mkdirSync(dirname(link), { recursive: true })
     rmSync(link, { recursive: true, force: true })
@@ -150,6 +174,12 @@ function dumpConfig(name) {
   })
   if (result.status !== 0) {
     throw new Error(`dump-config failed for profile ${name} (exit ${String(result.status)}): ${result.stderr.trim().split(/\r?\n/u).slice(-4).join(' | ')}`)
+  }
+  // 组合层被整层跳过时，该层的 insert/patch 会一起消失（本次升级就是这样静默丢掉 turn-rewind 的）。
+  // 平台只对 skip 打 stderr 告警，退出码仍是 0，故审计必须自己把它当失败判据。
+  const skipped = result.stderr.split(/\r?\n/u).filter(line => line.includes('skipping profile bundle'))
+  if (skipped.length > 0) {
+    throw new Error(`dump-config skipped a bundle layer for profile ${name}: ${skipped.join(' | ')}`)
   }
   // 平台输出可能带 UTF-8 BOM（经 shell 管道时尤其常见）；YAML 解析器会把 BOM 当正文而报
   // 「end of the stream or a document separator is expected」，故先剥掉（只剥首个字符）。

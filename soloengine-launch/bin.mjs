@@ -178,7 +178,23 @@ function readPluginManifest() {
     }
     return [entry.name, join(ROOT, entry.path)]
   })
-  return { dependencies, links: normalized }
+  // 兼容豁免只对清单钉住的精确版本成立：版本一升，旧豁免立即失效（而不是悄悄继续放行新版本）。
+  const declaredExemptions = parsed?.compatibilityExemptions ?? []
+  if (!Array.isArray(declaredExemptions)) fail(`plugin manifest ${path} compatibilityExemptions must be an array`)
+  const exemptions = declaredExemptions.map(entry => {
+    const packageVersion = entry?.packageVersion
+    if (typeof packageVersion !== 'string' || typeof entry?.reason !== 'string' || entry.reason.trim() === '') {
+      fail(`plugin manifest ${path} carries a malformed compatibility exemption`)
+    }
+    const separator = packageVersion.lastIndexOf('@')
+    const name = separator > 0 ? packageVersion.slice(0, separator) : ''
+    const version = separator > 0 ? packageVersion.slice(separator + 1) : ''
+    if (name === '' || dependencies[name] !== version) {
+      fail(`plugin manifest ${path} exemption ${packageVersion} does not pin a declared dependency version`)
+    }
+    return { packageVersion, reason: entry.reason.trim() }
+  })
+  return { dependencies, links: normalized, exemptions }
 }
 
 const PLUGIN_MANIFEST = readPluginManifest()
@@ -189,8 +205,9 @@ const PLUGIN_DEPENDENCIES = PLUGIN_MANIFEST.dependencies
 /**
  * 精确版本豁免（`<profile>/compatibility.json`）：插件清单的兼容区间未覆盖当前 DSH 版本，
  * 但该版本的功能与接口已按本产品组合实测。只对列出的精确版本生效，升级插件或 DSH 即失效。
+ * 名单与理由在 `profiles-templates/plugins.json` 的 `compatibilityExemptions`（唯一真源）。
  */
-const PLUGIN_VERSION_EXEMPTIONS = []
+const PLUGIN_VERSION_EXEMPTIONS = PLUGIN_MANIFEST.exemptions
 
 /** 当前 DSH 运行时版本（app-boot 的版本即平台判定的运行时版本）。 */
 function dshRuntimeVersion() {

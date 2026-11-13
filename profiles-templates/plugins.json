@@ -4,6 +4,12 @@
     "@anionex/dsh-turn-rewind": "0.3.10",
     "dsh-free-search": "0.9.13"
   },
+  "compatibilityExemptions": [
+    {
+      "packageVersion": "@anionex/dsh-turn-rewind@0.3.10",
+      "reason": "0.3.10 的 peer 区间止于 0.2.1-rc.2；0.2.2-rc.2 下其消费的接口逐项复核仍在：agent/pre-step、tools/execute、agents.list（Agent.status/Agent.session）、sessions.get、sessionQuery.readSession、webServer.register（kind/path/handler）、conversation.session.header.actions、conversation.chat.assistant-actions、settings.plugins.tab、ui-primitives 的 Button/Modal/Tooltip；dsh-settings 只缺 register/installSection，插件本身已按可选服务降级，Config 由平台自动投影"
+    }
+  ],
   "links": [
     { "name": "@soloengine/host", "path": "packages/soloengine/host" },
     { "name": "@soloengine/framework", "path": "soloengine-framework" },
