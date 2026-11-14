@@ -2,6 +2,8 @@
   "name": "@deepseek-ai/dsh-session-log-export",
   "description": "Web Session-log export command and shared download dialog",
   "version": "0.2.2-rc.2",
+  "description": "Web Session-log ZIP export and Session Markdown copy",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },

@@ -1,2 +1,16 @@
 # Unified patch blank context lines require their leading space.
 patches/*.patch whitespace=-blank-at-eol
+
+# Documentation gates parse exact bytes; a CRLF checkout breaks frontmatter,
+# heading and translation-record matching on Windows hosts with core.autocrlf.
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.mts text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf

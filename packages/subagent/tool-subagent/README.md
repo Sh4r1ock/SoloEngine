@@ -94,7 +94,7 @@ One instance is one provider plus one tool name. The plugin registers its defini
 
 ### Activation ownership
 
-The tool calls `ctx.subagents.startActivation()` with parent delivery selected. The runtime owns startup cancellation, execution, outcome reporting, and cleanup. A startup failure is an errored tool result; failures after publication arrive through the completion notice, with diagnostics and partial output preserved by the runtime.
+The tool calls `ctx.subagents.startActivation()` with parent delivery selected. The runtime owns startup cancellation, execution, outcome reporting, and cleanup. A startup failure is an errored tool result. Rejections before startup are coded: a missing calling Agent, `llm` service, or effective parent route throws `ToolContextUnavailableError`; an empty or unpaired route field throws `ToolArgsError`; and `SubagentError` reports a disabled selection (`MODEL_SELECTION_DISABLED`, `PRESET_SELECTION_DISABLED`), a preset outside the allowlist (`PRESET_NOT_ALLOWED`), a route the Session does not authorize (`MODEL_ROUTE_NOT_ALLOWED`), an LLM provider unknown to discovery (`LLM_PROVIDER_NOT_FOUND`), or a provider replaced during route preflight (`PROVIDER_CHANGED`). Failures after publication arrive through the completion notice, with diagnostics and partial output preserved by the runtime.
 
 ### Result acknowledgement
 
@@ -167,7 +167,7 @@ The schema is prefix-stable across adapter registration and catalog changes. Eac
 
 #### What the model sees
 
-Visible delegation tools share delegation and collaboration guidance, listing tools in name order and instructing the model to start independent delegations together and keep working while they run, and to end its turn instead of sleeping or polling when only waiting for their results remains. Ending the turn works because a settled child notifies its parent and a notice that reaches an idle parent starts one independent model request; hosts that keep children progressing alternate `agent.whenIdle()` and `waitForChildren(agent)` ([`dsh-subagent`](../subagent/README.md), `session.ts`). Hidden or unavailable tools are omitted; no guidance appears when none are visible. With both `subagent` and `subagent_fork` visible, the text is:
+Visible delegation tools share delegation and collaboration guidance, listing tools in name order and instructing the model to start independent delegations together and keep working while they run, and to end its turn instead of sleeping or polling when only waiting for their results remains. Ending the turn works because a settled child notifies its parent and a notice that reaches an idle parent starts one independent model request; hosts that keep children progressing alternate `agent.whenIdle()` and `waitForChildren(agent)` ([`dsh-subagent`](../subagent/README.md)). Hidden or unavailable tools are omitted; no guidance appears when none are visible. With both `subagent` and `subagent_fork` visible, the text is:
 
 ##### Tool-guidance section
 

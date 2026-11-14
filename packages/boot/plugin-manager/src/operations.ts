@@ -333,7 +333,16 @@ export async function runProfilePnpm(
       output = output.subarray(output.length - options.outputBytes)
     }
   }
-  const environment = { ...(options.execution === 'cli' ? process.env : scrubbedParentEnv()), ...options.env }
+  // pnpm's Git children must never block on an IDE askpass pipe or a credential
+  // UI; the application runs this install on behalf of a surface with no terminal.
+  const nonInteractiveGit = options.execution === 'cli'
+    ? {}
+    : { GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', SSH_ASKPASS_REQUIRE: 'never', GCM_INTERACTIVE: 'never' }
+  const environment = {
+    ...(options.execution === 'cli' ? process.env : scrubbedParentEnv()),
+    ...options.env,
+    ...nonInteractiveGit,
+  }
   const restore = async (): Promise<void> => {
     for (const file of savedFiles) {
       if (file.text === undefined) await rm(file.path, { force: true })

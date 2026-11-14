@@ -49,7 +49,6 @@ import type {
 } from './types.ts'
 import {
   RemoteStreamMuxServer,
-  rejectRemoteStreamUpgrade,
 } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
@@ -265,46 +264,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
             compression: resolved.websocketCompression === 'deflate',
           },
         )
-        const releases = new Set<Promise<void>>()
         webCtx.effect(function* () {
           yield async () => {
             await mux.close()
-            await Promise.all(releases)
           }
           const route: WebUpgradeRoute = {
             path: REMOTE_STREAM_MUX_PATH,
-            handler: (req, socket, head) => {
-              const admission = webCtx.connection.admitConnection(req)
-              if ('rejection' in admission) {
-                rejectRemoteStreamUpgrade(socket, admission.rejection)
-                return
-              }
-              const release = (): void => {
-                // release removes the API Peer synchronously, before awaiting
-                // scope cleanup or any logical-stream iterator's return.
-                const done = admission.release().catch((error: unknown) => {
-                  console.error('[api-gateway] Peer release failed:', error)
-                })
-                releases.add(done)
-                void done.then(() => { releases.delete(done) })
-              }
-              const closed = (): void => {
-                socket.removeListener('error', release)
-                release()
-              }
-              socket.on('error', release)
-              socket.once('close', closed)
-              if (socket.destroyed) {
-                closed()
-                return
-              }
-              try {
-                mux.handleUpgrade(req, socket, head, admission.peer)
-              } catch (error) {
-                release()
-                socket.destroy()
-                console.error('[api-gateway] Remote stream upgrade failed:', error)
-              }
+            auth: 'required',
+            handler: (req, socket, head, peer) => {
+              mux.handleUpgrade(req, socket, head, peer as PeerScope)
             },
           }
           yield webCtx.webServer.registerUpgrade(route)
@@ -643,13 +611,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
     let resolved = false
     let resources: readonly RemoteAccessResource[] | undefined
     for (const client of this.remoteEventClients.values()) {
+      // Resources decide every client: a non-owner's access rules, and the
+      // product account a browser Peer is bound to.
+      if (!resolved) {
+        resources = eventResources(frame.resources, frame.args)
+        resolved = true
+      }
       if (!client.answers) {
         // A non-owner receives the whole notification or nothing: its resources decide, payloads are never trimmed,
         // and a notification with invalid resources reaches no non-owner.
-        if (!resolved) {
-          resources = eventResources(frame.resources, frame.args)
-          resolved = true
-        }
         if (resources === undefined) continue
         if (this.ctx.remoteAccess.decide({ principal: client.principal, action: `event:${frame.event}`, resources }).kind === 'deny') continue
       }

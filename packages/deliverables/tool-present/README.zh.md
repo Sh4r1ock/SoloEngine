@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-共用的输出与文件链接指导由 `dsh-deliverable-file-references` 提供，Web 与 SDK bundle 单独挂载该插件。
+共用的输出与文件链接指导由 [`dsh-deliverable-file-references`](../deliverable-file-references/README.zh.md) 提供，Web 与 SDK bundle 单独挂载该插件。
 
 `present` 按 Session 的当前工作目录校验路径并记录绝对路径，因此后续目录切换不会让已交付文件指向其他位置。
 

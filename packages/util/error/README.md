@@ -33,7 +33,7 @@ export class ArchiveError extends HarnessError {}
 throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 ```
 
-Assign `this.name` a string literal in a subclass constructor when a bundler could rename the class, because `name` is persisted. Import the class from `@deepseek-ai/dsh-error` or from its `@deepseek-ai/dsh-llm` re-export; both name the same class, so `instanceof` checks agree. The [error-handling rules](../../../.agents/skills/dsh-error-handling/SKILL.md) define class choice, naming, and code conventions.
+Assign `this.name` a string literal in a subclass constructor when a bundler could rename the class, because `name` is persisted. Import the class from `@deepseek-ai/dsh-error` or from its `@deepseek-ai/dsh-llm` re-export; both name the same class, so `instanceof` checks agree. The [error handling skill](../../../.agents/skills/dsh-error-handling/SKILL.md) defines class choice, naming, and code conventions.
 
 -----
 
@@ -51,7 +51,7 @@ Assign `this.name` a string literal in a subclass constructor when a bundler cou
 
 ### Why it stays dependency-free
 
-`dsh-llm` depends on lower packages such as `dsh-attachment` and `dsh-typert-protocol`, so a base class defined there could not be extended below it without a dependency cycle. Keeping the class in a package without dependencies lets every package extend it.
+`dsh-llm` depends on lower packages such as `dsh-attachment` and `dsh-typert-protocol`, so a base class defined there could not be extended below it without a dependency cycle. Keeping the class in a package without dependencies lets every package extend it; the dependency-free error base decision records the relocation.
 
 </details>
 

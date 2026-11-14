@@ -110,26 +110,38 @@ export const INSTANCE_PARAM = 'dsh-instance'
 export interface ConnectionTrustRequest {
   /** Request headers supplied by either the Fetch or node:http representation. */
   readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
-  /** Request target; a WebSocket upgrade carries {@link INSTANCE_PARAM} here. */
-  readonly url?: string | undefined
-}
-
-/** HTTP status returned before dispatch, or undefined when the request may proceed. */
-export type ConnectionRequestRejection = 401 | 403 | undefined
-
-/** Root/index request facts used by the browser-token exchange. */
-export interface ConnectionIndexRequest extends ConnectionTrustRequest {
+  /** Method and target supplied by the HTTP carrier; an upgrade carries {@link INSTANCE_PARAM} in the target. */
   readonly method?: string | undefined
   readonly url?: string | undefined
+  /** Cancellation of a Fetch request. */
+  readonly signal?: AbortSignal | undefined
+  /** Current disconnection state and address of a Node carrier. */
   readonly socket?: {
+    readonly destroyed?: boolean
     readonly remoteAddress?: string | undefined
   } | undefined
 }
+
+/** HTTP status returned before dispatch, or undefined when the request may proceed. */
+export type ConnectionRequestRejection = 401 | 403 | 503 | undefined
+
+/** Root/index request facts used by the browser-token exchange. */
+export type ConnectionIndexRequest = ConnectionTrustRequest
 
 /** Root/index response operations owned by the browser-token exchange. */
 export interface ConnectionIndexResponse {
   writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown
   end(body?: string): unknown
+}
+
+/** A credential verifier returning the existing Peer this request may represent. */
+export interface AuthenticationProvider {
+  /**
+   * Verify one request using this implementation's credentials.
+   * @param request - current request headers and cancellation facts.
+   * @returns a provider-owned Peer, or undefined to try the next provider.
+   */
+  authenticate(request: ConnectionTrustRequest): PeerScope | undefined
 }
 
 /** Loopback first-visit redirect configuration for {@link HostConnectionHandle.authorizeIndex}. */
@@ -180,7 +192,7 @@ export interface ConnectionAccountScope {
 /** Outcome of admitting one request: the Peer it speaks for, or the status refusing it. */
 export type PeerAdmission =
   | { readonly peer: PeerScope }
-  | { readonly rejection: 401 | 403 }
+  | { readonly rejection: 401 | 403 | 503 }
 
 /** Socket admission claims API ownership until its carrier calls release, including failed upgrades. */
 export type ConnectionAdmission =
@@ -270,7 +282,7 @@ export interface HostConnectionHandle {
   readonly rpc: HostConnectionRpc
   /** Exact Fetch routes for streaming or browser-native responses. */
   readonly fetch: HostConnectionFetch
-  /** The owner Peer every authenticated browser connection shares. */
+  /** Connection-owned Peer for trusted in-process callers, not network authentication. */
   readonly browserPeer: PeerScope
 
   /**
@@ -287,35 +299,48 @@ export interface HostConnectionHandle {
   createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
 
   /**
-   * Apply Connection's Host/Origin checks and browser authentication to
-   * another Web route.
+   * Apply the Host/Origin fence and require an authenticated live Peer.
    * @param request - request headers from the HTTP or upgrade request.
-   * @returns rejection status, or undefined when the route may accept the request.
+   * @returns the HTTP status refusing the request, or undefined when it may proceed.
    */
   requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection
 
   /**
-   * Admit an HTTP request against its signed browser or API credential and live Peer.
+   * Apply Host/Origin checks and admit the first live Peer returned by a registered credential verifier.
    * @param request - request headers from the HTTP or upgrade request.
    * @returns the credential's Peer, or the rejection status.
    */
   admit(request: ConnectionTrustRequest): PeerAdmission
 
   /**
+   * Claim exclusive API socket ownership for one admitted request.
+   * @param request - request headers from the HTTP or upgrade request.
+   * @returns the Peer and its release function, or the rejection status.
+   */
+  admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
+
+  /**
+   * Whether this Connection published the Peer for an API caller through `/connect`.
+   * @param peer - Peer admitted for an upgrade or call.
+   * @returns true only for an API Peer this Connection created; browser and in-process Peers are not.
+   */
+  ownsApiPeer(peer: PeerScope): boolean
+
+  /**
+   * Release one API Peer when its socket ends. Revokes the credential synchronously,
+   * so later requests using it are refused before asynchronous disposal completes.
+   * @param peer - API Peer to release.
+   * @returns completion of Peer disposal; idempotent.
+   */
+  releaseApiPeer(peer: PeerScope): Promise<void>
+
+  /**
    * Create an independent in-process Peer, disposed with the Context that read `ctx.connection`.
-   * @param options - fixed principal and optional interaction participation (default `answer`).
+   * @param options - fixed principal and interaction participation (default answer).
    * @returns a new Peer distinct from every other Peer.
    */
   createPeer(options: { readonly principal: Principal; readonly interactions?: 'answer' | 'none' }): PeerScope
 
-  /**
-   * Claim a physical socket for an API Peer; browser sockets share their owner Peer.
-   * @param request - authenticated upgrade request headers.
-   * @returns the Peer and idempotent release, or 409 for duplicate API ownership.
-   * The carrier releases on socket termination or failed upgrade; release removes
-   * API admission synchronously without cancelling independent HTTP calls.
-   */
-  admitConnection(request: ConnectionTrustRequest): ConnectionAdmission
 
   /**
    * Authenticate one frontend index request, owning a token redirect or 401.

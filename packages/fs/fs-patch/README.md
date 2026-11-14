@@ -84,7 +84,7 @@ The intentional differences from Codex are ownership and result reporting: the D
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [parser](src/parse.ts) builds syntax records without a Session or provider dependency. The [text updater](src/apply.ts) locates every hunk against the original text before constructing a complete result. The [types](src/types.ts) carry syntax locations and match failures.
+The [parser](src/parse.ts) builds syntax records without a Session or provider dependency. The [text updater](src/apply.ts) locates every hunk against the original text before constructing a complete result. The [types](src/types.ts) carry syntax locations and match failures; the [filesystem reference](../../../docs/subsystems/filesystem.md#patch-syntax-records) owns the public type definitions.
 
 </details>
 
@@ -92,7 +92,7 @@ The [parser](src/parse.ts) builds syntax records without a Session or provider d
 ## Further Exploration
 
 - [Filesystem package group](../README.md) — providers, policies, and file tools.
-- [Filesystem subsystem](../../../docs/subsystems/filesystem.md) — provider contract and policy events.
+- Apply patch file editing — decision record.
 
 ## Known Limitations and Deferred Work
 

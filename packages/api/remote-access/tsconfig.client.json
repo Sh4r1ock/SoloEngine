@@ -14,20 +14,10 @@
     "src/types.ts"
   ],
   "references": [
-    {
-      "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../gateway/tsconfig.client.json"
-    },
-    {
-      "path": "../../client/ui-renderer"
-    },
-    {
-      "path": "../../client/ui-slots"
-    },
-    {
-      "path": "../../typert/protocol"
-    }
+    { "path": "../../../vendor/cordis" },
+    { "path": "../gateway/tsconfig.client.json" },
+    { "path": "../../client/ui-renderer" },
+    { "path": "../../client/ui-slots" },
+    { "path": "../../typert/protocol" }
   ]
 }

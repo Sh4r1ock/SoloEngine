@@ -1,20 +1,23 @@
 /** Host HTTP bridge for browser-client RPC. */
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
-import type {} from '@deepseek-ai/dsh-credentials'
 // Activates the webServer Context merge used below.
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-credentials'
 import { API_PATH } from './api-path.ts'
-import { CONNECT_PATH } from './connect-protocol.ts'
 import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority } from './api-request-trust.ts'
-import { BrowserAuth } from './browser-auth.ts'
+import type { ConnectionTrustRequest } from './rpc.ts'
 import { HostConnectionService } from './rpc-host.ts'
+import { ConnectionAuthentication } from './authentication.ts'
+import { BrowserAuth } from './browser-auth.ts'
+import { API_MUX_PATH, CONNECT_PATH } from './connect-protocol.ts'
 import { ConnectionRecoveryConfigSchema, resolveConnectionConfig, type ConnectionRecoveryConfig } from './recovery-config.ts'
 
 export type {
+  AuthenticationProvider,
   PeerAdmission,
   ConnectionAccountScope,
   ConnectionAdmission,
@@ -30,9 +33,9 @@ export type {
   ConnectionRpcFailure,
   ConnectionRpcHandler,
   ConnectionRpcHandlerResult,
-  ConnectionRequestRejection,
   ConnectionRpcResult,
   ConnectionRequestBodyMode,
+  ConnectionRequestRejection,
   ConnectionTrustRequest,
   ClientRequest,
   HostConnectionHandle,
@@ -45,7 +48,7 @@ export type { PeerId, PeerScope, Principal, RemoteInvocation } from '@deepseek-a
 export { INSTANCE_HEADER, INSTANCE_PARAM, RpcId, transportError } from './rpc.ts'
 export { Peer } from './peer.ts'
 export type { PeerOptions } from './peer.ts'
-export { CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
+export { API_MUX_PATH, CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
 export {
   clientRequestSchema,
   rpcErrorSchema,
@@ -55,6 +58,7 @@ export {
   serverResponseSchema,
 } from './rpc-schema.ts'
 export { HostConnectionService } from './rpc-host.ts'
+export { ConnectionAuthentication } from './authentication.ts'
 
 export { API_PATH } from './api-path.ts'
 
@@ -121,8 +125,8 @@ export const Config: z<ConnectionConfig> = z.object({
 
 /**
  * Provides carrier-neutral RPC and Fetch registries. When `webServer` is
- * present, the plugin also mounts the `/api` browser transport with Host/Origin
- * checks and persistent browser authentication.
+ * present, the plugin applies Host/Origin checks and registered authentication
+ * to WebServer routes and mounts the `/api` browser transport.
  * @param ctx - Host plugin context.
  * @param config - resolved plugin config (schema defaults applied).
  */
@@ -136,35 +140,120 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   assertImageBodyCapacity(ctx, maxRequestBodyBytes)
-  const connection = new HostConnectionService(
-    ctx,
-    trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
-  )
-  ctx.inject(['webServer'], (webCtx) => {
-    assertImageBodyCapacity(webCtx, maxRequestBodyBytes)
-    webCtx.on('webserver/index-inject', (table) => {
-      table.push({ kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: recovery })
-    })
-    const fetchHandler = connection.createSharedFetchHandler(API_PATH)
-    const route: WebRoute = {
-      kind: 'prefix',
-      path: API_PATH,
-      handler: async (req, res) => {
-        const admission = connection.admit(req)
-        if ('rejection' in admission) {
-          res.writeHead(admission.rejection)
-          res.end(admission.rejection === 401 ? 'unauthorized' : 'forbidden')
+  const browserAuth = await BrowserAuth.create(ctx[Context.root], ctx.credentials, cookieMaxAgeDays)
+  // The launcher prints this signed entry URL; Connection owns the process token.
+  ctx.on('webserver/entry-url', (baseUrl, entries) => {
+    entries.push({ label: 'dsh web', url: browserAuth.authenticatedUrl(baseUrl), open: true })
+  })
+  new ConnectionAuthentication(ctx)
+  ctx.inject(['connection.authentication'], (connectionCtx) => {
+    const connection = new HostConnectionService(connectionCtx, trustedHosts, browserAuth)
+    connectionCtx.inject(['webServer'], (webCtx) => {
+      assertImageBodyCapacity(webCtx, maxRequestBodyBytes)
+      webCtx.on('webserver/index-inject', (table) => {
+        table.push({ kind: 'global', name: '__DSH_CONNECTION_RECOVERY__', value: recovery })
+      })
+      const fetchHandler = connection.createSharedFetchHandler(API_PATH)
+      // No response is written for a request whose carrier is already gone.
+      const abandoned = (request: ConnectionTrustRequest, response: { readonly destroyed: boolean }): boolean =>
+        request.signal?.aborted === true || request.socket?.destroyed === true || response.destroyed
+      // The process launch token exchanges for a signed browser cookie only at the
+      // application root; every other request keeps the route's own admission.
+      webCtx.on('webserver/request', async (request, response, next) => {
+        const url = new URL(request.url ?? '/', 'http://dsh.invalid')
+        if (url.pathname !== '/' || !url.searchParams.has('token')) {
+          await next()
           return
         }
-        await webCtx.waterfall('connection/request', req, res, () => bridge(req, res, fetchHandler, admission.peer, maxRequestBodyBytes))
-      },
-    }
-    webCtx.effect(() => webCtx.webServer.register(route), 'client-connection: /api route')
-    webCtx.effect(() => webCtx.webServer.register({
-      kind: 'exact', path: CONNECT_PATH,
-      handler: (req, res) => { connection.authorizeConnect(req, res) },
-    }), 'client-connection: /connect route')
+        if (abandoned(request, response)) return
+        connection.authorizeIndex(request, response)
+      })
+      const route: WebRoute = {
+        kind: 'prefix',
+        path: API_PATH,
+        auth: 'required',
+        handler: async (req, res, peer) => {
+          if (peer === undefined || res.destroyed) return
+          await webCtx.waterfall('connection/request', req, res, () => bridge(req, res, fetchHandler, peer, maxRequestBodyBytes))
+        },
+      }
+      webCtx.effect(() => webCtx.webServer.register(route), 'client-connection: /api route')
+      webCtx.effect(() => webCtx.webServer.register({
+        kind: 'exact',
+        path: CONNECT_PATH,
+        auth: 'anonymous',
+        handler: (req, res) => {
+          if (abandoned(req, res)) return
+          connection.authorizeConnect(req, res)
+        },
+      }), 'client-connection: /connect route')
+      // One API socket per `connect` caller. The route admitted the Peer before this
+      // waterfall; browser and in-process Peers delegate so tabs may share them.
+      const apiSockets = new Map<string, () => Promise<void>>()
+      webCtx.effect(() => async () => {
+        await Promise.all([...apiSockets.values()].map(release => release()))
+      }, 'client-connection: API sockets')
+      webCtx.on('webserver/upgrade', async (request, socket, _head, admittedPeer, next) => {
+        if (admittedPeer === undefined || !connection.ownsApiPeer(admittedPeer)) {
+          await next()
+          return
+        }
+        if (admittedPeer.signal.aborted) {
+          socket.destroy()
+          return
+        }
+        if (new URL(request.url ?? '/', 'http://dsh.invalid').pathname !== API_MUX_PATH) {
+          await next()
+          return
+        }
+        if (apiSockets.has(admittedPeer.id)) {
+          socket.end([
+            'HTTP/1.1 409 Conflict',
+            'Connection: close',
+            'Content-Type: text/plain; charset=utf-8',
+            'Content-Length: 8',
+            '',
+            'conflict',
+          ].join('\r\n'))
+          return
+        }
+        const closed = Promise.withResolvers<undefined>()
+        let released: Promise<void> | undefined
+        const release = (): Promise<void> => {
+          if (released !== undefined) return released
+          socket.destroy()
+          released = Promise.all([
+            closed.promise,
+            // Revocation precedes asynchronous Peer disposal.
+            connection.releaseApiPeer(admittedPeer).catch((error: unknown) => {
+              console.error('[client-connection] Peer release failed:', error)
+            }),
+          ]).then(() => { apiSockets.delete(admittedPeer.id) })
+          return released
+        }
+        const failed = (): void => { void release() }
+        const finish = (): void => {
+          socket.removeListener('error', failed)
+          socket.removeListener('close', finish)
+          closed.resolve(undefined)
+          void release()
+        }
+        apiSockets.set(admittedPeer.id, release)
+        socket.on('error', failed)
+        socket.once('close', finish)
+        if (socket.closed) finish()
+        if (socket.destroyed) {
+          await release()
+          return
+        }
+        try {
+          await next()
+        } catch (error) {
+          await release()
+          throw error
+        }
+      })
+    })
   })
   ctx.inject(['attachments'], (attachmentCtx) => {
     assertImageBodyCapacity(attachmentCtx, maxRequestBodyBytes)

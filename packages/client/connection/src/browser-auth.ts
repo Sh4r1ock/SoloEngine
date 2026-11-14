@@ -1,8 +1,8 @@
-/** Browser-session authentication for the Host Connection carrier. */
+﻿/** Browser-session authentication for the Host Connection carrier. */
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
-import { CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
+import { API_MUX_PATH, CONNECT_PATH, type ConnectionInteractions } from './connect-protocol.ts'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
 import type {
@@ -418,7 +418,7 @@ export class BrowserAuth {
     const value = encodeCookie({ version: 2, authority, id, issuedAt, expiresAt }, this.secret)
     res.writeHead(302, {
       'cache-control': 'no-store',
-      'location': './api/remote.mux',
+      'location': `.${API_MUX_PATH}`,
       'referrer-policy': 'no-referrer',
       'set-cookie': sessionCookie(
         cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000), secure,

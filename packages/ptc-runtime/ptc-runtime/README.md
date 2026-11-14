@@ -59,7 +59,7 @@ Binding-global and error-class names are language-portable: they must match `[A-
 
 ### What can go wrong
 
-Failures arrive as `result.error` with an orthogonal `kind`: `exception`, `timeout`, `abort`, `worker-exit`, `invalid-output`, `output-limit`, `protocol` or `sandbox-unavailable`. Providers return applicable `result.sandbox` facts separately from success or failure. Invalid or unsupported execution options fail during `resolve`; `run` rejects caller misuse, such as unresolved inputs, invalid binding names or a call after disposal.
+Failures arrive as `result.error` with an orthogonal `kind`: `exception`, `timeout`, `abort`, `worker-exit`, `invalid-output`, `output-limit`, `protocol` or `sandbox-unavailable`. Providers return applicable `result.sandbox` facts separately from success or failure. Invalid or unsupported execution options fail during `resolve`; `run` rejects caller misuse, such as unresolved inputs, invalid binding names or a call after disposal. Contract misuse rejects with `PtcRuntimeError`: `PTC_RUNTIME_INVALID_ARGUMENT` for an invalid request or spec, `PTC_RUNTIME_UNAVAILABLE` after disposal or while a retained environment's cleanup is incomplete, and `PTC_RUNTIME_CONFLICT` for a concurrent run for one owner or a retained environment launched under another sandbox policy.
 
 -----
 
@@ -89,7 +89,7 @@ The exhaustive semantics live in the [PTC runtime subsystem reference](../../../
 
 `PtcRunRequest` carries the program, host bindings, cancellation and optional execution choices. `PtcRunSpec` requires the resolved cwd and an explicit numeric or null deadline choice. `PtcBindingNamespace` declares program globals and optional typed rejection constructors. `PtcRunResult` separates output/value, failure and `PtcRunSandbox` facts; exact fields and provider obligations live in [`src/types.ts`](src/types.ts).
 
-### Portable identifiers
+### Binding exclusions
 
 Binding-global and error-class names are language-portable: they must match the identifier subset `[A-Za-z_][A-Za-z0-9_]*` (no JS-only `$`) and clear the seam-exported exclusion sets, so one `bindings` list is valid against every backend. The package exports the contract every backend enforces — `PORTABLE_RESERVED_WORDS` (ECMAScript ∪ Python reserved words), `RESERVED_BINDING_GLOBALS` (backend-owned globals such as `console`, `inspect`, `Image` and `__dsh_main__`), `RESERVED_ERROR_MEMBERS` and `DUNDER_MEMBER` (error-member exclusions) — so a name like `$tools`, `lambda`, or `__dsh_main__` makes `run()` reject as seam misuse on any backend. See `src/index.ts` for the exact sets.
 
@@ -97,7 +97,7 @@ Binding-global and error-class names are language-portable: they must match the 
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: abstract `PtcRuntime` service and the portable-identifier exclusion sets |
+| [`src/index.ts`](src/index.ts) | Plugin entry: abstract `PtcRuntime` service and the binding exclusion sets |
 | [`src/types.ts`](src/types.ts) | Vocabulary: `PtcRunRequest`, `PtcRunSpec`, bindings, results, failures and sandbox facts |
 
 </details>
@@ -135,7 +135,7 @@ These limits define what the seam cannot do; they are current package constraint
 
 - **`run()` is one-shot** — `output` arrives only on the resolved `PtcRunResult`; the seam exposes no streaming-log or progress API for a live program's output.
 - **Retained memory is disposable**: providers may keep state for an explicit owner; restart, release, and provider-specific failures discard it. Programs, binding calls and results remain logged by consumers; live objects are neither serialized nor replayed.
-- **Providers have different confinement capabilities** — the shipped Node provider enforces a resolved file policy, while the private experimental Python provider rejects an explicit policy. No container provider is supplied.
+- **No container provider is supplied** — the shipped Node provider enforces the resolved file policy through the composed sandbox backend.
 - **No uniform binding byte cap applies across providers** — each provider owns its transport limits; a binding can still allocate memory before its result reaches those limits.
 
 <a id="dev-note"></a>

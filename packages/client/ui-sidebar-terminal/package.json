@@ -2,6 +2,8 @@
   "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
   "description": "Line-oriented agent terminal tabs for the right Sidebar: attaches to the Session's platform terminals",
   "version": "0.2.2-rc.2",
+  "description": "Interactive shell tabs for the right Sidebar",
+  "version": "0.2.2-rc.3",
   "publishConfig": {
     "access": "public"
   },

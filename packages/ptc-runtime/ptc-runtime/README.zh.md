@@ -59,7 +59,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 ### 可能出什么问题
 
-失败以 `result.error` 返回，带正交的 `kind`：`exception`、`timeout`、`abort`、`worker-exit`、`invalid-output`、`output-limit`、`protocol` 或 `sandbox-unavailable`。提供方在成功或失败之外，单独返回适用的 `result.sandbox` 事实。无效或不支持的执行选项在 `resolve` 期间失败；`run` 拒绝调用方误用，例如未解析输入、无效绑定名或资源释放后的调用。
+失败以 `result.error` 返回，带正交的 `kind`：`exception`、`timeout`、`abort`、`worker-exit`、`invalid-output`、`output-limit`、`protocol` 或 `sandbox-unavailable`。提供方在成功或失败之外，单独返回适用的 `result.sandbox` 事实。无效或不支持的执行选项在 `resolve` 期间失败；`run` 拒绝调用方误用，例如未解析输入、无效绑定名或资源释放后的调用。契约误用以 `PtcRuntimeError` 拒绝：无效的请求或 spec 为 `PTC_RUNTIME_INVALID_ARGUMENT`，资源释放后或保留环境清理未完成时为 `PTC_RUNTIME_UNAVAILABLE`，同一所有者的并发运行或保留环境以其他沙箱策略启动时为 `PTC_RUNTIME_CONFLICT`。
 
 -----
 
@@ -89,7 +89,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 `PtcRunRequest` 携带程序、Host 绑定、取消和可选执行选择。`PtcRunSpec` 要求已解析的 cwd 和明确的数值或 null 截止选择。`PtcBindingNamespace` 声明程序全局对象与可选的类型化拒绝构造器。`PtcRunResult` 将输出／值、失败与 `PtcRunSandbox` 事实分开；确切字段与提供方义务见 [`src/types.ts`](src/types.ts)。
 
-### 可移植标识符
+### 绑定排除规则
 
 binding-global 与 error-class 名称是语言可移植的：必须匹配标识符子集 `[A-Za-z_][A-Za-z0-9_]*`（不含 JS 专有的 `$`）并通过 seam 导出的排除集，因此同一份 `bindings` 列表对每个后端都有效。本包导出每个后端都执行的约定——`PORTABLE_RESERVED_WORDS`（ECMAScript ∪ Python 保留字）、`RESERVED_BINDING_GLOBALS`（如 `console`、`inspect`、`Image`、`__dsh_main__` 等后端拥有的 global）、`RESERVED_ERROR_MEMBERS` 与 `DUNDER_MEMBER`（error-member 排除）——因此 `$tools`、`lambda` 或 `__dsh_main__` 之类的名称会让 `run()` 在任何后端上作为 seam 误用而 reject。确切集合见 `src/index.ts`。
 
@@ -97,7 +97,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：抽象 `PtcRuntime` 服务与可移植标识符排除集 |
+| [`src/index.ts`](src/index.ts) | 插件入口：抽象 `PtcRuntime` 服务与绑定排除集 |
 | [`src/types.ts`](src/types.ts) | 词汇：`PtcRunRequest`、`PtcRunSpec`、绑定、结果、失败与沙箱事实 |
 
 </details>
@@ -135,7 +135,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 
 - **`run()` 是一次性的**——`output` 只有在 `PtcRunResult` resolve 后才能获得；seam 不提供正在运行的程序所产生输出的流式日志或进度接口。
 - **保留内存可以丢失**：提供方可以为显式所有者保留状态；重启、释放以及提供方指定的失败会清除状态。程序、绑定调用和结果仍由消费者记录；运行中的对象不会被序列化或回放。
-- **提供方的约束能力不同**——已发布 Node 提供方强制执行已解析文件策略，私有实验性 Python 提供方拒绝显式策略。不提供容器提供方。
+- **不提供容器提供方**——已发布 Node 提供方通过组合的沙箱后端强制执行已解析文件策略。
 - **提供方之间没有统一的绑定字节上限**——各提供方负责自己的传输限制；绑定仍可能在结果到达这些限制前分配内存。
 
 <a id="dev-note"></a>

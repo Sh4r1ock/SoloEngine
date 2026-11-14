@@ -33,7 +33,7 @@ export class ArchiveError extends HarnessError {}
 throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 ```
 
-打包工具可能重命名类时，在子类构造函数中把 `this.name` 赋为字符串字面量，因为 `name` 会被持久化。可以从 `@deepseek-ai/dsh-error` 导入该类，也可以使用 `@deepseek-ai/dsh-llm` 的重新导出；两者是同一个类，因此 `instanceof` 判断结果一致。[错误处理规则](../../../.agents/skills/dsh-error-handling/SKILL.md)规定了类的选择、命名与 code 约定。
+打包工具可能重命名类时，在子类构造函数中把 `this.name` 赋为字符串字面量，因为 `name` 会被持久化。可以从 `@deepseek-ai/dsh-error` 导入该类，也可以使用 `@deepseek-ai/dsh-llm` 的重新导出；两者是同一个类，因此 `instanceof` 判断结果一致。[错误处理技能](../../../.agents/skills/dsh-error-handling/SKILL.md)规定了类的选择、命名与 code 约定。
 
 -----
 
@@ -51,7 +51,7 @@ throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 
 ### 为什么保持无依赖
 
-`dsh-llm` 依赖 `dsh-attachment`、`dsh-typert-protocol` 等更底层的包，定义在其中的基类无法被这些包继承，否则会形成依赖环。把该类放在没有依赖的包中，所有包都可以继承它。
+`dsh-llm` 依赖 `dsh-attachment`、`dsh-typert-protocol` 等更底层的包，定义在其中的基类无法被这些包继承，否则会形成依赖环。把该类放在没有依赖的包中，所有包都可以继承它；上游的 dependency-free error base 决策记录了这次迁移。
 
 </details>
 

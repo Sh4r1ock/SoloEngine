@@ -15,10 +15,7 @@ import type { Context } from '@deepseek-ai/cordis'
 /* oxlint-disable typescript/prefer-promise-reject-errors -- Async iterators preserve arbitrary throw reasons. */
 
 declare module '@deepseek-ai/cordis' {
-  interface Context extends Pick<ClientTimerService, 'interval' | 'timeout' | 'throttle' | 'debounce' | 'setTimeout' | 'setInterval'> {
-    /** Browser timer Service used by the mixed-in Context helpers. */
-    timer: ClientTimerService
-  }
+  interface Context extends Pick<ClientTimerService, 'interval' | 'timeout' | 'throttle' | 'debounce' | 'setTimeout' | 'setInterval'> {}
 }
 
 type WithDispose<T> = T & { dispose: () => void }

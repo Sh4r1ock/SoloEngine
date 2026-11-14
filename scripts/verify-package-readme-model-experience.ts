@@ -242,6 +242,12 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web': { kind: 'indirect', reason: 'The provider registry delegates model rendering to dsh-tool-web.' },
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
+  'packages/client/script-realm': { kind: 'none', reason: 'Optional browser execution-provider registration contributes no model input.' },
+  'packages/client/script-realm-iframe': { kind: 'none', reason: 'Same-origin browser script environments contribute no model input.' },
+  'packages/client/ui-entry-customization': { kind: 'none', reason: 'Controls browser launchers and prepares a reviewable Creator draft without submitting model input.' },
+  'packages/client/ui-session-status': { kind: 'none', reason: 'Owner reading records and the Client Session status table add no tools, prompts, or Session events.' },
+  'packages/mcp/mcp-manager': { kind: 'indirect', reason: 'The manager only mounts and disposes dsh-mcp-client instances; those instances own every model-facing tool and schema.' },
+  'packages/util/text-search': { kind: 'none', reason: 'Filters caller-owned in-memory lists for UI search boxes; registers nothing model-facing.' },
 }
 
 interface Failure {

@@ -29,6 +29,7 @@ import { applyEntryPatches, type PatchOptions } from '@deepseek-ai/cordis-plugin
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DshBundleManifest, DshPackageManifest } from '@deepseek-ai/dsh-package-manifest'
 import { evaluatePluginCompatibility, pluginCompatibilityWarning } from './plugin-compatibility.ts'
+import { assertBundlePlatform } from './bundle-platform.ts'
 import { readProfileVersionExemptions } from './profile-compatibility.ts'
 import { loadOverlayPatches } from './index.ts'
 import { realModuleDirectory } from './profile-resolution/legacy-links.ts'
@@ -734,6 +735,7 @@ export function loadProfileDirectory(
       if (bundle === undefined) {
         throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
       }
+      assertBundlePlatform(bundle.platforms, process.platform)
       // A bundle is not a plugin row, so row admission never reads its own dsh requirements.
       const issue = evaluatePluginCompatibility(bundleManifest, exemptions)
       if (issue !== undefined && !issue.exempted) throw new Error(pluginCompatibilityWarning(issue))
