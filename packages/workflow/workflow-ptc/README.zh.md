@@ -56,7 +56,7 @@ Node PTC 提供方的 `maxPendingCalls` 也限制工作流并发：子 agent 启
 
 ### 文件策略与取消
 
-引擎分别捕获调用 Session 的有效工作目录与常设文件策略。父级之后切换目录时，PTC 进程及该工作流随后启动的每个子级都保留捕获的目录。不支持文件约束的运行时只允许用于 `danger-full-access`；`read-only` 和 `workspace-write` 在执行前失败。Node 内存保留模式在临时环境中执行异步包装函数，因此工作流局部变量不会进入 Agent 保留的 REPL。VM 保留文档说明的辅助 API，但它不是安全边界：触达 Node 的代码遵循所选运行时的文件策略。程序可见的环境为空。文件策略不限制网络访问。
+引擎分别捕获调用 Session 的有效工作目录与常设文件策略。父级之后切换目录时，PTC 进程及该工作流随后启动的每个子级都保留捕获的目录。不支持文件约束的运行时只允许用于 `danger-full-access`；`read-only` 和 `workspace-write` 在执行前失败。Node 内存保留模式在临时环境中执行异步包装函数，因此工作流局部变量不会进入 Agent 保留的 REPL。Script 模式使用 async 函数表达式，通过其 Promise 完成值返回工作流结果。VM 保留文档说明的辅助 API，但它不是安全边界：触达 Node 的代码遵循所选运行时的文件策略。程序可见的环境为空。文件策略不限制网络访问。
 
 工作流向 PTC 请求 `timeoutMs: null`。最初的 VM 片段仍受 `syncTimeoutMs` 限制，调用方的中止信号仍然生效，包括外层工具的截止。取消立即中止 PTC 进程及待启动或活跃的 subagent。调用方必须释放每次运行并等待子 agent 清理；不另设工作流清理定时器。
 
@@ -109,7 +109,7 @@ Host 分别跟踪待完成的启动与已接受的 Activation。取消会中止�
 - [工作流服务](../workflow/README.zh.md)——调用方拥有的运行与清理。
 - [Node PTC 运行时](../../ptc-runtime/ptc-runtime-node/README.zh.md)——文件策略、进程限制与部署选择。
 - [workflow 工具](../tool-workflow/README.zh.md)——面向模型的脚本编排。
-- [Ralph 工具](../../../bat/removed-20261031/packages/experimental/tool-ralph/README.md)——需显式启用的固定全新 agent 迭代。
+- Ralph 工具——需显式启用的固定全新 agent 迭代。
 - [工作流沙箱复用](../../../.agents/notes/implemented/architecture/2026-09-13-workflow-ptc-sandbox-reuse.zh.md)——执行归属与取舍。
 
 -----

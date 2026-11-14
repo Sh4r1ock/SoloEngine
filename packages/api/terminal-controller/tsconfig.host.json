@@ -60,9 +60,6 @@
     },
     {
       "path": "../../util/values"
-    },
-    {
-      "path": "../../terminal/terminal"
     }
   ]
 }

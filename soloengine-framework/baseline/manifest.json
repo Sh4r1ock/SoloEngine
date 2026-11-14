@@ -73,12 +73,12 @@
     {
       "dir": "packages/api/terminal-controller",
       "name": "@deepseek-ai/dsh-api-terminal-controller",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/api/terminal-controller @ 0.2.1-rc.2",
-      "note": "增：agent 终端 Remote（agentTerminals/agentSpawn/agentRead/agentSend/agentSignal/agentBackends）与 agentSendWaitMs，供面板接续 agent 同一 PTY（人机同 owner）；agentSpawn 的空白 type 解析为组合默认后端",
+      "upstream": "deepseek_harness/packages/api/terminal-controller @ 0.2.2-rc.2",
+      "note": "增：agent 终端 Remote（agentTerminals/agentSpawn/agentRead/agentSend/agentSignal/agentBackends）与 agentSendWaitMs，供面板接续 agent 同一 PTY（人机同 owner）；agentSpawn 的空白 type 解析为组合默认后端。0.2.2 起终端的 CLEANUP_FAILED 错误类型随 `dsh-terminal` 提供，本包不再持有该未使用的 devDependency/工程引用",
       "fileCount": 44,
-      "digest": "sha256:e8c08efe9aeda14b7d5d352404ea9a4cfabe71ace371a935deb314e02a94f518"
+      "digest": "sha256:907dd6d613840b6f597a2742e297af8b3c5a2753f4a465df2c83999ea7e3aeb7"
     },
     {
       "dir": "packages/api/workspace-controller",
@@ -163,12 +163,12 @@
     {
       "dir": "packages/boot/plugin-manager",
       "name": "@deepseek-ai/dsh-plugin-manager",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/boot/plugin-manager @ 0.2.1-rc.2",
-      "note": "裁剪：删除依赖非空官方目录的测试用例（D16）",
+      "upstream": "deepseek_harness/packages/boot/plugin-manager @ 0.2.2-rc.2",
+      "note": "裁剪：删除依赖非空官方目录的测试用例（D16）；采用 0.2.2 的 `viewProfilePackage({ fields })` 与 `BundleInfo.update`（registry/git）",
       "fileCount": 56,
-      "digest": "sha256:bb33aad05a6e7d8af7c2c503ceb37f5fea28986e9fc8009e270586f913b9d9bb"
+      "digest": "sha256:e054500b598c317db310b87ae0284d0b70fe0260a3b62256815469832ac1c89d"
     },
     {
       "dir": "packages/boot/plugin-market",
@@ -1213,9 +1213,9 @@
     {
       "dir": "packages/experimental/tool-terminal",
       "name": "@deepseek-ai/dsh-tool-terminal",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/experimental/tool-terminal @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/experimental/tool-terminal @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 19,
       "digest": "sha256:99b824c50fc4f493fe5bd6e7d7a4f05db610cd3e1ecc10fa83c3fde0b13a6bdc"
@@ -1503,12 +1503,12 @@
     {
       "dir": "packages/host/webserver",
       "name": "@deepseek-ai/dsh-host-webserver",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/host/webserver @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/host/webserver @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 17,
-      "digest": "sha256:2006ce2f13a9847c8991efa1c45973c6cccc5ff44ce6f0ef782c84bc3c0f276b"
+      "digest": "sha256:5d838a9f999b8a85a1d876e9653916e15134e7a28252f94d41962e8be29c478d"
     },
     {
       "dir": "packages/identity/anonymous-user-id",
@@ -1783,22 +1783,22 @@
     {
       "dir": "packages/ptc-runtime/ptc-runtime",
       "name": "@deepseek-ai/dsh-ptc-runtime",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime @ 0.2.1-rc.2",
-      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime @ 0.2.2-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改为纯文本；产品代码与上游逐字一致。",
       "fileCount": 10,
       "digest": "sha256:ab53f3c8da4821fb1e0980afe62f65c66789f843bd6ff22c2481c3368ba5cf50"
     },
     {
       "dir": "packages/ptc-runtime/ptc-runtime-node",
       "name": "@deepseek-ai/dsh-ptc-runtime-node",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime-node @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/ptc-runtime/ptc-runtime-node @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 80,
-      "digest": "sha256:fe0c6be95cd777ebe9c1d9ffb67ffbd45c25b4863b846d5c2f71dee34e976324"
+      "digest": "sha256:95574a6c85e704748a6fa89c1328930fc35b1e1c10c60213c6dd0a5f70eb6937"
     },
     {
       "dir": "packages/sandbox/sandbox",
@@ -2453,22 +2453,22 @@
     {
       "dir": "packages/terminal/terminal",
       "name": "@deepseek-ai/dsh-terminal",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/terminal/terminal @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/terminal/terminal @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 17,
-      "digest": "sha256:798e081115e0de4dbd6f68747c3b7370fe38c6c7709680fc64bb49415a61d958"
+      "digest": "sha256:970e2b11dadbebed543540b8a9789263d410d8cd628661b3afaa2c074a9e9428"
     },
     {
       "dir": "packages/terminal/terminal-bash",
       "name": "@deepseek-ai/dsh-terminal-bash",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/terminal/terminal-bash @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/terminal/terminal-bash @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 23,
-      "digest": "sha256:4725e0fe5b57caff03f306d83b9a2b4bd24185a5105ba14d126f6d2705534e86"
+      "digest": "sha256:08d5150caf51dc4203f6f333c887f52d55d80ab0e278b20c6dc6cae511f84d86"
     },
     {
       "dir": "packages/test-support/agent-loop-testkit",
@@ -2903,12 +2903,12 @@
     {
       "dir": "packages/workflow/workflow-ptc",
       "name": "@deepseek-ai/dsh-workflow-ptc",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/workflow/workflow-ptc @ 0.2.1-rc.2",
-      "note": "仅 README 中指向 D16 已裁剪实验包的链接改指 bat/removed-20261031；产品代码与上游逐字一致。",
+      "upstream": "deepseek_harness/packages/workflow/workflow-ptc @ 0.2.2-rc.2",
+      "note": "仅 README 中指向 D16 已裁剪实验包的链接改为纯文本；`src/guest-source.ts` 由本仓 `gen-workflow-guest` 复现；产品代码与上游逐字一致。",
       "fileCount": 34,
-      "digest": "sha256:c0d5b725c565b35c6db329f5784054c77a0e59bf54a07a996c5acc36ef3c751d"
+      "digest": "sha256:afe7f6183b1abe3add8f9cfe3ec3597ff09c75049d90a114f92dc29d95993f7c"
     },
     {
       "dir": "packages/workspace/workspace",
