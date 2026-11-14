@@ -11,9 +11,11 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.projectRow:hover,
-.sessionRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .projectRow:hover,
+  .sessionRow:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .sessionRow.selected {
@@ -36,8 +38,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.searchResultRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+@media (hover: hover) {
+  .searchResultRow:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
 }
 
 .searchResultRow.selected {
@@ -142,8 +146,10 @@
 
 /* Project leading slot: folder by default, expand arrow on row hover. */
 .projectRow .chevron { display: none; }
-.projectRow:hover .chevron { display: inline-flex; }
-.projectRow:hover .folder { display: none; }
+@media (hover: hover) {
+  .projectRow:hover .chevron { display: inline-flex; }
+  .projectRow:hover .folder { display: none; }
+}
 
 /* Expand arrow (filled triangle): points right closed, rotates to point down open. */
 .arrow {
@@ -260,9 +266,14 @@
   gap: 15px;
 }
 
-.projectRow:hover .rowActions,
-.sessionRow:hover .rowActions,
-.searchResultRow:hover .rowActions,
+@media (hover: hover) {
+  .projectRow:hover .rowActions,
+  .sessionRow:hover .rowActions,
+  .searchResultRow:hover .rowActions {
+    display: inline-flex;
+  }
+}
+
 .projectRow.menuOpen .rowActions,
 .sessionRow.menuOpen .rowActions {
   display: inline-flex;
@@ -274,14 +285,24 @@
   margin-left: auto;
 }
 
-.sessionRow:hover .time,
+@media (hover: hover) {
+  .sessionRow:hover .time {
+    display: none;
+  }
+}
+
 .sessionRow.menuOpen .time {
   display: none;
 }
 
 /* Hover swaps the trailing cell to the action buttons, which already carry
    the pin/archive glyphs — hide the static markers so they do not double. */
-.sessionRow:hover .pinIndicator,
+@media (hover: hover) {
+  .sessionRow:hover .pinIndicator {
+    display: none;
+  }
+}
+
 .sessionRow.menuOpen .pinIndicator {
   display: none;
 }
@@ -356,21 +377,21 @@
 .hoverTitle {
   font-size: 14px;
   line-height: 20px;
-  color: #FFFFFF;
+  color: var(--dsw-alias-tooltip-label);
   overflow-wrap: break-word;
 }
 
 .hoverPath {
   font-size: 12px;
   line-height: 16px;
-  color: #CFD3D6;
+  color: color-mix(in srgb, var(--dsw-alias-tooltip-label) 78%, transparent);
   word-break: break-all;
 }
 
 .hoverTime {
   font-size: 12px;
   line-height: 16px;
-  color: #CFD3D6;
+  color: color-mix(in srgb, var(--dsw-alias-tooltip-label) 78%, transparent);
 }
 
 .hoverStatus {
@@ -379,7 +400,7 @@
   gap: 8px;
   font-size: 12px;
   line-height: 20px;
-  color: #ADB2B8;
+  color: color-mix(in srgb, var(--dsw-alias-tooltip-label) 63%, transparent);
 }
 
 /* Archive glyph rides the status row's text color; slight inset aligns it with the 6px status dots. */
@@ -403,8 +424,10 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.iconButton:hover {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .iconButton:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 /* Chevrons ride the caption grey (#ADB2B8); the folder glyph stays one step

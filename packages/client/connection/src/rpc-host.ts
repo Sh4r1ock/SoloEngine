@@ -473,6 +473,11 @@ export class HostConnectionService extends Service implements HostConnectionHand
 
   /**
    * Authenticate and publish a credential before sending the connect redirect.
+   *
+   * The exchange replaces the signed cookie with an API operator. When the
+   * browser already proved a product account, that account (and the instance it
+   * addressed) stays bound to the new operator: a launcher-opened token URL must
+   * not sign the browser out of its own Sessions.
    * @param request - launch-token request on /connect.
    * @param response - response owned to completion.
    */
@@ -482,8 +487,17 @@ export class HostConnectionService extends Service implements HostConnectionHand
       response.end(this.disposed ? 'unauthorized' : 'forbidden')
       return
     }
-    this.requireBrowserAuth().authorizeConnect(request, response,
-      this.owner.get('webServer')?.protocol === 'https:', interactions => this.publishPeer(interactions))
+    const secure = this.owner.get('webServer')?.protocol === 'https:'
+    const userId = this.browserAuth?.browserUserId(request, secure)
+    const instance = instanceOf(request)
+    this.requireBrowserAuth().authorizeConnect(request, response, secure, (interactions) => {
+      const id = this.publishPeer(interactions)
+      if (userId !== undefined) {
+        this.userOfPeer.set(id, userId)
+        if (instance !== undefined) this.instanceOfPeer.set(id, instance)
+      }
+      return id
+    })
   }
 
   /**

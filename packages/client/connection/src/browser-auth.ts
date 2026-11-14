@@ -318,12 +318,12 @@ export class BrowserAuth {
         && authority !== undefined && tokenMatches(tokens.join(''), this.launchToken)) {
         const issuedAt = Date.now()
         const expiresAt = issuedAt + this.maxAgeMilliseconds
-        const value = encodeCookie({
-          version: COOKIE_PAYLOAD_VERSION,
-          authority,
-          issuedAt,
-          expiresAt,
-        }, this.secret)
+        // A launcher-opened token URL renews the transport credential; a product
+        // account this browser already proved stays bound to it.
+        const proven = this.browserUserId(req, secure)
+        const value = encodeCookie(proven === undefined
+          ? { version: COOKIE_PAYLOAD_VERSION, authority, issuedAt, expiresAt }
+          : { version: USER_COOKIE_VERSION, authority, userId: proven, issuedAt, expiresAt }, this.secret)
         res.writeHead(303, {
           'cache-control': 'no-store',
           'location': './',

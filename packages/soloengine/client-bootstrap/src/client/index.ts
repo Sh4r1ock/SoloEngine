@@ -121,6 +121,21 @@ function accessToken(): string {
 
 
 /**
+ * 用产品访问令牌向框架层证明一次身份。
+ *
+ * 运行面板的宿主请求按连接 cookie 判定账号，而宿主重启或重新打开启动令牌 URL 都会换掉该 cookie；
+ * `GET /api/solo/auth/me` 是框架层按 Bearer 重签账号绑定的那一次证明，面板先走它再发起运行。
+ * @returns 令牌被接受时为 true；被拒绝时为 false（调用方回登录页）。
+ */
+async function proveAccount(): Promise<boolean> {
+  const response = await fetch('/api/solo/auth/me', {
+    credentials: 'same-origin',
+    headers: { authorization: `Bearer ${accessToken()}` },
+  })
+  return response.ok
+}
+
+/**
  * 在面板内发起一次运行：宿主用受管工作根（该账号隔离项目根下的 `runs/<canvasId>`）登记运行项目并启动，
  * 成功后只重新载入同一 URL——宿主此时已能解析出会话，面板按正常路径选中它。
  *
@@ -134,6 +149,10 @@ function startRun(flowId: string): void {
   void (async () => {
     try {
       if (accessToken() === '') {
+        window.location.replace('/login')
+        return
+      }
+      if (!await proveAccount()) {
         window.location.replace('/login')
         return
       }

@@ -90,6 +90,10 @@
     - id: ui-open-in-app
       name: '@deepseek-ai/dsh-client-ui-open-in-app'
 
+    # Original-file saving and image clipboard actions for file surfaces.
+    - id: ui-file-actions
+      name: '@deepseek-ai/dsh-client-ui-file-actions'
+
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
@@ -151,6 +155,14 @@
 
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
+
+    # One shared MCP server fleet: Settings-configured servers plus servers
+    # that installed plugins register, with status and recovery over Remote.
+    # Credential templates and OAuth grants resolve through the credentials
+    # provider, so the manager starts after it.
+    - id: mcp-manager
+      name: '@deepseek-ai/dsh-mcp-manager'
+      inject: [credentials]
 
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
@@ -364,6 +376,10 @@
     - id: ui-approval
       name: '@deepseek-ai/dsh-client-ui-approval'
 
+    # Selected-text quotation and Markdown blockquote presentation.
+    - id: message-quotes
+      name: '@deepseek-ai/dsh-message-quotes'
+
     - id: ui-chat
       name: '@deepseek-ai/dsh-client-ui-chat'
 
@@ -380,6 +396,11 @@
 
     - id: ui-cordis
       name: '@deepseek-ai/dsh-client-ui-cordis'
+
+    # File-link and deliverable guidance shared by every Host that renders
+    # desktop-style file references.
+    - id: deliverable-file-references
+      name: '@deepseek-ai/dsh-deliverable-file-references'
 
     # Turn tail: the changed-files card and delivery cards under each closing
     # assistant message. Remove this entry to turn the surface off; the tail
@@ -457,6 +478,11 @@
     # sessions created later. Absent a roster it renders nothing.
     - id: ui-agent-preset
       name: '@deepseek-ai/dsh-client-ui-agent-preset'
+
+    # Region-local More menus: pin or unpin plugin launchers and start a
+    # plugin draft.
+    - id: entry-customization
+      name: '@deepseek-ai/dsh-client-ui-entry-customization'
 
     - id: ui-settings-session-log
       name: '@deepseek-ai/dsh-client-ui-settings-session-log'

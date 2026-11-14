@@ -297,7 +297,11 @@ export function createRouter(runtime: FrameworkRuntime): RouterBundle {
   })
 
   route('auth-me', 'get', '/auth/me', '当前用户资料', [authenticate], (req, res) => {
-    res.json({ ok: true, user: toView(req.soloUser as UserRow) })
+    const user = req.soloUser as UserRow
+    // 产品登录态可能比连接 cookie 活得更久（重启或重新打开启动令牌 URL 都换过 cookie）：
+    // 每次按 Bearer 证明身份时重签账号绑定，让原生 RPC 的会话归属始终跟随当前登录账号。
+    runtime.bindBrowserUser?.(req, res, user.id)
+    res.json({ ok: true, user: toView(user) })
   })
 
   route('auth-profile', 'patch', '/auth/me', '更新当前用户资料/口令', [authenticate], async (req, res) => {

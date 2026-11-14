@@ -129,7 +129,7 @@ export class FrameworkRuntime {
    *
    * 登录成功时把该账号写进浏览器 cookie：原生 RPC 的会话归属判定据此知道
    * 「当前连接属于谁」。未绑定时（直接构造运行时的单测/脚本形态）不写 cookie。
-   * @param request - 登录请求（只读请求头：Host/Origin 与既有 cookie 由此读取）。
+   * @param request - 已证实身份的请求（只读请求头：Host/Origin 与既有 cookie 由此读取）。
    * @param response - 承接续签 cookie 的响应。
    * @param userId - 登录已证实的账号 id。
    * @returns 是否写入了 cookie。
