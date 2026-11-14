@@ -76,9 +76,6 @@
     },
     {
       "path": "../ui-context-menu"
-    },
-    {
-      "path": "../../document/office-to-pdf"
     }
   ]
 }

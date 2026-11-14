@@ -306,6 +306,7 @@ function reuseInventoryMarkdown() {
     .sort((left, right) => left.id.localeCompare(right.id))
   const lines = [
     `<!-- BEGIN reuse-inventory（由 profiles-templates/audit-patch-hits.mjs --markdown 生成，勿手改） -->`,
+    '',
     `基线 ${String(baseline.size)} 行、被本层覆写 ${String(patchedIds.size)} 行，故**完全复用 = ${String(rows.length)} 行**：`,
     '',
     '| # | 行 id | 包 |',

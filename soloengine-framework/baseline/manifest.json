@@ -206,9 +206,9 @@
       "version": "0.2.2-rc.3",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.2-rc.3",
-      "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言；0.2.2 同步子代理行（移除 list-agents、interrupt:false、modelSelection/modelDiscovery）；新增 `ui-account-notifications` 行恢复账号通知轮询与卡片（0.2.2 拆包）；rc.3 恢复上游组合行 `ui-file-actions`、`mcp-manager`、`message-quotes`、`deliverable-file-references`、`entry-customization` 并同步依赖声明",
+      "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言；0.2.2 同步子代理行（移除 list-agents、interrupt:false、modelSelection/modelDiscovery）；新增 `ui-account-notifications` 行恢复账号通知轮询与卡片（0.2.2 拆包）；rc.3 恢复上游组合行 `ui-file-actions`、`mcp-manager`、`message-quotes`、`deliverable-file-references`、`entry-customization` 并同步依赖声明；rc.3 文档：采用上游 Office 段（office-kit 行 + standard/ptc 的 tool-office 行），不引入其 Token 认证插件句",
       "fileCount": 42,
-      "digest": "sha256:e35e98320d3dfd11fe9938cff7e5c9e0694dbc6a35422d6eb3186de7c0b877ae"
+      "digest": "sha256:bb2ac0217c4a3c7bf6ccdf954f9a0a481456a4333c8fb2136353a3912f715c87"
     },
     {
       "dir": "packages/client/connection",
@@ -806,9 +806,9 @@
       "version": "0.2.2-rc.3",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/client/ui-sidebar-documentpreview @ 0.2.2-rc.3",
-      "note": "tsconfig 保留产品 `document/office-to-pdf` 项目引用；`document-preview-license-bundle` 的 `pnpm pack` 用例在本机放宽超时（断言不变）",
+      "note": "`document-preview-license-bundle` 的 `pnpm pack` 用例在本机放宽超时（断言不变）；上游 rc.3 已移除 `document/office-to-pdf`，本包同步删除该依赖与 tsconfig 项目引用，转换走 `remote.officeKit`",
       "fileCount": 195,
-      "digest": "sha256:a19076efbf0a32637a71afaa33fe71d21a0038e775f06bfc3abed6edf8ec2f2c"
+      "digest": "sha256:8b1ce1d8c3f7c1df913e995d53939080d03cdc99bababda0af276d3c5de12424"
     },
     {
       "dir": "packages/client/ui-sidebar-files",
@@ -876,9 +876,9 @@
       "version": "0.2.2-rc.3",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/client/ui-theme @ 0.2.2-rc.3",
-      "note": "测试适配：`color-tokens`/`menu-surfaces` 的全仓扫描用例在 Windows 本地放宽超时（断言不变）；`color-tokens` 豁免表登记产品 token 所有者 `packages/soloengine/ui-theme`（`tokens.css` 由静态色板派生 `--se-*`，`static.ts` 是对比度覆盖真源）；样式与源码与上游逐字一致",
+      "note": "测试适配：`color-tokens`/`menu-surfaces` 的全仓扫描用例在 Windows 本地放宽超时（断言不变）；`color-tokens` 豁免表登记产品 token 所有者 `packages/soloengine/ui-theme`（`tokens.css` 由静态色板派生 `--se-*`，`static.ts` 是对比度覆盖真源）；三份 Montserrat woff2 曾被文本转码破坏（UTF-8 膨胀），已按上游字节还原；样式与源码其余部分与上游逐字一致",
       "fileCount": 73,
-      "digest": "sha256:f7a9d4eb49ceb6607ff42916dfb294609934bc215ffc64a97fad6bbb0619c34c"
+      "digest": "sha256:37c536077e6fb80899079e8ac20df6bf3bc7e3015835e350344bd893a3c6d90c"
     },
     {
       "dir": "packages/client/ui-tool",
@@ -1239,16 +1239,6 @@
       "note": "Workspace dependency declarations follow the product dependency policy; README links target the shipped tree.",
       "fileCount": 32,
       "digest": "sha256:3a123712bcd52a894a9a164920be41a19b0d358b9922787121e4a846aa7f81e4"
-    },
-    {
-      "dir": "packages/document/office-to-pdf",
-      "name": "@deepseek-ai/dsh-office-to-pdf",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/document/office-to-pdf @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 17,
-      "digest": "sha256:0051e046eb86970c511a2516f44a3d8b4c49007e99921a88d71cd1653c32b7f2"
     },
     {
       "dir": "packages/document/tool-office",
@@ -1688,7 +1678,7 @@
       "upstream": "deepseek_harness/packages/llm/llm-deepseek @ 0.2.2-rc.3",
       "note": "",
       "fileCount": 70,
-      "digest": "sha256:6f4092f40d27ea9f17978c5116a0dab5566e69b2017b9fc06a49ab18c867b941"
+      "digest": "sha256:197fd4314867a8193220108cddddf9733cb165cc28a1e80a3b3af13391336678"
     },
     {
       "dir": "packages/llm/llm-deepseek-account",
@@ -1714,11 +1704,11 @@
       "dir": "packages/llm/llm-pi-ai",
       "name": "@deepseek-ai/dsh-llm-pi-ai",
       "version": "0.2.2-rc.3",
-      "decision": "reuse",
+      "decision": "adapted",
       "upstream": "deepseek_harness/packages/llm/llm-pi-ai @ 0.2.2-rc.3",
-      "note": "",
+      "note": "测试适配：`native-auth.spec.ts` 的暂存快照用例在本机放宽超时（三次子进程校验，断言不变）；`tests/fixtures/qr-code.png` 曾被文本转码破坏，已按上游字节还原",
       "fileCount": 62,
-      "digest": "sha256:37a0bfb4436d677fef0bed1ddb29ff8d626845f1ba3e987b9ef058a9028fadf6"
+      "digest": "sha256:ebf079fb92688d6cdb6d3cab1afe354e717f80b753f88573894d439c6beff771"
     },
     {
       "dir": "packages/llm/llm-retry",
@@ -2318,7 +2308,7 @@
       "upstream": "deepseek_harness/packages/skill/skill-office @ 0.2.2-rc.3",
       "note": "",
       "fileCount": 36,
-      "digest": "sha256:c78ddee65a65c13773da7a1ebc5eef732e755a3e00403d4aa123af3539d11e55"
+      "digest": "sha256:50e102c4ea8bc62afa21853cd5c740c6d5ea2e5cd432d6fac22e2db0addd3fae"
     },
     {
       "dir": "packages/skill/tool-skill",
@@ -3473,6 +3463,12 @@
       "name": "",
       "version": "",
       "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/document/office-to-pdf",
+      "name": "@deepseek-ai/dsh-office-to-pdf",
+      "version": "0.2.1-rc.2",
+      "reason": "上游 dsh-v0.2.2-rc.3 已移除该包；文档预览的 Office 转换由 office-kit（remote.officeKit）承担，模型侧由 tool-office 承担"
     }
   ]
 }
