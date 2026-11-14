@@ -132,6 +132,41 @@
       "source": "packages/llm/llm/src/call-config.ts"
     },
     {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmNativeAuth",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmModelBadgeTone",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmModelBadge",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmRequestPurposeMap",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmRequestPurpose",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmCallControls",
+      "source": "packages/llm/llm/src/call-config.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "ConfigureCall",
+      "source": "packages/llm/llm/src/call-config.ts"
+    },
+    {
       "doc": "docs/subsystems/core.md",
       "symbol": "Inbox",
       "source": "packages/core/agent/src/runtime-types.ts"
@@ -373,6 +408,11 @@
       "doc": "docs/subsystems/token-meter.md",
       "symbol": "TokenSurfaceNode",
       "source": "packages/llm/token-meter/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/token-meter.md",
+      "symbol": "ContextPressureProjection",
+      "source": "packages/llm/token-meter/src/projection.ts"
     },
     {
       "doc": "docs/subsystems/session.md",

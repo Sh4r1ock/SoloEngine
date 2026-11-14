@@ -9234,15 +9234,9 @@ importers:
       '@deepseek-ai/cosmokit':
         specifier: link:../../../vendor/cosmokit
         version: link:../../../vendor/cosmokit
-      '@deepseek-ai/dsh-util-values':
-        specifier: workspace:*
-        version: link:../../util/values
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      semver:
-        specifier: ^7.8.5
-        version: 7.8.5
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~
@@ -9268,9 +9262,6 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../util/timeout
-      '@types/semver':
-        specifier: ^7.8.0
-        version: 7.8.0
 
   packages/llm/llm-deepseek-api-key:
     dependencies:
@@ -13757,9 +13748,6 @@ importers:
       '@deepseek-ai/dsh-web-fetch-http':
         specifier: workspace:*
         version: link:../web-fetch-http
-      '@deepseek-ai/dsh-web-search-exa':
-        specifier: workspace:*
-        version: link:../web-search-exa
       '@types/turndown':
         specifier: ^5.0.6
         version: 5.0.6
@@ -13843,9 +13831,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      ipaddr.js:
-        specifier: ^2.5.0
-        version: 2.5.0
       undici:
         specifier: 8.11.2
         version: 8.11.2
@@ -13896,44 +13881,6 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
-      '@deepseek-ai/dsh-web':
-        specifier: workspace:*
-        version: link:../web
-
-  packages/web/web-search-exa:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:~
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-http-proxy':
-        specifier: workspace:*
-        version: link:../../util/http-proxy
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:*
-        version: link:../../util/launch-environment
-      '@deepseek-ai/dsh-web':
-        specifier: workspace:*
-        version: link:../web
-
-  packages/web/web-search-perplexity:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:~
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-http-proxy':
-        specifier: workspace:*
-        version: link:../../util/http-proxy
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:*
-        version: link:../../util/launch-environment
       '@deepseek-ai/dsh-web':
         specifier: workspace:*
         version: link:../web

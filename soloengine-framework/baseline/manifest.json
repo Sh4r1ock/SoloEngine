@@ -188,7 +188,7 @@
       "upstream": "deepseek_harness/packages/bundle/base @ 0.2.2-rc.2",
       "note": "产品组合层：权限预设表增第四档 approve-for-me 行与 approveForMe 规则配置（R186）；0.2.2 起移除 tool-subagent-list-agents 行（list_agents 由控制插件注册）、tool-subagent-control 显式 interrupt:false",
       "fileCount": 9,
-      "digest": "sha256:91d26c3434c89ca66009ce9c07dd753194e1e12473b852896cdb853d43f655bc"
+      "digest": "sha256:460d37c0c271132176b6268f140b19cf4ef127b32cfe78707dc880ee8e2049d5"
     },
     {
       "dir": "packages/bundle/headless",
@@ -728,7 +728,7 @@
       "upstream": "deepseek_harness/packages/client/ui-settings-web-search @ 0.2.2-rc.2",
       "note": "README 的提供方挂载指引锚点改指产品 `web` README 的 `provider-selection`",
       "fileCount": 24,
-      "digest": "sha256:fcbc1409f3ad51eb0605d0e8e1abb4ae9d51108c80a2f8dbce7bf26a44243091"
+      "digest": "sha256:b7c66ea2de0b7a650b39bbbfe7806d2debc89a0f0014f79e2f36a610b9f5f08f"
     },
     {
       "dir": "packages/client/ui-shortcuts",
@@ -1143,12 +1143,12 @@
     {
       "dir": "packages/credentials/credentials-local",
       "name": "@deepseek-ai/dsh-credentials-local",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/credentials/credentials-local @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/credentials/credentials-local @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 20,
-      "digest": "sha256:f46d5ed546a656a2fb7446c72532e309b36924900886d6ae297772ecef04af41"
+      "digest": "sha256:a3990ca6e4c710449aceb8c3aba8827d732b056f5563ebcb56d63f8f6e9605b8"
     },
     {
       "dir": "packages/credentials/deepseek-account",
@@ -1603,29 +1603,29 @@
     {
       "dir": "packages/llm/deepseek-llm-api-extensions",
       "name": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/deepseek-llm-api-extensions @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/deepseek-llm-api-extensions @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 16,
-      "digest": "sha256:914552aa9f64ff4fc83a4f9fb64bc86b7982d37b7edfce4440ab5a6370b3360c"
+      "digest": "sha256:e232c0b814ad1b83b24d277ae557c8f23504da1d957ac229510d1f89caa65dae"
     },
     {
       "dir": "packages/llm/llm",
       "name": "@deepseek-ai/dsh-llm",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "adapted",
-      "upstream": "deepseek_harness/packages/llm/llm @ 0.2.1-rc.2",
-      "note": "增：`ModelRequest.samplingParams`（提供方特定采样字段，如 OpenAI 兼容的 `top_p`/`frequency_penalty`/`presence_penalty`；不支持的适配器忽略）",
+      "upstream": "deepseek_harness/packages/llm/llm @ 0.2.2-rc.2",
+      "note": "增：`GenerateOptions.samplingParams`（提供方特定采样字段，如 OpenAI 兼容的 `top_p`/`frequency_penalty`/`presence_penalty`；不支持的适配器忽略）。其余与上游 0.2.2 一致（含声明合并的 `LlmRequestPurposeMap`、内建失败码构造约束）",
       "fileCount": 38,
       "digest": "sha256:51f0c7f041020ab53bb587bbb9c4d25208c1eff1396488625cb9bbc0d4b41118"
     },
     {
       "dir": "packages/llm/llm-deepseek",
       "name": "@deepseek-ai/dsh-llm-deepseek",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/llm-deepseek @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 70,
       "digest": "sha256:1ff95bd5dfb7452fc1d6220a9847832edb94d4e9be4e6a4b89318496e2c35fca"
@@ -1633,62 +1633,62 @@
     {
       "dir": "packages/llm/llm-deepseek-account",
       "name": "@deepseek-ai/dsh-llm-deepseek-account",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/llm-deepseek-account @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek-account @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 24,
-      "digest": "sha256:0819d347ebc4a9bfac4efbc6575ae03c640e4b01374f8f73bdf1a1f0404ee9be"
+      "fileCount": 18,
+      "digest": "sha256:9e0d3dc9155b556d509f717178f67cf6420d26e3bded191e1c568edfc825ed0e"
     },
     {
       "dir": "packages/llm/llm-deepseek-api-key",
       "name": "@deepseek-ai/dsh-llm-deepseek-api-key",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/llm-deepseek-api-key @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/llm-deepseek-api-key @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 16,
-      "digest": "sha256:bdb56c641984b9894a6ea9b9d743cfc7d2aff3ba034dc6de60f4b917063530e3"
+      "fileCount": 18,
+      "digest": "sha256:93eb62e861fc3ab2c7941e40d849dbb165a1e2e3cd60b9f668ece482b8268a22"
     },
     {
       "dir": "packages/llm/llm-pi-ai",
       "name": "@deepseek-ai/dsh-llm-pi-ai",
-      "version": "0.2.1-rc.2",
-      "decision": "adapted",
-      "upstream": "deepseek_harness/packages/llm/llm-pi-ai @ 0.2.1-rc.2",
-      "note": "对外新增三个再导出（`resolveProfiles`/`credentialStoreFrom`/`authContextFrom`），供 @soloengine/llm-db-adapter 按行复用 pi-ai 的 OpenAI 兼容协议；适配器把 `samplingParams` 原样并入请求体；其余实现体不变",
+      "version": "0.2.2-rc.2",
+      "decision": "reuse",
+      "upstream": "deepseek_harness/packages/llm/llm-pi-ai @ 0.2.2-rc.2",
+      "note": "",
       "fileCount": 62,
-      "digest": "sha256:f3b2a3b4a6517204105b803ab88ec11e5a8537069cfa5aa18c84bfec4f36c49a"
+      "digest": "sha256:4ad3b0ca851d58b71498d4db2a21e4665773ef2bd20371a526ce09d5bae20cfd"
     },
     {
       "dir": "packages/llm/llm-retry",
       "name": "@deepseek-ai/dsh-llm-retry",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/llm-retry @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/llm-retry @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 22,
-      "digest": "sha256:3d9c21b6437049ccbd2aea95833b2a9a917e79c0651d709115c0f2387dbd6da8"
+      "digest": "sha256:cd74f88dcae370ddd006ebdd5f9ad87a62def2cfa3cf4f43a110a529c65b3728"
     },
     {
       "dir": "packages/llm/plugin-package-inventory-deepseek",
       "name": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/plugin-package-inventory-deepseek @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/plugin-package-inventory-deepseek @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 17,
-      "digest": "sha256:4f02363608343bac7dd807ff966fedf3dd8031b48261bfb1dffb966bdb95dbd3"
+      "digest": "sha256:4f61bef2c89287eefa134163ff077cf06c261fb27dd7de034471e755dca8f3ca"
     },
     {
       "dir": "packages/llm/token-meter",
       "name": "@deepseek-ai/dsh-token-meter",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/llm/token-meter @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/llm/token-meter @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 30,
-      "digest": "sha256:ad4082a13d898ec2d446873784a993bddba2a7fde6d547e6c64b79fb3848a8d1"
+      "fileCount": 31,
+      "digest": "sha256:f06f4a56c6036a76d48d074640c8ab74f3135aabdcc03640f7df139a5fe71611"
     },
     {
       "dir": "packages/lsp/lsp",
@@ -2833,72 +2833,52 @@
     {
       "dir": "packages/web/tool-web",
       "name": "@deepseek-ai/dsh-tool-web",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/tool-web @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/web/tool-web @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 21,
-      "digest": "sha256:26829b43e15b12d09bc17f38dd5aad14acdc69c9842a5cf56df594e8ab51f151"
+      "digest": "sha256:bc4563ad529e41f4f0fd2804480827e4e54c7ed959a17affab47a9a844bf8632"
     },
     {
       "dir": "packages/web/web",
       "name": "@deepseek-ai/dsh-web",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/web/web @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 16,
-      "digest": "sha256:2553178e034fc9fc7d01570ddc9f96abbca075407c0c4e81f9215e02499f7399"
+      "digest": "sha256:8e5f07862513950632d7d27bd37d9926c6b90f509efa33ae369a69d68c97f8e2"
     },
     {
       "dir": "packages/web/web-deepseek-api",
       "name": "@deepseek-ai/dsh-web-deepseek-api",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web-deepseek-api @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/web/web-deepseek-api @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 24,
-      "digest": "sha256:d5ca9d906e9cdfac571863d390d973dfcd7f28559fae6f417d0ebe2ddda3e857"
+      "fileCount": 28,
+      "digest": "sha256:88164f017d71e655b1e87d57e334dad2af2585f4b109b79c2c63088407eee78c"
     },
     {
       "dir": "packages/web/web-fetch-http",
       "name": "@deepseek-ai/dsh-web-fetch-http",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web-fetch-http @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/web/web-fetch-http @ 0.2.2-rc.2",
       "note": "",
-      "fileCount": 19,
-      "digest": "sha256:de90cd0c9cad7a00f682ac1799317cb9e91578651ef8400e0433366ca98fa05a"
+      "fileCount": 18,
+      "digest": "sha256:128127a31184dae64f07cfeab52f28f1437d364a7ae51fd21262fced5f59bbd3"
     },
     {
       "dir": "packages/web/web-search-deepseek",
       "name": "@deepseek-ai/dsh-web-search-deepseek",
-      "version": "0.2.1-rc.2",
+      "version": "0.2.2-rc.2",
       "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web-search-deepseek @ 0.2.1-rc.2",
+      "upstream": "deepseek_harness/packages/web/web-search-deepseek @ 0.2.2-rc.2",
       "note": "",
       "fileCount": 21,
-      "digest": "sha256:d2d34784c7b05757dbc2c95184decb463400de35fc671fca131a8ba4cb7b0696"
-    },
-    {
-      "dir": "packages/web/web-search-exa",
-      "name": "@deepseek-ai/dsh-web-search-exa",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web-search-exa @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 11,
-      "digest": "sha256:0075c083600b585c9e5ef2911c728e7d33590472c74ec7e545c924fe4627e65c"
-    },
-    {
-      "dir": "packages/web/web-search-perplexity",
-      "name": "@deepseek-ai/dsh-web-search-perplexity",
-      "version": "0.2.1-rc.2",
-      "decision": "reuse",
-      "upstream": "deepseek_harness/packages/web/web-search-perplexity @ 0.2.1-rc.2",
-      "note": "",
-      "fileCount": 11,
-      "digest": "sha256:218ade847ea2a0ec4439a02d2493a9f437d7fe7989a477e2fab81f19a087f8e0"
+      "digest": "sha256:cb599a85c115712dc967736052c6146d50ac4fa95ccf57619218aa031fe5d991"
     },
     {
       "dir": "packages/workflow/tool-workflow",
@@ -3389,6 +3369,18 @@
       "name": "",
       "version": "",
       "reason": "D16 + D1 明确不带项（acp/sdk/ssh/browser-use/computer-use/hooks/webhook）"
+    },
+    {
+      "dir": "packages/web/web-search-exa",
+      "name": "@deepseek-ai/dsh-web-search-exa",
+      "version": "0.2.1-rc.2",
+      "reason": "上游 dsh-v0.2.2-rc.2 已移除该可选搜索提供方（web-search-default-provider）；产品搜索默认由 deepseek-official 与 deepseek-search-api 承担"
+    },
+    {
+      "dir": "packages/web/web-search-perplexity",
+      "name": "@deepseek-ai/dsh-web-search-perplexity",
+      "version": "0.2.1-rc.2",
+      "reason": "上游 dsh-v0.2.2-rc.2 已移除该可选搜索提供方（web-search-default-provider）；产品搜索默认由 deepseek-official 与 deepseek-search-api 承担"
     },
     {
       "dir": "packages/webhook/webhook",

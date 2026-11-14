@@ -56,11 +56,15 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-llm': ['callConfigEquals'],
   '@deepseek-ai/dsh-session-format': ['sessionFormatLogFilename'],
   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
+  // Both operate only on the caller's subprocess service and handle; the module memoizes only the binary path.
+  '@deepseek-ai/dsh-util-ripgrep': ['readRipgrepLines', 'spawnRipgrep'],
   '@deepseek-ai/schemastery': ['default'],
 } as const satisfies HostDependencyExports
 
 /** Runtime exports that require every consumer to resolve the provider's shared peer instance. */
 const PEER_REQUIRED_HOST_EXPORTS = {
+  // The tool registry and every subclass rely on `instanceof` against one HarnessError class.
+  '@deepseek-ai/dsh-error': ['HarnessError'],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'createScope', 'scopeOf', 'scopeTarget'],
   '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION'],
   '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],

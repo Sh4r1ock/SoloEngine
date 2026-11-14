@@ -469,17 +469,17 @@
 
     # The shared base enables the stable model-facing web_search and web_fetch
     # tools. The Web app disables this host row and composes both tools per agent
-    # preset; products with a stricter network policy override tool-web. DeepSeek
-    # search resolves the same DEEPSEEK_API_KEY
-    # credential the Models page manages for chat, at each search; its Messages
-    # endpoint is configured independently from the model route, so it takes its own
-    # base-URL override. Anonymous fetch accepts only public HTTP(S) destinations,
-    # resolves and validates every destination, and pins every actual connection.
-    # Search is a full auxiliary model request with server-side retrieval, so this
-    # shipped DeepSeek route gets 60s while the provider-neutral tool default
-    # remains 30s. The DeepSeek Search and Fetch APIs register as
-    # deepseek-search-api and deepseek-fetch-api with the same credential; the Web
-    # search settings switch selects both in place of these defaults.
+    # preset; products with a stricter network policy override tool-web. The
+    # shipped search provider stays the legacy Messages route (deepseek-official)
+    # so the bundled no-key search plugin, which only takes over the shipped
+    # default, keeps serving search without a key; the Web search settings switch
+    # selects deepseek-search-api instead. The DeepSeek Search and Fetch APIs take
+    # their endpoint and credential from the DeepSeek model route (account token,
+    # or that route's key), so DEEPSEEK_BASE_URL moves them too; web_fetch sends
+    # every request through the proxy policy and the system resolver, and the
+    # product's own network guard covers MCP HTTP rather than this tool. Search
+    # runs a full auxiliary request for the legacy route, so this composition
+    # gives web_search 60s while the provider-neutral tool default remains 30s.
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
@@ -493,8 +493,6 @@
 
     - id: web-deepseek-api
       name: '@deepseek-ai/dsh-web-deepseek-api'
-      config:
-        apiKeyEnv: DEEPSEEK_API_KEY
 
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
