@@ -126,11 +126,14 @@ export function mountOperationAreaBridge(ctx: Context, runtime: FrameworkRuntime
     const disposeWorkspace = ctx.webServer.register({
       kind: 'prefix',
       path: WORKSPACE_PREFIX,
+      // 本桥自持鉴权（Bearer / 签名 cookie）并单独执行来源信任门；harness 的浏览器会话门不适用。
+      auth: 'anonymous',
       handler: (req, res) => { serve(WORKSPACE_OPS, WORKSPACE_PREFIX, req, res) },
     })
     const disposeChanges = ctx.webServer.register({
       kind: 'prefix',
       path: CHANGES_PREFIX,
+      auth: 'anonymous',
       handler: (req, res) => { serve(CHANGES_OPS, CHANGES_PREFIX, req, res) },
     })
 

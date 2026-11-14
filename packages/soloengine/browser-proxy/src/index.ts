@@ -366,6 +366,9 @@ export function apply(ctx: Context, config: Config = {}): void {
     const disposeHttp = ctx.webServer.register({
       kind: 'prefix',
       path: prefix,
+      // 本路由自持信任门（`requestRejection`：进程 token / 签名 cookie + 来源判定），
+      // 故对 harness 的浏览器会话门声明 anonymous，错误码与文案仍由本包给出。
+      auth: 'anonymous',
       handler: (req, res) => {
         const rejection = ctx.connection.requestRejection(req)
         if (rejection !== undefined) {
@@ -413,6 +416,8 @@ export function apply(ctx: Context, config: Config = {}): void {
     // WebSocket upgrade：官方 upgrade 只接受精确路径，故以查询参数承载目标（面板垫片自动改写）。
     const disposeUpgrade = ctx.webServer.registerUpgrade({
       path: upgradePath,
+      // 与 HTTP 前缀路由同一道自持信任门：upgrade 的拒绝理由由本包写出。
+      auth: 'anonymous',
       handler: (req, socket, head) => {
         // 升级路径与 HTTP 前缀路由同一道信任门：upgrade 不经过前缀 handler，必须在这里单独判定，
         // 否则任何能连到端口的客户端都能把本实例当成出站 WebSocket 中继。

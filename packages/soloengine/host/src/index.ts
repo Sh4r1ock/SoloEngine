@@ -765,22 +765,37 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         const dispose = mountCtx.webServer.register({
           kind: 'prefix',
           path: prefix,
+          // 框架层 REST 自持账号域 Bearer 鉴权；harness 的浏览器会话门不适用于它，
+          // 故声明 anonymous（来源信任域仍由下面的 requestRejection 拦截）。
+          auth: 'anonymous',
           handler: (req: IncomingMessage, res: ServerResponse) => {
-            // 经 `ctx.get` 读取（本插件未声明 connection 注入，直读会抛错）；逐请求解析，
-            // 组合层尚未装载连接插件时退回「不设围栏」——与原生 `/api` 的实际可用性一致。
-            const connection = ctx.get('connection') as { requestRejection?: (request: unknown) => number | undefined } | undefined
-            if (connection?.requestRejection?.(req) === 403) {
-              res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' })
+            try {
+              // 经 `ctx.get` 读取（本插件未声明 connection 注入，直读会抛错）；逐请求解析，
+              // 组合层尚未装载连接插件时退回「不设围栏」——与原生 `/api` 的实际可用性一致。
+              const connection = ctx.get('connection') as { requestRejection?: (request: unknown) => number | undefined } | undefined
+              if (connection?.requestRejection?.(req) === 403) {
+                res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' })
+                res.end(`${JSON.stringify({
+                  ok: false,
+                  error: {
+                    code: 'TRUST_DOMAIN_REJECTED',
+                    message: 'the request Host is neither loopback nor a host declared in the deployment trust domain (PRD-10 FR-SEC-011)',
+                  },
+                })}\n`)
+                return
+              }
+              runtime.app(req, res)
+            } catch (error) {
+              // 前缀路由拥有响应：分发或信任门抛出时给出结构化 500，而不是交给 harness 的兜底 400。
+              console.error('soloengine: framework dispatch failed:', error)
+              if (!res.headersSent) {
+                res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
+              }
               res.end(`${JSON.stringify({
                 ok: false,
-                error: {
-                  code: 'TRUST_DOMAIN_REJECTED',
-                  message: 'the request Host is neither loopback nor a host declared in the deployment trust domain (PRD-10 FR-SEC-011)',
-                },
+                error: { code: 'FRAMEWORK_DISPATCH_FAILED', message: error instanceof Error ? error.message : String(error) },
               })}\n`)
-              return
             }
-            runtime.app(req, res)
           },
         })
         // HTTP 就绪行在服务真正就绪后打印（本插件先于 webServer 激活，不能在 apply 时读地址）。
@@ -1117,9 +1132,11 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         res.end(await render([versionInjection, ...runInjections]))
       }
       routeCtx.effect(() => {
+        // 产品壳页面自持账号域鉴权（页面壳可匿名渲染，数据走 Bearer / 签名 cookie 的 /api/solo）；
+        // harness 的浏览器会话门只守它的原生 RPC 与事件流，故这些页面显式声明 anonymous。
         const disposers = [
-          ...PRODUCT_SURFACE_PATHS.map(path => routeCtx.webServer.register({ kind: 'prefix', path, handler: page })),
-          routeCtx.webServer.register({ kind: 'exact', path: '/', handler: page }),
+          ...PRODUCT_SURFACE_PATHS.map(path => routeCtx.webServer.register({ kind: 'prefix', path, auth: 'anonymous', handler: page })),
+          routeCtx.webServer.register({ kind: 'exact', path: '/', auth: 'anonymous', handler: page }),
         ]
         console.log(`soloengine: product surfaces mounted (/, ${PRODUCT_SURFACE_PATHS.join(', ')})；运行面板按 /run/:agenticFlowId 区分 URL`)
         return () => { for (const dispose of disposers) dispose() }

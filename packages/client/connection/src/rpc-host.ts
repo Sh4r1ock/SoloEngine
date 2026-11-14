@@ -149,6 +149,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
   readonly browserPeer: PeerScope
   /** Credential verification shared by every registered provider. */
   readonly authentication: ConnectionAuthentication
+  /**
+   * Same registry under a name that is not a Context service key.
+   *
+   * Cordis resolves the nested service on a shadowed `this` through the caller's
+   * Context, so a caller without the `connection.authentication` injection would
+   * throw. Internal calls therefore read this definition-site copy.
+   */
+  private readonly verifiers: ConnectionAuthentication
   private readonly peers = new Map<PeerId, PeerRecord>()
   /** One browser Peer per account and product instance; unbound cookies share {@link browserPeer}. */
   private readonly browserPeers = new Map<string, Peer>()
@@ -178,9 +186,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
   ) {
     super(ctx, 'connection')
     this.owner = ctx
-    this.authentication = ctx['connection.authentication']
+    this.verifiers = ctx['connection.authentication']
+    this.authentication = this.verifiers
     this.browserPeer = new Peer(ctx, { principal: { kind: 'owner' } })
-    this.authentication.register({ authenticate: request => this.authenticateRequest(request) })
+    this.verifiers.register({ authenticate: request => this.authenticateRequest(request) })
     ctx.effect(() => async () => {
       this.disposed = true
       const peers = [
@@ -199,7 +208,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       const facts = { ...request, url: request.url.href }
       if (!this.isTrustedRequest(facts)) return { kind: 'deny', status: 403 }
       if (policy === 'anonymous') return { kind: 'allow' }
-      const admission = this.authentication.authenticate(facts)
+      const admission = this.verifiers.authenticate(facts)
       return 'rejection' in admission
         ? { kind: 'deny', status: admission.rejection }
         : { kind: 'allow', peer: admission.peer }
@@ -234,7 +243,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
   admit(request: ConnectionTrustRequest): PeerAdmission {
     if (!this.isTrustedRequest(request)) return { rejection: 403 }
     if (this.disposed) return { rejection: 401 }
-    return this.authentication.authenticate(request)
+    return this.verifiers.authenticate(request)
   }
 
   /**

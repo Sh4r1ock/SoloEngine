@@ -194,6 +194,8 @@ export function mountRunSettingsBridge(ctx: Context, runtime: FrameworkRuntime):
     const dispose = ctx.webServer.register({
       kind: 'prefix',
       path: RUN_SETTINGS_PREFIX,
+      // 本桥自持鉴权（Bearer / 签名 cookie）并单独执行来源信任门；harness 的浏览器会话门不适用。
+      auth: 'anonymous',
       handler: serve,
     })
     console.log(`soloengine: run settings bridge mounted (${RUN_SETTINGS_PREFIX}; trust gate + run-ledger ownership)`)

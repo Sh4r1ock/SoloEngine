@@ -241,8 +241,8 @@
         # The listener's bind IP is accepted separately from this list.
         trustedHosts: !!js ctx.webStartup.trustedHosts
 
-    - id: authentication-token
-      name: '@deepseek-ai/dsh-host-authentication-token'
+    # Browser-session authentication lives inside dsh-client-connection
+    # (BrowserAuth); no separate authentication-token row is composed here.
 
     # Raw Blob and ReadableStream uploads run independently of Connection's
     # RPC and generation service.

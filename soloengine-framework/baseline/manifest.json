@@ -208,7 +208,7 @@
       "upstream": "deepseek_harness/packages/bundle/web-app @ 0.2.2-rc.2",
       "note": "改：presets/{standard,ptc,cordis,minimal} 的命令工具与终端按**执行世界**取方言；0.2.2 同步子代理行（移除 list-agents、interrupt:false、modelSelection/modelDiscovery）；新增 `ui-account-notifications` 行恢复账号通知轮询与卡片（0.2.2 拆包）",
       "fileCount": 42,
-      "digest": "sha256:7975f6a5f8881ef2dd03cb1a2a22b8d23808befaa5ec926bfb688ceb579c5518"
+      "digest": "sha256:30ef05bbb30da89d84f79172f3d5ba5bfd384ce783913514c48160414bc65c44"
     },
     {
       "dir": "packages/client/connection",
@@ -216,9 +216,9 @@
       "version": "0.2.2-rc.2",
       "decision": "adapted",
       "upstream": "deepseek_harness/packages/client/connection @ 0.2.2-rc.2",
-      "note": "增：`INSTANCE_HEADER`/`INSTANCE_PARAM` 按账号+实例给浏览器 Peer 分片；`resolveAsset` 与上游 0.2.2 同名字段；文档：认证段落改为本包 BrowserAuth 自持实现（无 host/authentication-token）",
+      "note": "增：`INSTANCE_HEADER`/`INSTANCE_PARAM` 按账号+实例给浏览器 Peer 分片；`resolveAsset` 与上游 0.2.2 同名字段；文档：认证段落改为本包 BrowserAuth 自持实现（无 host/authentication-token）；认证注册表在本包内以 def-site 副本调用（cordis 的 shadow 会按调用方 Context 解析嵌套服务，缺 inject 的调用方会抛错）；/api 前缀路由声明 required、/connect 匿名、webserver/request 仅在根 token 兑换时介入；webserver/upgrade 认领 API socket 并回 409",
       "fileCount": 54,
-      "digest": "sha256:fc6391d20c7d42d8ab94afc869d3ac43fcab1c40c52ac59cb72cef1752d026a7"
+      "digest": "sha256:018b27bfc1cb1752bc50b04f4b8648bba160d73834e613afb19a7b410a469c80"
     },
     {
       "dir": "packages/client/file-upload",
