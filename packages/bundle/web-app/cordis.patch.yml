@@ -146,6 +146,9 @@
     - id: ui-settings-account
       name: '@deepseek-ai/dsh-client-ui-settings-account'
 
+    - id: ui-account-notifications
+      name: '@deepseek-ai/dsh-client-ui-account-notifications'
+
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 

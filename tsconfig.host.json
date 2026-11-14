@@ -213,6 +213,9 @@
   "exclude": [
     "apps/desktop/tests/keyboard.spec.ts",
     "packages/client/*/src/**",
+    "packages/client/ui-primitives/tests/go-highlighting.worker.ts",
+    "packages/client/ui-primitives/tests/quote-text.spec.ts",
+    "packages/client/ui-primitives/tests/tooltip-placement.spec.ts",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",
     "packages/*/*/tests/**/*.client.spec.ts",

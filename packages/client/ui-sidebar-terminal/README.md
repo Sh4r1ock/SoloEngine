@@ -1,5 +1,5 @@
 ---
-description: "Line-oriented agent terminal tabs in the Web right sidebar: attach to the Session's platform terminals, read bounded scrollback, send one line at a time, and recover the attached terminal across reloads."
+description: "Open, recover and control interactive shell tabs in the Web right sidebar."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Open a terminal tab in the right sidebar to continue the agent terminals of the current Session. The panel attaches to the platform PTY sessions the terminal tools operate, shows their bounded scrollback, and sends one line at a time; ownership is the Session's, so a Session never reaches another Session's terminal. The contract is line-oriented, so full-screen TUI programs are not rendered here. A reload restores the tab onto the same terminal, and after a Host restart the panel replays the output the session log persisted and labels the new terminal as a new generation.
+Choose an installed shell from the right sidebar's Start page to run commands in the Session's current working directory. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration. Commands use the execution environment’s system-user permissions independently of Agent permissions; see [user-terminal execution](../../api/terminal-controller/README.md#use-this-package).
 
 ## Table of Contents
 
@@ -25,13 +25,19 @@ Open a terminal tab in the right sidebar to continue the agent terminals of the 
 <a id="use-this-package"></a>
 ## Use this package
 
-The `terminal.new` command opens a terminal tab in the focused dock pane, replacing a guide and retaining existing content pages. Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves the command unbound by default. The guide card right-aligns the current effective shortcut as unboxed text without a duplicate tooltip.
+The `terminal.new` command creates a separate terminal in the focused dock pane, replacing a guide and retaining existing content pages. From the conversation or a floating content page, it uses the active dock pane. The guide card right-aligns the current effective shortcut as unboxed text without a duplicate tooltip. Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves the command unbound by default.
 
-A tab opened without a `terminalId` reattaches to the terminal it showed before a page reload, else reuses the Session's first agent terminal, or creates one when the Session has none. A tab opened with `{ terminalId }` attaches to that exact terminal, including one the terminal tools created. The chip strip lists the Session's terminals and **New terminal** creates another. A terminal the registry no longer holds reports a localized missing-terminal line instead of a transport message.
+Open the right sidebar and click **New terminal** to open the remembered available shell immediately. The separate arrow beside the title opens the installed-shell menu; selecting an item remembers it and opens that shell directly. Discovery runs when the menu opens and does not allocate a terminal. A failed lookup offers Retry in the menu. Use **New tab** to return to the guide and open another terminal.
 
-The body polls the active terminal's scrollback while the tab is visible and the process runs, pauses while the tab is hidden, and stops once the process exits (the exit code is shown when the registry reports one). Enter or **Send** writes the composer's line; **Interrupt** delivers `SIGINT` to the foreground command. Closing the tab does not kill the terminal, because the agent may still be using it; only the tab's recovery record is dropped.
+Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A temporary disconnect preserves the screen and offers **Reconnect**, without exposing transport diagnostics. An exited shell remains visible with its exit code and offers **New terminal**; it never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
 
-After a Host restart the terminal is gone but its bounded output is not: `terminal_send` publishes each foreground viewport as tool-result presentation metadata, and the Session log persists it. The panel shows that persisted portion above the live screen and labels the terminal it creates as a new generation.
+Closing or replacing a terminal tab removes it immediately and ends its process in the background. Cleanup failures have no notification or manual retry action; saved unfinished close requests are retried when the Client plugin starts. Collapsing, switching tabs or Sessions, floating and fullscreen presentation preserve the process.
+
+After reload, the [sidebar restores its layout](../../client/ui-sidebar-right/README.md#state) and each terminal reconnects to its saved Host identity in the original tab. Collapsed and inactive tabs do not create recovery duplicates or change selection. Host terminals absent from the saved layout do not reopen automatically and have no UI recovery entry; they remain subject to the controller's unattended idle reclamation and Session/Host disposal. A missing saved process shows a localized unavailable panel with **New terminal**. Clicking it replaces the unavailable tab in place with a fresh terminal; recovery never creates that replacement automatically.
+
+Terminals an Agent opens appear by themselves. While a Session's header is displayed, the provider watches that Session's terminals and opens one tab per running Agent terminal not yet shown in this window, which expands a collapsed sidebar. It saves the tab's terminal association at once, so a reload reattaches even if the tab never mounted. A Session that is not displayed receives its tabs the next time it is. While the Agent controls a terminal, its title shows an **Agent** badge. Your first keystroke, paste, IME commit, drop, or click or touch that the running program receives in such a terminal takes it over and removes the **Agent** badge; scrolling, focus changes and other terminal-protocol replies from the emulator do not. When a terminal leaves the Session while the Agent still controls it, because the Agent closed it or its Session ended, this window closes its tab; a terminal you took over keeps its tab. Commands you type in an Agent terminal run in its sandbox, so a terminal started in a confined sandbox mode then shows a **Sandbox** badge. Hovering the badge of a confined terminal names its sandbox mode.
+
+The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes preserve the running shell, output, and application OSC color overrides. Reset commands restore colors to the current DSH defaults. The screen uses the Settings terminal font size and places the Settings terminal font ahead of its built-in monospace stack; changing either keeps the shell and output, and a visible writable screen refits the Host grid to the new cell size. xterm adjusts text toward 4.5:1 contrast; the cursor keeps at least 3:1 contrast against its cell background, including Vim colorschemes.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -39,20 +45,20 @@ After a Host restart the terminal is gone but its bounded output is not: `termin
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The plugin registers the `terminal` type with the right sidebar, the guide card, the keyed body under `sidebar.right.pane.tab`, and a static chip title. The body receives an injected face bound to the tab's Session: `list`, `spawn`, `read`, `send`, and `interrupt` call the `remote.terminal` agent-terminal methods (`agentTerminals`, `agentSpawn`, `agentRead`, `agentSend`, `agentSignal`) on [`api-terminal-controller`](../../api/terminal-controller/README.md#agent-terminals); `persisted` reads the same Session's loaded event window through `ctx.sessions` and rebuilds its tool-result viewports without a Host call.
+This plugin registers the `terminal` type and body/title seats with the right sidebar. The guide reuses the Plugins page’s blue terminal artwork; tab titles use the line glyph. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. `ui-primitives` Menu and Button provide the shell picker and startup controls, including keyboard navigation and the selected-item marker. The body loads its package-local `client.terminal.js` chunk when a terminal view mounts, keeping xterm.js and FitAddon out of the startup `client.js`; they then render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
 
-The registry (`ctx.terminals`) is the single source of terminal sessions, so the panel shows exactly what the terminal tools use; ownership is enforced by the registry on the Host, not by the browser. Pages are requested newest-first in bounded counts, and the panel keeps one page in memory rather than a growing buffer. The tab record's abort signal is the lifetime of every call; a rebuilt tab record does not restart the open effect because the signal is read through a ref.
+The terminal controller saves each globally unique content identity's Host association independently and owns content recovery; the sidebar owns layout persistence. A recovered view cannot allocate a replacement process. The sidebar's close handler schedules cleanup through the [terminal controller](../../api/terminal-controller/README.md#understand-the-implementation) and returns synchronously. Browser component cleanup and the tab's abort signal only detach browser work.
 
-The Sidebar persists tab records without navigation parameters, so the tab's own recovery record (`tab → terminalId`, bounded per browser profile) carries the attachment across reloads. Closing the tab unregisters that record through the Sidebar's close handler; the terminal itself is left alone.
+At plugin startup, terminal-kind entries in the sidebar's complete open-tab inventory retain matching saved Host identities, including dormant Sessions. This window hold remains independent of React mounts and screen subscriptions. Removing the last matching occurrence releases it; collapsing or switching views does not. The [terminal controller](../../api/terminal-controller/README.md#use-this-package) owns unattended idle reclamation and long-command protection.
 
 </details>
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Terminal controller](../../api/terminal-controller/README.md)
-- [Terminal registry](../../terminal/terminal/README.md)
+- [Subprocess](../../subprocess/subprocess/README.md)
 - [Right Sidebar](../../client/ui-sidebar-right/README.md)
+- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.md)
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -67,10 +73,11 @@ None; terminal output travels only between the browser and Host.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Line contract only.** Full-screen TUI programs are not rendered; the panel shows the registry's retained lines.
-- **One scrollback page.** Older retained output beyond the requested page is not paged in yet.
-- **No rename or resize.** A terminal keeps the name its creator gave it, and the panel does not resize a PTY.
-- **History is bounded.** The feature does not send terminal output to the Agent and does not restore processes after a Host restart; it replays only the bounded output the session log still holds through tool results.
+- Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
+- Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
+- Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
+- Terminal history is bounded. The feature does not send terminal output to the Agent itself, provide split terminal panes inside a tab, or restore processes after Host restart; an Agent reads terminals only through a terminal tool package.
+- A failed terminal chunk load requires a page reload because React caches a rejected lazy import for the page lifetime.
 
 <a id="dev-note"></a>
 ### Dev Note

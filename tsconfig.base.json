@@ -34,6 +34,8 @@
       "@deepseek-ai/dsh-otel": ["./packages/telemetry/otel/src"],
       "@deepseek-ai/dsh-client-ui-settings-account": ["./packages/client/ui-settings-account/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account/client": ["./packages/client/ui-settings-account/src/client/index.ts"],
+      "@deepseek-ai/dsh-client-ui-account-notifications": ["./packages/client/ui-account-notifications/src/index.ts"],
+      "@deepseek-ai/dsh-client-ui-account-notifications/client": ["./packages/client/ui-account-notifications/src/client/index.ts"],
       "@deepseek-ai/dsh-api-gateway/stream-protocol": ["./packages/api/gateway/src/stream-protocol.ts"],
       "@deepseek-ai/dsh-deepseek-account": ["./packages/credentials/deepseek-account/src/index.ts"],
       "@deepseek-ai/dsh-deepseek-account/types": ["./packages/credentials/deepseek-account/src/types.ts"],

@@ -62,6 +62,8 @@ const page = await ctx.web.fetch({ url: 'https://example.com' })
 
 两个调用都接受可选的 `AbortSignal`，用于把取消转发给提供方。规范化的请求与结果形状是调用方赖以构建的约定；[web 子系统](../../../docs/subsystems/web.zh.md) 参考中的词汇章节对其有穷尽式描述。
 
+<a id="provider-selection"></a>
+
 ### 提供方选择
 
 每次调用都在执行时解析提供方，注册或加载顺序从不影响结果。已配置的提供方 id 在已注册且可用时优先；没有配置 id 时，服务运行唯一可用的提供方，或在情况不明时明确失败：

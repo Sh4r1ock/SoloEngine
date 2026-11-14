@@ -54,6 +54,7 @@
     { "path": "./packages/api/terminal-controller/tsconfig.client.json" },
     { "path": "./packages/ptc-runtime/ptc-runtime" },
     { "path": "./packages/client/ui-settings-account" },
+    { "path": "./packages/client/ui-account-notifications" },
     { "path": "./packages/host/webserver" },
     { "path": "./packages/compaction/compaction" },
     { "path": "./packages/client/store" },

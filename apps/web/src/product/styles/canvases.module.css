@@ -250,9 +250,10 @@ span.searchInput:focus-within {
   display: inline-flex;
   align-items: center;
   gap: var(--se-space-1);
-  /* 标签是标记不是正文：单行、超长截断，避免内容把行高撑开（结构性区域尺寸不随内容变化）。 */
+  /* 标签是标记不是正文：单行、超长截断，并锁定到元信息行高，避免 0.5px 胶囊边框把行高撑开（结构性区域尺寸不随内容变化）。 */
   flex-wrap: nowrap;
   min-width: 0;
+  height: 20px;
   overflow: hidden;
 }
 
