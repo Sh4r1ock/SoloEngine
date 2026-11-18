@@ -90,8 +90,8 @@ Keeping these helpers in their own package means `dsh-jobs` can brand `JobId` wi
 
 Read these pages when you need the values these primitives brand or the type conventions around them.
 
-- [Core subsystem](../../../docs/subsystems/core.md) — where the shared `SessionId` brand and the type rules are documented.
-- [LSP subsystem](../../../docs/subsystems/lsp.md) — `LspProviderId`, a branded provider id built on this primitive.
+- Core subsystem — where the shared `SessionId` brand and the type rules are documented.
+- LSP subsystem — `LspProviderId`, a branded provider id built on this primitive.
 - [Jobs package](../../jobs/jobs/README.md) — the `JobId` brand owned by the jobs capability.
 
 -----

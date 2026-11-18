@@ -45,7 +45,7 @@ Both primitives refuse a path that is not fully qualified — relative forms, an
 |---|---|---|
 | `maxEntries` | `1,000` | Complete-result bound of one listing level; hidden rows count toward it |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-host-directory-picker-browse) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 -----
 
@@ -83,10 +83,10 @@ Every filesystem await races the caller's signal (`raceAbort`), so a stalled net
 Read these when the backend contract is not enough: the seam definition first, then the decision record and the native alternative.
 
 - [Directory-picker seam](../directory-picker/README.md) — the `browse` capability contract and the typed error vocabulary.
-- [Directory-picker capability seam decision](../../../.agents/notes/archived/architecture/2026-07-28-directory-picker-capability-seam.md) — the policy decisions behind listing and creation.
+- Directory-picker capability seam decision — the policy decisions behind listing and creation.
 - [Native backend](../directory-picker-native/README.md) — the OS-chooser alternative for local operators.
 - [Adaptive chooser](../directory-picker-auto/README.md) — boot-time resolution between the two backends.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-host-directory-picker-browse) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

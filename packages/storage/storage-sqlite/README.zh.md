@@ -50,13 +50,13 @@ kind: "package-reference"
 | `path` | 必填 | SQLite 数据库文件路径，或 `:memory:` |
 | `journalMode` | `wal` | Journal mode：`wal`、`delete`、`truncate` 或 `persist` |
 
-`wal` 适合本地磁盘；回滚日志模式（`delete`／`truncate`／`persist`）适合 WAL 共享内存文件不可用的文件系统，例如网络挂载。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-storage-sqlite)是每个受支持字段及其 JSDoc 的穷尽式真源。
+`wal` 适合本地磁盘；回滚日志模式（`delete`／`truncate`／`persist`）适合 WAL 共享内存文件不可用的文件系统，例如网络挂载。生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 ### 可观察行为
 
 缺失的目录与数据库文件会以仅所有者可访问的权限创建（`0o700`／`0o600`）；已有数据库保持其既有模式。单元接受描述符的当前版本或 `compatibleVersions`，否则拒绝 `version-mismatch`。读取接受的旧单元时保留其版本戳；首次修改将数据与当前版本戳放在同一事务中提交。删除不存在的键或空批次时版本戳保持不变。未改动记录的值与其他单元保持不变；后端不转换应用值。盖有非当前物理布局版本的数据库会直接拒绝；领域兼容性不迁移数据库布局。Storage 检查使用 `StorageError` 代码；底层 SQLite 失败会向上传递，写入操作完成后即已持久化。
 
-每个非空批量删除都使用一个事务，需要时在该事务内更新版本戳。事务失败时，只要 SQLite 成功回滚，数据与版本戳就保持原状，包括自动回滚的情况。`BEGIN` 失败会使整个批次保持未应用，允许在同一句柄上重试。如果回滚本身失败，后端会保留代码为 `unknown-state` 的 `StorageError`，其 cause 是包含两次失败的 `AggregateError`，并拒绝后续单元读写，以及正在等待或新发起的打开操作。此时事务结果未知。须关闭后端及其领域，再创建新后端检查已存状态，然后决定是否重试。混合记录与降级行为参阅[领域版本](../../../docs/subsystems/storage.zh.md#domain-versioning)。
+每个非空批量删除都使用一个事务，需要时在该事务内更新版本戳。事务失败时，只要 SQLite 成功回滚，数据与版本戳就保持原状，包括自动回滚的情况。`BEGIN` 失败会使整个批次保持未应用，允许在同一句柄上重试。如果回滚本身失败，后端会保留代码为 `unknown-state` 的 `StorageError`，其 cause 是包含两次失败的 `AggregateError`，并拒绝后续单元读写，以及正在等待或新发起的打开操作。此时事务结果未知。须关闭后端及其领域，再创建新后端检查已存状态，然后决定是否重试。混合记录与降级行为参阅领域版本。
 
 -----
 
@@ -96,10 +96,10 @@ kind: "package-reference"
 
 当本后端视角不够用时阅读以下页面：子系统参考是权威约定，兄弟后端展示了另一种介质。
 
-- [存储子系统](../../../docs/subsystems/storage.zh.md)——后端约定、领域语义与生成的 API。
+- 存储子系统——后端约定、领域语义与生成的 API。
 - [存储包映射](../README.zh.md)——家族的各包及其在仓库中的位置。
 - [JSON 存储后端](../storage-json/README.zh.md)——面向小而可检查数据的人类可读介质。
-- [领域 KV 存储 Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)——后端家族背后的设计与被推迟的会话后端迁移。
+- 领域 KV 存储 Agent Note——后端家族背后的设计与被推迟的会话后端迁移。
 
 -----
 

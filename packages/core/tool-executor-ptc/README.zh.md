@@ -48,7 +48,7 @@ kind: "package-reference"
 
 调用方拥有传入的运行时，必须使其可用至工厂上下文完成销毁。对于保留状态或实施沙箱的运行时，销毁会取消活动的 Agent 程序并等待嵌套调用；Agent 销毁时释放其保留环境。环境初始化由传入[运行时的注册 API](../../ptc-runtime/ptc-runtime/README.zh.md#choose-a-backend)负责；应在提供程序工具前完成注册。工厂将运行时语法和执行说明追加到调用方提供的描述后；私有绑定的说明由调用方提供。
 
-[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-executor-ptc)
+配置目录
 
 -----
 
@@ -64,7 +64,7 @@ kind: "package-reference"
 
 PTC 执行器公开保留的 `run_code` 传输，以及确定性的 TypeScript SDK。每个 SDK 绑定捕获冻结的 ToolSchema，经由调度器传入该次执行上下文。已开始的调用在策略之前只记录配对 id、名称和规范化参数；其结算事件保留渲染结果、可选展示元数据与结构化错误；元数据由该次调用的规范值投影并冻结，不改变程序读取的值或模型内容。描述与参数 schema 仅临时存活，不进入 Session 事件或 SDK 输出。调用通过复用原生并发约定的每次运行独有池调度。在纯 `ptc` 下，模型直呼仅供程序使用的 SDK 工具都会在策略之前解析为 `UNKNOWN_TOOL`——通告面与可调用面保持一致。中间绑定值只存在于执行局部；只有外层 `run_code` 结果有硬大小上限。
 
-新子调用使用 `<parent>:ptc:<n>` 标识。消费方将这些标识视为不透明值，并通过精确相等关联事件；恢复的历史标识保留原始字节。[PTC mode 决策](../../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md) 负责持久化命名与恢复规则。
+新子调用使用 `<parent>:ptc:<n>` 标识。消费方将这些标识视为不透明值，并通过精确相等关联事件；恢复的历史标识保留原始字节。PTC mode 决策 负责持久化命名与恢复规则。
 
 TypeScript 中的 `read_image` 与 CUA 截图操作返回 `Image`，其中包含可读取的 `path`、`width` 和 `height`。将其传给 `inspect` 后，持久附件会按顺序与文本一起进入 `run_code` 结果。数组和对象内嵌的图片会随所在值一起展示。程序失败时，已 inspect 的输出随原始诊断一起呈现；外层替换的结果保持生效。输出策略移除截图或 read_image 图片时，绑定以 ToolCallError 拒绝，并包含保留的文本提示。额外上下文保留生成工具的归属。
 
@@ -97,7 +97,7 @@ TypeScript 中的 `read_image` 与 CUA 截图操作返回 `Image`，其中包含
 
 #### 模型看到什么
 
-PTC mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-executor-ptc)、下方 SDK 说明，以及生成的精确 TypeScript SDK 块。schema 将 `code` 列在 `description` 前；这是呈现顺序，不强制 JSON 成员顺序。REPL 与 Script 运行时共用通用工具描述和 SDK 说明；语法与状态规则由各自的 `executionInstructions` 提供。TypeScript SDK 声明 `inspect(...values)`，并在所有执行模式的 bash 示例中使用它。说明将生成声明明确标为只能在程序内使用的绑定。当当前 `bash` 参数 schema 接受示例参数时，说明还会给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000，并关闭提示词变量插值，使 TypeScript 程序原样保留工具描述和 schema 中的 `{{…}}` 文本。在 `ptc` 下，提示词还会带上处于更早 first-party 顺序的 `tools:ptc-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。 工具调用额度耗尽时，`run_code` 返回失败结果，说明额度、被拒绝的调用序号、程序已终止，以及可能存在死循环。运行时清理诊断和已捕获的输出仍然可见。 TypeScript 程序通过 `inspect(...values)` 展示选定的值。每个参数独立渲染。执行器省略函数返回值和末尾表达式的值。Node 提供方保留完整的原生 console，并捕获其 stdout 和 stderr 写入；模型指引要求程序使用 `inspect`。
+PTC mode 会公开生成的 `run_code` schema、下方 SDK 说明，以及生成的精确 TypeScript SDK 块。schema 将 `code` 列在 `description` 前；这是呈现顺序，不强制 JSON 成员顺序。REPL 与 Script 运行时共用通用工具描述和 SDK 说明；语法与状态规则由各自的 `executionInstructions` 提供。TypeScript SDK 声明 `inspect(...values)`，并在所有执行模式的 bash 示例中使用它。说明将生成声明明确标为只能在程序内使用的绑定。当当前 `bash` 参数 schema 接受示例参数时，说明还会给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000，并关闭提示词变量插值，使 TypeScript 程序原样保留工具描述和 schema 中的 `{{…}}` 文本。在 `ptc` 下，提示词还会带上处于更早 first-party 顺序的 `tools:ptc-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。 工具调用额度耗尽时，`run_code` 返回失败结果，说明额度、被拒绝的调用序号、程序已终止，以及可能存在死循环。运行时清理诊断和已捕获的输出仍然可见。 TypeScript 程序通过 `inspect(...values)` 展示选定的值。每个参数独立渲染。执行器省略函数返回值和末尾表达式的值。Node 提供方保留完整的原生 console，并捕获其 stdout 和 stderr 写入；模型指引要求程序使用 `inspect`。
 
 ##### 带 bash 的 TypeScript PTC mode SDK 说明
 

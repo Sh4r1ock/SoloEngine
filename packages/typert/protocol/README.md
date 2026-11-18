@@ -42,7 +42,7 @@ export class GoalService extends TypertRemoteService {
 }
 ```
 
-Generation turns the method into a wire endpoint under the service's namespace; Clients call it as a typed method through `ctx.remote` (see the [API Gateway reference](../../../docs/api-gateway.md)). A method opts into cooperative cancellation by declaring `signal: AbortSignal` as its final parameter — the signal is injected, never a JSON parameter or lookup field.
+Generation turns the method into a wire endpoint under the service's namespace; Clients call it as a typed method through `ctx.remote` (see the API Gateway reference). A method opts into cooperative cancellation by declaring `signal: AbortSignal` as its final parameter — the signal is injected, never a JSON parameter or lookup field.
 
 A unary method can return `Uint8Array` directly or within nested objects, arrays, tuples, optional fields, unions, and recursive types. Generation supplies optional result codec `encode()` and `decode()` functions: encoding visits only subtrees whose types can contain bytes, while decoding validates reconstructed values; Client declarations use `Uint8Array<ArrayBuffer>` at every byte position while retaining other field types. Pure JSON results pass through without Host byte detection or Client parsing. Parameters, events, and stream items remain JSON-only; runtime object cycles are unsupported.
 
@@ -138,11 +138,11 @@ Every namespace, method, lookup, and Context segment must satisfy `isTypertRemot
 
 Read these pages when the package-level contract is not enough; they move from the declarations to the runtime and the call path.
 
-- [API Gateway reference](../../../docs/api-gateway.md) — how the declarations become running Host-to-Client calls.
-- [Typert subsystem reference](../../../docs/subsystems/typert.md) — the literal public contracts recorded from protocol and Gateway types.
+- API Gateway reference — how the declarations become running Host-to-Client calls.
+- Typert subsystem reference — the literal public contracts recorded from protocol and Gateway types.
 - [Typert registry](../registry/README.md) — where descriptors and providers are stored at runtime.
 - [Typert generator](../generator/README.md) — what generates the consumer-side declarations and descriptors.
-- [Remote-call Agent Note](../../../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.md) — the architecture and transport decisions behind Remote calls.
+- Remote-call Agent Note — the architecture and transport decisions behind Remote calls.
 
 -----
 

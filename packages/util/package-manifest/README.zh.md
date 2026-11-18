@@ -77,7 +77,7 @@ const manifest: DshPackageManifest = {
 ## 进一步探索
 
 - [Profile 启动器](../../boot/app-boot/README.zh.md#profiles)——manifest 加载与组合。
-- [公共包元数据](../../../.agents/notes/implemented/architecture/2026-09-10-public-package-manifest.zh.md)——字段位置与读取方归属。
+- 公共包元数据——字段位置与读取方归属。
 
 <a id="model-experience"></a>
 ## 模型体验

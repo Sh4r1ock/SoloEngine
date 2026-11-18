@@ -50,7 +50,7 @@ Time-zone enumeration and localized names use the browser's embedded ICU/CLDR da
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-Task menus use the [standard menu geometry](../../../docs/ui-radius.md#nested-hover), including keyboard-highlighted rows. Portaled task menus, date/time pickers, and the Session-header popover follow their triggers through CSS anchors, with layout-viewport limits and desktop frame clearance. Browser zoom and panning move these panels with the page; they may extend beyond the visual viewport, including while the keyboard is open. Labels ellipsize when they exceed the panel width. Clock columns and task-menu choices scroll vertically within the panel height limit. Horizontal gestures over clock columns can pan the zoomed page; vertical overscroll stays within the column. Outside dismissal and keyboard navigation remain available.
+Task menus use the standard menu geometry, including keyboard-highlighted rows. Portaled task menus, date/time pickers, and the Session-header popover follow their triggers through CSS anchors, with layout-viewport limits and desktop frame clearance. Browser zoom and panning move these panels with the page; they may extend beyond the visual viewport, including while the keyboard is open. Labels ellipsize when they exceed the panel width. Clock columns and task-menu choices scroll vertically within the panel height limit. Horizontal gestures over clock columns can pan the zoomed page; vertical overscroll stays within the column. Outside dismissal and keyboard navigation remain available.
 
 <details>
 <summary>Implementation details — click to expand</summary>
@@ -69,7 +69,7 @@ Sidebar layout records omit opener parameters. `TaskTabBindings` therefore persi
 ## Further Exploration
 
 - [Schedule](../../schedule/schedule/README.md) owns persistence, destinations, lifecycle, and delivery semantics.
-- [Slots](../../../docs/subsystems/slots.md) defines framework readers and panel contributions.
+- Slots defines framework readers and panel contributions.
 
 <a id="model-experience"></a>
 ## Model Experience

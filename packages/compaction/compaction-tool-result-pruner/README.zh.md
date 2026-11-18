@@ -45,7 +45,7 @@ kind: "package-reference"
 
 ### 设置大小限制
 
-所有设置都可选；默认会把文本超过 8,192 个字符的结果修剪为其前 4,096 加后 1,024 个字符，并用标记连接。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-compaction-tool-result-pruner)是涵盖所有配置字段的真源。
+所有设置都可选；默认会把文本超过 8,192 个字符的结果修剪为其前 4,096 加后 1,024 个字符，并用标记连接。生成的配置目录是涵盖所有配置字段的真源。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -100,9 +100,9 @@ kind: "package-reference"
 
 - [压缩基础后端](../compaction-basic/README.zh.md)——在压缩前修剪超大工具输出的后端。
 - [压缩 seam](../compaction/README.zh.md)——本包接入的压缩约定。
-- [压缩子系统参考](../../../docs/subsystems/compaction.zh.md)——压缩词汇、结果与服务行为。
+- 压缩子系统参考——压缩词汇、结果与服务行为。
 - [Token meter](../../llm/token-meter/README.zh.md)——判定修剪是否缓解压力的测量服务。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-compaction-tool-result-pruner)——每个受支持配置字段及其源声明。
+- 生成配置目录——每个受支持配置字段及其源声明。
 
 -----
 

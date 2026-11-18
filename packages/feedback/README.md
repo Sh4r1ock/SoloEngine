@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The feedback group collects human opinions about the harness's work: users can submit a free-text remark about a whole session, and rate or annotate individual assistant messages. Neither kind of feedback reaches the model — these are signals about the output, never input to it. Users record a session remark with the `/feedback` command; product surfaces read and change per-message ratings through the `messageFeedback` service. The two packages are independent: session remarks and per-message ratings do not interact. This page maps the group; the package READMEs and the [feedback subsystem page](../../docs/subsystems/feedback.md) own the per-package contracts.
+The feedback group collects human opinions about the harness's work: users can submit a free-text remark about a whole session, and rate or annotate individual assistant messages. Neither kind of feedback reaches the model — these are signals about the output, never input to it. Users record a session remark with the `/feedback` command; product surfaces read and change per-message ratings through the `messageFeedback` service. The two packages are independent: session remarks and per-message ratings do not interact. This page maps the group; the package READMEs and the feedback subsystem page own the per-package contracts.
 
 ## Table of Contents
 
@@ -32,8 +32,8 @@ Per-message ratings and notes are stored with the session, survive restarts, and
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Feedback subsystem](../../docs/subsystems/feedback.md) — the message-feedback types, service contract, and Web consumer.
-- [Session telemetry subsystem](../../docs/subsystems/session-telemetry.md) — the sharing policy disclosed by the `/feedback` acknowledgement.
+- Feedback subsystem — the message-feedback types, service contract, and Web consumer.
+- Session telemetry subsystem — the sharing policy disclosed by the `/feedback` acknowledgement.
 - [Anonymous user identity](../identity/README.md) — the per-harness-home id embedded in the feedback acknowledgement.
 
 <a id="dev-note"></a>

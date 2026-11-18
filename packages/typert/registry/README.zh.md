@@ -101,8 +101,8 @@ Remote 调用通过 `ctx.typert.lookups` 与 `ctx.typert.contexts` 解析 Host �
 - [Typert loader](../loader/README.zh.md)——生成宿主产物的自动注册。
 - [Typert 生成器](../generator/README.zh.md)——产生注册表所存贡献的包。
 - [Typert 协议](../protocol/README.zh.md)——注册表所服务的描述符、编解码器与提供方约定。
-- [Typert 子系统参考](../../../docs/subsystems/typert.zh.md)——字面的 `ctx.typert` 约定。
-- [API Gateway 参考](../../../docs/api-gateway.zh.md)——调用描述符与提供方的主要消费方。
+- Typert 子系统参考——字面的 `ctx.typert` 约定。
+- API Gateway 参考——调用描述符与提供方的主要消费方。
 
 -----
 

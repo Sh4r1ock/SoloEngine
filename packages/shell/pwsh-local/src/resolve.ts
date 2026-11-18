@@ -1,9 +1,6 @@
 /**
  * PowerShell executable resolution, dependency-free so non-package consumers
- * (the repository's coverage-gate probe in `vitest.config.ts`) can share the
- * ONE resolution definition with the executor and its suites — a probe that
- * resolved differently from the code under test could exempt a file whose
- * suites actually run.
+ * share the ONE resolution definition with the executor.
  *
  * @module @deepseek-ai/dsh-pwsh-local/resolve
  */

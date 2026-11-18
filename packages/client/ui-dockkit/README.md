@@ -111,7 +111,7 @@ None; this package neither assembles nor sends a provider request.
 <a id="dev-note"></a>
 ### Dev Note
 
-Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the menu rules.
 
 <details>
 <summary>Working context for maintainers — click to expand</summary>

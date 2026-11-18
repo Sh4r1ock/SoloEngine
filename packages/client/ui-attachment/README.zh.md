@@ -77,7 +77,7 @@ Trajectory 附件行使用 48px 方形缩略图，完整缩放图片而不裁剪
 如果附件界面本身还不够，请阅读以下页面。这些页面从本包填充的 slot 讲到负责输入流程的会话外壳。
 
 - [ui-conversation](../ui-conversation/README.zh.md)——声明附件 slot，并负责 composer 与图片接收。
-- [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)——浏览器插件行如何加载并注册 slot。
+- Web 客户端架构——浏览器插件行如何加载并注册 slot。
 - [客户端包映射](../README.zh.md)——相邻的浏览器 UI 包。
 
 -----

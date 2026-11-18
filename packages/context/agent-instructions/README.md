@@ -39,7 +39,7 @@ The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md`
 
 The harness home holding the user-global `AGENTS.md` is process policy rather than row configuration: the plugin resolves `$DSH_HOME`, or `~/.dsh`, through `@deepseek-ai/dsh-home-paths`, so instruction loading always reads the process home. The shared agents root resolves the same way, from `$DSH_AGENTS_HOME` or `~/.agents`. Stray `dshHome` and `agentsHome` row keys are ignored.
 
-Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The [historical root-marker metadata decision](../../../.agents/notes/archived/bug-fix/2026-09-03-root-marker-metadata-failures.md) records why discovery fails instead of substituting another root.
+Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The historical root-marker metadata decision records why discovery fails instead of substituting another root.
 
 ```yaml
 - name: '@deepseek-ai/dsh-agent-instructions'
@@ -67,13 +67,13 @@ export interface Config {
 | `instructionFileCandidates` | `['AGENTS.md', 'CLAUDE.md']` | Base file names loaded in each project directory |
 | `localInstructionFileCandidates` | `['AGENTS.local.md', 'CLAUDE.local.md']` | Local overlay file names loaded after the base files |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-instructions) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Observing the budget
 
 Rendering budgets the user-global chain and the project chain separately, each under `maxBytes`. Within a chain it keeps the most specific files first: it drops whole broader files, truncates the last remaining file, and then falls back to a compact intro, to the budget notice with that file's empty heading, and finally to the notice alone. User-global files are therefore omitted or truncated only when they exceed their own budget, with the harness-home file omitted before the shared-root file, except in the fallback below. A visible `Workspace instruction budget ...` notice names the omitted and truncated paths of both chains. An over-budget broad file is ignored; during refresh it is treated as temporarily unavailable rather than removed.
 
-When all files fit within `maxBytes` together, the message holds them with no budget notice; when only one chain has files, that chain renders alone under `maxBytes`. Otherwise one `<system-reminder>` frame holds the merged budget notice when a file was omitted or truncated, one intro when a chain kept its frame, and the rendered sections of both chains in their loaded order, which puts user-global files first in a baseline; this message can exceed `maxBytes` and is at most twice that size. When a chain renders without a frame and the merged frame would exceed twice `maxBytes`, all files render as one chain under one `maxBytes` instead, which can omit a user-global file that fit its own budget; this needs a budget of a few hundred bytes or a budget notice that nearly fills or exceeds `maxBytes`. The [per-chain budget decision](../../../.agents/notes/implemented/architecture/2026-10-16-separate-instruction-chain-budgets.md) records why the two chains are budgeted separately.
+When all files fit within `maxBytes` together, the message holds them with no budget notice; when only one chain has files, that chain renders alone under `maxBytes`. Otherwise one `<system-reminder>` frame holds the merged budget notice when a file was omitted or truncated, one intro when a chain kept its frame, and the rendered sections of both chains in their loaded order, which puts user-global files first in a baseline; this message can exceed `maxBytes` and is at most twice that size. When a chain renders without a frame and the merged frame would exceed twice `maxBytes`, all files render as one chain under one `maxBytes` instead, which can omit a user-global file that fit its own budget; this needs a budget of a few hundred bytes or a budget notice that nearly fills or exceeds `maxBytes`. The per-chain budget decision records why the two chains are budgeted separately.
 
 -----
 
@@ -117,10 +117,10 @@ Every injected message carries a typed source with its change list; a complete b
 
 Read these pages when the package-level contract is not enough. They move from the instruction-file format to the design decision and the exhaustive configuration.
 
-- [Documentation standard](../../../docs/AGENTS.md) — what `AGENTS.md` instruction files contain and how they are maintained.
-- [Workspace-context decision record](../../../.agents/notes/archived/feature/2026-06-24-workspace-context.md) — per-agent/session isolation and lifecycle rationale.
+- Documentation standard — what `AGENTS.md` instruction files contain and how they are maintained.
+- Workspace-context decision record — per-agent/session isolation and lifecycle rationale.
 - [Context group map](../README.md) — sibling request-context packages.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-instructions) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

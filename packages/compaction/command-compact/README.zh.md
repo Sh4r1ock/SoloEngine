@@ -108,7 +108,7 @@ kind: "package-reference"
 - [压缩 seam](../compaction/README.zh.md)——本命令触发的压缩约定。
 - [压缩基础后端](../compaction-basic/README.zh.md)——自动与按需压缩的随附后端。
 - [命令包](../../interaction/commands/README.zh.md)——聊天命令背后的注册表与分发约定。
-- [压缩子系统参考](../../../docs/subsystems/compaction.zh.md)——压缩词汇、结果与服务行为。
+- 压缩子系统参考——压缩词汇、结果与服务行为。
 - [排队手动压缩 参考](../compaction/README.zh.md)——按需压缩如何与运行中的轮次串行化。
 
 -----

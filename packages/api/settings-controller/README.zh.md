@@ -39,7 +39,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-settings-controller)是所有受支持字段及其 JSDoc 的完整来源。
+生成的配置目录是所有受支持字段及其 JSDoc 的完整来源。
 
 -----
 

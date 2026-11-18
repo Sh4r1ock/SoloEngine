@@ -52,7 +52,7 @@ For a truncated reference, an optional spill backend saves the full captured tex
 
 The automatic budget is `max(65536, floor(contextWindow × 4 × referenceContextFraction))` bytes per source. Model context capacity is measured in tokens; four bytes per token is a sizing heuristic, not an exact token conversion. A missing LLM service, adapter, or capacity uses 64 KiB; other model metadata lookup errors and cancellation fail preparation.
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-reference) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 -----
 
@@ -97,11 +97,11 @@ The outer `agent/pre-step` listener accepts the step, parses canonical mentions 
 
 Read these pages when the package-level contract is not enough. They move from the shared reference surface to the design decision and the read service behind it.
 
-- [Session-reference subsystem](../../../docs/subsystems/session-reference.md) — canonical URIs, projection rules, and the stable error taxonomy.
-- [historical Session-reference spill reuse](../../../.agents/notes/archived/bug-fix/2026-09-05-session-reference-spill-reuse.md) — snapshot identity, omission notices, storage ownership, and alternatives.
-- [Session-query subsystem](../../../docs/subsystems/session-query.md) — the read service that supplies session surfaces.
+- Session-reference subsystem — canonical URIs, projection rules, and the stable error taxonomy.
+- historical Session-reference spill reuse — snapshot identity, omission notices, storage ownership, and alternatives.
+- Session-query subsystem — the read service that supplies session surfaces.
 - [Context group map](../README.md) — sibling request-context packages.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-reference) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

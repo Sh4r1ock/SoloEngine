@@ -77,9 +77,9 @@ The adapter injects `otel` and creates an independent ordinary-event channel thr
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Product telemetry](../../../docs/subsystems/product-telemetry.md) — consumer types and service reference.
+- Product telemetry — consumer types and service reference.
 - [Session telemetry](../../session/session-telemetry-otel/README.md) — separate feedback-authorized Session reporting.
-- [Testing policy](../../../docs/testing.md) — Loader composition and network fixtures.
+- Testing policy — Loader composition and network fixtures.
 
 -----
 

@@ -64,7 +64,7 @@ Cold material mutations emit `feedback/committed` after flush with a borrowed re
 | [`src/index.ts`](src/index.ts) | Remote service, payload validation, event projection, and persistence ownership |
 | [`src/types.ts`](src/types.ts) | Requests, results, and Session event declarations; types only |
 
-See the [feedback subsystem](../../../docs/subsystems/feedback.md), [Session persistence](../../../docs/subsystems/persistence.md), and [browser consumer](../../client/ui-message-feedback/README.md) for their respective APIs.
+See the feedback subsystem, Session persistence, and [browser consumer](../../client/ui-message-feedback/README.md) for their respective APIs.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -97,5 +97,3 @@ Independent. Feedback does not change the model request prefix.
 
 <a id="dev-note"></a>
 ### Dev Note
-
-The [package tests](tests/message-feedback.spec.ts) cover current-state and durable-history semantics; the [Loader composition](tests/loader-composition.spec.ts) verifies live and cold JSONL operations across restart.

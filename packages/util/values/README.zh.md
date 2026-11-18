@@ -78,8 +78,8 @@ JSON 校验器为每个正在遍历的容器保留一个位置，每次读取一
 ## 进一步探索
 
 - [工具包映射](../README.zh.md)——相邻的无状态 helper。
-- [会话子系统](../../../docs/subsystems/session.zh.md)——要求无损 JSON 的持久事件。
-- [工具子系统](../../../docs/subsystems/tools.zh.md)——构建于 `JsonValue` 之上的 schema 校验与规范工具结果。
+- 会话子系统——要求无损 JSON 的持久事件。
+- 工具子系统——构建于 `JsonValue` 之上的 schema 校验与规范工具结果。
 
 -----
 

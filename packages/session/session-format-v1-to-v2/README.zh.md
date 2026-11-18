@@ -77,8 +77,8 @@ v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从�
 
 - [已发布 v0 到 v1 迁移边](../session-format-v0-to-v1/README.zh.md)——本包复用的源编解码器与冻结历史词表。
 - [静态目录](../session-format-catalog/README.zh.md)——构建拥有的编解码器与迁移顺序。
-- [Session 持久化子系统](../../../docs/subsystems/persistence.zh.md)——不可变 generation 选择与发布。
-- [嵌入式 Assistant stream 决策](../../../.agents/notes/implemented/architecture/2026-09-01-v2-embedded-assistant-streams.zh.md)——理由、替代方案与后果。
+- Session 持久化子系统——不可变 generation 选择与发布。
+- 嵌入式 Assistant stream 决策——理由、替代方案与后果。
 
 -----
 

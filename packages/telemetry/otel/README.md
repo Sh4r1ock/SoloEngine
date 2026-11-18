@@ -43,7 +43,7 @@ Composition tests exercise independent channels and service removal; adapter tes
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [OTel subsystem](../../../docs/subsystems/otel.md) — service ownership and API.
+- OTel subsystem — service ownership and API.
 - [Product adapter](../../host/product-telemetry-otel/README.md) — explicit analytics policy and configuration.
 - [Session adapter](../../session/session-telemetry-otel/README.md) — feedback authorization and configured upload limits.
 

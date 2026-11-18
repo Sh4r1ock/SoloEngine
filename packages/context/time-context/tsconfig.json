@@ -30,9 +30,6 @@
       "path": "../../core/agent"
     },
     {
-      "path": "../../test-support/loader-smoke"
-    },
-    {
       "path": "../../core/session"
     },
     {

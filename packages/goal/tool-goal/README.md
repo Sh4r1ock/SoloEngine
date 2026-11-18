@@ -48,7 +48,7 @@ Call `get_goal` before `update_goal` and copy the exact `goal_id` and `revision`
     blockedAfterConsecutiveRounds: 3
 ```
 
-The value must be a positive safe integer. It supplies both the hard lower bound on model self-blocking and the number named in model guidance. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-goal) is the exhaustive source for every accepted field.
+The value must be a positive safe integer. It supplies both the hard lower bound on model self-blocking and the number named in model guidance. The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### Authority rules
 
@@ -96,8 +96,8 @@ The tools are the model-facing half of the goal surface; read these pages for th
 
 - [Goal service](../goal/README.md) — the goal state and lifecycle the tools mutate.
 - [Goal group map](../README.md) — the goal packages and how they compose.
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-goal) — the exact schemas the model receives.
-- [Goal-tool Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-model-facing-goal-tools.md) — the authority split and UX decisions.
+- Generated tool catalog — the exact schemas the model receives.
+- Goal-tool Agent Note — the authority split and UX decisions.
 
 -----
 
@@ -128,7 +128,7 @@ Prefix-stable while the plugin scope, configured threshold, and guidance text ar
 
 #### What the model sees
 
-The generated [`get_goal`, `create_goal`, and `update_goal` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-goal). Successful results are compact JSON. A mutation appends the goal domain's durable `goal/change` event without queuing model context. `activation` in a result is a live observation and never becomes replay authority.
+The generated `get_goal`, `create_goal`, and `update_goal` schemas. Successful results are compact JSON. A mutation appends the goal domain's durable `goal/change` event without queuing model context. `activation` in a result is a live observation and never becomes replay authority.
 
 #### Token effect
 

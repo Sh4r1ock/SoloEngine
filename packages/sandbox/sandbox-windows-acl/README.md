@@ -79,7 +79,7 @@ A denial this backend cannot explain is diagnosed by the `diagnose-windows-sandb
 
 One run diagnoses and repairs. The script has no modes: it reads the requested path and every ancestor, adds the signed-in user's full-control allow ACE to chain directories that lack effective `WRITE_DAC` or `WRITE_OWNER`, and removes explicit package allow ACEs at their sources, ancestor first, verifying each change by re-reading it. Repairs preserve denies, owner, inheritance and SACL, and back up each changed DACL. An object is modified only when it is `-AllowRoot` or strictly inside it, so a workspace root can repair itself; reparse paths and managed application trees are refused, and a repair needs effective `WRITE_DAC`. Failed repairs restore attempted changes in reverse order and exit nonzero. Follow the [bundled skill](assets/diagnose-windows-sandbox-acl/SKILL.md) for the single command, original-operation verification and recovery.
 
-Every run prints `REPORT` JSON records of observations, actions, reasons and verification, then a final `RECAP` line carrying the verdicts, changes, verifications, refusals and scans, and a summary with the counts, recovery commands and `nextAction`; unknown observations remain unknown. The same run writes every record to `-Out\acl-report-*.jsonl`, because tool output keeps only its tail. `-Out` also receives two recovery files per change: the DACL the object owned before that change and the independent script that restores it. Action completion records API execution; verification records the observed result. The [recovery decisions](../../../.agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.md#acl-diagnosis-and-recovery) explain resource ownership and rollback limits.
+Every run prints `REPORT` JSON records of observations, actions, reasons and verification, then a final `RECAP` line carrying the verdicts, changes, verifications, refusals and scans, and a summary with the counts, recovery commands and `nextAction`; unknown observations remain unknown. The same run writes every record to `-Out\acl-report-*.jsonl`, because tool output keeps only its tail. `-Out` also receives two recovery files per change: the DACL the object owned before that change and the independent script that restores it. Action completion records API execution; verification records the observed result. The recovery decisions explain resource ownership and rollback limits.
 
 Inspection visits the requested object and each ancestor through the filesystem root. Each ACL observation's `path` identifies the inspected object; the classification's `details.packageObjects` lists objects carrying package allow ACEs without establishing the cause of the original failure. Each package removal is verified per object by comparing the recorded own ACEs with the re-read DACL, so a deny that shares the removed allow's SID remains visible in the verification details.
 
@@ -152,12 +152,12 @@ The sandbox-owned SID, ACL, token, file, and lock declarations are checked again
 
 Start with the subsystem reference for the shared vocabulary, then the provider that mounts this rung, its consumers, and the design decision.
 
-- [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — modes, per-call policy, and enforcement semantics.
+- Process sandbox subsystem — modes, per-call policy, and enforcement semantics.
 - [Local sandbox backends](../sandbox-local/README.md) — the provider that mounts this backend as the win32 rung.
 - [Sandbox seam package](../sandbox/README.md) — the service contract this backend implements.
 - [Win32 process library](../../subprocess/win32-process/README.md) — shared restricted-process, stdio, Job, wait, and handle-cleanup primitives.
 - [Bash sandbox executor](../../shell/bash-sandbox/README.md) and [pwsh sandbox executor](../../shell/pwsh-sandbox/README.md) — the confined executors that consume it.
-- [Windows ACL restricted-token sandbox decision](../../../.agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.md) — why raw ACL restricted tokens over mxc and AppContainer.
+- Windows ACL restricted-token sandbox decision — why raw ACL restricted tokens over mxc and AppContainer.
 
 -----
 

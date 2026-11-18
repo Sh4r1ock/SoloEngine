@@ -35,8 +35,8 @@ The service keeps process lifetime across consumer reloads; consumers own what a
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Subprocess subsystem](../../docs/subsystems/subprocess.md) — spawn specs, output readers, outcomes, and the managed `DSH_*` environment.
-- [Subprocess seam Agent Note](../../.agents/notes/archived/architecture/2026-07-26-subprocess-seam.md) — why the process half of the bash executors became its own seam.
+- Subprocess subsystem — spawn specs, output readers, outcomes, and the managed `DSH_*` environment.
+- Subprocess seam Agent Note — why the process half of the bash executors became its own seam.
 
 -----
 

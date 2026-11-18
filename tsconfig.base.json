@@ -1,6 +1,6 @@
 {
-  // Doubles as the resolution facade for vite-tsconfig-paths (vitest configs
-  // point here). NEVER add include/files to this file: it would leak into
+  // Doubles as the resolution facade for vite-tsconfig-paths. NEVER add
+  // include/files to this file: it would leak into
   // every extending package project and narrow the facade's match-all scope.
   "compilerOptions": {
     "target": "es2024",
@@ -215,7 +215,6 @@
       "@deepseek-ai/dsh-cordis-client-runner/client": ["./packages/extensions/cordis-client-runner/src/client"],
       "@deepseek-ai/dsh-client-ui-cordis": ["./packages/extensions/ui-cordis/src"],
       "@deepseek-ai/dsh-client-ui-cordis/client": ["./packages/extensions/ui-cordis/src/client"],
-      "@deepseek-ai/dsh-client-test-runtime": ["./packages/test-support/client-runtime/src"],
       "@deepseek-ai/dsh-client-shortcuts/protocol": ["./packages/client/shortcuts/src/protocol.ts"],
       "@deepseek-ai/dsh-client-shortcuts": ["./packages/client/shortcuts/src"],
       "@deepseek-ai/dsh-client-ui-shortcuts": ["./packages/client/ui-shortcuts/src"],
@@ -334,7 +333,6 @@
       "@deepseek-ai/dsh-agent-default-model": ["./packages/core/agent-default-model/src"],
       "@deepseek-ai/dsh-agent-instructions": ["./packages/context/agent-instructions/src"],
       "@deepseek-ai/dsh-agent-loop": ["./packages/core/agent-loop/src"],
-      "@deepseek-ai/dsh-agent-loop-testkit": ["./packages/test-support/agent-loop-testkit/src"],
       "@deepseek-ai/dsh-agent-preset": ["./packages/preset/agent-preset/src"],
       "@deepseek-ai/dsh-agent-preset-registry": ["./packages/preset/agent-preset-registry/src"],
       "@deepseek-ai/dsh-agent-team": ["./packages/team/agent-team/src"],
@@ -386,11 +384,8 @@
       "@deepseek-ai/dsh-llm-deepseek": ["./packages/llm/llm-deepseek/src"],
       "@deepseek-ai/dsh-llm-deepseek-account": ["./packages/llm/llm-deepseek-account/src"],
       "@deepseek-ai/dsh-llm-deepseek-api-key": ["./packages/llm/llm-deepseek-api-key/src"],
-      "@deepseek-ai/dsh-llm-mock-server": ["./packages/test-support/llm-mock-server/src"],
       "@deepseek-ai/dsh-llm-pi-ai": ["./packages/llm/llm-pi-ai/src"],
-      "@deepseek-ai/dsh-llm-replay": ["./packages/test-support/llm-replay/src"],
       "@deepseek-ai/dsh-llm-retry": ["./packages/llm/llm-retry/src"],
-      "@deepseek-ai/dsh-loader-smoke": ["./packages/test-support/loader-smoke/src"],
       "@deepseek-ai/dsh-lsp": ["./packages/lsp/lsp/src"],
       "@deepseek-ai/dsh-lsp-stdio": ["./packages/lsp/lsp-stdio/src"],
       "@deepseek-ai/dsh-mcp-client": ["./packages/mcp/mcp-client/src"],
@@ -413,7 +408,6 @@
       "@deepseek-ai/dsh-ptc-runtime": ["./packages/ptc-runtime/ptc-runtime/src"],
       "@deepseek-ai/dsh-ptc-runtime-node": ["./packages/ptc-runtime/ptc-runtime-node/src"],
       "@deepseek-ai/dsh-pwsh-sandbox": ["./packages/shell/pwsh-sandbox/src"],
-      "@deepseek-ai/dsh-remote-mock": ["./packages/test-support/remote-mock/src"],
       "@deepseek-ai/dsh-repeat-tool-reminder": ["./packages/guard/repeat-tool-reminder/src"],
       "@deepseek-ai/dsh-sandbox": ["./packages/sandbox/sandbox/src"],
       "@deepseek-ai/dsh-sandbox-local": ["./packages/sandbox/sandbox-local/src"],
@@ -438,7 +432,6 @@
       "@deepseek-ai/dsh-session-query": ["./packages/session-query/session-query/src"],
       "@deepseek-ai/dsh-session-query-sqlite": ["./packages/session-query/session-query-sqlite/src"],
       "@deepseek-ai/dsh-session-reference": ["./packages/context/session-reference/src"],
-      "@deepseek-ai/dsh-session-snapshot": ["./packages/test-support/session-snapshot/src"],
       "@deepseek-ai/dsh-session-stats": ["./packages/session/session-stats/src"],
       "@deepseek-ai/dsh-session-telemetry": ["./packages/session/session-telemetry/src"],
       "@deepseek-ai/dsh-session-telemetry-otel": ["./packages/session/session-telemetry-otel/src"],
@@ -492,7 +485,6 @@
       "@deepseek-ai/dsh-tool-subagent": ["./packages/subagent/tool-subagent/src"],
       "@deepseek-ai/dsh-tool-subagent-control": ["./packages/subagent/tool-subagent-control/src"],
       "@deepseek-ai/dsh-tool-terminal": ["./packages/experimental/tool-terminal/src"],
-      "@deepseek-ai/dsh-tool-testkit": ["./packages/test-support/tool-testkit/src"],
       "@deepseek-ai/dsh-tool-todo": ["./packages/todo/tool-todo/src"],
       "@deepseek-ai/dsh-tool-web": ["./packages/web/tool-web/src"],
       "@deepseek-ai/dsh-tool-workflow": ["./packages/workflow/tool-workflow/src"],

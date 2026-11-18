@@ -97,7 +97,7 @@ Host 路由是由该功能拥有的精确 Fetch 路由贡献。Connection 应用
 当包级约定不够用时阅读以下页面。它们从 Web 控件逐步进入 Host 端点及相关的命令与会话接口。
 
 - [dsh-client-connection](../../client/connection/README.zh.md)——Host 端点使用的认证 Fetch 路由载体。
-- [命令子系统参考](../../../docs/subsystems/commands.zh.md)——`/export` 命令注册的用户命令注册表。
+- 命令子系统参考——`/export` 命令注册的用户命令注册表。
 - [dsh-client-ui-commands](../../client/ui-commands/README.zh.md)——渲染并确认 `/export` 的浏览器命令界面。
 - [会话查询包映射](../README.zh.md)——本包所属的检索包族。
 

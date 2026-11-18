@@ -60,7 +60,7 @@ Desktop 原生菜单和内嵌 frame 使用与 DOM 输入相同的命令注册表
 <a id="further-exploration"></a>
 ## 进一步阅读
 
-- [Web Client](../../../docs/subsystems/web-client.zh.md)
+- Web Client
 - [UI primitives](../ui-primitives/README.zh.md)
 - [Web app bundle](../../bundle/web-app/README.zh.md)
 

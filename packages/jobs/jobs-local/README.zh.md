@@ -46,7 +46,7 @@ kind: "package-reference"
 | `settledRetainBytes` | `16384` | 任务结算后保留的环容量，UTF-8 字节；模型尚未读取的字节保留到它的首次终态读取 |
 | `pumpPollMs` | `150` | 任务拉取源的轮询间隔，毫秒 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-jobs-local)是每个受支持字段的穷尽式真源。
+生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 每个所有者得到什么
 
@@ -58,7 +58,7 @@ kind: "package-reference"
 
 ### Session 时间记录
 
-有所有者的 job 在原始 Session 中记录注册与结算，不依赖模型收集输出。SDK 消费方通过 `session.event` 收到同样的事件；[jobs 参考](../../../docs/subsystems/jobs.zh.md#session-lifecycle-records)定义标识、时间戳和生产方结算报告。已持久化的事件在进程退出后仍可读取；运行中的 job 和输出环不会被恢复。
+有所有者的 job 在原始 Session 中记录注册与结算，不依赖模型收集输出。SDK 消费方通过 `session.event` 收到同样的事件；jobs 参考定义标识、时间戳和生产方结算报告。已持久化的事件在进程退出后仍可读取；运行中的 job 和输出环不会被恢复。
 
 生命周期事实在注册或结算提交时同步追加，先于运行期 hub 订阅者和完成等待方的反应。追加失败会记录警告，不放弃执行或阻塞清理；消费方必须将不完整历史保留为不完整。
 
@@ -115,13 +115,13 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从注册表约定逐步进入模型侧控制与设计记录。
 
-- [后台任务运行时子系统](../../../docs/subsystems/jobs.zh.md)——任务类型、投影字段与 `ctx.jobs` 的 Cordis 接口面。
+- 后台任务运行时子系统——任务类型、投影字段与 `ctx.jobs` 的 Cordis 接口面。
 - [jobs 组映射](../README.zh.md)——同级组页面及其包表格。
 - [注册表约定](../jobs/README.zh.md)——本包实现的抽象 `ctx.jobs` 服务。
 - [模型侧任务控制](../tool-jobs/README.zh.md)——`job_output`、`job_list` 与 `job_kill` 工具及完成通知。
 - [通用长时间运行工具运行时 reference](../jobs/README.zh.md)——后台任务运行时背后的设计。
-- [job 生命周期记录决策](../../../.agents/notes/implemented/bug-fix/2026-09-30-job-session-lifecycle.zh.md)——持久化时间、执行标识及记录失败行为。
-- [任务注册表 seam Agent Note](../../../.agents/notes/archived/architecture/2026-07-26-job-registry-seam.md)——按所有者隔离的注册表约定及其理由。
+- job 生命周期记录决策——持久化时间、执行标识及记录失败行为。
+- 任务注册表 seam Agent Note——按所有者隔离的注册表约定及其理由。
 
 -----
 

@@ -59,7 +59,7 @@ Loading the plugin with no config is the common path; a `waitTimeoutMs` above `m
 | `maxConsecutiveWakes` | unset | Turns one owner may open by wake before notices degrade to injection; unset means no cap |
 | `inlineOutputBytes` | `2048` | Largest complete notice that carries the job's output and final result inline; `0` never inlines |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-jobs) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### What can go wrong
 
@@ -107,13 +107,13 @@ A job whose whole output stream (`JobView.output.total`) exceeds `inlineOutputBy
 
 Read these pages when the package-level contract is not enough. They move from the job types to the registry contract and the generated schemas.
 
-- [Background task runtime subsystem](../../../docs/subsystems/jobs.md) — the job types, snapshot fields, and `ctx.jobs` Cordis surface.
+- Background task runtime subsystem — the job types, snapshot fields, and `ctx.jobs` Cordis surface.
 - [jobs group map](../README.md) — the sibling group page and its package table.
 - [Registry contract](../jobs/README.md) — the abstract `ctx.jobs` service behind the tools.
 - [Process-local registry](../jobs-local/README.md) — where jobs run in this process.
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-jobs) — the exact `job_output`, `job_list`, and `job_kill` schemas.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-jobs) — every accepted config field and its source declaration.
-- [job-registry seam Agent Note](../../../.agents/notes/archived/architecture/2026-07-26-job-registry-seam.md) — the owner-fenced registry contract and its rationale.
+- Generated tool catalog — the exact `job_output`, `job_list`, and `job_kill` schemas.
+- Generated configuration catalog — every accepted config field and its source declaration.
+- job-registry seam Agent Note — the owner-fenced registry contract and its rationale.
 
 -----
 
@@ -144,7 +144,7 @@ Prefix-stable while the plugin scope and guidance text are unchanged. Activation
 
 #### What the model sees
 
-The generated [`job_output`, `job_list`, and `job_kill` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-jobs) while this tool set is visible.
+The generated `job_output`, `job_list`, and `job_kill` schemas while this tool set is visible.
 
 #### Token effect
 

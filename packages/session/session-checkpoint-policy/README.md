@@ -80,7 +80,7 @@ The plugin is a listener-only composition over three seams, with no state of its
 
 Read these pages when the package-level contract is not enough. They move from the durability model to the seam it joins and the shipped backends.
 
-- [Session persistence subsystem](../../../docs/subsystems/persistence.md) — the flush checkpoint, batching window, and crash recovery every backend shares.
+- Session persistence subsystem — the flush checkpoint, batching window, and crash recovery every backend shares.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 - [Session persistence seam](../session-persistence/README.md) — the `ctx.sessionPersistence` service this policy flushes through.
 - [JSONL persistence backend](../session-persistence-jsonl/README.md) — the shipped backend this policy is usually loaded beside.

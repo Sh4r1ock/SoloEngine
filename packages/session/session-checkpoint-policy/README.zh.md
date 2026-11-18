@@ -80,7 +80,7 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从持久性模型逐步进入它所加入的 seam 与随产品交付的后端。
 
-- [会话持久化子系统](../../../docs/subsystems/persistence.zh.md)——每个后端共享的 flush 检查点、批处理窗口与崩溃恢复。
+- 会话持久化子系统——每个后端共享的 flush 检查点、批处理窗口与崩溃恢复。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 - [会话持久化 seam](../session-persistence/README.zh.md)——本策略经由其刷新的 `ctx.sessionPersistence` 服务。
 - [JSONL 持久化后端](../session-persistence-jsonl/README.zh.md)——本策略通常与之一起加载的随产品交付后端。

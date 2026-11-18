@@ -60,12 +60,6 @@ const CLIENT_TYPE_PROGRAM = 'tsconfig.client.json'
 const SHELL_PACKAGE = '@deepseek-ai/dsh-web-frontend'
 
 /**
- * Test infrastructure builds through the client preset but never enters the
- * shell's module graph, so it is not a dev-loop artifact.
- */
-const TEST_INFRASTRUCTURE_PREFIX = 'packages/test-support/'
-
-/**
  * Sample one local public environment for every long-lived watcher stage.
  * @param root - repository root supplying version and Git metadata.
  * @param environment - watcher launch environment supplying public extensions.
@@ -158,7 +152,6 @@ export function discoverLibraryDirs(root = repoRoot): string[] {
   const dirs: string[] = []
   for (const configPath of globSync('packages/*/*/tsdown.config.ts', { cwd: root }).sort()) {
     const dir = dirname(configPath).split(sep).join('/')
-    if (dir.startsWith(TEST_INFRASTRUCTURE_PREFIX)) continue
     if (!readFileSync(join(root, configPath), 'utf8').includes('tsdown.client.ts')) continue
     const manifest = JSON.parse(readFileSync(join(root, dir, 'package.json'), 'utf8')) as {
       dsh?: { client?: unknown }

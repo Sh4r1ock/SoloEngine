@@ -36,10 +36,10 @@ kind: "package-group"
 
 先用可运行的示例配置体验插件，再阅读 Agent Note 了解其背后的行为决策。
 
-- [历史MCP 客户端插件 Agent Note](../../.agents/notes/archived/feature/2026-07-07-mcp-client-plugin.md)——桥接的设计：服务器限定命名、发现、执行与环境清洗。
+- 历史MCP 客户端插件 Agent Note——桥接的设计：服务器限定命名、发现、执行与环境清洗。
 - [资源与指令 参考](mcp-resources/README.zh.md)——按需资源访问与作用域服务器指引。
-- [第三方记忆 MCP 指南](../../docs/user/guide/mcp-memory.zh.md)——可运行的 overlay 配置行与设置说明。
-- [工具子系统参考](../../docs/subsystems/tools.zh.md)——接收已注册工具的 `ToolRuntime`。
+- 第三方记忆 MCP 指南——可运行的 overlay 配置行与设置说明。
+- 工具子系统参考——接收已注册工具的 `ToolRuntime`。
 
 <a id="dev-note"></a>
 ## 开发备注

@@ -56,7 +56,7 @@ kind: "package-reference"
 | `maxTasks` | `256` | 任务板上最多的未删除任务数 |
 | `defaultEnabled` | `false` | 为没有已有选择的新根会话保存 Team 模式开启状态 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-team)是每个受支持字段及其 JSDoc 的穷尽式真源。设置 `maxMembers`、`maxMessageBytes` 或 `disposalTimeoutMs` 的配置行不会激活，dsh 会在启动警告中指出该键；升级指南列出替代方式。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。设置 `maxMembers`、`maxMessageBytes` 或 `disposalTimeoutMs` 的配置行不会激活，dsh 会在启动警告中指出该键；升级指南列出替代方式。
 
 ### Teammate
 
@@ -105,7 +105,7 @@ kind: "package-reference"
 - **显式权限。** 每个服务方法都接收确切的 live 调用方 `Agent`；任务 owner 或 Lead 可以变更任务，只有 Lead 可以 reassign。
 - **超出上限时明确失败。** `maxTasks` 是经过校验的部署值，耗尽时报告类型化错误，而不是复用 id。
 
-[仅等待收件箱的决策](../../../.agents/notes/implemented/simplification/2026-10-29-inbox-only-agent-wait.zh.md)区分任务提交与 Agent 输入等待。
+仅等待收件箱的决策区分任务提交与 Agent 输入等待。
 
 ### 源码地图
 
@@ -147,7 +147,7 @@ Team 在激活前要求 `sessionPersistence` 可用。`Service.init` 等待 `age
 
 ### 浏览器投影
 
-`agentTeam` 投影发布未删除任务视图，并在最后有效状态旁报告失败。历史名册与邮箱记录不会导致任务板投影失败。投影失败后，任务读取和修改均以 `TeamError` `TEAM_STATE_CORRUPT` 报错，不再追加任务事件。模式选择仍可保存并生效，包括关闭 Team；投影错误持续可见。无效模式载荷保留最后有效选择，并发布投影错误。[子系统参考](../../../docs/subsystems/agent-team.zh.md#web-projection)定义线上的类型。
+`agentTeam` 投影发布未删除任务视图，并在最后有效状态旁报告失败。历史名册与邮箱记录不会导致任务板投影失败。投影失败后，任务读取和修改均以 `TeamError` `TEAM_STATE_CORRUPT` 报错，不再追加任务事件。模式选择仍可保存并生效，包括关闭 Team；投影错误持续可见。无效模式载荷保留最后有效选择，并发布投影错误。子系统参考定义线上的类型。
 
 Web UI仅展示任务。普通 subagent 导航负责成员列表；任务所有者标签显示所有者的完整名称，所有者没有名称时显示其 Session id。
 
@@ -160,10 +160,10 @@ Web UI仅展示任务。普通 subagent 导航负责成员列表；任务所有�
 
 当包级约定不够用时阅读以下页面。它们从共享子系统类型逐步进入工具表面与设计背后的决策。
 
-- [Agent Teams 子系统](../../../docs/subsystems/agent-team.zh.md)——持久 Team 类型与 `ctx.agentTeams` 服务 API。
+- Agent Teams 子系统——持久 Team 类型与 `ctx.agentTeams` 服务 API。
 - [tool-agent-team 包](../tool-agent-team/README.zh.md) — 任务工具和共享任务板策略。
 - [Subagent 运行时](../../subagent/subagent/README.zh.md)——teammate 使用的可继续子级、消息、中断与生命周期。
-- [subagent teammate Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.zh.md)——为何 teammate 是subagent，以及 Team 保留了什么。
+- subagent teammate Agent Note——为何 teammate 是subagent，以及 Team 保留了什么。
 - 升级指南——已移除的 Team 工具、服务方法与配置键的替代方式。
 
 -----

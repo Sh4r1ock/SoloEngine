@@ -28,8 +28,8 @@ Packages in this group carry complete public contracts that remain under evaluat
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Session query subsystem](../../docs/subsystems/session-query.md) — the retrieval services these tools project.
-- [Terminal subsystem](../../docs/subsystems/terminal.md) — owner-scoped persistent PTY sessions.
+- Session query subsystem — the retrieval services these tools project.
+- Terminal subsystem — owner-scoped persistent PTY sessions.
 - [Experimental package policy](../../scripts/experimental-package-policy.ts) — publication defaults and private exceptions.
 
 <a id="dev-note"></a>

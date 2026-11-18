@@ -1,7 +1,7 @@
 /** Non-default package roles retained outside the experimental group. */
 
 /** Product role that does not require a default runtime mount. */
-export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'test' | 'web-distribution' | 'declarations'
+export type ProductPackageCategory = 'optional' | 'sdk' | 'build' | 'web-distribution' | 'declarations'
 
 /** One explicitly maintained package role and its reason. */
 export interface ProductPackagePolicy {
@@ -52,13 +52,6 @@ export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolic
   'packages/soloengine/ui-document-editor': { category: 'optional', reason: 'Product document editor mounted by the SoloEngine client composition.' },
   'packages/soloengine/ui-operation-area': { category: 'optional', reason: 'Product operation area mounted by the SoloEngine client composition.' },
   'packages/typert/generator': { category: 'build', reason: 'Build-time generation of type metadata.' },
-  'packages/test-support/agent-loop-testkit': { category: 'test', reason: 'Published agent-loop test harness.' },
-  'packages/test-support/client-runtime': { category: 'test', reason: 'Published browser plugin test harness.' },
-  'packages/test-support/llm-mock-server': { category: 'test', reason: 'Published model-provider test server.' },
-  'packages/test-support/llm-replay': { category: 'test', reason: 'Published recorded-model replay harness.' },
-  'packages/test-support/loader-smoke': { category: 'test', reason: 'Published plugin Loader smoke-test harness.' },
-  'packages/test-support/remote-mock': { category: 'test', reason: 'Published typed Remote test proxies.' },
-  'packages/test-support/session-snapshot': { category: 'test', reason: 'Published Session snapshot replay harness.' },
   'packages/client/web': { category: 'web-distribution', reason: 'Browser boot kernel bundled into the Web distribution.' },
   'packages/client/ui-dockkit': { category: 'web-distribution', reason: 'Layout library bundled into the Web distribution.' },
   'packages/util/package-manifest': { category: 'declarations', reason: 'Shared package metadata declarations have no runtime mount.' },

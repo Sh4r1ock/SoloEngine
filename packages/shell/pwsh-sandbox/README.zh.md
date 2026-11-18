@@ -41,7 +41,7 @@ kind: "package-reference"
 
 ### 最小配置
 
-在 Windows 上挂载 ACL 受限令牌提供方；在 Linux 与 macOS 上则改挂本地 runner 提供方。执行器自身的配置与本地 pwsh 执行器的配置项完全相同；生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-pwsh-sandbox)是完整真源。
+在 Windows 上挂载 ACL 受限令牌提供方；在 Linux 与 macOS 上则改挂本地 runner 提供方。执行器自身的配置与本地 pwsh 执行器的配置项完全相同；生成的配置目录是完整真源。
 
 ```yaml
 - id: sandbox
@@ -83,7 +83,6 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`SandboxPwshExecutor`、按进程保留事实、执行准备 |
 | [`src/helpers.ts`](src/helpers.ts) | 拒绝、runner 失败与 runner spawn 失败分类 |
-| `tests/` | 跨 ACL 与平台 runner 演练的行为 |
 
 ### 主要流程
 
@@ -108,8 +107,8 @@ kind: "package-reference"
 - [bash-sandbox](../bash-sandbox/README.zh.md) —— 本执行器的 bash 孪生，共享拒绝与升权面。
 - [pwsh-local](../pwsh-local/README.zh.md) —— 本执行器继承的进程机制。
 - [sandbox-windows-acl](../../sandbox/sandbox-windows-acl/README.zh.md) —— Windows 受限令牌 runner 链。
-- [Bash 执行器子系统](../../../docs/subsystems/shell.zh.md) —— 请求/spec 词汇、结果与完整的服务约定。
-- [pwsh 执行器与工具笔记](../../../.agents/notes/archived/feature/2026-08-01-pwsh-tool-and-executor.md) —— pwsh 执行器与工具这一对背后的决策。
+- Bash 执行器子系统 —— 请求/spec 词汇、结果与完整的服务约定。
+- pwsh 执行器与工具笔记 —— pwsh 执行器与工具这一对背后的决策。
 
 -----
 

@@ -46,7 +46,7 @@ The companion contributes a `settings.general.item` row while `session-log-deeps
 
 - [Settings forms](../ui-settings/README.md) — accepted Host values and ordered writes.
 - [Session-log upload](../../session/session-log-deepseek/README.md) — request contribution and acceptance tracking.
-- [Web Client](../../../docs/subsystems/web-client.md) — plugin composition and settings placement.
+- Web Client — plugin composition and settings placement.
 
 <a id="model-experience"></a>
 ## Model Experience

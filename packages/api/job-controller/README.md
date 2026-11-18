@@ -35,7 +35,7 @@ The Client entry installs `ctx.jobs` (`IJobs`), backed by the package-internal `
 | `observeFlushMs` | `100` | Coalescing window after a registry commit before the next rows or output read, in milliseconds |
 | `observeMaxFrameBytes` | `65,536` | Soft byte budget per observation output frame; one larger chunk ships whole |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-job-controller) is the exhaustive source for accepted fields and their JSDoc.
+The generated configuration catalog is the exhaustive source for accepted fields and their JSDoc.
 
 -----
 

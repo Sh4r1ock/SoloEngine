@@ -32,9 +32,9 @@ deliverables 系列把一轮交给用户的内容记录为只有客户端读取�
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [产出物子系统](../../docs/subsystems/deliverables.zh.md)——`PresentedFile` 与 `WorkspaceChangesSummary` 的词汇、两个持久事件和摘要服务。
+- 产出物子系统——`PresentedFile` 与 `WorkspaceChangesSummary` 的词汇、两个持久事件和摘要服务。
 - [Web 产出物](../client/ui-deliverables/README.zh.md)——渲染这些事件的轮尾卡片与文件提及。
-- [present 声明工作区源文件](../../.agents/notes/implemented/feature/2026-09-08-present-workspace-source-files.zh.md)——交付决策。
+- present 声明工作区源文件——交付决策。
 - [本轮改动文件卡片](workspace-changes/README.zh.md)——快照设计与覆盖规则。
 
 -----

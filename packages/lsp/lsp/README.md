@@ -101,7 +101,7 @@ Registration and disposal run through `ctx.effect()`, so provider routes live an
 
 Read these pages when the package-level contract is not enough. They move from the shared navigation model to the provider and the tool.
 
-- [LSP navigation subsystem](../../../docs/subsystems/lsp.md) — operations, coordinates, requests and results, and `LspError` codes.
+- LSP navigation subsystem — operations, coordinates, requests and results, and `LspError` codes.
 - [dsh-lsp-stdio](../lsp-stdio/README.md) — the stdio provider that registers against this seam.
 - [dsh-tool-lsp](../tool-lsp/README.md) — the model-facing tool over this seam.
 - [lsp group map](../README.md) — the three-package family and its related documentation.

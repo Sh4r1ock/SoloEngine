@@ -34,7 +34,7 @@ Each request creates a hidden same-origin iframe. `expose()` installs direct ref
 ## Further Exploration
 
 - [Client modules](../modules/README.md)
-- [Web client architecture](../../../docs/subsystems/web-client.md)
+- Web client architecture
 - [Client entry](src/client/index.ts)
 
 <a id="model-experience"></a>

@@ -33,7 +33,7 @@ Feature plugins use this package to store and edit their preferences without re-
 
 Feature adapters use `ctx.configForms.get(entryId)` to obtain accepted values and a write queue shared by every editor of that Host entry. Snapshots contain resolved `value`, inherited `base`, raw `user`, revision, and writability. `set` and `unset` submit one operation; `mutate` submits one atomic operation list. Staged editors pass the revision read before editing; conflicts preserve their drafts. Unsetting removes the override and restores inheritance.
 
-A configuration form persists through the Host settings service for every authenticated browser; the [authenticated-browser Host preferences note](../../../.agents/notes/implemented/bug-fix/2026-09-15-authenticated-browser-host-preferences.md) owns that policy. `settings.describe.writable` is the authority on whether a write is accepted.
+A configuration form persists through the Host settings service for every authenticated browser; the authenticated-browser Host preferences note owns that policy. `settings.describe.writable` is the authority on whether a write is accepted.
 
 ### Following served namespaces
 

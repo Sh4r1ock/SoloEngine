@@ -86,12 +86,12 @@ The package declares three events so the emitter (`dsh-tool-fs`) and the policy 
 
 Read these pages when the package-level contract is not enough. They move from the exhaustive contract to the backends and consumers built on it.
 
-- [Filesystem subsystem](../../../docs/subsystems/filesystem.md) — exhaustive provider contract, policy events, and error taxonomy.
+- Filesystem subsystem — exhaustive provider contract, policy events, and error taxonomy.
 - [fs-local](../fs-local/README.md) — the host-filesystem backend implementing this contract.
 - [fs-sandbox](../fs-sandbox/README.md) — the sandbox-enforcing backend implementing this contract.
 - [tool-fs](../tool-fs/README.md) — the model-facing tools that consume `ctx.fs`.
 - [fs-observation-policy](../fs-observation-policy/README.md) — the policy plugin that guards mutations through the `fs/*` events.
-- [Capability seams note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — why the filesystem stack splits into contract, provider, policy, and tools.
+- Capability seams note — why the filesystem stack splits into contract, provider, policy, and tools.
 
 -----
 
@@ -112,7 +112,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 These limits define when the contract is a poor fit or needs special operational care. They are current package constraints, not a general filesystem comparison or a task backlog.
 
 - **Text-only mutations by contract** — text reads and both mutations reject binary or non-UTF-8 content with `FS_NOT_TEXT`; `readBytes` and `readByteRange` are the raw-byte primitives, and binary-safe mutations remain deferred.
-- **No copy** — `mkdir`, `rename`, and `remove` cover the directory mutations a human file tree performs; copying, globbing, pagination, and search stay out of scope ([directory-listing note](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)).
+- **No copy** — `mkdir`, `rename`, and `remove` cover the directory mutations a human file tree performs; copying, globbing, pagination, and search stay out of scope (directory-listing note).
 - **No I/O deadline** — the seam arms no timeout; cancellation is a best-effort optional `AbortSignal` per primitive ([fs family stance](../README.md)).
 - **Resolve-then-operate costs a remote backend two round-trips per tool call** — folding or caching resolution is left to such a backend.
 

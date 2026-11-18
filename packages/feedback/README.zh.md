@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-feedback 组收集用户对 harness 工作成果的意见：用户可以提交一条关于整个会话的自由文本评价，也可以对单条 assistant 消息评分或加备注。两类反馈都不会到达模型——它们是关于输出的信号，绝不是输入。用户通过 `/feedback` 命令记录会话评价；产品界面通过 `messageFeedback` 服务读取和修改逐消息评分。两个包相互独立：会话评价与逐消息评分互不影响。本页概述该包组；具体包级约定以各包 README 和[反馈子系统页](../../docs/subsystems/feedback.zh.md)为准。
+feedback 组收集用户对 harness 工作成果的意见：用户可以提交一条关于整个会话的自由文本评价，也可以对单条 assistant 消息评分或加备注。两类反馈都不会到达模型——它们是关于输出的信号，绝不是输入。用户通过 `/feedback` 命令记录会话评价；产品界面通过 `messageFeedback` 服务读取和修改逐消息评分。两个包相互独立：会话评价与逐消息评分互不影响。本页概述该包组；具体包级约定以各包 README 和反馈子系统页为准。
 
 ## 目录
 
@@ -32,8 +32,8 @@ feedback 组收集用户对 harness 工作成果的意见：用户可以提交�
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [反馈子系统](../../docs/subsystems/feedback.zh.md)——message-feedback 的类型、服务约定与 Web 消费方。
-- [会话遥测子系统](../../docs/subsystems/session-telemetry.zh.md)——`/feedback` 确认文本披露的共享策略。
+- 反馈子系统——message-feedback 的类型、服务约定与 Web 消费方。
+- 会话遥测子系统——`/feedback` 确认文本披露的共享策略。
 - [匿名用户身份](../identity/README.zh.md)——反馈确认文本中嵌入的 id，每个 harness home 各有一个。
 
 <a id="dev-note"></a>

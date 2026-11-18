@@ -36,7 +36,7 @@ boot 组负责启动 profile 应用并管理其已安装组合。`app-boot` 解�
 - [dsh-home-paths](../util/home-paths/README.zh.md)——两个包都依赖的 harness home 解析器。
 - [dsh-cmdline](cmdline/README.zh.md)——flag 家族如何由应用持有而非启动器。
 
-- [Profile 管理](../../docs/subsystems/boot.zh.md)——服务方法与结果记录。
+- Profile 管理——服务方法与结果记录。
 
 <a id="dev-note"></a>
 ## 开发备注

@@ -57,7 +57,7 @@ One slot entry in the header actions band (after the preset label) renders the t
 | [`src/client/index.ts`](src/client/index.ts) | Slot registration and the dictionaries |
 | [`src/client/locales.ts`](src/client/locales.ts) | The `job` namespace copy (zh source of truth) |
 
-Background-job rows follow the [standard menu edge geometry](../../../docs/ui-radius.md#nested-hover); controls inside a filled running row retain compact corners.
+Background-job rows follow the standard menu edge geometry; controls inside a filled running row retain compact corners.
 
 </details>
 

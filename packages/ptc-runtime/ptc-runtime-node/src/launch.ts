@@ -59,7 +59,6 @@ function scriptBootstrapArgs(
     if (result === undefined) throw new Error(`PTC runtime bootstrap is unavailable in the subprocess execution world: ${path}`)
     return result
   }
-  /* v8 ignore next 3 -- built-lib.e2e.ts executes the bundled provider and sibling process.js under plain Node. */
   if (!new URL(import.meta.url).pathname.endsWith('.ts')) {
     return [mapped(fileURLToPath(new URL('./process.js', import.meta.url))), String(maxMessageBytes)]
   }

@@ -75,9 +75,9 @@ The UI recognizes an active `@` token through `activeAtToken`, calls `list` with
 Read these pages when the package-level contract is not enough. They move from the shipped provider to the shared reference surface and the tools the candidates point at.
 
 - [Local file-reference provider](../file-reference-local/README.md) — the shipped local-workspace implementation of this seam.
-- [Session-reference subsystem](../../../docs/subsystems/session-reference.md) — the shared file-reference and session-reference contracts behind host UIs.
+- Session-reference subsystem — the shared file-reference and session-reference contracts behind host UIs.
 - [Context group map](../README.md) — sibling request-context packages.
-- [Filesystem tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs) — the `read` tool that referenced paths are meant for.
+- Filesystem tool catalog — the `read` tool that referenced paths are meant for.
 
 -----
 

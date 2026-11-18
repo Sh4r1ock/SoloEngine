@@ -83,10 +83,10 @@ Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略�
 <a id="further-exploration"></a>
 ## 延伸阅读
 
-- [右侧 Sidebar](../../../docs/subsystems/sidebar-right.zh.md)——tab composition、导航与生命周期。
+- 右侧 Sidebar——tab composition、导航与生命周期。
 - [Document Preview](../ui-sidebar-documentpreview/README.zh.md)——本地源码、Markdown、图片、HTML 与 PDF 渲染。
-- [Sidebar Browser 决策](../../../.agents/notes/implemented/feature/2026-09-16-sidebar-browser.zh.md)——iframe 行为与 controller 所有权。
-- [Desktop Browser 决策](../../../.agents/notes/implemented/feature/2026-09-20-desktop-browser-webview.zh.md)——webview 租约、CWD 存储分组与手动恢复。
+- Sidebar Browser 决策——iframe 行为与 controller 所有权。
+- Desktop Browser 决策——webview 租约、CWD 存储分组与手动恢复。
 
 -----
 

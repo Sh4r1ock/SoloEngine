@@ -72,7 +72,7 @@ The directory and file adapters supply application metadata and operations to [`
 - [ui-conversation](../ui-conversation/README.md) — the Header owning the shared More button.
 - [ui-sidebar-documentpreview](../ui-sidebar-documentpreview/README.md) — the document preview declaring the header and empty-state child slots the file controls occupy.
 - [ui-deliverables](../ui-deliverables/README.md) — the delivery cards, which still open declared files through their own routes.
-- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
+- Web client architecture — how browser plugin rows load and register slots.
 
 -----
 
@@ -105,6 +105,6 @@ The Host verifies the path through the composed filesystem before opening or rev
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The feature-level decisions, including the split into the host package and this surface, are recorded in the [historical promotion Agent Note](../../../.agents/notes/archived/feature/2026-08-25-promote-open-anywhere-plugin.md); the document preview's file controls are recorded in the [historical default-application Agent Note](../../../.agents/notes/archived/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
+The feature-level decisions, including the split into the host package and this surface, are recorded in the historical promotion Agent Note; the document preview's file controls are recorded in the historical default-application Agent Note.
 
 </details>

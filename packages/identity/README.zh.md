@@ -27,7 +27,7 @@ identity 组为每个 harness home 提供一个匿名 id，该安装的遥测、
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [会话遥测子系统](../../docs/subsystems/session-telemetry.zh.md)——在导出中携带该 id 的遥测功能。
+- 会话遥测子系统——在导出中携带该 id 的遥测功能。
 - [dsh-llm-deepseek](../llm/llm-deepseek/README.zh.md)——在请求中携带该 id 的 DeepSeek 提供方。
 - [dsh-command-feedback](../feedback/command-feedback/README.zh.md)——在确认文本中点名该匿名安装的反馈命令。
 

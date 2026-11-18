@@ -36,10 +36,9 @@ export const OWNER_FILE = 'packages/core/session/src/index.ts'
 /** Production source under this prefix may call the restricted function. */
 export const EXPERIMENTAL_PREFIX = 'packages/experimental/'
 
-/** This gate and its spec name the restricted function to find it. */
+/** This gate names the restricted function to find it. */
 const GATE_FILES: ReadonlySet<string> = new Set([
   'scripts/verify-plugin-record-callers.ts',
-  'scripts/verify-plugin-record-callers.spec.ts',
 ])
 
 const SOURCE_EXTENSION = /\.(?:[cm]?[jt]s|[jt]sx)$/u

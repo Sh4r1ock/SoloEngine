@@ -100,7 +100,7 @@ The ladder is a closed table — `read-only` may escalate to `workspace-write` o
 
 ### Writable roots
 
-`workspaceWritableRoots` derives the workspace and explicit extra directories for bwrap and Landlock. `writableRoots` adds the host temporary areas for Seatbelt and the in-process filesystem fence. Both deduplicate roots and reject extra paths that are missing, are not directories, or resolve through symlinks. Path comparison accepts Windows casing and separator differences. Each execution checks the paths again. Windows subprocesses ignore additional roots; file tools still enforce them. See the [mode definitions](../../../docs/subsystems/sandbox.md).
+`workspaceWritableRoots` derives the workspace and explicit extra directories for bwrap and Landlock. `writableRoots` adds the host temporary areas for Seatbelt and the in-process filesystem fence. Both deduplicate roots and reject extra paths that are missing, are not directories, or resolve through symlinks. Path comparison accepts Windows casing and separator differences. Each execution checks the paths again. Windows subprocesses ignore additional roots; file tools still enforce them. See the mode definitions.
 
 </details>
 
@@ -111,8 +111,8 @@ The ladder is a closed table — `read-only` may escalate to `workspace-write` o
 
 Start with the subsystem reference for the exhaustive contract, then the backends, consumers, and policy source that realize it.
 
-- [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — the complete vocabulary, per-call policy, and classification dialects.
-- [The historical subprocess sandbox decision](../../../.agents/notes/archived/feature/2026-07-06-sandbox.md) — capability boundary, escalation design, and deferred phases.
+- Process sandbox subsystem — the complete vocabulary, per-call policy, and classification dialects.
+- The historical subprocess sandbox decision — capability boundary, escalation design, and deferred phases.
 - [Local sandbox backends](../sandbox-local/README.md) — the per-platform runners behind `ctx.sandbox`.
 - [Bash sandbox executor](../../shell/bash-sandbox/README.md) — the confined bash consumer.
 - [Sandbox policy package](../sandbox-policy/README.md) — where the per-call mode and workspace root come from.

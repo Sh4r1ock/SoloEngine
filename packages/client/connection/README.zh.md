@@ -46,7 +46,7 @@ Host Connection 插件将同包的 `ConnectionAuthentication` 挂载为独立嵌
 
 HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 hostname 和 port 相同，HTTP cookie 也无法通过 TLS 监听器的认证。默认端口按监听器的 scheme 归一化。既有 HTTP cookie audience 保持不变。
 
-对匹配到的 `anonymous` 与 `required` WebServer 路由，Connection 在凭据验证前执行 `src/api-request-trust.ts`。`Host` 必须为回环、等于监听器绑定 IP 字面量（端口不限），或匹配 `trustedHosts`：`host:port` 精确匹配，无端口条目接受任意端口。Host 与配置条目按监听器 scheme 做 WHATWG 默认端口归一化，不采信转发头或 `Origin`。附带 HTTP(S) `Origin` 必须指向同一 authority；按该 Origin 的 scheme 解析 Host，以支持 HTTPS 代理转发到 HTTP 上游；拒绝 `sec-fetch-site: cross-site`。畸形配置 authority 使插件加载失败。`allowsRemoteAuthorities` 表示 `trustedHosts` 是否允许非回环 authority；接受绑定 IP 不改变该列表。这些检查防御 DNS rebinding 与跨站请求，不建立身份。来源拒绝即使在匿名资源或登录路由也返回403；来源可信但未认证访问受保护路由返回401。不支持 `dsh web --host 0.0.0.0`。决策记录：[浏览器请求信任](../../../.agents/notes/implemented/architecture/2026-07-28-api-browser-trust-boundary.zh.md)与[浏览器令牌认证](../../../.agents/notes/implemented/architecture/2026-08-24-browser-token-authentication.zh.md)。
+对匹配到的 `anonymous` 与 `required` WebServer 路由，Connection 在凭据验证前执行 `src/api-request-trust.ts`。`Host` 必须为回环、等于监听器绑定 IP 字面量（端口不限），或匹配 `trustedHosts`：`host:port` 精确匹配，无端口条目接受任意端口。Host 与配置条目按监听器 scheme 做 WHATWG 默认端口归一化，不采信转发头或 `Origin`。附带 HTTP(S) `Origin` 必须指向同一 authority；按该 Origin 的 scheme 解析 Host，以支持 HTTPS 代理转发到 HTTP 上游；拒绝 `sec-fetch-site: cross-site`。畸形配置 authority 使插件加载失败。`allowsRemoteAuthorities` 表示 `trustedHosts` 是否允许非回环 authority；接受绑定 IP 不改变该列表。这些检查防御 DNS rebinding 与跨站请求，不建立身份。来源拒绝即使在匿名资源或登录路由也返回403；来源可信但未认证访问受保护路由返回401。不支持 `dsh web --host 0.0.0.0`。决策记录：浏览器请求信任与浏览器令牌认证。
 
 每个认证请求代表一个 `PeerScope`：`principal` 指明调用方，`interactions` 决定转发事件参与，`signal` 在作用域结束时中止。`ctx.connection.browserPeer` 保留给可信进程内调用方；网络 handler 使用 WebServer 选定的 Peer，不重复准入。直接 `ctx.connection.admit(request)` 为其他适配器保留来源与凭据检查。`createPeer({ principal, interactions? })` 在调用 Context 中创建 Peer；interactions 默认 `answer`。Connection 不维护 Peer 查询表或 Socket 认领；各 Provider 保存自己的 Peer。创建者作用域或 `dispose()` 可释放 Peer。`fetch(request, peer)` 与 HTTP bridge 显式接收 Peer；精确路由要求 owner，方法级判断归 [`dsh-api-remote-access`](../../api/remote-access/README.zh.md)。
 
@@ -63,7 +63,7 @@ HTTPS cookie 名称与签名 audience 包含 `https:` scheme，因此即使 host
 
 `ctx.connection.reconnect()` 会中断活动工作、重置序列，并立即开始 retry 1。浏览器 `offline` 会中断活动工作、发布 `disconnected` 并暂停自动尝试；下一次 `online` 转换会重置序列并从 500ms 档开始。只有 ready 项会发布 `connected`。Gateway mux 不拥有独立重试调度。
 
-可通过 Host Connection 行的 `config.recovery` 覆盖重试上限、增长因子或握手告警与取消时间；[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-client-connection)列出接受的字段。Host 校验这些值，并将其注入所提供的每个页面。Client 在提供 Connection 前校验启动数据，并在 Gateway 启动循环时采用这些默认值；显式传给 `start()` 的时序覆盖优先。增长因子必须是至少为一的有限数。若就绪、失败、取消或硬期限先于告警发生，该告警会被取消。修改 Host 恢复配置后需重新加载页面。
+可通过 Host Connection 行的 `config.recovery` 覆盖重试上限、增长因子或握手告警与取消时间；配置目录列出接受的字段。Host 校验这些值，并将其注入所提供的每个页面。Client 在提供 Connection 前校验启动数据，并在 Gateway 启动循环时采用这些默认值；显式传给 `start()` 的时序覆盖优先。增长因子必须是至少为一的有限数。若就绪、失败、取消或硬期限先于告警发生，该告警会被取消。修改 Host 恢复配置后需重新加载页面。
 
 
 <a id="model-experience"></a>

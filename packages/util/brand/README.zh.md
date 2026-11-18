@@ -90,8 +90,8 @@ const seq = brandNumber<SessionSeq>(7)
 
 当你需要这些原语所品牌化的值或围绕它们的类型约定时，阅读以下页面。
 
-- [核心子系统](../../../docs/subsystems/core.zh.md)——共享 `SessionId` 品牌与类型规则的记录位置。
-- [LSP 子系统](../../../docs/subsystems/lsp.zh.md)——构建在本原语之上的品牌化提供方 id `LspProviderId`。
+- 核心子系统——共享 `SessionId` 品牌与类型规则的记录位置。
+- LSP 子系统——构建在本原语之上的品牌化提供方 id `LspProviderId`。
 - [jobs 包](../../jobs/jobs/README.zh.md)——由 jobs 能力拥有的 `JobId` 品牌。
 
 -----

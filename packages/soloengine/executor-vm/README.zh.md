@@ -40,7 +40,6 @@ kind: "package-reference"
 - 需要 QEMU、可引导基础镜像与平台私钥；本机与容器形态不会加载它。
 - guest 默认拒绝出口（`restrict=on`）：guest 只能到达显式转发的 SSH 端口。
 - 不随产品提供 `browser-use` 与 `computer-use` 提供方（D16）；VM 暴露 VNC 显示面，供部署方在 guest 内自行安装。
-- L3 验收需要可引导镜像与可用的 QEMU（`kvm` 或 `tcg`）；缺失时整组跳过。D 档已在无 KVM 宿主上用 TCG 完成运行验收：`test/soloengine/vm-l3` **8/8**，含 guest 出口默认拒绝与两台并发会话 VM 的文件边界（`records/vm-l3.json`）。
 
 <a id="dev-note"></a>
 ### 开发备注

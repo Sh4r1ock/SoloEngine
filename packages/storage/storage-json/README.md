@@ -49,7 +49,7 @@ The only plugin field is `root`, which holds the unit files and directories. It 
 |---|---|---|
 | `root` | required | Directory holding `<unit>.json` files and `<unit>/` trees; created `0o700` on demand |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-storage-json) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Observable behavior
 
@@ -57,7 +57,7 @@ Without a legacy bootstrap, a missing `single` file or `per-record` directory op
 
 An unmaterialized `per-record` tree can initialize its declared tables from a valid `<root>/<unit>.json` whole-unit document only when the source unit name matches and its version is current or declared compatible. This bootstrap writes during loading: it leaves the source file unchanged and copies stored values into current-stamped documents without converting them. A source version outside the accepted set leaves the new tree empty. Any declared table directory, even when empty, or a declared `global.json` suppresses this initialization for the complete unit. Deleted records therefore remain absent while the retained source file stays unchanged.
 
-A synchronous serialization failure restores the open `single` unit's previous memory and permits retry on that handle. An I/O failure can occur after file replacement, so a rejected write does not prove that disk data or its stamp stayed unchanged. Stop using and close the backend and its domains, then reopen to reload saved state before deciding whether to retry. See [domain versioning](../../../docs/subsystems/storage.md#domain-versioning) for mixed records and downgrade behavior.
+A synchronous serialization failure restores the open `single` unit's previous memory and permits retry on that handle. An I/O failure can occur after file replacement, so a rejected write does not prove that disk data or its stamp stayed unchanged. Stop using and close the backend and its domains, then reopen to reload saved state before deciding whether to retry. See domain versioning for mixed records and downgrade behavior.
 
 -----
 
@@ -108,10 +108,10 @@ A `per-record` table document at `<root>/<unit>/<table>/<key>.json` has the form
 
 Read these pages when this backend's view is not enough: the subsystem reference is the authoritative contract, and the sibling backend shows the alternative medium.
 
-- [Storage subsystem](../../../docs/subsystems/storage.md) — the backend contract, domain semantics, and generated API.
+- Storage subsystem — the backend contract, domain semantics, and generated API.
 - [Storage package map](../README.md) — the family's packages and their repository position.
 - [SQLite storage backend](../storage-sqlite/README.md) — the point-update medium for high-frequency data.
-- [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — the design behind the backend family and its deferred work.
+- domain KV storage Agent Note — the design behind the backend family and its deferred work.
 
 -----
 

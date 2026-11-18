@@ -53,7 +53,7 @@ Secret roles are redacted from values, inherited values, profile overrides, and 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Settings reference](../../../docs/subsystems/settings.md) — form values and mutations.
+- Settings reference — form values and mutations.
 - [Volatile configuration](../../../vendor/loader/README.md) — reference lifetime and notifications.
 - [Configuration editor](../../boot/config-editor/README.md) — persistence and reload ordering.
 

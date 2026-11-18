@@ -48,7 +48,7 @@ Mount the plugin with no required configuration. The defaults below define what 
 | `normalizedImageMaxBytes` | `4 MiB` | Encoded-byte target; the smallest quality-ladder output is kept when none fits |
 | `imageCompressionConcurrency` | `2` | FIFO limit for concurrent normalization and request transforms |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-attachment-local) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Where your images are stored and how long they last
 
@@ -111,9 +111,9 @@ Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-
 
 For the full service contract and payload types, read the subsystem reference; for the capability this storage backs, read the seam package.
 
-- [Attachment subsystem reference](../../../docs/subsystems/attachment.md) — service contract, payload types, and the `ctx.attachments` Cordis surface.
+- Attachment subsystem reference — service contract, payload types, and the `ctx.attachments` Cordis surface.
 - [Attachment seam package](../attachment/README.md) — the image attachment capability this storage backs.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-attachment-local) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 - [Home paths resolution](../../util/home-paths/README.md) — how `DSH_HOME` resolves from explicit config, environment, and the user home.
 
 -----

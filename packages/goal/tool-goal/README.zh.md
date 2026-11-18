@@ -48,7 +48,7 @@ kind: "package-reference"
     blockedAfterConsecutiveRounds: 3
 ```
 
-该值必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-goal)是每个受支持字段的穷尽式真源。
+该值必须是正的安全整数。它既提供模型自行报告阻塞的硬下限，也决定模型指引中指明的数值。生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 权限规则
 
@@ -96,8 +96,8 @@ kind: "package-reference"
 
 - [goal 服务](../goal/README.zh.md)——工具变更的 goal 状态与生命周期。
 - [goal 组地图](../README.zh.md)——goal 各包及其组合方式。
-- [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-goal)——模型接收的精确 schema。
-- [goal 工具 Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-model-facing-goal-tools.zh.md)——权限拆分与 UX 决策。
+- 生成的工具目录——模型接收的精确 schema。
+- goal 工具 Agent Note——权限拆分与 UX 决策。
 
 -----
 
@@ -128,7 +128,7 @@ create_goal may infer goal intent from a direct human request in any language. A
 
 #### 模型看到的内容
 
-生成的 [`get_goal`、`create_goal` 和 `update_goal` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-goal)。成功结果是紧凑 JSON。变更会追加 goal 领域的持久 `goal/change` 事件，而不会将模型上下文加入队列。结果中的 `activation` 是实时观察值，绝不会成为回放权限依据。
+生成的 `get_goal`、`create_goal` 和 `update_goal` schema。成功结果是紧凑 JSON。变更会追加 goal 领域的持久 `goal/change` 事件，而不会将模型上下文加入队列。结果中的 `activation` 是实时观察值，绝不会成为回放权限依据。
 
 #### Token 影响
 

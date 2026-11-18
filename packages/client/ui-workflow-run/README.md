@@ -65,7 +65,7 @@ These pages cover the tool seam, the conversation host, and the tool presentatio
 - [tool-workflow](../../workflow/tool-workflow/README.md) — the tool that owns the four `tool-workflow/*` Session events.
 - [ui-conversation](../ui-conversation/README.md) — the chat surface hosting the `conversation.chat.node` slot.
 - [ui-tool](../ui-tool/README.md) — the tool-call presentation layer this node sits beside.
-- [Conversation subsystem](../../../docs/subsystems/conversation.md) — how a business-owned feature registers a Conversation node.
+- Conversation subsystem — how a business-owned feature registers a Conversation node.
 
 -----
 

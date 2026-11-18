@@ -590,7 +590,7 @@ export class LlmConfigService {
       return { ok: false, kind: classifyHttpFailure(response.status), message: text.slice(0, 400), latency_ms: latency, status: response.status }
     } catch (error) {
       const latency = Date.now() - started
-      // 实测（test/soloengine/fetch-error-probe.mjs）：不可达主机的传输超时由 undici 抛
+      // 实测：不可达主机的传输超时由 undici 抛
       // `TimeoutError`（code 23，"aborted due to timeout"），并非我们自己的 `AbortError`。
       // 只认 AbortError 会把这类真实超时错判成「未分类」。
       if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
@@ -603,7 +603,7 @@ export class LlmConfigService {
       const chain = failureChain(error)
       // 传输层超时通常以 `TypeError: fetch failed` 为外壳，真正原因埋在 cause 链里
       // （undici `TimeoutError`：code 23 / "The operation was aborted due to timeout"）。
-      // 实测（test/soloengine/fetch-error-probe.mjs）：只测最外层 name 会把它错判成 unknown。
+      // 实测：只测最外层 name 会把它错判成 unknown。
       // undici 自己的连接超时是 `ConnectTimeoutError`（code UND_ERR_CONNECT_TIMEOUT，
       // message "Connect Timeout Error"）——与 AbortSignal 的写法都不同，三种都要认。
       if (/aborted due to timeout|TimeoutError|ConnectTimeoutError|Connect Timeout Error|UND_ERR_CONNECT_TIMEOUT/i.test(chain.text)) {

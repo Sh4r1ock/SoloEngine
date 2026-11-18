@@ -42,11 +42,11 @@ Agent / 用户 / 外部程序修改工作树
 
 每条用户消息下方依次显示时间、DSH 原生“复制”和第三个纯图标“回退”：
 
-![用户消息下方的 Turn Rewind 图标](docs/assets/turn-rewind-action.png)
+!用户消息下方的 Turn Rewind 图标
 
 打开后会先展示受影响文件，可选择“恢复文件并从这里继续”“只恢复文件”或“只回溯消息（不动文件）”：
 
-![Turn Rewind 审阅弹窗](docs/assets/turn-rewind-dialog.png)
+!Turn Rewind 审阅弹窗
 
 ## 为什么底层需要 Change Ledger
 
@@ -62,7 +62,7 @@ Agent / 用户 / 外部程序修改工作树
 - DSH 重启时对未完成操作日志进行对账；
 - 可供其他插件依赖的 `ctx.changeLedger` 公共服务。
 
-持久格式见 [docs/FORMAT.md](docs/FORMAT.md)，安全与故障模型见 [SECURITY.md](SECURITY.md)。
+持久格式见 docs/FORMAT.md，安全与故障模型见 [SECURITY.md](SECURITY.md)。
 
 ## 安全契约
 

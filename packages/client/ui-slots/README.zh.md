@@ -75,9 +75,9 @@ register 调用可以用 `store: defineStore(...)` 声明 store 席位：`init` 
 以下页面覆盖引擎、渲染器与组合模型。
 
 - [ui-renderer](../ui-renderer/README.zh.md)——实现本包安装约定的 React slot 渲染器。
-- [slot 系统标准](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.zh.md)——权威组合模型。
-- [Component Factory](../../../.agents/notes/implemented/architecture/2026-09-10-component-factories-and-local-slots.zh.md)——可复用 definitions、局部 Component 选择与 occurrence 生命周期。
-- [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)——本注册表接入的加载链与对象层。
+- slot 系统标准——权威组合模型。
+- Component Factory——可复用 definitions、局部 Component 选择与 occurrence 生命周期。
+- Web 客户端架构——本注册表接入的加载链与对象层。
 
 -----
 

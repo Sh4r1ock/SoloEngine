@@ -130,11 +130,11 @@ The root export includes the model-driven extraction, completeness checks, and d
 
 Read these pages when the package-level contract is not enough; they move from the generated model to the runtime and the Remote-call path.
 
-- [Typert subsystem reference](../../../docs/subsystems/typert.md) — the Remote contracts and registry interfaces the generator models.
+- Typert subsystem reference — the Remote contracts and registry interfaces the generator models.
 - [Typert protocol](../protocol/README.md) — the declarations generated artifacts extend and consume.
 - [Typert registry](../registry/README.md) — the runtime store the emitted artifacts feed.
-- [API Gateway reference](../../../docs/api-gateway.md) — how generated Remote descriptors are invoked end to end.
-- [Compiler-independent model Agent Note](../../../.agents/notes/implemented/architecture/2026-07-27-compiler-independent-typert-model.md) — the model design, alternatives, and consequences.
+- API Gateway reference — how generated Remote descriptors are invoked end to end.
+- Compiler-independent model Agent Note — the model design, alternatives, and consequences.
 
 -----
 

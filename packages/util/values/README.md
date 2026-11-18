@@ -78,8 +78,8 @@ The JSON validator keeps one cursor per active container, reads one child at a t
 ## Further Exploration
 
 - [Utility package map](../README.md) — adjacent stateless helpers.
-- [Session subsystem](../../../docs/subsystems/session.md) — durable events that require lossless JSON.
-- [Tools subsystem](../../../docs/subsystems/tools.md) — schema validation and canonical tool results built on `JsonValue`.
+- Session subsystem — durable events that require lossless JSON.
+- Tools subsystem — schema validation and canonical tool results built on `JsonValue`.
 
 -----
 

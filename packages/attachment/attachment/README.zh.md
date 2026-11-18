@@ -93,9 +93,9 @@ kind: "package-reference"
 
 完整的服务约定与载荷类型请看子系统参考；支撑这一能力的存储请看本地后端。
 
-- [附件子系统参考](../../../docs/subsystems/attachment.zh.md)——服务约定、载荷类型与 `ctx.attachments` 的 Cordis 接口面。
+- 附件子系统参考——服务约定、载荷类型与 `ctx.attachments` 的 Cordis 接口面。
 - [本地文件系统后端](../attachment-local/README.zh.md)——你的附加图片在本机上的存储位置。
-- [能力 seam](../../../docs/capability-seams.zh.md)——本能力家族如何拆分为多个角色。
+- 能力 seam——本能力家族如何拆分为多个角色。
 
 -----
 

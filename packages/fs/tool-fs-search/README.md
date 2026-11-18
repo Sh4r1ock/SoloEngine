@@ -70,7 +70,7 @@ Both tools opt into concurrent scheduling with sibling parallel-safe calls. A se
 | `stderrMaxBytes` | `65536` | Diagnostic-tail budget for `rg` stderr |
 | `searchMetaMaxBytes` | `65536` | Max bytes of one search's serialized `presentationMeta`; trailing groups/paths drop past it |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-fs-search) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Deployment requirement
 
@@ -111,21 +111,6 @@ Without an explicit `path`, `glob` prunes unrelated subtrees for patterns such a
 
 Each call resolves and starts the packaged binary through the shared [ripgrep library](../../util/ripgrep/README.md), which prepends `--no-config` to prevent configuration-driven preprocessors. Model-controlled values remain plain argv elements without shell quoting. Collect-mode budgets bound complete stdout and a stderr tail; a lossy stdout read fails as `SEARCH_RAW_OUTPUT_OVERFLOW` rather than parsing a silently-partial stream. The tools never read a raw spill path.
 
-### Native-mode benchmark
-
-After `pnpm run build`, compile the package-local diagnostic with external runtime dependencies, then run it under plain Node:
-
-```sh
-cd packages/fs/tool-fs-search
-node --input-type=module <<'JS'
-import { build } from 'tsdown';
-await build({ config: false, tsconfig: false, dts: false, entry: 'tests/glob-native.perf.ts', outDir: 'tests/.dsh-build', clean: false, deps: { neverBundle: [/^[^./]/] } });
-JS
-node tests/.dsh-build/glob-native.perf.mjs
-```
-
-The diagnostic creates 20,000 unrelated files and six matches, then measures five `ctx.tools.execute()` calls through the Native executor with a real Agent, working-directory service, and local subprocess backend. It reports raw timings, the median, and a hash of the complete value, text, and presentation metadata. `--plugin <built-module>` selects another search-package revision; `--workspace <directory>` opts into a read-only existing workspace instead of the synthetic tree. Setup, model generation, UI, and Session persistence are excluded; there is no timing threshold.
-
 ### Two budgets, two artifacts
 
 Raw stdout and stderr are internal transport details; the tools always collect the complete result in memory, and only the inline page is capped. When a call yields more logical results than the inline cap, a best-effort spill saves the complete formatted preview to the spill store and the page carries its locator, while dispatches whose full value never enters model context skip the spill. Missing or failed spill keeps the inline page and reports that the complete result could not be saved — never an error. The collection and spill handoff live in `src/search-core.ts` and `src/presentation.ts`.
@@ -139,12 +124,12 @@ Raw stdout and stderr are internal transport details; the tools always collect t
 
 Read these pages when the package-level contract is not enough. They move from the tools to the subprocess seam, the spill store, and the filesystem family.
 
-- [Filesystem subsystem](../../../docs/subsystems/filesystem.md) — exhaustive provider contract, policy events, and error taxonomy.
+- Filesystem subsystem — exhaustive provider contract, policy events, and error taxonomy.
 - [tool-fs](../tool-fs/README.md) — the sibling `read`/`write`/`edit` tools for follow-up reads.
-- [Subprocess capability](../../../docs/subsystems/subprocess.md) — the spawn seam these tools execute through.
+- Subprocess capability — the spawn seam these tools execute through.
 - [Spill store](../../spill/spill/README.md) — the optional backend that makes capped results fully recoverable.
 - [Timeout utility](../../util/timeout/README.md) — the `MAX_TIMER_DELAY_MS` bound on the terminate grace.
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs-search) — the exhaustive schemas this package registers.
+- Generated tool catalog — the exhaustive schemas this package registers.
 
 -----
 
@@ -181,7 +166,7 @@ Prefix-stable while the visible tool set, plugin scope, sampling choice, and gui
 
 #### What the model sees
 
-The glob description states the configured over-cap ordering. The generated [`glob` and `grep` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs-search) use `sampleOverCapGlobResults: true`; the tools are registered unconditionally.
+The glob description states the configured over-cap ordering. The generated `glob` and `grep` schemas use `sampleOverCapGlobResults: true`; the tools are registered unconditionally.
 
 #### Token effect
 

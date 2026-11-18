@@ -157,7 +157,6 @@ Input already marked V3 does not run V2-to-V3. Native catalog reads with `valida
 
 The [stage](src/migration.ts) owns synchronous per-artifact sequence maps, message identity sets, and prompt/lifecycle state. Compact runs expand incrementally. The [codec](src/codec.ts) reuses frozen V2 framing; the [restorer](src/validation.ts) validates V3 structure before giving frozen ordinary relationship validation a private system/PTC/repair-id and endpoint view. That view retains the actual target generation for delivery checks and never escapes: restoration returns the original V3 artifact and identities. Frozen V0-to-V1 and V1-to-V2 semantics remain unchanged.
 
-[Combined catalog tests](tests/combined-migration.spec.ts) exercise transformation composition and native reopen; [migration tests](tests/migration.spec.ts) and [canonical tests](tests/canonical-envelopes.spec.ts) pin preservation and refusal. [Persistence integration](../session-persistence-jsonl/tests/v2-ptc-migration.spec.ts) owns publication evidence. The [released-format decision](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns the rationale for testing adjacent composition separately from native admission.
 
 </details>
 
@@ -167,8 +166,8 @@ The [stage](src/migration.ts) owns synchronous per-artifact sequence maps, messa
 ## Further Exploration
 
 - [Released V1 to V2](../session-format-v1-to-v2/README.md) — frozen preceding conversion and source codec.
-- [System-prompt surface decision](../../../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md) — prompt ownership and protected-head rationale.
-- [Canonical V3 envelope decision](../../../.agents/notes/implemented/architecture/2026-09-06-v3-canonical-session-envelopes.md) — strict acceptance and validation ownership.
+- System-prompt surface decision — prompt ownership and protected-head rationale.
+- Canonical V3 envelope decision — strict acceptance and validation ownership.
 
 -----
 
@@ -194,7 +193,7 @@ The edge preserves historical request meaning and model configuration; it does n
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Historical preset ambiguity** — released `code` references cannot distinguish a custom preset with the legacy built-in id; the [exact rename](#header-and-presets) is host-independent.
-- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. See [format release status](../../../docs/session-format-status.md) and the compatibility obligations in the [released-format policy](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md).
+- **No file or settings migration** — this package never changes committed generations or `settings.yaml`. Persistence owns publishing the final successor; an existing V3 generation does not rerun its incoming edge. See format release status and the compatibility obligations in the released-format policy.
 
 <a id="dev-note"></a>
 ### Dev Note

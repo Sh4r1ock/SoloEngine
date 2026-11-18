@@ -261,8 +261,7 @@ export function verifyProductUse(
 
 function validCategory(path: string, category: ProductPackagePolicy['category']): boolean {
   switch (category) {
-    case 'optional': return !path.startsWith('packages/test-support/')
-    case 'test': return path.startsWith('packages/test-support/')
+    case 'optional': return true
     case 'sdk': return path === 'packages/sdk/client'
     case 'build': return path === 'packages/typert/generator'
     case 'web-distribution': return path === 'packages/client/web' || path === 'packages/client/ui-dockkit'

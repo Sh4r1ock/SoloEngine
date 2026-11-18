@@ -52,14 +52,14 @@ kind: "package-library"
 
 ### 配置
 
-本包自身不接受任何插件配置；生成的[配置目录](../../../docs/config-catalog.zh.md)列出仓库中每个插件配置以供对照。
+本包自身不接受任何插件配置；生成的配置目录列出仓库中每个插件配置以供对照。
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循[菜单规则](../../../docs/web-styling.zh.md#component-rules)。
+菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循菜单规则。
 
 在 macOS 上，原生窗口区域使用元素完整矩形，不考虑 overflow 裁剪。Shell 重置继承的区域，并将控件的自动排除限制在 `data-window-drag` 行或显式 `data-window-drag-controls` 范围内。范围外的滚动内容不会获得自动排除。不含嵌套拖动行的交互视口使用 `data-window-drag-exclude`，仅排除自身矩形；覆盖浮层和含自有拖动行的容器单独声明区域。Body portal 必须具有实际矩形，否则需在可见内容上显式声明排除。
 
@@ -74,7 +74,7 @@ kind: "package-library"
 
 ### 两阶段启动
 
-`run()` 调用 Host 安装的 `window.__ModuleLoader__.create({ boot, staticModules, ...seams })`；facade 接纳 parser 已加载的 bootstrap 批次后返回构造好的模块系统与已解析 manifest（元数据清单）。模块阶段通过一个共享的 application 批次 URL 预取 `immediately` 层级。插件阶段挂载 Loader、把 `loader.internal` 赋为 `modules`、统一创建全部图 entry、等待完全停稳，然后按与 [Host 启动严格性](../../../.agents/notes/implemented/architecture/2026-09-09-consumer-owned-startup-strictness.zh.md)相同的策略审计激活：导入失败、因缺失服务而 pending，或落入其他非 active 状态的 entry 视为未激活。未激活 entry 在 [`src/boot-client.ts`](src/boot-client.ts) 的全局必需名单（模块系统、Session 控制、渲染器、应用框架、Session 视图与侧栏）中时，审计抛出一个聚合错误，点名每个未激活 entry 并标出必需项；否则写一条控制台警告，应用照常挂载。图中不存在的必需名称不产生影响。必需 entry 所等待的 entry 失败时，必需 entry 保持 pending，因此同样会拒绝启动。Loader 未能创建的 entry（模块导入失败或未导出插件）没有 fiber，按导入失败报告，与 Host 审计报告 `failed to import` 相同；原始错误在控制台日志中。
+`run()` 调用 Host 安装的 `window.__ModuleLoader__.create({ boot, staticModules, ...seams })`；facade 接纳 parser 已加载的 bootstrap 批次后返回构造好的模块系统与已解析 manifest（元数据清单）。模块阶段通过一个共享的 application 批次 URL 预取 `immediately` 层级。插件阶段挂载 Loader、把 `loader.internal` 赋为 `modules`、统一创建全部图 entry、等待完全停稳，然后按与 Host 启动严格性相同的策略审计激活：导入失败、因缺失服务而 pending，或落入其他非 active 状态的 entry 视为未激活。未激活 entry 在 [`src/boot-client.ts`](src/boot-client.ts) 的全局必需名单（模块系统、Session 控制、渲染器、应用框架、Session 视图与侧栏）中时，审计抛出一个聚合错误，点名每个未激活 entry 并标出必需项；否则写一条控制台警告，应用照常挂载。图中不存在的必需名称不产生影响。必需 entry 所等待的 entry 失败时，必需 entry 保持 pending，因此同样会拒绝启动。Loader 未能创建的 entry（模块导入失败或未导出插件）没有 fiber，按导入失败报告，与 Host 审计报告 `failed to import` 相同；原始错误在控制台日志中。
 
 ### 启动页机制
 
@@ -108,7 +108,7 @@ kind: "package-library"
 
 - [客户端模块系统](../modules/README.zh.md)——本内核消费的惰性模块表与启动图。
 - [UI 渲染器](../ui-renderer/README.zh.md)——接收挂载点并把 slot 数据绑定到 React。
-- [客户端模块子系统](../../../docs/subsystems/client-modules.zh.md)——web 插件表、启动图协议与 bundle 路由。
+- 客户端模块子系统——web 插件表、启动图协议与 bundle 路由。
 - [客户端编写规则](../AGENTS.md#shared-modules-and-the-module-graph)——共享模块基座与 `dsh.client.external` 语义。
 - [客户端组地图](../README.zh.md)——本包所属的浏览器半侧。
 

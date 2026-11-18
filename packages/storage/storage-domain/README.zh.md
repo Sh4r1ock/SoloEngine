@@ -66,7 +66,7 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 | `backend` | 必填 | 未显式路由的每个领域的默认后端名称 |
 | `routes` | `{}` | 逐领域覆盖：领域名称 → 后端名称 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-storage-domain)是所有受支持字段及其 JSDoc 的完整真源。
+生成的配置目录是所有受支持字段及其 JSDoc 的完整真源。
 
 ### 可观察行为与失败
 
@@ -112,10 +112,10 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 
 当领域层视角不够用时阅读以下页面：子系统参考是权威约定，Agent Note 记录了设计与延期工作。
 
-- [存储子系统](../../../docs/subsystems/storage.zh.md)——领域约定、后端约定、变更事件与生成的 API。
+- 存储子系统——领域约定、后端约定、变更事件与生成的 API。
 - [存储包映射](../README.zh.md)——家族的各包及其在仓库中的位置。
-- [领域 KV 存储 Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)——领域为何存在、workspace 消费方，以及跨进程变更推送等延期工作。
-- [Workspace 子系统](../../../docs/subsystems/workspace.zh.md)——领域数据形式的第一个消费方。
+- 领域 KV 存储 Agent Note——领域为何存在、workspace 消费方，以及跨进程变更推送等延期工作。
+- Workspace 子系统——领域数据形式的第一个消费方。
 
 -----
 
@@ -143,9 +143,9 @@ domain.table('workspaces').update(id, (r) => ({ ...r, path: newPath }))
 
 这些限制说明领域层何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是任务积压。
 
-- **变更只在单进程内可见**——`domain/changed` 是进程内事件；在跨进程修订模式落地前，第二个主机进程或重新连接的 GUI 无法观察变更（[Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)）。
+- **变更只在单进程内可见**——`domain/changed` 是进程内事件；在跨进程修订模式落地前，第二个主机进程或重新连接的 GUI 无法观察变更（Agent Note）。
 - **没有跨表事务、二级索引或多段键**——每次写入针对一张表或全局槽位；这些扩展列在 Agent Note 的范围外清单中。
-- **没有不兼容值迁移执行器**——`compatibleVersions` 允许当前解码器读取旧数据；消费方在重写选定记录时转换其值。当前版本戳下仍可能包含历史行。后端差异、升级、降级拒绝与移除旧读取器参阅[领域版本](../../../docs/subsystems/storage.zh.md#domain-versioning)。
+- **没有不兼容值迁移执行器**——`compatibleVersions` 允许当前解码器读取旧数据；消费方在重写选定记录时转换其值。当前版本戳下仍可能包含历史行。后端差异、升级、降级拒绝与移除旧读取器参阅领域版本。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -32,19 +32,10 @@ const MANIFEST_BIN_ALLOWLIST = new Map<string, ManifestBin>([
 const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
   ['apps/cli/src/bin.ts', 'supported dsh application launcher'],
   ['apps/desktop/scripts/logged-notarytool.mjs', 'build-only notarization logging wrapper'],
-  ['packages/context/time-context/tests/fixtures/driver.ts', 'test-only subprocess driver'],
   // SoloEngine's cloud control plane and gateway are processes outside the cordis
   // tree by design (a shared authority across nodes); the console entry is their
   // only launcher and it is started from the deployment, not from a package bin.
   ['packages/soloengine/cloud-control/src/cli.ts', 'SoloEngine cloud control-plane/gateway console entry'],
-  ['packages/sdk/client/tests/fake-runtime.ts', 'test-only SDK runtime peer'],
-  ['packages/session/session-telemetry-otel/tests/fixtures/driver.ts', 'test-only subprocess driver'],
-  ['packages/shell/tool-pwsh/tests/fixtures/loader/driver.ts', 'test-only subprocess driver'],
-  ['packages/subagent/subagent-claude-code/tests/fixtures/loader/driver.ts', 'test-only subprocess driver'],
-  ['packages/subagent/subagent-codex/tests/fixtures/loader/driver.ts', 'test-only subprocess driver'],
-  ['packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/driver.ts', 'test-only subprocess driver'],
-  ['packages/test-support/loader-smoke/tests/fixtures/headless-driver.ts', 'test-only subprocess driver'],
-  ['packages/test-support/llm-mock-server/src/bin.ts', 'test-only model server'],
 ])
 
 /**

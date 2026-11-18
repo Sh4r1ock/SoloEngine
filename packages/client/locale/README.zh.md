@@ -83,7 +83,7 @@ export function apply(ctx) {
 
 ### 设计理念
 
-一个 `LocaleRuntime` 同时拥有偏好与字典注册表，并且自身就是 slot 系统的 `LocaleFace`：`getSnapshot`／`subscribe` 通过 `ctx.slots.installLocale` 支撑框架注入的 `t` 席位。不可变快照携带生效中的 locale、可选择的 locale 列表与单调 revision；字典注册与 locale 切换都会推进 revision，但只有切换会发出 `locale/change` 事件。产品编写的 Client UI 文本必须来自这些带类型的字典，或来自已经本地化的 primitive prop；`verify-client-ui-i18n` 强制执行该源码归属（见[决策](../../../.agents/notes/implemented/architecture/2026-08-23-locale-owned-client-ui-copy.zh.md)）。
+一个 `LocaleRuntime` 同时拥有偏好与字典注册表，并且自身就是 slot 系统的 `LocaleFace`：`getSnapshot`／`subscribe` 通过 `ctx.slots.installLocale` 支撑框架注入的 `t` 席位。不可变快照携带生效中的 locale、可选择的 locale 列表与单调 revision；字典注册与 locale 切换都会推进 revision，但只有切换会发出 `locale/change` 事件。产品编写的 Client UI 文本必须来自这些带类型的字典，或来自已经本地化的 primitive prop；`verify-client-ui-i18n` 强制执行该源码归属（见决策）。
 
 ### 偏好解析
 
@@ -114,7 +114,7 @@ export function apply(ctx) {
 当仅阅读 locale 约定不足以解答问题时，请继续阅读以下页面，了解它实现的 slot 接口、依托的设置机制，以及偏好背后的持久化决策。
 
 - [客户端 slot 系统](../ui-slots/README.zh.md)——本包实现的 slot 模型与 `LocaleFace` 席位。
-- [历史Host 支撑偏好决策](../../../.agents/notes/archived/bug-fix/2026-08-06-host-backed-web-preferences.md)——偏好为何持久化在 Host 设置中而非浏览器里。
+- 历史Host 支撑偏好决策——偏好为何持久化在 Host 设置中而非浏览器里。
 - [设置组地图](../../settings/README.zh.md)——存储该偏好的设置服务。
 - [客户端组地图](../README.zh.md)——本包所属的浏览器半侧。
 

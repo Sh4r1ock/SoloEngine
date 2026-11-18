@@ -42,8 +42,8 @@ profile 层恰好选择一个执行器实现（win32 层会把 POSIX 行换成 p
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [Bash 执行器子系统](../../docs/subsystems/shell.zh.md) —— 共享的请求/spec 词汇、结果、后台进程与完整的服务约定。
-- [沙箱子系统](../../docs/subsystems/sandbox.zh.md) —— 沙箱执行器所消费的隔离能力。
+- Bash 执行器子系统 —— 共享的请求/spec 词汇、结果、后台进程与完整的服务约定。
+- 沙箱子系统 —— 沙箱执行器所消费的隔离能力。
 
 <a id="dev-note"></a>
 ## 开发备注

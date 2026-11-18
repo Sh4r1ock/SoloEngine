@@ -44,7 +44,7 @@ Chat 通过 `shell.overlay` 中的宿主把已绑定 Session 的实时欠费交�
 
 账号菜单的“意见反馈”入口在系统浏览器中打开飞书问卷。每次点击都按当时的上下文取值：profile ready 且带 id 时的账号 UID、以 harness_version 表示的构建版本，以及 device_info。device_info 以 screen_resolution=宽x高 包含屏幕物理分辨率，尺寸乘以 devicePixelRatio 后四舍五入；屏幕尺寸不可用时省略此项。所有上下文字段同时设置 hide_*=1，配置的表单 URL 中这些字段的 stale prefill 参数先被清除，uid、device_info 与 harness_version 的隐藏参数不依赖配置 URL 的取值。URL 不携带 os_version、device_brand、app_locale 或独立的 screen_resolution 参数；配置 URL 中这些字段的 prefill 与 hide 参数会被移除。不传 token 或脱敏联系方式；未登录、profile 仍在加载或读取失败时都不填写 prefill_uid。普通浏览器中，或 Desktop 桥接没有 deviceInfo 读取器时，打开的表单以 navigator.userAgent 作为 device_info。Desktop 端暴露可选的 dshDesktop.deviceInfo 读取器，其字段格式由 [Desktop README](../../../apps/desktop/README.zh.md) 负责；该读取器的结果取代 user-agent，读取失败时仍打开表单，device_info 保留可获取的屏幕分辨率，而 device_info 描述的是上报的环境而非硬件型号。可在 ui-settings-account 插件配置 contactFormUrl，切换到另一个 HTTPS 问卷；问卷支持 Harness 来源选项前，contactSource 默认为空。
 
-账号资料与余额卡片共用[设置卡片材质与圆角](../../../docs/web-styling.zh.md#corner-radii-and-settings-cards)。用量与充值链接与标准 Button 尺寸一致；授权操作使用公共 Button。
+账号资料与余额卡片共用设置卡片材质与圆角。用量与充值链接与标准 Button 尺寸一致；授权操作使用公共 Button。
 
 侧边栏账号菜单使用公共 Menu 的表面和背景模糊。已登录菜单沿用公共菜单项排版；未登录菜单使用自己的较宽菜单项。两种菜单的问卷入口均为“意见反馈”。设置菜单项显示外壳传入的有效组合键。关闭设置后，焦点回到侧栏账号入口。
 
@@ -68,12 +68,12 @@ Desktop preload 标记在账号凭证已存储后启用引导。进度属于本�
 
 仅登录后在设置导航首位显示账号页；账号状态加载完成前以及退出登录后隐藏该页。 插件持有一条 Host 快照流，通过框架 hook 供 settings.section 和 settings.launcher 共享。入口菜单可打开设置，并仅在已存储账号凭证时提供退出登录。Platform 请求失败时保留菜单，以供重试。插件不维护独立凭证状态。
 
-桌面控制器通过 Host 设置将进度写入 `ui-settings-account`。完成时先一并应用 `ui-chat.transcriptView` 与 `ui-chat.performanceUsage`，再通过共享代码工作工具偏好保存 `ui-settings.enabled`，最后保存完成标记；写入被拒绝时保留引导以供重试。成功完成后通过 180ms 淡出显露工作区；选择和普通翻页立即预览，写入在后台按顺序执行。队列最后一次写入失败时恢复已保存进度，并允许重试。完成操作会等待选择队列及偏好保存成功，再关闭页面；减少动态效果偏好会跳过淡出。onboarding 选项 compact、standard、detailed 直接应用到对应的 Chat 工作过程模式。API Key 进入与显式跳过均采用 standard；onboarding 不选择 verbose。完整 Figma 示意图层以透明、无损编码的 3× WebP [包资源](../AGENTS.md#dependency-declaration)形式提供；欢迎页图层合并并烘焙侧栏局部模糊；充值页前景窗口不透明度为 70%，仅烘焙其覆盖插图区域的模糊，标题使用已打包的 Montserrat 品牌字体，英文标题和描述使用 Light（300），标题中的 DeepSeek Harness 使用 Medium（500）；卡片标题选中前后均使用 Regular（400）。英文底部导航使用 Light（300）。确认进入引导后，窗口最小宽度设为 960px，较窄窗口自动放大；完成后解除宽度限制，但不恢复原尺寸。加载中或已完成引导的启动不改变窗口尺寸。底部导航空白区域透过鼠标事件，避免遮挡主操作。卡片区域不参与原生窗口拖动，复选框的键盘焦点仅在卡片外框展示。账号包负责引导覆盖层和控件尺寸样式。每个步骤和确认弹窗各有独立组件，流程组件协调导航、切换动画和充值。初始账号与进度加载期间，覆盖层隐藏工作区。答题标题和卡片独立于操作按钮，位置对齐 Figma 的 1440 × 920 和 960 × 600 断点。在 macOS 上，Shell 为每个元素重置继承的窗口区域，位于内容之前的拖拽层保留 8px 原生缩放边缘。内容层的 `data-window-drag-controls` 范围排除交互控件，后续弹窗排除自身矩形；原生平台页面打开时禁用底层引导拖拽层。上方工作区弹窗插画在两种语言和主题下均使用不透明背景，下层侧边栏不绘制选中行高亮。欢迎页保持示意图的原始尺寸，在窄窗口内调整插图位置并裁切，在宽窗口内展示完整插图。[历史引导决策](../../../.agents/notes/archived/feature/2026-09-16-desktop-onboarding.md)记录持久化与展示方面的取舍。
+桌面控制器通过 Host 设置将进度写入 `ui-settings-account`。完成时先一并应用 `ui-chat.transcriptView` 与 `ui-chat.performanceUsage`，再通过共享代码工作工具偏好保存 `ui-settings.enabled`，最后保存完成标记；写入被拒绝时保留引导以供重试。成功完成后通过 180ms 淡出显露工作区；选择和普通翻页立即预览，写入在后台按顺序执行。队列最后一次写入失败时恢复已保存进度，并允许重试。完成操作会等待选择队列及偏好保存成功，再关闭页面；减少动态效果偏好会跳过淡出。onboarding 选项 compact、standard、detailed 直接应用到对应的 Chat 工作过程模式。API Key 进入与显式跳过均采用 standard；onboarding 不选择 verbose。完整 Figma 示意图层以透明、无损编码的 3× WebP [包资源](../AGENTS.md#dependency-declaration)形式提供；欢迎页图层合并并烘焙侧栏局部模糊；充值页前景窗口不透明度为 70%，仅烘焙其覆盖插图区域的模糊，标题使用已打包的 Montserrat 品牌字体，英文标题和描述使用 Light（300），标题中的 DeepSeek Harness 使用 Medium（500）；卡片标题选中前后均使用 Regular（400）。英文底部导航使用 Light（300）。确认进入引导后，窗口最小宽度设为 960px，较窄窗口自动放大；完成后解除宽度限制，但不恢复原尺寸。加载中或已完成引导的启动不改变窗口尺寸。底部导航空白区域透过鼠标事件，避免遮挡主操作。卡片区域不参与原生窗口拖动，复选框的键盘焦点仅在卡片外框展示。账号包负责引导覆盖层和控件尺寸样式。每个步骤和确认弹窗各有独立组件，流程组件协调导航、切换动画和充值。初始账号与进度加载期间，覆盖层隐藏工作区。答题标题和卡片独立于操作按钮，位置对齐 Figma 的 1440 × 920 和 960 × 600 断点。在 macOS 上，Shell 为每个元素重置继承的窗口区域，位于内容之前的拖拽层保留 8px 原生缩放边缘。内容层的 `data-window-drag-controls` 范围排除交互控件，后续弹窗排除自身矩形；原生平台页面打开时禁用底层引导拖拽层。上方工作区弹窗插画在两种语言和主题下均使用不透明背景，下层侧边栏不绘制选中行高亮。欢迎页保持示意图的原始尺寸，在窄窗口内调整插图位置并裁切，在宽窗口内展示完整插图。历史引导决策记录持久化与展示方面的取舍。
 
 <a id="further-exploration"></a>
 ## 深入探索
 
-[凭证子系统](../../../docs/subsystems/credentials.zh.md)定义存储接口；[架构](../../../docs/architecture.zh.md)说明应用组合。
+凭证子系统定义存储接口；架构说明应用组合。
 
 账号登录在模型引导的凭证编辑器之前显示可关闭的弹窗。弹窗底部采用紧凑的右对齐横排操作，主操作位于末尾。侧边栏优先显示昵称，缺少昵称时显示服务端返回的脱敏手机号或邮箱；资料加载期间保持留空。 弹窗文字和侧边栏账号状态文字不可选中，复制登录链接按钮始终可用，并在每次复制成功两秒后恢复原文案。剪贴板失败时，链接原位显示“复制失败”两秒，不中断登录。等待状态提供可复制的授权链接和加载图标；超时和失败均须用户手动重试。弹窗的“复制登录链接”和设置页的“打开”链接会从当前主题快照读取应用生效配色，追加 `theme=light` 或 `theme=dark`，使两条路径都以当前应用主题打开 Platform 页面，且不改变 Platform 已保存的主题偏好。登录失败在该弹窗内呈现；退出登录失败时菜单保持展开以便重试，入口本身不展示失败提示。关闭等待弹窗会取消对应 Host 登录流程。侧边栏通过设置协调器重新打开同一个 API Key 编辑器。
 
@@ -107,7 +107,7 @@ Desktop preload 标记在账号凭证已存储后启用引导。进度属于本�
 <a id="dev-note"></a>
 ### 开发备注
 
-[桌面登录决策](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.zh.md)记录取消和存储的职责。
+桌面登录决策记录取消和存储的职责。
 
 用量和充值在原生页面加载完成前显示居中的 24px 加载图标，不显示加载文字；返回操作始终可用。加载 SVG 从 Figma 节点 2957:72553 内嵌到本地样式。
 

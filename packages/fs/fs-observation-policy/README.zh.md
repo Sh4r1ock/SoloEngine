@@ -92,7 +92,7 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从策略逐步进入它所组合的约定、工具与后端。
 
-- [文件系统子系统](../../../docs/subsystems/filesystem.zh.md)——穷尽式提供方约定、策略事件与错误分类体系。
+- 文件系统子系统——穷尽式提供方约定、策略事件与错误分类体系。
 - [dsh-fs](../fs/README.zh.md)——`ctx.fs` 约定与 `fs/*` 事件词汇。
 - [tool-fs](../tool-fs/README.zh.md)——分派 `fs/*` 事件的面向模型工具。
 - [fs-local](../fs-local/README.zh.md)——本策略所防护的宿主文件系统后端。

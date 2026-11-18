@@ -86,12 +86,12 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从穷尽式约定逐步进入构建于其上的后端与消费方。
 
-- [文件系统子系统](../../../docs/subsystems/filesystem.zh.md)——穷尽式提供方约定、策略事件与错误分类体系。
+- 文件系统子系统——穷尽式提供方约定、策略事件与错误分类体系。
 - [fs-local](../fs-local/README.zh.md)——实现该约定的宿主文件系统后端。
 - [fs-sandbox](../fs-sandbox/README.zh.md)——实现该约定的沙箱强制后端。
 - [tool-fs](../tool-fs/README.zh.md)——消费 `ctx.fs` 的面向模型工具。
 - [fs-observation-policy](../fs-observation-policy/README.zh.md)——通过 `fs/*` 事件防护变更的策略插件。
-- [能力 seam 笔记](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)——文件系统栈为何拆分为约定、提供方、策略与工具。
+- 能力 seam 笔记——文件系统栈为何拆分为约定、提供方、策略与工具。
 
 -----
 
@@ -112,7 +112,7 @@ kind: "package-reference"
 这些限制说明该约定何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是通用文件系统对比或任务积压。
 
 - **变更操作约定只支持文本**：文本读取和两个变更操作都以 `FS_NOT_TEXT` 拒绝二进制/非 UTF-8 内容；`readBytes` 与 `readByteRange` 是原始字节原语，二进制安全的变更操作仍延期。
-- **没有复制**：`mkdir`、`rename` 与 `remove` 覆盖了人类文件树会执行的目录变更；复制、glob、分页与搜索不在范围内（见[目录列出笔记](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)）。
+- **没有复制**：`mkdir`、`rename` 与 `remove` 覆盖了人类文件树会执行的目录变更；复制、glob、分页与搜索不在范围内（见目录列出笔记）。
 - **没有 I/O deadline**：该 seam 不启动超时；取消只是每个原语上尽力而为的可选 `AbortSignal`（见[fs 能力族立场](../README.zh.md)）。
 - **先解析后操作使远程后端每次工具调用需要两次往返**：折叠或缓存解析由这种后端自行决定。
 

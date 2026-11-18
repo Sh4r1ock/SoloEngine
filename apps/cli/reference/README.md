@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 This reference defines the profile, plugin-management, and config-dump command modes. Argv is parsed once through [`src/args.ts`](../src/args.ts), and [`src/bin.ts`](../src/bin.ts) dynamically imports only the selected runner.
 
-The [generated command help](../../../docs/cli-help.md) contains complete launcher, plugin-management, and shipped-profile help. Run `pnpm run gen-cli-help` to refresh it; `pnpm run verify-cli-help` checks it against the current CLI.
+The generated command help contains complete launcher, plugin-management, and shipped-profile help. Run `pnpm run gen-cli-help` to refresh it; `pnpm run verify-cli-help` checks it against the current CLI.
 
 ## Profile boot
 
@@ -108,7 +108,7 @@ Git-hosted plugins that ship sources build during install through their `prepare
 
 `dsh web` uses the profile shorthand. Launcher flags are parsed first; the remaining flags belong to the web app, whose ordinary bundle provider parses them. `--host` and `--port` override the composed listener values, and `--tls-cert`/`--tls-key` set the listener's `tls` pair. The host must name one concrete local address, not a wildcard (`--host 0.0.0.0` exits with a usage error); `hostname -i` may list several, so pass one. Repeatable `--trusted-host` values are collected in `ctx.webStartup.trustedHosts`; a deployment expression may add its own authorities. `--no-open` disables the default-browser handoff for this invocation. The client-plugin HMR receiver is always mounted and stays idle until `pnpm run dev:web` rebuilds client bundles; that command builds once, starts this same launcher, and keeps client bundles rebuilt, or with `--no-serve` runs only the watchers beside a `dsh web` started elsewhere.
 
-`--public-url <url>` advertises one HTTP(S) application root — with an optional forwarding prefix — in place of the listener's bind-address URL (loopback for a loopback bind). It grants no trust, so the browser-visible authority still has to be named with `--trusted-host`; [Publish the Web UI behind a reverse proxy](../../../docs/user/guide/public-deployments.md) lists what the proxy in front must provide.
+`--public-url <url>` advertises one HTTP(S) application root — with an optional forwarding prefix — in place of the listener's bind-address URL (loopback for a loopback bind). It grants no trust, so the browser-visible authority still has to be named with `--trusted-host`; Publish the Web UI behind a reverse proxy lists what the proxy in front must provide.
 
 `--tls-cert <file>` and `--tls-key <file>` make the listener serve HTTPS in place of plain HTTP. They are one setting: both or neither, and each names a file resolved against the process working directory. The certificate file holds the full chain, including intermediates; the key file holds an unencrypted PEM private key. A missing, unreadable, empty, or invalid pair fails startup, which never falls back to HTTP, and a replacement pair takes effect only after a listener reload or a process restart because the carrier reads the files once and nothing obtains, renews, or watches certificates. HTTPS also grants no trust: the browser must trust the certificate and open an authority its names cover, Connection still authenticates each request and checks Host/Origin, and the session cookie is `Secure` because the receiving listener serves HTTPS. The default port stays 3080, and `--public-url` remains an independent advertisement.
 

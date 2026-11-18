@@ -36,10 +36,10 @@ The client owns each configured connection; the shared resource package supplies
 
 Try the worked example configurations to see the plugin in action, then read the Agent Note for the behavior decisions behind it.
 
-- [historical MCP client plugin Agent Note](../../.agents/notes/archived/feature/2026-07-07-mcp-client-plugin.md) — the bridge's design: server-qualified naming, discovery, execution, and environment scrubbing.
+- historical MCP client plugin Agent Note — the bridge's design: server-qualified naming, discovery, execution, and environment scrubbing.
 - [Resources and instructions reference](mcp-resources/README.md) — on-demand resource access and scoped server guidance.
-- [Third-party memory MCP guide](../../docs/user/guide/mcp-memory.md) — runnable overlay rows and setup instructions.
-- [Tools subsystem reference](../../docs/subsystems/tools.md) — the `ToolRuntime` that receives the registered tools.
+- Third-party memory MCP guide — runnable overlay rows and setup instructions.
+- Tools subsystem reference — the `ToolRuntime` that receives the registered tools.
 
 <a id="dev-note"></a>
 ## Dev Note

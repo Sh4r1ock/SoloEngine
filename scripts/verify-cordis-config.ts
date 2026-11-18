@@ -259,12 +259,6 @@ function validateAppResolution(): string[] {
     appDependencies,
     'apps/cli/package.json dependencies or a bundle manifest',
   ))
-  const appTestReferences = pluginReferences.filter(reference => reference.file.startsWith('apps/cli/tests/'))
-  violations.push(...missingPluginDependencies(
-    appTestReferences,
-    { ...appManifest.dependencies, ...appManifest.devDependencies },
-    'apps/cli/package.json dependencies or devDependencies',
-  ))
   // Each bundle's patch rows must resolve from that bundle's own dependencies:
   // per-layer resolution anchors on the bundle package directory.
   for (const manifestPath of bundleManifests) {
@@ -404,7 +398,7 @@ export function bundlePluginDependencyErrors(
 /**
  * Every configured specifier of a local workspace package must resolve through
  * the tsconfig `paths` facade to a `.ts`/`.tsx` source file. The `dsh` source
- * launch (tsx) and vitest resolve in the source plane; without a `paths` match
+ * launch (tsx) resolves in the source plane; without a `paths` match
  * they fall back to package `exports`, which reach built `lib/` — present on a
  * built dev tree, absent on a clean one — so a missing mapping boots locally
  * yet breaks every clean checkout. Anything but a `.ts`/`.tsx` hit (a `.d.ts`

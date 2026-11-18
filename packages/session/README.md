@@ -70,11 +70,11 @@ Only one title provider may register at a time; without one, the title service k
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Session persistence subsystem](../../docs/subsystems/persistence.md) — backend-neutral service semantics, the flush checkpoint, and crash recovery.
-- [Session projections subsystem](../../docs/subsystems/session-projection.md) — the projection unit contract and drive semantics.
-- [Session titles subsystem](../../docs/subsystems/session-title.md) — title eligibility, fallback, and provider flow.
-- [Session telemetry subsystem](../../docs/subsystems/session-telemetry.md) — capture, redaction, and delivery modes.
-- [Session subsystem](../../docs/subsystems/session.md) — the live event log every package in this group persists or derives from.
+- Session persistence subsystem — backend-neutral service semantics, the flush checkpoint, and crash recovery.
+- Session projections subsystem — the projection unit contract and drive semantics.
+- Session titles subsystem — title eligibility, fallback, and provider flow.
+- Session telemetry subsystem — capture, redaction, and delivery modes.
+- Session subsystem — the live event log every package in this group persists or derives from.
 
 <a id="dev-note"></a>
 ## Dev Note

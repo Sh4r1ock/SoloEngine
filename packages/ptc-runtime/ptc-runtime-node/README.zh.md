@@ -62,7 +62,7 @@ kind: "package-reference"
 | `graceMs` | `3,000` | 受管终止与输出排空宽限时间 |
 | `launch` | 本地载体 | 子进程环境中显式的 `{ kind: "node-script", executable, bootstrapPath? }` 或 `{ kind: "embedded", executable }` |
 
-[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-ptc-runtime-node)定义可接受的配置字段。`resolve(request)` 将 cwd 默认设为沙箱策略的工作区根目录，并补全数值或 null 截止选择与执行策略；`run(spec)` 接受这些已解析输入，不补缺省值。
+配置目录定义可接受的配置字段。`resolve(request)` 将 cwd 默认设为沙箱策略的工作区根目录，并补全数值或 null 截止选择与执行策略；`run(spec)` 接受这些已解析输入，不补缺省值。
 
 profile 编辑器可从 `@deepseek-ai/dsh-ptc-runtime-node/configuration` 导入 `resolvePersistentExecution`，根据当前有效程序格式选择持久执行设置。返回的三个设置必须原子合入：Script 和 scoped REPL 保留原语法，函数体和 REPL 语句切换为使用默认 `replScoped` 的 `persistent-in-memory`，也就是 scoped REPL。
 
@@ -108,7 +108,7 @@ profile 编辑器可从 `@deepseek-ai/dsh-ptc-runtime-node/configuration` 导入
 
 初始化期间的错误、取消、超时或捕获输出超限会阻止用户程序启动，并在返回前终止该环境。此前的外部效果仍然保留。Host 确认初始化完成后，用户程序失败遵循下方的普通状态保留规则。[运行时服务](../ptc-runtime/README.zh.md#choose-a-backend)定义注册和异步注销行为。
 
-省略 `replScoped` 或设为 `true` 时，`persistent-in-memory` 报告程序格式 `scoped-repl`，每次调用编译成同一个保留 context 里独立的 strict VM Script。每次调用开始时拿到之前调用留下的顶层绑定的拷贝，可以用任意关键字再次声明这些名字；之前调用里的函数和仍在运行的代码保留各自的绑定，调用开始后之前的代码再赋的值不会拷进来。不声明、直接给之前的名字赋值，包括用 `const` 声明的名字，只改这次及之后调用看到的拷贝。最后一条顶层表达式语句是完成值，Promise 完成值不会被等待；顶层 `return` 会被拒绝。程序环境里的 `eval`、`new Function` 和 WebAssembly 编译会被拒绝。程序只能用动态 `import()` 加载模块，相对路径按这个环境第一次调用时的工作目录解析；不提供 `require`、`module` 和内置模块全局变量。块里声明的 `var` 算作这次调用的顶层名字，和其他 `var` 一样带到之后的调用。用 `var` 重新声明之前的名字时，这次的 `var` 从旧值开始，所以没执行到的声明（抛错之后或在没走到的分支里）保留旧值。未捕获的回调异常和未处理的 rejection，在创建回调的那次执行仍在运行时让它失败，否则被丢弃，不会结束进程；回调里抛出冻结或不可扩展的对象时，进程仍会结束，与 Node REPL 相同。[scoped REPL 决策](../../../.agents/notes/implemented/architecture/2026-11-09-retained-ptc-scoped-repl.zh.md)记录完整行为及其与 Node REPL 的对比。
+省略 `replScoped` 或设为 `true` 时，`persistent-in-memory` 报告程序格式 `scoped-repl`，每次调用编译成同一个保留 context 里独立的 strict VM Script。每次调用开始时拿到之前调用留下的顶层绑定的拷贝，可以用任意关键字再次声明这些名字；之前调用里的函数和仍在运行的代码保留各自的绑定，调用开始后之前的代码再赋的值不会拷进来。不声明、直接给之前的名字赋值，包括用 `const` 声明的名字，只改这次及之后调用看到的拷贝。最后一条顶层表达式语句是完成值，Promise 完成值不会被等待；顶层 `return` 会被拒绝。程序环境里的 `eval`、`new Function` 和 WebAssembly 编译会被拒绝。程序只能用动态 `import()` 加载模块，相对路径按这个环境第一次调用时的工作目录解析；不提供 `require`、`module` 和内置模块全局变量。块里声明的 `var` 算作这次调用的顶层名字，和其他 `var` 一样带到之后的调用。用 `var` 重新声明之前的名字时，这次的 `var` 从旧值开始，所以没执行到的声明（抛错之后或在没走到的分支里）保留旧值。未捕获的回调异常和未处理的 rejection，在创建回调的那次执行仍在运行时让它失败，否则被丢弃，不会结束进程；回调里抛出冻结或不可扩展的对象时，进程仍会结束，与 Node REPL 相同。scoped REPL 决策记录完整行为及其与 Node REPL 的对比。
 
 内存按尽力保留处理，不保存到磁盘。重启、Agent 销毁、提供方卸载、协议失败、输出超限或进程退出都会清除内存。缺失变量产生普通引用错误，模型需要重新获取句柄和创建声明。当前执行中的异常只结算一次，并保留此前发生的修改。在 REPL 模式下，已完成执行的回调抛出的异常不会在后续结果中报告。在 Script 模式下，未捕获的回调异常可能终止保留进程；结束执行前应等待异步工作完成。Session 仍记录程序、工具分派和可见结果；恢复 Session 或派生 Agent 时从空内存开始。每次执行都会将进程工作目录重置为本次解析的 cwd；程序中的 `process.chdir()` 不跨执行保留。直接 Node 访问遵循进程启动时的文件策略。保留状态的所有者必须先释放环境，才能更改权限模式、工作区根目录或 Session 身份。额外可写目录在进程启动时固定：之后的授权和撤销仅在释放并重新创建环境后生效。
 
@@ -136,7 +136,7 @@ PTC 消费方按 [dsh-tool-executor-ptc](../../core/tool-executor-ptc/README.zh.
 
 Host 负责策略、截止时间、绑定查找和进程清理。子进程负责程序求值与绑定代理；即使使用预期的控制描述符，模型编写的代码仍是不可信对端。
 
-`createExecution()` 在提供方加载时一次性确定配置对应的语法、类型擦除、模型指导和进程生命周期。提供方处理执行准入与取消。统一的执行所有者创建临时进程，或在启用状态保留时复用所有者的进程；二者都由 `ProgramWorker` 负责启动、截止时间、绑定分派和清理。子进程会丢弃运行时自身触发的实验性功能警告（`vm.USE_MAIN_CONTEXT_DEFAULT_LOADER` 和 `stripTypeScriptTypes`），它们不会进入程序输出；程序自己发出的警告照常打印，宿主擦除类型时也不打印 `stripTypeScriptTypes` 警告。共用的子进程循环根据本次执行数据选择 `createProgramEvaluator()`；异步函数、REPL、Script 和 scoped REPL 实现提供全局变量、求值与清理操作，与进程生命周期独立。运行时等待初始化求值结束，不等待或展开其完成值；随后等待 Host 确认，再执行用户程序。求值器报告完成时立即结算用户程序；随后运行的微任务不能再输出内容或调用绑定。REPL 诊断也可以结算当前运行。scoped REPL 求值器还接受三个创建参数：`strict`（默认开）、`codeGeneration`（默认关）和 `finalExpression`（默认开）。运行时总是取默认值，scoped REPL 的模型说明描述的也是默认值；其他取值是设计上为以后的配置预留的，两种状态都有测试。重复声明通知同样是预留的钩子，不输出任何内容。[scoped REPL 决策](../../../.agents/notes/implemented/architecture/2026-11-09-retained-ptc-scoped-repl.zh.md)记录每个参数改变什么。
+`createExecution()` 在提供方加载时一次性确定配置对应的语法、类型擦除、模型指导和进程生命周期。提供方处理执行准入与取消。统一的执行所有者创建临时进程，或在启用状态保留时复用所有者的进程；二者都由 `ProgramWorker` 负责启动、截止时间、绑定分派和清理。子进程会丢弃运行时自身触发的实验性功能警告（`vm.USE_MAIN_CONTEXT_DEFAULT_LOADER` 和 `stripTypeScriptTypes`），它们不会进入程序输出；程序自己发出的警告照常打印，宿主擦除类型时也不打印 `stripTypeScriptTypes` 警告。共用的子进程循环根据本次执行数据选择 `createProgramEvaluator()`；异步函数、REPL、Script 和 scoped REPL 实现提供全局变量、求值与清理操作，与进程生命周期独立。运行时等待初始化求值结束，不等待或展开其完成值；随后等待 Host 确认，再执行用户程序。求值器报告完成时立即结算用户程序；随后运行的微任务不能再输出内容或调用绑定。REPL 诊断也可以结算当前运行。scoped REPL 求值器还接受三个创建参数：`strict`（默认开）、`codeGeneration`（默认关）和 `finalExpression`（默认开）。运行时总是取默认值，scoped REPL 的模型说明描述的也是默认值；其他取值是设计上为以后的配置预留的，两种状态都有测试。重复声明通知同样是预留的钩子，不输出任何内容。scoped REPL 决策记录每个参数改变什么。
 
 ### 启动与控制
 
@@ -210,8 +210,8 @@ AsyncFunction 和 Node REPL 共用同步 `registerHooks` 和以 symbol 为键的
 直接使用提供方前先读服务约定；决策记录解释策略与消费方职责。
 
 - [PTC 运行时服务](../ptc-runtime/README.zh.md)——请求、已解析 spec 与结果。
-- [沙箱 Node 决策](../../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-ptc-runtime.zh.md)——安全、生命周期与 timeout 取舍。
-- [PTC 基础](../../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md)——注册表呈现与嵌套工具分派。
+- 沙箱 Node 决策——安全、生命周期与 timeout 取舍。
+- PTC 基础——注册表呈现与嵌套工具分派。
 - [子进程提供方](../../subprocess/subprocess-local/README.zh.md)——受管进程范围与平台限制。
 
 -----
@@ -238,7 +238,7 @@ AsyncFunction 和 Node REPL 共用同步 `registerHooks` 和以 symbol 为键的
 - **默认执行是一次性的**：保留状态需要设置 `persistent-in-memory` 模式，或在 Script 模式下启用 `scriptPersistence: true`；所有模式都不提供 yield/wait API。
 - **await 转换放宽声明语义**——转换后程序的顶层 `let`、`const` 和 `class` 绑定可修改，且在执行前初始化为 `undefined`，不再具有原生暂时性死区。执行到函数声明时才会为其设置保留的全局变量；没有初始化器的 `var` 声明会将其绑定重置为 `undefined`。直接 eval 中的声明仅在本次求值内有效。不接受顶层 `using` 声明；可释放绑定需放在块内。运行时堆栈位置指向转换后的源码。无需转换即可编译的脚本保持原生语义。
 - **原生词法初始化失败可能占用名称**——顶层 `let`、`const` 或 `class` 的初始化器在完成绑定初始化前抛错时，该名称会在保留的 Script context 中持续处于未初始化状态。读取、赋值和重新声明都会失败；应使用新名称，或释放并重新创建环境。
-- **scoped REPL 在调用开始时拷贝值**——省略 `replScoped` 或设为 `true` 时，之前的代码之后再赋的值，后面的调用看不到；`let`、`const` 或 `class` 重新声明的初始化表达式读不到同名旧值；`var` 重新声明从旧值开始，所以 `var count = count + 1` 在旧值上加 1，之前是同名的 `let` 或 `const` 时也是这样。之后的调用换了目录，相对的 `import()` 仍按这个环境第一次的工作目录解析；读写文件的相对路径跟随当前目录。`codeGeneration` 限制只拒绝程序环境自己的 `eval`、`Function` 和 WebAssembly 编译，不构成隔离：复制进程序环境的主环境函数，例如 `setTimeout.constructor`，仍能编译代码。最后一条表达式所在行，插入完成值之后的列号右移 17；以 `#!` 开头或任何位置含 `__$binding_` 的程序会被拒绝；包含此前缀的 binding-global 和 error-class 名称会在启动进程前失败；存活的函数会留住它那次调用拷贝进来的所有值。[scoped REPL 决策](../../../.agents/notes/implemented/architecture/2026-11-09-retained-ptc-scoped-repl.zh.md)列出完整行为。
+- **scoped REPL 在调用开始时拷贝值**——省略 `replScoped` 或设为 `true` 时，之前的代码之后再赋的值，后面的调用看不到；`let`、`const` 或 `class` 重新声明的初始化表达式读不到同名旧值；`var` 重新声明从旧值开始，所以 `var count = count + 1` 在旧值上加 1，之前是同名的 `let` 或 `const` 时也是这样。之后的调用换了目录，相对的 `import()` 仍按这个环境第一次的工作目录解析；读写文件的相对路径跟随当前目录。`codeGeneration` 限制只拒绝程序环境自己的 `eval`、`Function` 和 WebAssembly 编译，不构成隔离：复制进程序环境的主环境函数，例如 `setTimeout.constructor`，仍能编译代码。最后一条表达式所在行，插入完成值之后的列号右移 17；以 `#!` 开头或任何位置含 `__$binding_` 的程序会被拒绝；包含此前缀的 binding-global 和 error-class 名称会在启动进程前失败；存活的函数会留住它那次调用拷贝进来的所有值。scoped REPL 决策列出完整行为。
 - **Script 值可能跨 realm**——绑定结果、绑定拒绝类和导入模块可能使用 Script context 之外的构造器。这些值的 `instanceof Array` 或 `instanceof Error` 可能为 false；应使用 `Array.isArray` 和声明的绑定错误类。
 - **内存保留环境为每个存活所有者保留一个进程**——空闲所有者保留进程及堆内存，直到显式释放、所有者销毁或执行失败。并行创建多个所有者会保留多个进程；空闲过期机制留待后续处理。
 - **输出上限拒绝超量内容，而不保留每个字节**——溢出只能保存本提供方交付的有界结果。
@@ -253,6 +253,6 @@ AsyncFunction 和 Node REPL 共用同步 `registerHooks` 和以 symbol 为键的
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-[timeout 讨论](../../../.agents/notes/implemented/architecture/2026-09-11-sandboxed-node-ptc-runtime.zh.md#deferred-timeout-design)记录 yield、总生命周期、审批等待计时和进程树 CPU/RSS 上限的开放选择。这些选择不改变数值截止的默认值或显式的不设截止服务选项。
+timeout 讨论记录 yield、总生命周期、审批等待计时和进程树 CPU/RSS 上限的开放选择。这些选择不改变数值截止的默认值或显式的不设截止服务选项。
 
 </details>

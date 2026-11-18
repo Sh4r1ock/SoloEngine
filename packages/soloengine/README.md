@@ -32,10 +32,10 @@ Use this group to run SoloEngine. The framework layer (`soloengine-framework/`) 
 
 ## Related documentation
 
-- [Architecture](../../docs/soloengine/01-架构.md)
-- [Composition and plugin inventory](../../docs/soloengine/02-组合与插件全量清单.md)
-- [Data layer](../../docs/soloengine/03-数据层.md)
-- [REST and account domain](../../docs/soloengine/04-REST与账号域.md)
+- Architecture
+- Composition and plugin inventory
+- Data layer
+- REST and account domain
 
 ## Dev Note
 

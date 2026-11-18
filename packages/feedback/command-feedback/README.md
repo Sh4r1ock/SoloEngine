@@ -103,7 +103,7 @@ The producer trims the text, records blank text as absent, and writes one event 
 Read these pages when the package-level contract is not enough. They cover the command registry, persistence, and identity facts this capture path relies on.
 
 - [dsh-commands](../../interaction/commands/README.md) — the registry that discovers the global command and its `recordInput` semantics.
-- [Session persistence subsystem](../../../docs/subsystems/persistence.md) — how appended events become durable and what a flush barrier means.
+- Session persistence subsystem — how appended events become durable and what a flush barrier means.
 - [Anonymous user identity](../../identity/anonymous-user-id/README.md) — the id the acknowledgement reports.
 - [ui-message-feedback](../../client/ui-message-feedback/README.md) — the Web feedback dialog that records through the `sessionFeedback` Remote.
 - [Feedback package map](../README.md) — where log-only capture sits next to per-message feedback.
@@ -150,7 +150,6 @@ These limits define where session feedback is a poor fit or behaves differently 
 
 This Dev Note is working context for maintainers; it is explicitly non-authoritative. Shipped behavior, limits, and rationale live in the sections above and the package code.
 
-- The acknowledgement sentences and the category order are pinned by [`tests/command-feedback.spec.ts`](tests/command-feedback.spec.ts); changing them changes user-visible copy.
 - A retrieval surface remains the open direction behind the first limitation; nothing in the current contract reserves a format for it.
 
 </details>

@@ -68,10 +68,10 @@ The important pieces are:
 
 ## Documentation
 
-- [Tutorial: build a plugin](../../docs/tutorials/build-a-plugin.md)
-- [Guide: plugin lifecycle](../../docs/guides/plugin-lifecycle.md)
-- [Guide: loader configuration](../../docs/guides/loader-config.md)
-- [API reference](../../docs/api/core.md)
+- Tutorial: build a plugin
+- Guide: plugin lifecycle
+- Guide: loader configuration
+- API reference
 
 ## Packages
 

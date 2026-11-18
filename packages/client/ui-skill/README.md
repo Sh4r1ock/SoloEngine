@@ -47,7 +47,7 @@ Hovering over `/name` highlights the entire reference. Clicking a known skill op
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The source implements no adjudication hooks and no reference codec: the pick lands literal text and the prompt ships the same literal, so determinism lives host-side ([slash pipeline note](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md)).
+The source implements no adjudication hooks and no reference codec: the pick lands literal text and the prompt ships the same literal, so determinism lives host-side (slash pipeline note).
 
 ### Candidate flow
 
@@ -73,7 +73,7 @@ These pages cover the input machinery, the tool row host, and the host-side skil
 - [ui-input-trigger](../ui-input-trigger/README.md) — the inline suggestion machinery the source registers into.
 - [ui-tool](../ui-tool/README.md) — the tool-call presentation layer hosting the `tool.call.toolview` slot.
 - [tool-skill](../../skill/tool-skill/README.md) — the host-side `skill` tool owning the pre-step gesture boundary.
-- [Web input machine and slash pipeline](../../../.agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md) — how references and commands share the input machine.
+- Web input machine and slash pipeline — how references and commands share the input machine.
 
 -----
 

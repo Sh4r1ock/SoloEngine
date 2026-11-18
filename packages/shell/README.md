@@ -42,8 +42,8 @@ A profile layer selects exactly one executor implementation (the win32 layer swa
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Bash executor subsystem](../../docs/subsystems/shell.md) — the shared request/spec vocabulary, results, background processes, and the complete service contract.
-- [Sandbox subsystem](../../docs/subsystems/sandbox.md) — the confinement capability the sandboxing executors consume.
+- Bash executor subsystem — the shared request/spec vocabulary, results, background processes, and the complete service contract.
+- Sandbox subsystem — the confinement capability the sandboxing executors consume.
 
 <a id="dev-note"></a>
 ## Dev Note

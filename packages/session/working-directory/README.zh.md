@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用此包
 
-与 `fs`、`sessionProjections` 和 `systemPrompt` 一起挂载。`defaultDirectory` 为没有原始目录的 Session 指定绝对回退目录；省略时使用启动目录。参见[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-working-directory)。
+与 `fs`、`sessionProjections` 和 `systemPrompt` 一起挂载。`defaultDirectory` 为没有原始目录的 Session 指定绝对回退目录；省略时使用启动目录。参见配置目录。
 
 ```yaml
 - name: '@deepseek-ai/dsh-working-directory'
@@ -52,9 +52,9 @@ Session 投影拥有当前目录，并通过 Session observation 暴露它，因
 <a id="further-exploration"></a>
 ## 进一步阅读
 
-- [工作目录](../../../docs/subsystems/working-directory.zh.md) — 共享运行时行为。
+- 工作目录 — 共享运行时行为。
 - [Session 包组](../README.zh.md) — 持久化 Session 服务。
-- [测试](../../../docs/testing.zh.md) — 组合与回放验证。
+- 测试 — 组合与回放验证。
 
 -----
 

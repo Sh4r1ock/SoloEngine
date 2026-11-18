@@ -35,7 +35,7 @@ kind: "package-group"
 
 - [dsh 应用](../../apps/cli/README.zh.md)——启动 profile 的 `dsh` 命令。
 - [app-boot](../boot/app-boot/README.zh.md)——profile 如何解析、分层与定制。
-- [Profile 插件组合包设计笔记](../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.zh.md)——profile 与组合包的组合设计。
+- Profile 插件组合包设计笔记——profile 与组合包的组合设计。
 - [生成组合图](../../apps/cli/composition.md)——每个随发行版交付的 profile 使用的确切组合。
 
 <a id="dev-note"></a>

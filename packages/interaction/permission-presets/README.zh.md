@@ -59,7 +59,7 @@ kind: "package-reference"
 | `approveForMe.commandPrefixes` | `[]` | 字面 token 前缀；复合 shell 命令的每一段都必须匹配其中之一 |
 | `approveForMe.review` | `false` | 命中规则后请当前会话模型确认；它只能收窄 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-permission-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 保留给推导出的非预设状态，`auto` 则保留给 Auto review integration。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。畸形的命令前缀会让挂载失败，而不是在一个无人能解析的前缀上放行。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 保留给推导出的非预设状态，`auto` 则保留给 Auto review integration。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。畸形的命令前缀会让挂载失败，而不是在一个无人能解析的前缀上放行。
 
 ### approve-for-me 准入
 
@@ -129,9 +129,9 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从预设词汇逐步进入执行旋钮与设计依据。
 
-- [权限预设子系统参考](../../../docs/subsystems/permission-presets.zh.md)——预设表、进程级目录、当前选择与 `ctx.permissionPresets` Cordis API。
-- [历史沙箱切换设计 Agent Note](../../../.agents/notes/archived/feature/2026-07-06-sandbox.md)——沙箱模式与审批策略如何组合与切换。
-- [审批子系统参考](../../../docs/subsystems/approval.zh.md)——此服务捆绑的审批策略旋钮。
+- 权限预设子系统参考——预设表、进程级目录、当前选择与 `ctx.permissionPresets` Cordis API。
+- 历史沙箱切换设计 Agent Note——沙箱模式与审批策略如何组合与切换。
+- 审批子系统参考——此服务捆绑的审批策略旋钮。
 - [交互组映射](../README.zh.md)——相邻的命令、审批与问答包。
 
 -----

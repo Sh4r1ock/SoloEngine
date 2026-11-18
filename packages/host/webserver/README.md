@@ -102,7 +102,6 @@ A listen failure (for example EADDRINUSE) rejects plugin initialization with the
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` service: route tables, fallback seat, index rendering, matching, TLS listener, lifecycle |
 | [`src/injections.ts`](src/injections.ts) | Structured `IndexInjection` rows and `renderIndexInjections` row rendering |
-| [`tests/tls-fixture.ts`](tests/tls-fixture.ts) | Generated TLS material for TLS-listener tests; another suite may materialize the same pair |
 
 </details>
 
@@ -113,10 +112,10 @@ A listen failure (for example EADDRINUSE) rejects plugin initialization with the
 
 Read these when the server contract is not enough: the subsystem reference, then the fallback owner and the layering decision behind who registers which route.
 
-- [HTTP server subsystem](../../../docs/subsystems/web-server.md) — routes, matching order, and the config the server accepts.
+- HTTP server subsystem — routes, matching order, and the config the server accepts.
 - [SPA dist server](../frontend-static/README.md) — the shipped owner of the fallback seat.
 - [Web config-tree boot and transport layering](../../boot/app-boot/README.md) — why feature plugins own every route.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-host-webserver) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 
@@ -148,7 +147,6 @@ These limits define where the server is intentionally minimal. They are current 
 
 Two working notes, both non-authoritative:
 
-- TLS test material is generated at test time (`tests/tls-fixture.ts`), never committed: GitHub push protection rejects PEM private keys even in tests, and the certificate is disposable anyway. The helper issues one self-signed localhost certificate per process, covering 127.0.0.1, `::1`, and `localhost`, and writes the key owner-only.
 - `selfsigned` stays on the 4.x line: 5.x installs two `@peculiar/asn1-schema` copies under pnpm, and its extension builder then throws for every `generate()` call.
 
 </details>

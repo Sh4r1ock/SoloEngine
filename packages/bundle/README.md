@@ -35,7 +35,7 @@ In-box bundles resolve from the dsh installation; out-of-tree bundles install in
 
 - [dsh app](../../apps/cli/README.md) — the `dsh` command that starts a profile.
 - [app-boot](../boot/app-boot/README.md) — how profiles are resolved, layered, and customized.
-- [Profile plugin bundles note](../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.md) — the profile and bundle composition design.
+- Profile plugin bundles note — the profile and bundle composition design.
 - [Generated composition graph](../../apps/cli/composition.md) — the exact composition each shipped profile uses.
 
 <a id="dev-note"></a>

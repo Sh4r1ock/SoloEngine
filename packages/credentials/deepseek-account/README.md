@@ -50,7 +50,7 @@ The service defines account operations without maintaining a second credential i
 <a id="further-exploration"></a>
 ## Further Exploration
 
-The [credentials subsystem](../../../docs/subsystems/credentials.md) owns storage APIs; the [architecture](../../../docs/architecture.md) explains application composition.
+The credentials subsystem owns storage APIs; the architecture explains application composition.
 
 A ready AccountDetails.balance keeps recharge wallets in value and bonus wallets in bonusWallets; both arrays preserve decimal strings and currency. Query failure supplies neither amount.
 
@@ -72,6 +72,6 @@ No model request prefix changes.
 <a id="dev-note"></a>
 ### Dev Note
 
-The [desktop login decision](../../../.agents/notes/implemented/architecture/2026-09-14-deepseek-account-login.md) records cancellation and storage ownership.
+The desktop login decision records cancellation and storage ownership.
 
 PlatformSession may carry Host-only requestHeaders from Host to Electron main: deployment headers only, because the embedded document's client identity is composed where its locale, timezone and version are known. Consumers must exclude those headers from renderer bootstrap and restrict them to the configured origin. userId is Host-only on the same terms and never enters renderer bootstrap. mergePlatformCookies preserves unrelated cookie pairs while replacing matching names.

@@ -140,7 +140,7 @@ The atoms cannot read the application locale, so every piece of user-facing copy
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-`Button` uses H36/R12 for `md` and H28/R8 for `sm`, including outlined controls. The `outline` variant preserves a transparent 0.5px layout border and paints its stroke with an inset shadow. The stroke reads ui-theme's DPR-aware `--dsh-hairline-width`, with a 0.5px fallback outside the theme. Feature classes customize its color through `--dsh-button-outline-color` and preserve the border width, transparent border color, and box-shadow. Menus and cards follow the [shared radius rules](../../../docs/web-styling.md#corner-radii-and-settings-cards); feature classes preserve control geometry.
+`Button` uses H36/R12 for `md` and H28/R8 for `sm`, including outlined controls. The `outline` variant preserves a transparent 0.5px layout border and paints its stroke with an inset shadow. The stroke reads ui-theme's DPR-aware `--dsh-hairline-width`, with a 0.5px fallback outside the theme. Feature classes customize its color through `--dsh-button-outline-color` and preserve the border width, transparent border color, and box-shadow. Menus and cards follow the shared radius rules; feature classes preserve control geometry.
 
 Portalled menus close when their anchor becomes inert or hidden; contextual menus use the original control supplied by `returnFocus`. `isExternalTrigger(node)` lets the caller identify external controls whose pointer presses must reach its toggle handler without outside dismissal. Without this prop, presses outside the anchor and menu panels dismiss, including presses on `returnFocus` targets. `returnFocus` alone only controls focus restoration. While open, a contextual menu adds its ID to that control's `aria-controls` and restores the previous value on close. Their owner’s retained content stays mounted.
 
@@ -150,7 +150,7 @@ Submenu parents show a right chevron and open through focus, click, or hover-cap
 
 `useMenuSubmenu` owns child state, focus transitions, and pointer grace; `SubmenuPanel` renders the portal, and `MenuRow` supplies the shared component, data, and child row presentation. Root document listeners use the hook's containment, active-list, and return operations. Child cards use CSS Anchor Positioning against an unscrolled box inside the parent card that matches the card. A side card opens to the parent's right with a 4px gap and aligns its top edge with the active row; when it does not fit, CSS tries the left side. The hook measures the row's offset within the parent card and the child's natural height on opening, window resize, list scrolling, and observed size changes; the card moves up only as far as needed to stay within the layout viewport, keeping 12px margins and the frame top clearance. `submenuNeedsPage` compares the child's natural width with both sides; when neither fits, an activated child replaces the parent page at the parent's position and at least its width. Pinch zoom moves child cards with the page, as it does parent menus.
 
-`Menu` delegates its card material to `MenuSurface`; custom menus use the same component. `MenuSurface` forwards div props and refs, uses translucent fill and blur, and accepts `compact` for the smaller radius. Its default relative positioning contains the material layer; caller classes can supply fixed or absolute placement. On macOS, its non-interactive backing follows the card through CSS anchors and unmounts with it; the backing requires the Web shell’s isolated body. Feature classes control layout and elevation, while the component owns material and outer radius ([menu rules](../../../docs/web-styling.md#component-rules)). Modal masks retain their dark translucent fill without background blur.
+`Menu` delegates its card material to `MenuSurface`; custom menus use the same component. `MenuSurface` forwards div props and refs, uses translucent fill and blur, and accepts `compact` for the smaller radius. Its default relative positioning contains the material layer; caller classes can supply fixed or absolute placement. On macOS, its non-interactive backing follows the card through CSS anchors and unmounts with it; the backing requires the Web shell’s isolated body. Feature classes control layout and elevation, while the component owns material and outer radius (menu rules). Modal masks retain their dark translucent fill without background blur.
 
 `MenuGroup` renders a `role="group"` section named by its localized heading, with an instance-owned heading id. It shares heading typography, spacing, and sticky positioning between custom menus and listboxes. Headings are transparent at rest; only `data-stuck` enables the theme's 94%-opaque group-header fill in either palette. Outside `data-platform="darwin"`, headings use `--dsw-radius-md` corners; the enclosing menu keeps its translucent material.
 
@@ -205,7 +205,7 @@ These pages place the atoms in the client stack and the design system.
 - [ui-tool](../ui-tool/README.md) — the tool-call presentation layer that composes these output cards.
 - [ui-conversation](../ui-conversation/README.md) — the chat surface that renders markdown replies and tool cards.
 - [ui-theme](../ui-theme/README.md) — the `--dsw-*` token system these atoms style through.
-- [Web styling](../../../docs/web-styling.md) — the authoritative styling rules for web client components.
+- Web styling — the authoritative styling rules for web client components.
 
 -----
 
@@ -244,7 +244,7 @@ These limits define how the atoms behave at the edges; they are current package 
 - **`Pill` and `Input` have no design source** — both atoms are self-defined; the sidebar search field and view-tab strip that resemble them are consumer-owned compositions, not these atoms.
 - **Product icons need the ui-theme sprite** — each icon only references its symbol, so without ui-theme, or inside another document such as an iframe, the icon renders nothing.
 - **No `Active` `StateDot` variant** — the supported states are done, warning, ongoing, error, and idle.
-- **User-facing copy is required at the render site** — the atoms are zero-Cordis and cannot reach `ctx.locale`; each feature must supply complete localized labels through the primitive's typed props ([decision](../../../.agents/notes/implemented/architecture/2026-08-23-locale-owned-client-ui-copy.md)).
+- **User-facing copy is required at the render site** — the atoms are zero-Cordis and cannot reach `ctx.locale`; each feature must supply complete localized labels through the primitive's typed props (decision).
 - **`TerminalBlock` is not a terminal emulator** — it renders settled or still-running command output, not an interactive session: SGR colors, carriage return, backspace, erase-in-line, tab stops, and character width are honored; absolute cursor positioning, screen clearing, and alternate-screen sequences are stripped.
 
 <a id="dev-note"></a>

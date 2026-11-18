@@ -38,7 +38,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循[菜单规则](../../../docs/web-styling.zh.md#component-rules)。
+菜单采用共享 `MenuSurface` 材质，包括用于背景模糊的 macOS 底层；自定义内容遵循菜单规则。
 
 <details>
 <summary>实现细节——点击展开</summary>
@@ -57,7 +57,7 @@ kind: "package-reference"
 - [ui-commands](../ui-commands/README.zh.md)——把 `/` 命令 source 注册进本流水线并拥有命令弹窗外壳。
 - [ui-reference](../ui-reference/README.zh.md)——注册 `@` 文件与会话引用 source。
 - [ui-conversation](../ui-conversation/README.zh.md)——声明输入浮层 slot 并拥有 composer 与输入状态机。
-- [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)——浏览器插件行如何加载并注册 slot。
+- Web 客户端架构——浏览器插件行如何加载并注册 slot。
 
 -----
 

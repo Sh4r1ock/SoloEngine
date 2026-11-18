@@ -56,7 +56,7 @@ For example, ask the model to start a subagent to review the diff and track its 
 | `maxTasks` | `256` | Maximum non-deleted tasks on the board |
 | `defaultEnabled` | `false` | Save Team mode on for new roots without an existing selection |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-team) is the exhaustive source for every accepted field and its JSDoc. A row that sets `maxMembers`, `maxMessageBytes`, or `disposalTimeoutMs` does not activate, and dsh names the key in its startup warning; the upgrade guide lists the replacements.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc. A row that sets `maxMembers`, `maxMessageBytes`, or `disposalTimeoutMs` does not activate, and dsh names the key in its startup warning; the upgrade guide lists the replacements.
 
 ### Teammates
 
@@ -105,7 +105,7 @@ The service is built on four commitments:
 - **Explicit authority.** Every service method takes the exact live calling `Agent`; a task owner or the Lead mutates a task, and only the Lead reassigns one.
 - **Bounds that fail loud.** `maxTasks` is a validated deployment value, and exhaustion reports a typed error instead of reusing an id.
 
-The [inbox-only wait decision](../../../.agents/notes/implemented/simplification/2026-10-29-inbox-only-agent-wait.md) separates task commits from Agent input waiting.
+The inbox-only wait decision separates task commits from Agent input waiting.
 
 ### Source map
 
@@ -147,7 +147,7 @@ Unloading the service unregisters the projection. The retained handle remains re
 
 ### Browser projection
 
-The `agentTeam` projection publishes non-deleted task views and any failure beside the last valid state. Historical roster and mailbox records cannot cause a task-board projection failure. A failed projection rejects task reads and mutations with `TeamError` `TEAM_STATE_CORRUPT` without appending task events. Mode selections can still be saved and applied, including disabling Team; the projection failure remains visible. Invalid mode payloads retain the last valid selection and publish a projection failure. The [subsystem reference](../../../docs/subsystems/agent-team.md#web-projection) defines the wire types.
+The `agentTeam` projection publishes non-deleted task views and any failure beside the last valid state. Historical roster and mailbox records cannot cause a task-board projection failure. A failed projection rejects task reads and mutations with `TeamError` `TEAM_STATE_CORRUPT` without appending task events. Mode selections can still be saved and applied, including disabling Team; the projection failure remains visible. Invalid mode payloads retain the last valid selection and publish a projection failure. The subsystem reference defines the wire types.
 
 The Web UI displays tasks only. Ordinary subagent navigation owns the member list; task owner labels display the owner's full name, or its Session id when the owner has no name.
 
@@ -160,10 +160,10 @@ The Web UI displays tasks only. Ordinary subagent navigation owns the member lis
 
 Read these pages when the package-level contract is not enough. They move from the shared subsystem types to the tool surface and the decisions behind the design.
 
-- [Agent Teams subsystem](../../../docs/subsystems/agent-team.md) — durable Team types and the `ctx.agentTeams` service API.
+- Agent Teams subsystem — durable Team types and the `ctx.agentTeams` service API.
 - [tool-agent-team package](../tool-agent-team/README.md) — task tools and shared-board policy.
 - [Subagent runtime](../../subagent/subagent/README.md) — continuable children, messaging, interruption, and lifecycle that teammates use.
-- [Subagent teammates Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.md) — why teammates are subagents and what Team keeps.
+- Subagent teammates Agent Note — why teammates are subagents and what Team keeps.
 - Upgrade guide — replacements for the removed Team tools, service methods, and configuration keys.
 
 -----

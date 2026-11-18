@@ -51,7 +51,7 @@ When you want to change when reminders fire or which tools they cover, mount the
 | `exclude` | `[]` | These tools are never tracked; calls to them neither count nor reset |
 | `argumentsPreviewChars` | `500` | How many characters of the repeated arguments the detailed reminder shows |
 
-Invalid configuration fails at startup with a clear error — an empty `thresholds` list, a repeat count below 2, or a duplicate — never a silent change of behavior. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-repeat-tool-reminder) documents every accepted value.
+Invalid configuration fails at startup with a clear error — an empty `thresholds` list, a repeat count below 2, or a duplicate — never a silent change of behavior. The generated configuration catalog documents every accepted value.
 
 ### What you get
 
@@ -105,8 +105,8 @@ Reminders ride the post-execute decision's `additionalContexts` (source `{kind: 
 
 Read these pages when the package-level contract is not enough. They move from the tools waterfall to exhaustive configuration and the guard group map.
 
-- [Tools subsystem reference](../../../docs/subsystems/tools.md) — the `tools/execute` waterfall, `additionalContexts`, and decision shapes this guard consumes.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-repeat-tool-reminder) — every accepted config field and its source declaration.
+- Tools subsystem reference — the `tools/execute` waterfall, `additionalContexts`, and decision shapes this guard consumes.
+- Generated configuration catalog — every accepted config field and its source declaration.
 - [guard group map](../README.md) — the sibling guard packages and the loop-hygiene family.
 
 -----
@@ -180,6 +180,6 @@ These limits define when the guard is a poor fit. They are current package const
 
 This Dev Note is working context for maintainers: open questions and directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
-The [repeat-tool-guard feature note](../../../.agents/notes/archived/feature/2026-07-08-repeat-tool-guard.md) records the original design and alternatives under the former package name; the [naming ledger](../../../.agents/notes/archived/architecture/2026-08-11-repository-naming-contract-and-rename-ledger.md) records the rename to `repeat-tool-reminder` and its reason.
+The repeat-tool-guard feature note records the original design and alternatives under the former package name; the naming ledger records the rename to `repeat-tool-reminder` and its reason.
 
 </details>

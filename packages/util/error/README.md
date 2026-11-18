@@ -33,7 +33,7 @@ export class ArchiveError extends HarnessError {}
 throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 ```
 
-Assign `this.name` a string literal in a subclass constructor when a bundler could rename the class, because `name` is persisted. Import the class from `@deepseek-ai/dsh-error` or from its `@deepseek-ai/dsh-llm` re-export; both name the same class, so `instanceof` checks agree. The [error handling skill](../../../.agents/skills/dsh-error-handling/SKILL.md) defines class choice, naming, and code conventions.
+Assign `this.name` a string literal in a subclass constructor when a bundler could rename the class, because `name` is persisted. Import the class from `@deepseek-ai/dsh-error` or from its `@deepseek-ai/dsh-llm` re-export; both name the same class, so `instanceof` checks agree. The error handling skill defines class choice, naming, and code conventions.
 
 -----
 
@@ -60,8 +60,8 @@ Assign `this.name` a string literal in a subclass constructor when a bundler cou
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Tools subsystem](../../../docs/subsystems/tools.md) — how the registry records `ToolErrorInfo` from a thrown `HarnessError`.
-- [Error-handling rules](../../../.agents/skills/dsh-error-handling/SKILL.md) — when code must throw a `HarnessError`.
+- Tools subsystem — how the registry records `ToolErrorInfo` from a thrown `HarnessError`.
+- Error-handling rules — when code must throw a `HarnessError`.
 
 -----
 

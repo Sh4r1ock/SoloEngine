@@ -47,7 +47,7 @@ kind: "package-reference"
 |---|---|---|
 | `section` | 必填 | 计划模式激活时作为 `plan:policy` 提示词段落渲染的引导 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-plan-mode)完整列出了所有受支持的字段及其 JSDoc。
+生成的配置目录完整列出了所有受支持的字段及其 JSDoc。
 
 <a id="model-and-human-interactions"></a>
 ### 进入与离开计划模式
@@ -118,11 +118,11 @@ agent 完成计划后，会以 markdown 形式、从标题开头书写计划并�
 
 当包级约定不够用时阅读以下页面。它们从子系统语义逐步进入生成的目录与设计决策。
 
-- [计划模式子系统参考](../../../docs/subsystems/plan.zh.md)——计划模式的行为、配置与退出工具的约定。
+- 计划模式子系统参考——计划模式的行为、配置与退出工具的约定。
 - [plan/ 包映射](../README.zh.md)——本组及其唯一的包。
-- [`exit_plan_mode` 工具目录条目](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plan-mode)——模型收到的确切 schema。
-- [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-plan-mode)——每个受支持配置字段及其含义。
-- [已归档的plan 专用协作状态](../../../.agents/notes/archived/simplification/2026-07-22-plan-specific-collaboration-state.md)——计划模式背后的设计决策。
+- `exit_plan_mode` 工具目录条目——模型收到的确切 schema。
+- 生成的配置目录——每个受支持配置字段及其含义。
+- 已归档的plan 专用协作状态——计划模式背后的设计决策。
 
 -----
 
@@ -167,7 +167,7 @@ You are in plan mode. Explore and design before presenting the complete plan thr
 
 #### 模型看到什么
 
-[`exit_plan_mode` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-plan-mode) 从会话首次进入计划模式起提供；此前的调用返回 `UNKNOWN_TOOL`，离开计划模式后的调用会以计划模式之外不可用而失败。模式内获批的评审返回规范值 `{ approved: true }` 并渲染现有确认文本。拒绝仍是以 `PLAN_REVISION_REQUESTED` 失败并携带评审反馈的调用。放弃评审返回 `{ approved: false }`，渲染一条说明用户将自行回复的文本，并结束当前轮次，不再发起模型请求。
+`exit_plan_mode` schema 从会话首次进入计划模式起提供；此前的调用返回 `UNKNOWN_TOOL`，离开计划模式后的调用会以计划模式之外不可用而失败。模式内获批的评审返回规范值 `{ approved: true }` 并渲染现有确认文本。拒绝仍是以 `PLAN_REVISION_REQUESTED` 失败并携带评审反馈的调用。放弃评审返回 `{ approved: false }`，渲染一条说明用户将自行回复的文本，并结束当前轮次，不再发起模型请求。
 
 #### Token 影响
 

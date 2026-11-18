@@ -34,9 +34,9 @@ The storage group keeps non-session application data across restarts, including 
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Storage subsystem](../../docs/subsystems/storage.md) — the authoritative contract: the backend contract, domain declaration, change events, and generated API.
-- [domain KV storage Agent Note](../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — the design behind the family, the workspace consumer, and the deferred session-backend migration.
-- [Workspace subsystem](../../docs/subsystems/workspace.md) — the first consumer of the domain data form.
+- Storage subsystem — the authoritative contract: the backend contract, domain declaration, change events, and generated API.
+- domain KV storage Agent Note — the design behind the family, the workspace consumer, and the deferred session-backend migration.
+- Workspace subsystem — the first consumer of the domain data form.
 
 -----
 

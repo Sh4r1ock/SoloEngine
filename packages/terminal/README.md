@@ -36,9 +36,9 @@ This group contains one session service and one shell backend. Each child README
 
 Start with the subsystem reference for the shared types and the service surface, then the Agent Note for the design rationale and deferred boundaries.
 
-- [Terminal subsystem reference](../../docs/subsystems/terminal.md) — ids, backend and session contracts, send readiness, bounded reads, and the generated `ctx.terminals` API.
-- [Persistent PTY Agent Note](../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.md) — the design decision, alternatives, and deferred work.
-- [Capability seams](../../docs/capability-seams.md) — the Service Definition / Service Provider / Consumer split this family follows.
+- Terminal subsystem reference — ids, backend and session contracts, send readiness, bounded reads, and the generated `ctx.terminals` API.
+- Persistent PTY Agent Note — the design decision, alternatives, and deferred work.
+- Capability seams — the Service Definition / Service Provider / Consumer split this family follows.
 
 See [`tool-terminal`](../experimental/tool-terminal/README.md) for the experimental optional capability.
 

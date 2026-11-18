@@ -81,7 +81,7 @@ rmSync(tempDir, { recursive: true, force: true })
 
 一次运行同时完成诊断与修复。脚本没有模式开关：它读取请求路径及每一级祖先，为链路上缺少有效 `WRITE_DAC` 或 `WRITE_OWNER` 的目录补上当前用户的完全控制允许 ACE，并从祖先开始在其来源移除显式包允许 ACE，每处改动都通过重新读取来验证。修复保留拒绝条目、所有者、继承和 SACL，并备份每个被修改的 DACL。仅当对象就是 `-AllowRoot` 或严格位于其内部时才会被修改，因此工作区根目录可以自我修复；重解析路径和受管理的应用目录会被拒绝，修复需要有效的 `WRITE_DAC`。修复失败时按相反顺序恢复尝试修改的内容，并以非零状态退出。单条命令、原始操作验证及恢复流程见[内置技能](assets/diagnose-windows-sandbox-acl/SKILL.md)。
 
-每次执行都会打印包含观察、操作、原因和验证结果的 `REPORT` JSON 记录，最后给出一行 `RECAP`（判定、改动、验证、拒绝与扫描结果）以及含计数、恢复命令和 `nextAction` 的摘要；未知观察保持未知。同一次执行还会把全部记录写入 `-Out\acl-report-*.jsonl`，因为工具输出只保留末尾部分。`-Out` 同时为每次改动写入两个恢复文件：该对象在本次改动前拥有的 DACL，以及用于恢复它的独立脚本。操作完成记录 API 执行情况，验证记录实际观察到的结果。[恢复决策](../../../.agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.zh.md#acl-diagnosis-and-recovery) 说明资源归属和回滚限制。
+每次执行都会打印包含观察、操作、原因和验证结果的 `REPORT` JSON 记录，最后给出一行 `RECAP`（判定、改动、验证、拒绝与扫描结果）以及含计数、恢复命令和 `nextAction` 的摘要；未知观察保持未知。同一次执行还会把全部记录写入 `-Out\acl-report-*.jsonl`，因为工具输出只保留末尾部分。`-Out` 同时为每次改动写入两个恢复文件：该对象在本次改动前拥有的 DACL，以及用于恢复它的独立脚本。操作完成记录 API 执行情况，验证记录实际观察到的结果。恢复决策 说明资源归属和回滚限制。
 
 检查会从请求对象逐级访问祖先，直到文件系统根目录。每条 ACL 观察的 `path` 标识实际检查的对象；分类结果的 `details.packageObjects` 列出包含包允许 ACE 的对象，但不能据此确认原始失败的原因。每次包 ACE 移除都按对象验证：把记录下来的自身 ACE 与重新读取的 DACL 比对，因此与被移除允许项共用 SID 的拒绝条目仍会出现在验证详情中。
 
@@ -154,12 +154,12 @@ seam 先把确定性工作区 SID 的 ACE 常驻物化（每个工作区每服�
 
 先从子系统参考文档了解共享词汇，再看挂载此档的提供方、其消费方与设计决策。
 
-- [进程沙箱子系统](../../../docs/subsystems/sandbox.zh.md)——模式、逐调用策略与强制执行语义。
+- 进程沙箱子系统——模式、逐调用策略与强制执行语义。
 - [本地沙箱后端](../sandbox-local/README.zh.md)——把此后端挂载为 win32 档的提供方。
 - [沙箱 seam 包](../sandbox/README.zh.md)——此后端实现的服务约定。
 - [Win32 进程库](../../subprocess/win32-process/README.zh.md)——共享的受限进程、stdio、Job、等待与句柄清理原语。
 - [Bash 沙箱执行器](../../shell/bash-sandbox/README.zh.md)与[pwsh 沙箱执行器](../../shell/pwsh-sandbox/README.zh.md)——消费它的受限执行器。
-- [Windows ACL 受限令牌沙箱决策](../../../.agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.zh.md)——为何选择原始 ACL 受限令牌而非 mxc 与 AppContainer。
+- Windows ACL 受限令牌沙箱决策——为何选择原始 ACL 受限令牌而非 mxc 与 AppContainer。
 
 -----
 

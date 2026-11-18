@@ -45,7 +45,7 @@ Load the package with a composition entry; the only deployment choice is the def
 |---|---|---|
 | `defaultMaxGoalRounds` | `256` | Round cap applied when a create request omits its own |
 
-`defaultMaxGoalRounds` must be a positive safe integer; a create request that names its own cap overrides it. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-goal) is the exhaustive source for every accepted field.
+`defaultMaxGoalRounds` must be a positive safe integer; a create request that names its own cap overrides it. The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### Session projection
 
@@ -123,10 +123,10 @@ This section explains how the service realizes the behavior above; the observabl
 
 The package-level contract is enough for most consumers; read these when you need the surrounding domain and the design rationale.
 
-- [Goal subsystem](../../../docs/subsystems/goal.md) — the goal types, durable change payloads, and generated service API.
+- Goal subsystem — the goal types, durable change payloads, and generated service API.
 - [Goal group map](../README.md) — the goal packages and how they compose.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-goal) — every accepted config field and its source declaration.
-- [historical Goal domain Agent Note](../../../.agents/notes/archived/feature/2026-07-19-persisted-same-session-goal-domain.md) — the domain design, alternatives, and decisions.
+- Generated configuration catalog — every accepted config field and its source declaration.
+- historical Goal domain Agent Note — the domain design, alternatives, and decisions.
 
 -----
 

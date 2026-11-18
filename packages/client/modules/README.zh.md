@@ -124,7 +124,7 @@ bundle 路由随注入的 `webServer` 生命周期注册：服务就绪时注册
 
 当模块约定不够用时阅读以下页面：子系统参考、启动插件树的外壳，以及图背后的客户端编写规则。
 
-- [客户端模块子系统](../../../docs/subsystems/client-modules.zh.md)——web 插件表、`WebBootGraph` 协议与 bundle 路由。
+- 客户端模块子系统——web 插件表、`WebBootGraph` 协议与 bundle 路由。
 - [Web 启动内核](../web/README.zh.md)——创建模块系统并启动插件树的外壳。
 - [客户端 HMR 驱动器](../hmr/README.zh.md)——在重建 bundle 上驱动 `invalidate`/`prefetch` 的重载链路。
 - [客户端编写规则](../AGENTS.md#shared-modules-and-the-module-graph)——共享模块基座与 `dsh.client.external` 语义。

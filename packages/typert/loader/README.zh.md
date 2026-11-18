@@ -40,7 +40,7 @@ kind: "package-reference"
 |---|---|---|
 | `packages` | `[]` | 为嵌套在另一 Loader 配置项下的插件额外注册的包产物；每个包都必须能从配置树解析，并导出 `./typert` |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-typert-loader)是所有受支持字段的完整真源。
+生成的配置目录是所有受支持字段的完整真源。
 
 ### 注册什么
 
@@ -91,7 +91,7 @@ kind: "package-reference"
 
 - [Typert 注册表](../registry/README.zh.md)——本插件所供给的服务。
 - [Typert 生成器](../generator/README.zh.md)——产生 loader 所导入产物的包。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-typert-loader)——`packages` 字段声明及其 JSDoc。
+- 生成配置目录——`packages` 字段声明及其 JSDoc。
 - [Typert 组地图](../README.zh.md)——完整的类型反射流水线。
 
 -----

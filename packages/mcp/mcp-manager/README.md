@@ -73,7 +73,7 @@ A profile’s `cordis.patch.yml` replaces the entry’s complete `servers` map. 
 | `startupTimeoutMs` | `30,000` | Budget for template resolution, negotiation, connection, and initial tool discovery |
 | `toolCallTimeoutMs` / `closeTimeoutMs` / `reconnect` | mcp-client defaults | Per-server overrides |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-mcp-manager) is the exhaustive source for every accepted field.
+The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### Managing configured servers
 
@@ -155,7 +155,7 @@ Read these pages when the package-level contract is not enough.
 - [mcp-client README](../mcp-client/README.md) — the per-instance bridge: naming, reconnect policy, tool execution, status surface.
 - [Settings package README](../../settings/settings/README.md) — the Config forms, inheritance, revision checks, and profile writes the manager uses.
 - [Credentials group README](../../credentials/README.md) — the credential references `${credential:…}` templates resolve.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-mcp-manager) — every accepted config field.
+- Generated configuration catalog — every accepted config field.
 - MCP manager Agent Note — the design decisions, peer-product survey, and rejected alternatives.
 
 -----

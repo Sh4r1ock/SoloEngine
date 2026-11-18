@@ -130,11 +130,11 @@ Host 与 Client 是两个独立的 TypeScript 程序。直接项目引用确定�
 
 当包级约定不够用时阅读以下页面；它们从生成模型逐步进入运行时与 Remote 调用路径。
 
-- [Typert 子系统参考](../../../docs/subsystems/typert.zh.md)——生成器建模的 Remote 约定与注册表接口。
+- Typert 子系统参考——生成器建模的 Remote 约定与注册表接口。
 - [Typert 协议](../protocol/README.zh.md)——生成产物所扩展并消费的声明。
 - [Typert 注册表](../registry/README.zh.md)——生成产物所供给的运行时存储。
-- [API 网关参考](../../../docs/api-gateway.zh.md)——生成的 Remote 描述符如何端到端被调用。
-- [与编译器无关的模型 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-27-compiler-independent-typert-model.zh.md)——模型设计、备选方案与后果。
+- API 网关参考——生成的 Remote 描述符如何端到端被调用。
+- 与编译器无关的模型 Agent Note——模型设计、备选方案与后果。
 
 -----
 

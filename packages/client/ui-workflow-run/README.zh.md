@@ -65,7 +65,7 @@ kind: "package-reference"
 - [tool-workflow](../../workflow/tool-workflow/README.zh.md)——拥有四类 `tool-workflow/*` 会话事件的工具。
 - [ui-conversation](../ui-conversation/README.zh.md)——承载 `conversation.chat.node` slot 的聊天界面。
 - [ui-tool](../ui-tool/README.zh.md)——本节点相邻的工具调用展示层。
-- [Conversation 子系统](../../../docs/subsystems/conversation.zh.md)——业务自有功能如何注册 Conversation node。
+- Conversation 子系统——业务自有功能如何注册 Conversation node。
 
 -----
 

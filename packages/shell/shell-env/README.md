@@ -60,7 +60,7 @@ The single config field picks the home directory exposed as `DSH_HOME`; the defa
 |---|---|---|
 | `dshHome` | `$DSH_HOME`, then `~/.dsh` | Absolute Harness home exposed as `DSH_HOME` |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-shell-env) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### What can go wrong
 
@@ -103,11 +103,11 @@ This section explains the design decisions behind the registry and points at the
 Read these pages when the package-level contract is not enough. They move from the shell family to the executor seam and the generated catalogs.
 
 - [shell package map](../README.md) — the bash capability family and its roles.
-- [Bash executor subsystem](../../../docs/subsystems/shell.md) — the `ctx.shell` seam the tools execute through.
+- Bash executor subsystem — the `ctx.shell` seam the tools execute through.
 - [tool-bash](../tool-bash/README.md) — the bash tool that consumes this environment.
 - [tool-pwsh](../tool-pwsh/README.md) — the pwsh tool that consumes this environment.
 - [home paths package](../../util/home-paths/README.md) — how `DSH_HOME` is resolved.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-shell-env) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

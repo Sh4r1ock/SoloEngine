@@ -73,7 +73,6 @@ const userId = getOrCreateAnonymousUserId() // stable for the process lifetime
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 库入口：`getOrCreateAnonymousUserId`、文件持久化、按路径记忆化 |
-| [`tests/anonymous-user-id.spec.ts`](tests/anonymous-user-id.spec.ts) | 测试覆盖的行为：生成、持久化、损坏、并发、记忆化 |
 
 ### API
 
@@ -97,7 +96,7 @@ const userId = getOrCreateAnonymousUserId() // stable for the process lifetime
 - [dsh-session-telemetry-otel](../../session/session-telemetry-otel/README.zh.md)——将该 id 作为 OTel Resource `user.id` 上报。
 - [dsh-command-feedback](../../feedback/command-feedback/README.zh.md)——将 id 嵌入反馈确认。
 - [dsh-llm-deepseek](../../llm/llm-deepseek/README.zh.md)——在提供方请求中发送 `x-deepseek-harness-user-id`。
-- [会话遥测子系统](../../../docs/subsystems/session-telemetry.zh.md)——遥测 seam 及其后端约定。
+- 会话遥测子系统——遥测 seam 及其后端约定。
 
 -----
 

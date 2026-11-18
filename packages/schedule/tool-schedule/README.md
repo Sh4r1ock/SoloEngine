@@ -37,7 +37,7 @@ One shared `tool:schedule` system-prompt section requires explicit user authoriz
 
 ### The four tools
 
-- `schedule_create(title, prompt, rrule, target)` — Create one task; all four inputs are required. `title` has at most 120 characters and names the action and object in the user's language; keep timing, status, and ids in their fields. `prompt` is the instruction delivered at each occurrence, and `rrule` is one `DTSTART` line and one `RRULE` line in the [RFC 5545 subset of Schedule](../../../docs/subsystems/schedule.md#rrule-input). Returns the task with its generated id.
+- `schedule_create(title, prompt, rrule, target)` — Create one task; all four inputs are required. `title` has at most 120 characters and names the action and object in the user's language; keep timing, status, and ids in their fields. `prompt` is the instruction delivered at each occurrence, and `rrule` is one `DTSTART` line and one `RRULE` line in the RFC 5545 subset of Schedule. Returns the task with its generated id.
 - `schedule_list(active?, limit?, offset?)` — List one page of every Host task, including tasks that other Sessions created. Active tasks come first by next occurrence, and paused and ended tasks follow, newest first. `active: true` keeps only active tasks and `active: false` only paused and ended tasks; `limit` is 1 through 500 and defaults to 100.
 - `schedule_view(id)` — Read one task by id. An unknown id returns `{ id, code: 'schedule_not_found' }`.
 - `schedule_edit(id, action, ...)` — An `update` changes at least one of `title`, `prompt`, `rrule`, `target`, and `active`; `active: false` pauses the task and `active: true` resumes it. Resume needs a future occurrence; supply a new `rrule` if the old rule is exhausted. With `expectedUpdatedAt`, an update or delete of a task that changed after that read returns `schedule_conflict` and changes nothing. A `delete` accepts no patch field and removes the task with its saved deliveries.
@@ -77,9 +77,9 @@ The plugin registers four `defineTool` definitions and one `tool:schedule` syste
 
 - [Schedule service](../schedule/README.md) — the Host task store, runtime, and delivery behavior these tools manage.
 - [Schedule group map](../README.md) — the sibling packages in this group.
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-schedule) — the exact four schemas the model receives.
-- [Schedule subsystem](../../../docs/subsystems/schedule.md) — the `ctx.schedule` Cordis surface and stored types.
-- [Schedule user guide](../../../docs/user/guide/schedule.md) — the user-facing scheduled task workflow.
+- Generated tool catalog — the exact four schemas the model receives.
+- Schedule subsystem — the `ctx.schedule` Cordis surface and stored types.
+- Schedule user guide — the user-facing scheduled task workflow.
 
 -----
 
@@ -110,7 +110,7 @@ Prefix-stable while the section text and mutation-tool visibility are unchanged.
 
 #### What the model sees
 
-The generated [`schedule_create`, `schedule_list`, `schedule_view`, and `schedule_edit` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-schedule) whenever this package is visible in the calling Agent's scope. The catalog shows the default configuration; the `target` description of `schedule_create` adds the configured spacing of `new` deliveries when it exceeds one minute.
+The generated `schedule_create`, `schedule_list`, `schedule_view`, and `schedule_edit` schemas whenever this package is visible in the calling Agent's scope. The catalog shows the default configuration; the `target` description of `schedule_create` adds the configured spacing of `new` deliveries when it exceeds one minute.
 
 #### Token effect
 

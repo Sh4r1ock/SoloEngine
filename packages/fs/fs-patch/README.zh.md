@@ -42,7 +42,7 @@ if (operation?.kind === 'update') {
 <a id="compatibility"></a>
 ## 兼容性
 
-参照实现为 [OpenAI Codex rust-v0.158.0](https://github.com/openai/codex/tree/rust-v0.158.0/codex-rs/apply-patch/src)：语法参照 `parser.rs` 和 `streaming_parser.rs`，匹配及 `NormalizeToLf` 重建参照 `seek_sequence.rs` 和 `file_update.rs`。`text_file.rs` 说明独立的换行保留表示。[解析器测试](tests/parse.spec.ts) 与[文本测试](tests/apply.spec.ts) 改编选定的上游用例，包括 `file_update_tests.rs` 和 `lib.rs`。[LICENSE](LICENSE) 在 DeepSeek 贡献的 MIT 许可证之外，保留 OpenAI 署名与 Apache-2.0 条款。
+参照实现为 [OpenAI Codex rust-v0.158.0](https://github.com/openai/codex/tree/rust-v0.158.0/codex-rs/apply-patch/src)：语法参照 `parser.rs` 和 `streaming_parser.rs`，匹配及 `NormalizeToLf` 重建参照 `seek_sequence.rs` 和 `file_update.rs`。`text_file.rs` 说明独立的换行保留表示。[LICENSE](LICENSE) 在 DeepSeek 贡献的 MIT 许可证之外，保留 OpenAI 署名与 Apache-2.0 条款。
 
 ### 解析
 
@@ -84,7 +84,7 @@ if (operation?.kind === 'update') {
 <details>
 <summary>实现内部机制——点击展开</summary>
 
-[解析器](src/parse.ts) 构建语法记录，不依赖 Session 或提供方。[文本更新器](src/apply.ts) 先在原文本中定位每个 hunk，再构建完整结果。[类型](src/types.ts) 携带语法位置与匹配失败；[文件系统参考](../../../docs/subsystems/filesystem.zh.md#patch-syntax-records) 维护公开类型定义。
+[解析器](src/parse.ts) 构建语法记录，不依赖 Session 或提供方。[文本更新器](src/apply.ts) 先在原文本中定位每个 hunk，再构建完整结果。[类型](src/types.ts) 携带语法位置与匹配失败；文件系统参考 维护公开类型定义。
 
 </details>
 

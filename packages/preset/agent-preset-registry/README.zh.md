@@ -73,7 +73,7 @@ preset 的服务提供方及其消费方必须共享同一个 `cordis:group` 隔
 
 - [Scope](../../core/scope/README.zh.md) — 注册隔离。
 - [Agent](../../core/agent/README.zh.md) — 会话运行时。
-- [Cordis](../../../docs/cordis-primer.zh.md) — 插件配置与生命周期。
+- Cordis — 插件配置与生命周期。
 
 <a id="model-experience"></a>
 ## 模型体验

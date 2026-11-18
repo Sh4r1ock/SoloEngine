@@ -5,7 +5,6 @@
   "format": ["typescript", "tsx"],
   "pattern": "**/*.{ts,tsx}",
   "ignore": [
-    "**/tests/**",
     "**/tsdown.config.ts",
     "packages/soloengine/session-persistence-postgres/src/**",
     "packages/soloengine/session-query-postgres/src/**",

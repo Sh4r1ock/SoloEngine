@@ -74,11 +74,11 @@ The seam is built on one separation: the interaction shape a backend provides is
 
 Read these when the seam contract is not enough: the decision record first, then the two backends and the adaptive chooser that compose it.
 
-- [Directory-picker capability seam decision](../../../.agents/notes/archived/architecture/2026-07-28-directory-picker-capability-seam.md) — design rationale, the `ctx.fs` separation, and the policy decisions.
+- Directory-picker capability seam decision — design rationale, the `ctx.fs` separation, and the policy decisions.
 - [Native backend](../directory-picker-native/README.md) — the OS-chooser interaction and its platform tooling.
 - [Browse backend](../directory-picker-browse/README.md) — the in-app listing and creation interaction for remote clients.
 - [Adaptive chooser](../directory-picker-auto/README.md) — boot-time resolution between the two backends.
-- [Workspace subsystem](../../../docs/subsystems/workspace.md) — the workspace records the picked directory feeds.
+- Workspace subsystem — the workspace records the picked directory feeds.
 
 -----
 

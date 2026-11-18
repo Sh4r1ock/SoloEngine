@@ -34,7 +34,7 @@ kind: "package-reference"
 ## 进一步探索
 
 - [Client 模块](../modules/README.zh.md)
-- [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)
+- Web 客户端架构
 - [Client 入口](src/client/index.ts)
 
 <a id="model-experience"></a>

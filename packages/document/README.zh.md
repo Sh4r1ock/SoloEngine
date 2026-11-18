@@ -36,8 +36,8 @@ kind: "package-group"
 
 消费者负责源文件授权与展示。
 
-- [文档转换](../../docs/subsystems/office-kit.zh.md) — 共享操作和生成的服务参考。
-- [独立 kit 所有权](../../.agents/notes/implemented/architecture/2026-09-14-independent-libreoffice-kit.zh.md) — 引擎分发与应用集成。
+- 文档转换 — 共享操作和生成的服务参考。
+- 独立 kit 所有权 — 引擎分发与应用集成。
 - [工作区文件](../api/workspace-files/README.zh.md) — 已授权的有界源文件读取。
 
 <a id="dev-note"></a>

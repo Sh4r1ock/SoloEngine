@@ -45,7 +45,7 @@ Web bundle 挂载此插件。Client 入口向 `ctx.uiConversation.interactions` 
 ## 延伸阅读
 
 - [Session 包索引](../README.zh.md) — 相关持久化和投影包。
-- [Conversation 子系统](../../../docs/subsystems/conversation.zh.md) — 编辑器和对话呈现消费方。
+- Conversation 子系统 — 编辑器和对话呈现消费方。
 
 -----
 

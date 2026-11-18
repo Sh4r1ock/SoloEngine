@@ -36,7 +36,7 @@ The boot group launches profile applications and manages their installed composi
 - [dsh-home-paths](../util/home-paths/README.md) — the harness-home resolver both packages build on.
 - [dsh-cmdline](cmdline/README.md) — how an app owns its flag family instead of the launcher.
 
-- [Profile management](../../docs/subsystems/boot.md) — service methods and result records.
+- Profile management — service methods and result records.
 
 <a id="dev-note"></a>
 ## Dev Note

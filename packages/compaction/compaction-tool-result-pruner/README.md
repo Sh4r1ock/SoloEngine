@@ -45,7 +45,7 @@ Every tool result whose text exceeds the threshold is replaced by a trimmed vers
 
 ### Setting the size limits
 
-All settings are optional; the defaults trim any result with more than 8,192 text characters to its first 4,096 plus its last 1,024, joined by the marker. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-compaction-tool-result-pruner) is the exhaustive source.
+All settings are optional; the defaults trim any result with more than 8,192 text characters to its first 4,096 plus its last 1,024, joined by the marker. The generated configuration catalog is the exhaustive source.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -100,9 +100,9 @@ Read these pages when the package-level contract is not enough; they move from t
 
 - [Compaction basic backend](../compaction-basic/README.md) — the backend that trims oversized tool outputs before condensing.
 - [Compaction seam](../compaction/README.md) — the condensation contract this package plugs into.
-- [Compaction subsystem reference](../../../docs/subsystems/compaction.md) — the condensation vocabulary, results, and service behavior.
+- Compaction subsystem reference — the condensation vocabulary, results, and service behavior.
 - [Token meter](../../llm/token-meter/README.md) — the measurement service that decides whether trimming relieved pressure.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-compaction-tool-result-pruner) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

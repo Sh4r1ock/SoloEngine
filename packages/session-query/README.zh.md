@@ -37,9 +37,9 @@ kind: "package-group"
 
 先从子系统参考了解共享的查询词汇，再看追踪与搜索背后的设计记录。
 
-- [会话查询子系统参考](../../docs/subsystems/session-query.zh.md)——逻辑记录、过滤器、搜索页、血缘、有界读取与事件关系。
-- [会话查询关系追踪](../../.agents/notes/archived/feature/2026-07-13-session-query-tracing.md)——追踪语义与校验边界。
-- [SQLite FTS5 会话搜索](../../.agents/notes/archived/feature/2026-07-10-sqlite-session-query-provider.md)——搜索语义、对账与 tokenizer 决策。
+- 会话查询子系统参考——逻辑记录、过滤器、搜索页、血缘、有界读取与事件关系。
+- 会话查询关系追踪——追踪语义与校验边界。
+- SQLite FTS5 会话搜索——搜索语义、对账与 tokenizer 决策。
 
 <a id="dev-note"></a>
 ## 开发备注

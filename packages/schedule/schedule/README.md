@@ -58,9 +58,9 @@ The service requires `agents`, `sessions`, `storageDomain`, and `sessionPersiste
 | `deliveryHistoryRecords` | `200` | Retain the newest 1–10,000 receipts per task. |
 | `newSessionIntervalSeconds` | `60` | Delivery floor for `new` targets, from 60 through 604,800 seconds. |
 
-The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-schedule) defines all fields. Remote `deliveryLimits()` exposes the effective new-Session interval for UI hints.
+The configuration catalog defines all fields. Remote `deliveryLimits()` exposes the effective new-Session interval for UI hints.
 
-Create with `create({ title, prompt, timing, target? }, actorSessionId?, signal?)`. `timing.kind` selects `after`, `at`, `every`, `daily`, `weekly`, `cron`, or `rrule`; only its corresponding selector is accepted. The [Schedule reference](../../../docs/subsystems/schedule.md#recurrence-rules) defines each selector and its bounds. For example:
+Create with `create({ title, prompt, timing, target? }, actorSessionId?, signal?)`. `timing.kind` selects `after`, `at`, `every`, `daily`, `weekly`, `cron`, or `rrule`; only its corresponding selector is accepted. The Schedule reference defines each selector and its bounds. For example:
 
 ```json
 {"title":"Deploy check","prompt":"Check the deployment.","timing":{"kind":"cron","cron":{"expression":"*/15 9-17 * * 1-5","time_zone":"Asia/Shanghai"}},"target":{"kind":"new_once"}}
@@ -68,7 +68,7 @@ Create with `create({ title, prompt, timing, target? }, actorSessionId?, signal?
 
 RRULE timing uses `{ kind: "rrule", rrule: "DTSTART:…\nRRULE:…" }`. The model tools teach RRULE; the Web Custom editor also accepts five-field Cron with an explicit zone. Titles are required, trimmed, and at most 120 characters; prompts are non-empty.
 
-The `session` target reuses an existing, unarchived, non-delegated Session; unloaded targets are validated through the header-only `SessionPersistence.stat()` read without activation or history replay. The default `new_once` reserves one Session id, creates it on first delivery, and reuses it. The `new` target creates a fresh Session per delivery. Arming either creating target requires the Session creation provider. Optional `create` values select the directory and preset; omitted values use Host defaults. See [delivery targets](../../../docs/subsystems/schedule.md#delivery-targets) for creation, naming, reuse, and archive admission.
+The `session` target reuses an existing, unarchived, non-delegated Session; unloaded targets are validated through the header-only `SessionPersistence.stat()` read without activation or history replay. The default `new_once` reserves one Session id, creates it on first delivery, and reuses it. The `new` target creates a fresh Session per delivery. Arming either creating target requires the Session creation provider. Optional `create` values select the directory and preset; omitted values use Host defaults. See delivery targets for creation, naming, reuse, and archive admission.
 
 `edit({ id, action: "update", patch, expectedUpdatedAt? }, actorSessionId?, signal?)` changes `title`, `prompt`, `timing`, `target`, or `active`; `action: "delete"` removes the task. Revision mismatch returns `schedule_conflict`; `null` compares an absent stored revision. An equivalent edit preserves the committed occurrence and writes the current format. Pause keeps the task; resume computes its next future occurrence.
 
@@ -113,7 +113,7 @@ One current JSON task has this envelope; the table key must equal `record.id`:
 | `status` | `active`, `paused`, or `ended`; omission means `active`, and old `inactive` means `ended`. |
 | `involvedSessionIds` | Notification destinations; omission starts with the reusable/reserved target or `[]` for `new`. |
 | `createdAt`, `updatedAt` | Optional known timestamps. Unknown historical values stay absent. |
-| `lastDelivery`, `deliveryHistory` | Optional receipt and history. A missing history exposes the latest receipt and marks earlier records unavailable; no prompt or destination is invented. [Saved deliveries](../../../docs/subsystems/schedule.md#saved-delivery-records) defines receipt fields and retention. |
+| `lastDelivery`, `deliveryHistory` | Optional receipt and history. A missing history exposes the latest receipt and marks earlier records unavailable; no prompt or destination is invented. Saved deliveries defines receipt fields and retention. |
 | `pendingDelivery` | Optional `{ targetSessionId }` reservation before creating a per-delivery Session. |
 
 Current writers store explicit target, status, involvement, and history, omit top-level `sessionId`, and keep timestamps absent when unknown. Both versions decode into one task type using optional fields and defaults, without row-level versions. Existing timing kinds and committed occurrences are preserved. Custom text starting with `DTSTART` selects RRULE; other text selects Cron with the chosen zone, and the Host validates it. Model authoring tools expose RRULE only; user labels say Custom/Customize.
@@ -166,7 +166,7 @@ Normalization walks the task and retained receipts; it neither enumerates missed
 
 #### Future versions
 
-A compatible v3 uses `version: 3, compatibleVersions: [1, 2]`, extends this decoder/defaults, and writes current rows on edits or deliveries. Keep one task type and management API. No startup script or v1→v2→v3 conversion chain is required. A current unit stamp can contain untouched older rows, so retain their decoding until all affected rows are rewritten and validated. If the same saved fields acquire a different meaning, use an explicit discriminator or a recoverable complete upgrade. The storage domain has no incompatible-value migration runner today; Session-log migrations and SQLite physical-layout versions have separate owners. See the shared [domain version policy](../../../docs/subsystems/storage.md#domain-versioning).
+A compatible v3 uses `version: 3, compatibleVersions: [1, 2]`, extends this decoder/defaults, and writes current rows on edits or deliveries. Keep one task type and management API. No startup script or v1→v2→v3 conversion chain is required. A current unit stamp can contain untouched older rows, so retain their decoding until all affected rows are rewritten and validated. If the same saved fields acquire a different meaning, use an explicit discriminator or a recoverable complete upgrade. The storage domain has no incompatible-value migration runner today; Session-log migrations and SQLite physical-layout versions have separate owners. See the shared domain version policy.
 
 A v1 binary rejects a store after a v2 write. Invalid or ambiguous receipts reject rather than inventing their historical destination.
 
@@ -187,7 +187,7 @@ History stays with the task and is pruned only on append. Missing old history ke
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Schedule subsystem](../../../docs/subsystems/schedule.md) — timing, management, storage, and delivery contracts.
+- Schedule subsystem — timing, management, storage, and delivery contracts.
 - [Time utilities](../../util/time/README.md) — Cron and RRULE parsers and occurrence arithmetic.
 - [Domain helpers](src/domain.ts), [timing edits](src/update.ts), [storage](src/storage.ts), and [runtime](src/runtime.ts) own Schedule policy.
 
@@ -198,7 +198,7 @@ History stays with the task and is pruned only on append. Missing old history ke
 
 #### What the model sees
 
-The [generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-schedule) contains the descriptions and schemas for `schedule_create`, `schedule_list`, `schedule_view`, and `schedule_edit`, which [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.md) contributes to the presets that mount it.
+The generated tool catalog contains the descriptions and schemas for `schedule_create`, `schedule_list`, `schedule_view`, and `schedule_edit`, which [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.md) contributes to the presets that mount it.
 
 #### Token effect
 

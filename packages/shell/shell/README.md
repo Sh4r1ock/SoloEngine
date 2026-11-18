@@ -78,7 +78,7 @@ This section explains the design of the seam and points at the code that realize
 
 ### Design philosophy
 
-The package is one role of a standard capability seam: the Service Definition that names the executor contract, with Service Providers and Consumers split so each role evolves independently (see the [capability-seams note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)). Two decisions anchor the contract:
+The package is one role of a standard capability seam: the Service Definition that names the executor contract, with Service Providers and Consumers split so each role evolves independently (see the capability-seams note). Two decisions anchor the contract:
 
 - **Explicit resolution at the boundary.** `resolve(request)` is the single place defaults and caps are applied; `execute` accepts only resolved specs and never re-defaults, so no hidden fallback lives inside an implementation.
 - **One execution, projected views.** `execute` resolves with the prepared handle; the foreground result and the background cursor reads are projections over the same spawned process, so foreground/background is the caller's choice, never a second spawn path. The handle carries no id or owner; job identity, ownership, and lifecycle belong to the generic `ctx.jobs` runtime, keeping executors independent of sessions.
@@ -108,11 +108,11 @@ A spawned process belongs to the subprocess service, not to the executor: it sur
 
 Read these pages when the seam contract is not enough. They move from the shared subsystem reference to the concrete executors and the model-facing tools.
 
-- [Bash executor subsystem](../../../docs/subsystems/shell.md) — the request/spec vocabulary, results, and service contract in full.
+- Bash executor subsystem — the request/spec vocabulary, results, and service contract in full.
 - [bash-local](../bash-local/README.md) — the default POSIX executor: fresh `bash -c` processes, budgets, and deadlines.
 - [bash-sandbox](../bash-sandbox/README.md) — the confining executor: sandbox modes, denials, and escalation.
 - [tool-bash](../tool-bash/README.md) — the model-facing `bash` tool over this seam.
-- [Capability seams note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — the Service Definition / Provider / Consumer split this seam follows.
+- Capability seams note — the Service Definition / Provider / Consumer split this seam follows.
 
 -----
 
@@ -133,7 +133,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 These limits define what the seam does not provide. They are current package constraints, not a roadmap.
 
 - **No interactive-input vocabulary** — `stdin` is written once at spawn and closed; the seam has no channel to feed a running task and no PTY session concept.
-- **Foreground timeouts are always executor-owned** — a caller-owned-deadline mode on the seam is explicitly deferred by the [tool-call timeout-policy note](../../../.agents/notes/implemented/architecture/2026-07-07-tool-call-timeout-policy.md).
+- **Foreground timeouts are always executor-owned** — a caller-owned-deadline mode on the seam is explicitly deferred by the tool-call timeout-policy note.
 
 <a id="dev-note"></a>
 ### Dev Note

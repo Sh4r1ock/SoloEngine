@@ -41,7 +41,7 @@ Choose it when a deployment needs file-level confinement for PowerShell commands
 
 ### Minimal configuration
 
-On Windows, mount the ACL restricted-token provider; on Linux and macOS, mount the local runner provider instead. The executor's own config is the local pwsh executor's knobs verbatim; the generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-pwsh-sandbox) is the exhaustive source.
+On Windows, mount the ACL restricted-token provider; on Linux and macOS, mount the local runner provider instead. The executor's own config is the local pwsh executor's knobs verbatim; the generated configuration catalog is the exhaustive source.
 
 ```yaml
 - id: sandbox
@@ -83,7 +83,6 @@ The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, execution preparation |
 | [`src/helpers.ts`](src/helpers.ts) | Denial, runner-failure, and runner-spawn-failure classification |
-| `tests/` | Exercised behavior across the ACL and platform runners |
 
 ### Main flow
 
@@ -108,8 +107,8 @@ Read these pages when the executor contract is not enough. They move from the se
 - [bash-sandbox](../bash-sandbox/README.md) — the bash twin of this executor, with the shared denial and escalation surface.
 - [pwsh-local](../pwsh-local/README.md) — the process mechanics this executor inherits.
 - [sandbox-windows-acl](../../sandbox/sandbox-windows-acl/README.md) — the Windows restricted-token runner chain.
-- [Bash executor subsystem](../../../docs/subsystems/shell.md) — request/spec vocabulary, results, and the service contract in full.
-- [pwsh executor and tool note](../../../.agents/notes/archived/feature/2026-08-01-pwsh-tool-and-executor.md) — the decision behind the pwsh executor and tool pair.
+- Bash executor subsystem — request/spec vocabulary, results, and the service contract in full.
+- pwsh executor and tool note — the decision behind the pwsh executor and tool pair.
 
 -----
 

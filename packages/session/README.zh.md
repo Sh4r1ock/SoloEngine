@@ -70,11 +70,11 @@ session 组让对话持久保存，恢复已发布的日志格式，并使已提
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [会话持久化子系统](../../docs/subsystems/persistence.zh.md)——后端无关的服务语义、flush 检查点与崩溃恢复。
-- [会话投影子系统](../../docs/subsystems/session-projection.zh.md)——投影单元约定与驱动语义。
-- [会话标题子系统](../../docs/subsystems/session-title.zh.md)——标题资格、回退与提供方流程。
-- [会话遥测子系统](../../docs/subsystems/session-telemetry.zh.md)——捕获、脱敏与投递模式。
-- [会话子系统](../../docs/subsystems/session.zh.md)——本组每个包持久化或派生的实时事件日志。
+- 会话持久化子系统——后端无关的服务语义、flush 检查点与崩溃恢复。
+- 会话投影子系统——投影单元约定与驱动语义。
+- 会话标题子系统——标题资格、回退与提供方流程。
+- 会话遥测子系统——捕获、脱敏与投递模式。
+- 会话子系统——本组每个包持久化或派生的实时事件日志。
 
 <a id="dev-note"></a>
 ## 开发备注

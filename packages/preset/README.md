@@ -29,9 +29,9 @@ This group declares Agent capabilities through ordinary Cordis configuration and
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Scope](../../docs/subsystems/scope.md)
-- [Cordis](../../docs/cordis-primer.md)
-- [Agent preset](../../.agents/notes/implemented/architecture/2026-09-18-declarative-agent-presets.md)
+- Scope
+- Cordis
+- Agent preset
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -50,8 +50,8 @@ kind: "package-group"
 ## 相关文档
 
 - [根包映射](../README.zh.md)——`util/` 在所有包组中的位置。
-- [生成配置目录](../../docs/config-catalog.zh.md)——本组所属的库包索引。
-- [添加包实操手册](../../docs/cookbook/adding-a-package.zh.md)——新的共享原语如何落入本组。
+- 生成配置目录——本组所属的库包索引。
+- 添加包实操手册——新的共享原语如何落入本组。
 
 <a id="dev-note"></a>
 ## 开发备注

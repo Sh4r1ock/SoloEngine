@@ -74,7 +74,7 @@ The physical codec validates each packed row atomically, emits it as a compact r
 
 - [Migration machinery](../session-format/README.md) — pure chain and codec contracts.
 - [Static catalog](../session-format-catalog/README.md) — build-owned assembly.
-- [Session subsystem](../../../docs/subsystems/session.md) — current logical Session semantics.
+- Session subsystem — current logical Session semantics.
 
 -----
 

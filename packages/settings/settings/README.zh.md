@@ -53,7 +53,7 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [设置参考](../../../docs/subsystems/settings.zh.md)——表单值与修改。
+- 设置参考——表单值与修改。
 - [Volatile 配置](../../../vendor/loader/README.md)——引用生命周期与通知。
 - [配置编辑器](../../boot/config-editor/README.zh.md)——持久化与重载顺序。
 

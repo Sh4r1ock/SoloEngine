@@ -10,7 +10,7 @@ $Makensis = [System.IO.Path]::GetFullPath($Makensis)
 $SevenZip = [System.IO.Path]::GetFullPath($SevenZip)
 if ($FrameLibrary) { $FrameLibrary = [System.IO.Path]::GetFullPath($FrameLibrary) }
 $scratch = [System.IO.Directory]::CreateTempSubdirectory('dsh-directory-smoke-').FullName
-$fixture = Join-Path $PSScriptRoot '../tests/fixtures/installer-directory-smoke.nsi'
+$fixture = Join-Path $PSScriptRoot 'fixtures/installer-directory-smoke.nsi'
 
 function Invoke-Checked([string]$Executable, [string[]]$Arguments) {
   & $Executable @Arguments | Out-Host

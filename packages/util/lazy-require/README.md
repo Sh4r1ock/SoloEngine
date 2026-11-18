@@ -60,7 +60,7 @@ The utility creates Node's `require` from the supplied caller URL and caches onl
 ## Further Exploration
 
 - [Utility package map](../README.md) — adjacent shared primitives.
-- [NPM release sequences](../../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.md) — published dependency classification and first-use loading policy.
+- NPM release sequences — published dependency classification and first-use loading policy.
 
 -----
 

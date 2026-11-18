@@ -45,11 +45,11 @@ kind: "package-reference"
 | `maxResultChars` | `16000` | 完整渲染结果的最大长度，包括截断元数据 |
 | `timeoutMs` | `60000` | 由 `dsh-tool-call-timeout-policy` 强制执行的工具调用超时预算；覆盖完整的排队打开／查询／关闭生命周期，且模型不可配置 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-lsp)是每个受支持字段的穷尽式真源。
+生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 失败与恢复
 
-未知操作、空白 `file_path` 或不是正整数的坐标会在任何查询前以 `ToolArgsError` `INVALID_ARGS` 失败。该工具要求 Agent Session；非 Agent 调用会在任何查询前以 `LSP_WORKSPACE_REQUIRED` 失败。工作目录服务提供并校验当前根目录。当没有提供方处理该文件扩展名时，查询以 `LSP_UNAVAILABLE` 失败；格式错误的提供方载荷仍保持为结构化 `LSP_MALFORMED_RESPONSE` 错误。这些失败以及所有提供方失败都会呈现为保留失败 `name` 与 `code` 的错误工具结果；[LSP 导航子系统](../../../docs/subsystems/lsp.zh.md#failures)列出了这些错误码。
+未知操作、空白 `file_path` 或不是正整数的坐标会在任何查询前以 `ToolArgsError` `INVALID_ARGS` 失败。该工具要求 Agent Session；非 Agent 调用会在任何查询前以 `LSP_WORKSPACE_REQUIRED` 失败。工作目录服务提供并校验当前根目录。当没有提供方处理该文件扩展名时，查询以 `LSP_UNAVAILABLE` 失败；格式错误的提供方载荷仍保持为结构化 `LSP_MALFORMED_RESPONSE` 错误。这些失败以及所有提供方失败都会呈现为保留失败 `name` 与 `code` 的错误工具结果；LSP 导航子系统列出了这些错误码。
 
 -----
 
@@ -86,7 +86,7 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从面向模型的表层逐步进入 seam 与提供方。
 
-- [LSP 导航子系统](../../../docs/subsystems/lsp.zh.md)——操作、坐标、请求与结果，以及 `LspError` 错误码。
+- LSP 导航子系统——操作、坐标、请求与结果，以及 `LspError` 错误码。
 - [dsh-lsp](../lsp/README.zh.md)——本工具查询的 seam。
 - [dsh-lsp-stdio](../lsp-stdio/README.zh.md)——应答这些查询的 stdio 提供方。
 - [lsp 组地图](../README.zh.md)——三个包的家族及其相关文档。
@@ -120,7 +120,7 @@ Use search/read for ordinary navigation. Use lsp when textual matches are ambigu
 
 #### 模型看到什么
 
-模型会看到生成的 [`lsp` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-lsp)。
+模型会看到生成的 `lsp` schema。
 
 #### Token 影响
 

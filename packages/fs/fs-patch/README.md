@@ -42,7 +42,7 @@ Malformed input throws `PatchParseError` with a one-based `lineNumber` and a cor
 <a id="compatibility"></a>
 ## Compatibility
 
-The reference is [OpenAI Codex rust-v0.158.0](https://github.com/openai/codex/tree/rust-v0.158.0/codex-rs/apply-patch/src): `parser.rs` and `streaming_parser.rs` for syntax, and `seek_sequence.rs` and `file_update.rs` for matching and `NormalizeToLf` reconstruction. `text_file.rs` documents the separate line-preserving representation. The [parser tests](tests/parse.spec.ts) and [text tests](tests/apply.spec.ts) adapt selected upstream cases, including `file_update_tests.rs` and `lib.rs`. The [LICENSE](LICENSE) retains OpenAI attribution and Apache-2.0 terms alongside the MIT license for DeepSeek contributions.
+The reference is [OpenAI Codex rust-v0.158.0](https://github.com/openai/codex/tree/rust-v0.158.0/codex-rs/apply-patch/src): `parser.rs` and `streaming_parser.rs` for syntax, and `seek_sequence.rs` and `file_update.rs` for matching and `NormalizeToLf` reconstruction. `text_file.rs` documents the separate line-preserving representation. The [LICENSE](LICENSE) retains OpenAI attribution and Apache-2.0 terms alongside the MIT license for DeepSeek contributions.
 
 ### Parsing
 
@@ -84,7 +84,7 @@ The intentional differences from Codex are ownership and result reporting: the D
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [parser](src/parse.ts) builds syntax records without a Session or provider dependency. The [text updater](src/apply.ts) locates every hunk against the original text before constructing a complete result. The [types](src/types.ts) carry syntax locations and match failures; the [filesystem reference](../../../docs/subsystems/filesystem.md#patch-syntax-records) owns the public type definitions.
+The [parser](src/parse.ts) builds syntax records without a Session or provider dependency. The [text updater](src/apply.ts) locates every hunk against the original text before constructing a complete result. The [types](src/types.ts) carry syntax locations and match failures; the filesystem reference owns the public type definitions.
 
 </details>
 

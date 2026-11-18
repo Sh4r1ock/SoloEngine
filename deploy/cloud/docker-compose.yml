@@ -7,9 +7,8 @@
 # 用法：
 #   docker build --build-arg DSH_CLIENT_COMMIT_HASH=$(git rev-parse HEAD) -f packaging/container/Dockerfile -t soloengine:l2 .
 #   docker compose -f deploy/cloud/docker-compose.yml up -d
-#   node test/soloengine/cloud-rebuild.mjs   # 重建演练（自动 down/up 两次并核验数据恢复）
-#   node test/soloengine/cloud-autoscale.mjs # 扩容执行演练（决策 → 建节点 → 放置 → 缩容回收）
-#   node test/soloengine/cloud-overflow-session.mjs # 溢出会话一致性（跨节点/网关读取同一会话）
+#
+# 重建、扩容与溢出会话一致性演练脚本已随测试目录一并移除。
 #
 # 边界：host 网络共享同一 Docker VM，不是多物理机，也不是 microVM/全 VM（D18 的 L3）。
 name: soloengine-cloud

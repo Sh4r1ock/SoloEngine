@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Decides which Remote methods a non-owner Peer may call and which forwarded events it may receive. Business packages define roles, each an action set over one resource kind, and register one policy per non-owner principal kind that binds roles to resources. The [API Gateway](../gateway/README.md) resolves the resources a call or event touches and asks this package before it resolves lookups or decodes arguments. List methods filter items through `allows()`, and each Peer follows its own access snapshot, so the Client can hide entries the Host would refuse. The [Peer principals Agent Note](../../../.agents/notes/implemented/architecture/2026-10-12-peer-principal-and-remote-access.md) owns the design.
+Decides which Remote methods a non-owner Peer may call and which forwarded events it may receive. Business packages define roles, each an action set over one resource kind, and register one policy per non-owner principal kind that binds roles to resources. The [API Gateway](../gateway/README.md) resolves the resources a call or event touches and asks this package before it resolves lookups or decodes arguments. List methods filter items through `allows()`, and each Peer follows its own access snapshot, so the Client can hide entries the Host would refuse. The Peer principals Agent Note owns the design.
 
 ## Table of Contents
 

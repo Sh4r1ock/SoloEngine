@@ -50,9 +50,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步阅读
 
-- [工作目录](../../../docs/subsystems/working-directory.zh.md) — 共享运行时行为。
+- 工作目录 — 共享运行时行为。
 - [Session 包组](../README.zh.md) — 持久化 Session 服务。
-- [测试](../../../docs/testing.zh.md) — 组合与回放验证。
+- 测试 — 组合与回放验证。
 
 -----
 
@@ -63,7 +63,7 @@ kind: "package-reference"
 
 #### 模型可见内容
 
-[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-working-directory) 定义可选的 `cd` 参数与规范 `cwd` 结果。目录通知由 `dsh-working-directory` 拥有。
+工具目录 定义可选的 `cd` 参数与规范 `cwd` 结果。目录通知由 `dsh-working-directory` 拥有。
 
 #### Token 影响
 

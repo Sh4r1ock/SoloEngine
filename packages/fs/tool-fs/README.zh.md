@@ -69,7 +69,7 @@ kind: "package-reference"
 | `readMaxBytes` | `51200` | 一次 `read` 调用所选行的字节上限；溢出时以「已达上限」footer 结束窗口 |
 | `readStreamMinSize` | `10485760` | 大于等于该大小或大小未知的文件采用流式读取，而不是整体加载到内存 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-fs)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 挂载 `fs-observation-policy` 且关闭 `read` 时，`write` 仍可创建文件，成功写入或编辑会记录本会话后续修改所需的版本。未观察过的已有文件仍受保护；关闭 `read` 不会放宽策略。其他文件系统读取方必须发出 `fs/observed`，已有文件才会成为已观察状态。
 
@@ -145,12 +145,12 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从工具逐步进入它们所组合的约定、后端与策略。
 
-- [文件系统子系统](../../../docs/subsystems/filesystem.zh.md)——穷尽式提供方约定、策略事件与错误分类体系。
+- 文件系统子系统——穷尽式提供方约定、策略事件与错误分类体系。
 - [dsh-fs](../fs/README.zh.md)——这些工具消费的 `ctx.fs` 约定。
 - [fs-local](../fs-local/README.zh.md)——这些工具运行于其上的宿主文件系统后端。
 - [fs-sandbox](../fs-sandbox/README.zh.md)——添加升权字段的沙箱强制后端。
 - [fs-observation-policy](../fs-observation-policy/README.zh.md)——通过 `fs/*` 事件防护变更的策略插件。
-- [生成工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)——本包注册的穷尽式 schema。
+- 生成工具目录——本包注册的穷尽式 schema。
 
 -----
 
@@ -193,7 +193,7 @@ Read a file before editing it unless you just created or edited it in this sessi
 
 #### 模型看到的内容
 
-模型会看到已生成的 [`read`、`read_image`、`write` 和 `edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-fs)，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
+模型会看到已生成的 `read`、`read_image`、`write` 和 `edit` schema，参数使用 snake_case。图片工具只在持久附件存储已挂载时出现；schema 本身与路由无关，严格门禁在执行时拒绝。作用域工具限制可以为某个 agent 移除任一定义。
 
 #### Token 影响
 

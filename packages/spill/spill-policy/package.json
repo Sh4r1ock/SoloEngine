@@ -58,7 +58,6 @@
     "@deepseek-ai/dsh-output-retention": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-spill": "workspace:*",
-    "@deepseek-ai/dsh-tool-testkit": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
@@ -77,7 +76,6 @@
     "@deepseek-ai/dsh-tool-executor-native": "workspace:*",
     "@deepseek-ai/dsh-tool-executor-ptc": "workspace:*",
     "@deepseek-ai/dsh-tool-fs": "workspace:*",
-    "sharp": "0.35.5",
-    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*"
+    "sharp": "0.35.5"
   }
 }

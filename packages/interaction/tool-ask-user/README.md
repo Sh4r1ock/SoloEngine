@@ -107,8 +107,8 @@ The `render` output projects the structured value to a single text block via `JS
 
 Read these pages when the package-level contract is not enough. They move from the tool surface to the seam contract and its answerer waterfall.
 
-- [User interaction subsystem reference](../../../docs/subsystems/user-questions.md) — the service contract, question vocabulary, and answerer waterfall behind this tool.
-- [Tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ask-user) — the generated `ask_user_question` schema.
+- User interaction subsystem reference — the service contract, question vocabulary, and answerer waterfall behind this tool.
+- Tool catalog — the generated `ask_user_question` schema.
 - [user-questions package](../user-questions/README.md) — the seam this tool consumes.
 - [Interaction group map](../README.md) — adjacent approval and command surfaces.
 
@@ -121,7 +121,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-The shipped presets expose the original blocking [`ask_user_question` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-ask-user). A custom Cordis row with `mode: timed` switches to the alternate schema, including question ids, prompts, headings, options, multi-select flags, `timeout`, and the pending result; the model sees only the selected definition.
+The shipped presets expose the original blocking `ask_user_question` schema. A custom Cordis row with `mode: timed` switches to the alternate schema, including question ids, prompts, headings, options, multi-select flags, `timeout`, and the pending result; the model sees only the selected definition.
 
 #### Token effect
 

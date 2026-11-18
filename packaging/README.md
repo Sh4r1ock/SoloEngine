@@ -19,10 +19,9 @@
 与总量摘要；读回时重算比对）、`README.md`（前置条件与三种原生加载方式）。
 **产物不含任何密钥**（`verifyArtifact` 在整棵产物树上扫描密钥键名；闭包另行检查包管理器凭据载体）。
 **自包含**：闭包按解析结果逐包复制（不依赖目标机安装 `@soloengine/*`），平台包由目标机运行器提供；
-空 `DSH_HOME` + 断网可直接启动——`pnpm run verify-artifact-offline`（记录
-`test/soloengine/records/stage9-artifact-offline.json`，3/3）。
-**互载**：产物的插件都是标准 cordis 插件，可被任意 dsh 实例装载——`pnpm run verify-interop` 在空 `DSH_HOME` 里由
-桌面内置运行时启动产物，跑八类契约 + 任意实例加载 + 第三方插件装入并 boot（`test/soloengine/records/stage9-interop-matrix.json`，10/10）。
+空 `DSH_HOME` + 断网可直接启动。
+**互载**：产物的插件都是标准 cordis 插件，可被任意 dsh 实例装载——在空 `DSH_HOME` 里由
+桌面内置运行时启动产物，跑八类契约 + 任意实例加载 + 第三方插件装入并 boot。
 
 产物形态由 `POST /packaging/run` 的 `form` 选择：`profile`（缺省，仅 profile 发行）与 `desktop`
 （同一份产物再走发行侧暂存：先过发行流水线的前置检查，再调用 `desktop/prepare-profile.mjs`
@@ -66,15 +65,15 @@
 
 ## 桌面形态复用平台机制（K4 对齐表）
 
-| 要求（PRD-11） | 平台实现位置 | 本机取证方式 |
-|---|---|---|
-| 首启自检，成功才激活 | `apps/desktop/src/backend-controller.ts`（Host 子进程 `ready` 才切到应用页）、`project-manager.ts`(`applyRelease`/`assertProfileRuntime`)、`runtime-tree.ts`(`readDesktopRuntime`) | `npx vitest run apps/desktop/tests`（`main-startup`/`startup-renderer`/`project-manager`/`runtime-tree` 各 spec） |
-| 自检失败不激活、报告失败项、可重试 | `apps/desktop/src/startup-document.ts` + `startup-renderer` + `ipc.ts`（backend-retry / disablePlugins / resetConfiguration） | 同上（`startup-renderer.spec.ts` 断言启动页与失败项渲染） |
-| **不做任何形式的自动回滚**，失败保留半成品 | `apps/desktop/src/project-manager.ts`（直接写、`pendingPackages` 标记供下次重试、**无 staging/backup/rollback**） | `project-manager.spec.ts`（`expect(existsSync(rollback)).toBe(false)`、`keeps partial package changes ... after pnpm fails`、`resets the entire profile without backups`） |
-| 单一实例锁 + 私有实例目录 | `apps/desktop/src/single-instance.ts`（`requestSingleInstanceLock`）、`paths.ts`（`$DSH_HOME/profiles/desktop`、`$DSH_HOME/desktop/pnpm/*`） | `single-instance.spec.ts`；`paths` 取值见 `apps/desktop/src/paths.ts` |
-| 内置运行时 + 离线依赖 | `apps/desktop/scripts/prepare-runtime.ts`（Node 归档 + 校验 SHA256）、`prepare-package-set.ts`、`prepare-dsh.ts`（本地 tarball + `--prod --frozen-lockfile` 安装核心闭包并封 `desktop-runtime.json`） | `runtime-tree.spec.ts` / `core-package-set.spec.ts` / `prepare-package-set.spec.ts` |
-| 升级 = 壳 + 运行时 + 离线依赖同一签名单元（含差分） | `apps/desktop/electron-builder.config.mjs`（`nsis.differentialPackage: true`、macOS `dmg`+`zip`）、`src/update-coordinator.ts` | `update-coordinator.spec.ts` / `desktop-auto-update-environment.spec.ts` |
-| 桌面壳加载同一份 Web 应用 | `apps/desktop/src/host-process.ts` 以子进程启动 Web 应用并等待其 `ready` 的 `url`，`main.ts` 随后 `loadURL` 该回环地址 | `host-process.ts` / `main.ts` 即证据；桌面与 Web 共用同一 HTTP 服务与路由（无第二套承载层） |
+| 要求（PRD-11） | 平台实现位置 |
+|---|---|
+| 首启自检，成功才激活 | `apps/desktop/src/backend-controller.ts`（Host 子进程 `ready` 才切到应用页）、`project-manager.ts`(`applyRelease`/`assertProfileRuntime`)、`runtime-tree.ts`(`readDesktopRuntime`) |
+| 自检失败不激活、报告失败项、可重试 | `apps/desktop/src/startup-document.ts` + `startup-renderer` + `ipc.ts`（backend-retry / disablePlugins / resetConfiguration） |
+| **不做任何形式的自动回滚**，失败保留半成品 | `apps/desktop/src/project-manager.ts`（直接写、`pendingPackages` 标记供下次重试、**无 staging/backup/rollback**） |
+| 单一实例锁 + 私有实例目录 | `apps/desktop/src/single-instance.ts`（`requestSingleInstanceLock`）、`paths.ts`（`$DSH_HOME/profiles/desktop`、`$DSH_HOME/desktop/pnpm/*`） |
+| 内置运行时 + 离线依赖 | `apps/desktop/scripts/prepare-runtime.ts`（Node 归档 + 校验 SHA256）、`prepare-package-set.ts`、`prepare-dsh.ts`（本地 tarball + `--prod --frozen-lockfile` 安装核心闭包并封 `desktop-runtime.json`） |
+| 升级 = 壳 + 运行时 + 离线依赖同一签名单元（含差分） | `apps/desktop/electron-builder.config.mjs`（`nsis.differentialPackage: true`、macOS `dmg`+`zip`）、`src/update-coordinator.ts` |
+| 桌面壳加载同一份 Web 应用 | `apps/desktop/src/host-process.ts` 以子进程启动 Web 应用并等待其 `ready` 的 `url`，`main.ts` 随后 `loadURL` 该回环地址；桌面与 Web 共用同一 HTTP 服务与路由（无第二套承载层） |
 
 ## 交付边界与实测结果
 
@@ -83,41 +82,28 @@
 | 产物 | 路径 | 实测 |
 |---|---|---|
 | NSIS 安装包 | `data/packaging/.desktop/<run-id>/unsigned-artifacts/deepseek-harness-0.2.1-rc.2-win-x64-unsigned.exe`（296,932,733 B ≈ 283 MiB） | 产品页一键：`POST /packaging/runs/<id>/desktop-build` → `build-windows.mjs` → 平台 `package:win:x64:unsigned` 全链（`@electron/rebuild` → asar → 原生件 → `nsis` → `.exe.blockmap` 309,390 B） |
-| 免安装目录 | 同一运行目录的 `win-unpacked/`（`DeepSeek Harness.exe` 246,329,856 B ≈ 235 MiB + `resources/{app.asar, app.asar.unpacked, runtime, profile-seed}`） | 以隔离 `DSH_HOME` 真实启动：首启载荷装成 `profiles/desktop/`（随包插件在 `profile-seed/plugins/`，首启换回 `node_modules/`），框架层在该 home 建业务库 `soloengine/data/database/soloengine.db` 与主密钥，窗口标题 `DeepSeek Harness`。记录 `test/soloengine/records/stage8-desktop-build.json`（E1–E4 4/4）与 `stage8-desktop-first-launch.json`（L1–L3 3/3） |
+| 免安装目录 | 同一运行目录的 `win-unpacked/`（`DeepSeek Harness.exe` 246,329,856 B ≈ 235 MiB + `resources/{app.asar, app.asar.unpacked, runtime, profile-seed}`） | 以隔离 `DSH_HOME` 真实启动：首启载荷装成 `profiles/desktop/`（随包插件在 `profile-seed/plugins/`，首启换回 `node_modules/`），框架层在该 home 建业务库 `soloengine/data/database/soloengine.db` 与主密钥，窗口标题 `DeepSeek Harness` |
 
-本机实测到的层：**机制层**（`npx vitest run apps/desktop/tests` 197 通过）、**编排层**（`prepare-profile.mjs` 的真实副作用 + 前置条件 fail loud）、**产物层**（上表两行）。仍然只交付配置与脚本的是 **macOS DMG**：`package-target.ts` 本身拒绝非 darwin 宿主，故不在本机实测（见 `desktop/macos/README.md`）。
+本机实测到的层：**机制层**、**编排层**（`prepare-profile.mjs` 的真实副作用 + 前置条件 fail loud）、**产物层**（上表两行）。仍然只交付配置与脚本的是 **macOS DMG**：`package-target.ts` 本身拒绝非 darwin 宿主，故不在本机实测（见 `desktop/macos/README.md`）。
 
 构建期踩到并修掉的平台缺陷（都在本仓库留下了修复）：
 
-1. **载荷冒烟夹具的失效期望**：`apps/desktop/tests/fixtures/runtime-payload-smoke.mjs` 原先无条件 `require('fs-ext')`，而 `fs-ext` 在本仓库整棵依赖图里不存在（无清单、无锁文件条目、无源码引用；文件锁由 `native/system` 的 flock 绑定承担）——任何主机都过不了这一步，Windows 产物因此完全无法产出。现在夹具改为「可解析则验证 seek 契约；不可解析则断言没有任何载荷清单声明它」，并如实输出 `fsExt: "absent"`。
-2. **免安装目录只走签名路径**：`package:win:x64:dir` 需要代码签名证书，与 `package:win:x64:unsigned` 不成对。补 `package:win:x64:dir:unsigned`（平台脚本同一口径），编排据此调用。
-3. **编排自身的判定与顺序**：预检原先按 `apps/desktop/node_modules/<传递依赖>` 目录名判定（pnpm 布局下传递依赖在 `.pnpm/<pkg>@<ver>/node_modules`），会把已装好的打包器误报成缺失；且自己重列 prepare 步骤并把顺序排错（`prepare:packages` 需要先 `release:pack`）。现在只做「可解析 + app id 必填」的预检，步骤一律委派平台命令。
+1. **免安装目录只走签名路径**：`package:win:x64:dir` 需要代码签名证书，与 `package:win:x64:unsigned` 不成对。补 `package:win:x64:dir:unsigned`（平台脚本同一口径），编排据此调用。
+2. **编排自身的判定与顺序**：预检原先按 `apps/desktop/node_modules/<传递依赖>` 目录名判定（pnpm 布局下传递依赖在 `.pnpm/<pkg>@<ver>/node_modules`），会把已装好的打包器误报成缺失；且自己重列 prepare 步骤并把顺序排错（`prepare:packages` 需要先 `release:pack`）。现在只做「可解析 + app id 必填」的预检，步骤一律委派平台命令。
 
 ## 复现命令
 
 ```powershell
-# 1) 云实例侧打包一次（真实落盘 profile/）
-node test/soloengine/profile-release-drill.mjs
-
-# 1b) 产物自包含 + 离线目标机取证（闭包独立重算 / 无符号链接 / 空 home 断网首启）
-pnpm run verify-artifact-offline
-
-# 1c) 产物互载矩阵（八类契约 + 任意实例加载 + 第三方插件装入并 boot）
-pnpm run verify-interop
-
-# 2) 桌面壳的 profile 与预设固化（真实副作用 + 体检；home 用该运行的私有目录）
+# 1) 桌面壳的 profile 与预设固化（真实副作用 + 体检；home 用该运行的私有目录）
 node packaging/desktop/prepare-profile.mjs --from data/packaging/<run-id>/profile `
   --home data/packaging/.desktop/<run-id>
 
-# 3) 桌面机制层取证（平台自带 spec）
-npx vitest run apps/desktop/tests
-
-# 4) 产出 Windows 产物（安装包 + 免安装目录；需要 electron 二进制与一次联网取 NSIS）
+# 2) 产出 Windows 产物（安装包 + 免安装目录；需要 electron 二进制与一次联网取 NSIS）
 $env:DSH_DESKTOP_APP_ID='com.soloengine.desktop'
 $env:DSH_DESKTOP_PROFILE_SEED='data/packaging/.desktop/<run-id>/profiles/desktop'
 node packaging/desktop/build-windows.mjs --unsigned
 
-# 5) 容器形态（同一程序、同一条启动路径）
+# 3) 容器形态（同一程序、同一条启动路径）
 docker build -f packaging/container/Dockerfile `
   --build-arg DSH_CLIENT_COMMIT_HASH=$(git rev-parse HEAD) -t soloengine:local .
 docker run -d --name soloengine -p 8991:8991 -v soloengine-data:/app/data `

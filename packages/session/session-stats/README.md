@@ -94,7 +94,7 @@ The fold state holds the eight totals plus in-flight boundaries: `lastTurn` (tur
 
 Read these pages when the unit's contract is not enough. They move from the registry that drives units to adjacent session packages.
 
-- [Session projection subsystem](../../../docs/subsystems/session-projection.md) — the registry that drives units and serves snapshot and change-feed values.
+- Session projection subsystem — the registry that drives units and serves snapshot and change-feed values.
 - [Session projection registry package](../session-projection/README.md) — the registry contract units register against.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 

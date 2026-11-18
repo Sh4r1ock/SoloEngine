@@ -37,9 +37,9 @@ Each package README describes what you can do with its part of the family.
 
 Start with the subsystem reference for the shared query vocabulary, then the design records behind tracing and search.
 
-- [Session Query subsystem reference](../../docs/subsystems/session-query.md) — logical records, filters, search pages, lineage, bounded reads, and event relationships.
-- [Session query relationship tracing](../../.agents/notes/archived/feature/2026-07-13-session-query-tracing.md) — trace semantics and the validation boundary.
-- [SQLite FTS5 session search](../../.agents/notes/archived/feature/2026-07-10-sqlite-session-query-provider.md) — search semantics, reconciliation, and the tokenizer decision.
+- Session Query subsystem reference — logical records, filters, search pages, lineage, bounded reads, and event relationships.
+- Session query relationship tracing — trace semantics and the validation boundary.
+- SQLite FTS5 session search — search semantics, reconciliation, and the tokenizer decision.
 
 <a id="dev-note"></a>
 ## Dev Note

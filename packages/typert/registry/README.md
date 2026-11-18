@@ -101,8 +101,8 @@ Read these pages when the package-level contract is not enough; they move from t
 - [Typert loader](../loader/README.md) — automatic registration of generated host artifacts.
 - [Typert generator](../generator/README.md) — what produces the contributions the registry stores.
 - [Typert protocol](../protocol/README.md) — the descriptors, codecs, and provider contracts the registry serves.
-- [Typert subsystem reference](../../../docs/subsystems/typert.md) — the literal `ctx.typert` contract.
-- [API Gateway reference](../../../docs/api-gateway.md) — the main consumer of invocation descriptors and providers.
+- Typert subsystem reference — the literal `ctx.typert` contract.
+- API Gateway reference — the main consumer of invocation descriptors and providers.
 
 -----
 

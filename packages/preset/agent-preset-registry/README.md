@@ -73,7 +73,7 @@ Activation auditing checks imports, missing services and globally leaked service
 
 - [Scope](../../core/scope/README.md) — Registration isolation.
 - [Agent](../../core/agent/README.md) — Session runtime.
-- [Cordis](../../../docs/cordis-primer.md) — Plugin configuration and lifecycle.
+- Cordis — Plugin configuration and lifecycle.
 
 <a id="model-experience"></a>
 ## Model Experience

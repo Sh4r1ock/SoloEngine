@@ -64,7 +64,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | Remote 服务、payload 校验、事件投影与持久化所有权 |
 | [`src/types.ts`](src/types.ts) | 请求、结果和 Session 事件声明；仅类型 |
 
-各自的 API 见[反馈子系统](../../../docs/subsystems/feedback.zh.md)、[Session 持久化](../../../docs/subsystems/persistence.zh.md)和[浏览器消费方](../../client/ui-message-feedback/README.zh.md)。
+各自的 API 见反馈子系统、Session 持久化和[浏览器消费方](../../client/ui-message-feedback/README.zh.md)。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -97,5 +97,3 @@ kind: "package-reference"
 
 <a id="dev-note"></a>
 ### 开发备注
-
-[包测试](tests/message-feedback.spec.ts)覆盖当前状态与持久历史语义；[Loader 组合](tests/loader-composition.spec.ts)验证跨重启的活跃和冷 JSONL 操作。

@@ -40,12 +40,12 @@ Use the core packages to build or extend an agent that records durable session h
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Core subsystem](../../docs/subsystems/core.md) — the package-by-package loop map and the `Agent` handle contracts.
-- [Session subsystem](../../docs/subsystems/session.md) — the session event vocabulary and derived history.
-- [System-prompt subsystem](../../docs/subsystems/system-prompt.md) — prompt section, dynamic context, and tool-schema types.
-- [Tools subsystem](../../docs/subsystems/tools.md) — the tool execution pipeline and presentation vocabulary.
-- [Scoped registration subsystem](../../docs/subsystems/scope.md) — the scoped-layer primitive these registries build on.
-- [Architecture](../../docs/architecture.md) — the turn flow and where new behavior goes.
+- Core subsystem — the package-by-package loop map and the `Agent` handle contracts.
+- Session subsystem — the session event vocabulary and derived history.
+- System-prompt subsystem — prompt section, dynamic context, and tool-schema types.
+- Tools subsystem — the tool execution pipeline and presentation vocabulary.
+- Scoped registration subsystem — the scoped-layer primitive these registries build on.
+- Architecture — the turn flow and where new behavior goes.
 - [Base bundle](../bundle/base/README.md) — the default product composition.
 
 -----

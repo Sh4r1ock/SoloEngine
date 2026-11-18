@@ -50,9 +50,9 @@ No runtime invariant companion is published because the tool delegates all direc
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Working directories](../../../docs/subsystems/working-directory.md) — shared runtime behavior.
+- Working directories — shared runtime behavior.
 - [Session group](../README.md) — durable Session services.
-- [Testing](../../../docs/testing.md) — composition and replay verification.
+- Testing — composition and replay verification.
 
 -----
 
@@ -63,7 +63,7 @@ No runtime invariant companion is published because the tool delegates all direc
 
 #### What the model sees
 
-The [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-working-directory) defines the optional `cd` argument and canonical `cwd` result. Directory notices are owned by `dsh-working-directory`.
+The tool catalog defines the optional `cd` argument and canonical `cwd` result. Directory notices are owned by `dsh-working-directory`.
 
 #### Token effect
 

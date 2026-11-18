@@ -59,7 +59,7 @@ The plugin config defines the preset table and the default for fresh sessions. E
 | `approveForMe.commandPrefixes` | `[]` | Literal token prefixes; every segment of a compound shell command must match one |
 | `approveForMe.review` | `false` | Ask the current session model to confirm a rule-matched call; it can only narrow |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-permission-presets) is the exhaustive source for every accepted field and its JSDoc. `custom` is reserved for the derived not-a-preset state, while `auto` is reserved for the Auto review integration. Mounting requires a confining bash executor (one that reports a `sandboxMode`) and the approval service. A malformed command prefix fails the mount instead of admitting on a prefix nobody can parse.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc. `custom` is reserved for the derived not-a-preset state, while `auto` is reserved for the Auto review integration. Mounting requires a confining bash executor (one that reports a `sandboxMode`) and the approval service. A malformed command prefix fails the mount instead of admitting on a prefix nobody can parse.
 
 ### Approve-for-me admission
 
@@ -129,9 +129,9 @@ The service requires `ctx.sessionProjections` and registers a `permissions` proj
 
 Read these pages when the package-level contract is not enough. They move from the preset vocabulary to the enforcement knobs and the design rationale.
 
-- [Permission presets subsystem reference](../../../docs/subsystems/permission-presets.md) — the preset table, process catalog, current selection, and `ctx.permissionPresets` Cordis API.
-- [historical Sandbox switching design Agent Note](../../../.agents/notes/archived/feature/2026-07-06-sandbox.md) — how sandbox mode and approval policy compose and switch.
-- [Approval subsystem reference](../../../docs/subsystems/approval.md) — the approval policy knob this service bundles.
+- Permission presets subsystem reference — the preset table, process catalog, current selection, and `ctx.permissionPresets` Cordis API.
+- historical Sandbox switching design Agent Note — how sandbox mode and approval policy compose and switch.
+- Approval subsystem reference — the approval policy knob this service bundles.
 - [Interaction group map](../README.md) — adjacent command, approval, and question packages.
 
 -----

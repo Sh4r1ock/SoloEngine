@@ -42,11 +42,11 @@ Most recent work first:
 
 Rewind appears as an icon-only third action under each user message, after its timestamp and native Copy action:
 
-![Turn Rewind action under a user message](docs/assets/turn-rewind-action.png)
+!Turn Rewind action under a user message
 
 Opening it shows the affected files and offers three choices: restore the files and restart from before that message, restore only the files, or rewind only the messages and leave the files untouched:
 
-![Turn Rewind review dialog](docs/assets/turn-rewind-dialog.png)
+!Turn Rewind review dialog
 
 ## Why it has a Change Ledger engine
 
@@ -62,7 +62,7 @@ A diff button can show current changes, but it does not own a durable restore li
 - startup reconciliation of interrupted restore journals;
 - a public `ctx.changeLedger` service that other plugins can consume.
 
-The durable format is documented in [docs/FORMAT.md](docs/FORMAT.md). The security and failure model is documented in [SECURITY.md](SECURITY.md).
+The durable format is documented in docs/FORMAT.md. The security and failure model is documented in [SECURITY.md](SECURITY.md).
 
 ## Safety contract
 

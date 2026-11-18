@@ -83,8 +83,8 @@ Client 在分配前将每条 Session/内容与终端身份的关联保存到独�
 
 - [Subprocess](../../subprocess/subprocess/README.zh.md)
 - [Right Sidebar](../../client/ui-sidebar-right/README.zh.md)
-- [用户终端权限](../../../.agents/notes/implemented/architecture/2026-09-16-user-terminal-permissions.zh.md)
-- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.zh.md)
+- 用户终端权限
+- Web terminal decision
 
 <a id="model-experience"></a>
 ## 模型体验

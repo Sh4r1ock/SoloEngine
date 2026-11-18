@@ -88,8 +88,8 @@ A `list(agent, query, signal)` call either lists one directory's entries or read
 Read these pages when the package-level contract is not enough. They move from the seam this provider implements to the tools its candidates point at.
 
 - [File-reference seam](../file-reference/README.md) — the service contract and `@file` grammar this provider implements.
-- [Session-reference subsystem](../../../docs/subsystems/session-reference.md) — the shared file-reference contract behind host UIs.
-- [Filesystem tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-fs) — the `read` tool whose namespace discovery must match.
+- Session-reference subsystem — the shared file-reference contract behind host UIs.
+- Filesystem tool catalog — the `read` tool whose namespace discovery must match.
 - [Context group map](../README.md) — sibling request-context packages.
 
 -----

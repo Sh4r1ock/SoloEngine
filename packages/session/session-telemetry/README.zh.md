@@ -65,7 +65,7 @@ ledger 记录携带 `sourceEvent`，其中包含所属 Session id 和不含 `dat
 
 ### 设计理念
 
-捕获包负责完整事件捕获、脱敏和交接游标。脱敏规则必须保留 `sourceEvent` 才能通过 OTel 上传；返回不含它的新记录会阻止该事件上传并产生诊断。复制的 envelope 不含 `data`，数据仅由 `body` 携带。OTel 后端负责字节/条数调度并使用 SDK 传输和重试。[历史恢复遥测决策记录](../../../.agents/notes/archived/feature/2026-07-23-session-telemetry-otel-revival.md) 说明捕获和脱敏依据。
+捕获包负责完整事件捕获、脱敏和交接游标。脱敏规则必须保留 `sourceEvent` 才能通过 OTel 上传；返回不含它的新记录会阻止该事件上传并产生诊断。复制的 envelope 不含 `data`，数据仅由 `body` 携带。OTel 后端负责字节/条数调度并使用 SDK 传输和重试。历史恢复遥测决策记录 说明捕获和脱敏依据。
 
 ### 源码地图
 
@@ -92,8 +92,8 @@ ledger 记录携带 `sourceEvent`，其中包含所属 Session id 和不含 `dat
 当 seam 约定不够用时阅读以下页面。它们从随附后端逐步进入子系统参考与决策证据。
 
 - [OpenTelemetry 遥测后端](../session-telemetry-otel/README.zh.md)——部署方加载的随附后端，含模式与导出器配置。
-- [会话遥测子系统](../../../docs/subsystems/session-telemetry.zh.md)——能力拆分与类型声明。
-- [历史会话遥测复活决策](../../../.agents/notes/archived/feature/2026-07-23-session-telemetry-otel-revival.md)——理由、权衡与被否决的替代方案。
+- 会话遥测子系统——能力拆分与类型声明。
+- 历史会话遥测复活决策——理由、权衡与被否决的替代方案。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 
 -----

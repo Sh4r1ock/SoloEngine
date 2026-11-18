@@ -39,10 +39,10 @@ kind: "package-group"
 
 先从子系统参考了解共享词汇，再看相邻的自动化与组合面。
 
-- [命令子系统](../../docs/subsystems/commands.zh.md)——命令注册表语义与 `ctx.commands` 的 Cordis 接口面。
-- [审批子系统](../../docs/subsystems/approval.zh.md)——请求／结果词汇、应答者瀑布与按会话策略。
-- [权限预设子系统](../../docs/subsystems/permission-presets.zh.md)——预设表与旋钮写穿。
-- [用户交互子系统](../../docs/subsystems/user-questions.zh.md)——问题词汇、answerer waterfall 与待处理问题生命周期。
+- 命令子系统——命令注册表语义与 `ctx.commands` 的 Cordis 接口面。
+- 审批子系统——请求／结果词汇、应答者瀑布与按会话策略。
+- 权限预设子系统——预设表与旋钮写穿。
+- 用户交互子系统——问题词汇、answerer waterfall 与待处理问题生命周期。
 
 <a id="dev-note"></a>
 ## 开发备注

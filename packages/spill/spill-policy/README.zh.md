@@ -42,7 +42,7 @@ kind: "package-reference"
 |---|---|---|
 | `maxInlineTokens` | 省略 | 保留的文字、图片、图片说明和提示的估算 token 上限；省略时禁用策略 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-spill-policy)是每个受支持字段的穷尽式真源。负数或小数上限会让插件加载失败，而不是破坏每次调用的行为。
+生成的配置目录是每个受支持字段的穷尽式真源。负数或小数上限会让插件加载失败，而不是破坏每次调用的行为。
 
 ### 模型看到什么
 
@@ -115,7 +115,7 @@ PTC 程序收到完整的规范值。含图片的子结果在转发给模型前�
 - [spill 存储服务](../spill/README.zh.md)——策略替换背后的 `saveText` 约定。
 - [dsh-spill-local](../spill-local/README.zh.md)——保存 spill 文本的本地后端。
 - [Token meter](../../llm/token-meter/README.zh.md) — 共享文字估算和模型图片计量。
-- [工具输出 spill 决策](../../../.agents/notes/implemented/architecture/2026-07-08-tool-output-spill-files.zh.md)——能力边界与设计依据。
+- 工具输出 spill 决策——能力边界与设计依据。
 
 -----
 

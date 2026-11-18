@@ -108,7 +108,7 @@ Read these pages when the package-level contract is not enough; they move from t
 - [Compaction seam](../compaction/README.md) — the condensation contract this command triggers.
 - [Compaction basic backend](../compaction-basic/README.md) — the shipped backend that condenses automatically and on demand.
 - [Commands package](../../interaction/commands/README.md) — the registry and dispatch contract behind chat commands.
-- [Compaction subsystem reference](../../../docs/subsystems/compaction.md) — the condensation vocabulary, results, and service behavior.
+- Compaction subsystem reference — the condensation vocabulary, results, and service behavior.
 - [Queued manual compaction reference](../compaction/README.md) — how on-demand condensation serializes against running turns.
 
 -----

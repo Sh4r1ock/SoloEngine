@@ -48,7 +48,7 @@ agent 会完成该任务，把提供方的每个非空推理（reasoning）增�
 | `json` | `false` | 把本次运行投影为 stdout 上的按行 JSON 事件 |
 | `permissionMode` | 会话策略 | 提交任务前应用已配置的权限预设，恢复会话时同样生效 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-headless)是所有受支持字段及其 JSDoc 的完整真源。
+生成的配置目录是所有受支持字段及其 JSDoc 的完整真源。
 
 <a id="credentials"></a>
 ### 凭据
@@ -143,9 +143,6 @@ patch 叠加在 `dsh-base` 之上：继承投影缓存与共享 PTC 运行时，
 | [`src/startup.ts`](src/startup.ts) | `headless-startup` 提供方：任务输入、Session 标识、权限选项与输出选择 |
 | [`src/json-stream.ts`](src/json-stream.ts) | `--json` 投影：事件词汇、提交点发射、字符串限长 |
 | [`cordis.patch.yml`](cordis.patch.yml) | 叠加在 `dsh-base` 之上的一次性 patch |
-| [`tests/headless.spec.ts`](tests/headless.spec.ts) | 运行流程、汇总、flush、Session 沿用与退出映射 |
-| [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | 投影顺序、提交点发射、限长与释放 |
-| [`tests/startup.spec.ts`](tests/startup.spec.ts) | 在真实 Loader 树上的命令行解析 |
 
 </details>
 
@@ -160,7 +157,7 @@ patch 叠加在 `dsh-base` 之上：继承投影缓存与共享 PTC 运行时，
 - [dsh-base](../base/README.zh.md)——headless 运行其上的共享核心。
 - [dsh-web-app](../web-app/README.zh.md)——用于多轮工作的同级交互式浏览器入口。
 - [dsh-cmdline](../../boot/cmdline/README.zh.md)——启动器如何把命令行交给应用。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-headless)——每个受支持配置字段及其源声明。
+- 生成配置目录——每个受支持配置字段及其源声明。
 
 -----
 
@@ -181,7 +178,7 @@ runner 不向请求前缀添加任何内容；它只是驱动组合出的配置�
 这些限制告诉你 headless 何时不适用、它需要 `dsh` 启动器提供什么。它们是当前包约束，不是通用的 CLI（命令行界面）对比或任务积压。
 
 - **每次运行一个任务**——任务得到回答后进程即退出；没有交互式后续，因此多步工作请拆成多次运行。
-- **持久化历史可能缺少后台 job 的最后一条结算**——进程销毁可能在有主 job 结算前停止 Session 路由或关闭写句柄，正常结束和信号关停也可能如此；[job 生命周期约定](../../../docs/subsystems/jobs.zh.md#session-lifecycle-records)说明消费方如何保留不完整区间。
+- **持久化历史可能缺少后台 job 的最后一条结算**——进程销毁可能在有主 job 结算前停止 Session 路由或关闭写句柄，正常结束和信号关停也可能如此；job 生命周期约定说明消费方如何保留不完整区间。
 - **自定义 startup**——禁用 `headless-startup` 的组合必须直接配置策略。
 - **Windows 额外根目录**——ACL 后端在工具执行时拒绝带额外根目录的子进程调用，不会阻止模型请求。文件系统工具独立执行这些授权。参见[平台限制](../../sandbox/sandbox-local/README.zh.md)。
 - **通过 `dsh` 启动器运行**——以其他方式启动 headless profile 会在启动时失败，因为只有启动器能请求进程退出。

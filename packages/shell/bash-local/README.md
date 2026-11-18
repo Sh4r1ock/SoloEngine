@@ -48,7 +48,7 @@ Load the executor with the budgets you want; every field has a default, so the s
 | `maxSpillBytes` | `67,108,864` | Per-stream full-output spill cap |
 | `graceMs` | `3,000` | Grace period for kill escalation and post-exit pipe draining |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-bash-local) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Running commands
 
@@ -88,8 +88,6 @@ The executor is a Service Provider for the `ctx.shell` seam built on the subproc
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `LocalBashExecutor`, `Config`, settings-section wiring |
-| `tests/executor.spec.ts` | Exercised behavior: budgets, classification, background handles, ownership |
-| `tests/settings.spec.ts` | Settings layering over the composition entry |
 
 ### Main flow
 
@@ -115,7 +113,7 @@ Read these pages when the executor contract is not enough. They move from the se
 - [shell seam](../shell/README.md) — the executor contract this provider implements, including the request/spec split.
 - [bash-sandbox](../bash-sandbox/README.md) — the confining executor to compose instead when commands need the sandbox capability.
 - [tool-bash](../tool-bash/README.md) — the model-facing `bash` tool over this executor.
-- [Bash executor subsystem](../../../docs/subsystems/shell.md) — request/spec vocabulary, results, and the service contract in full.
+- Bash executor subsystem — request/spec vocabulary, results, and the service contract in full.
 - [subprocess-local](../../subprocess/subprocess-local/README.md) — the managed-range mechanics behind this executor.
 
 -----

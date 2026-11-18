@@ -57,9 +57,6 @@
       "path": "../../packages/mcp/mcp-client"
     },
     {
-      "path": "../../packages/test-support/loader-smoke"
-    },
-    {
       "path": "../../packages/session-query/session-query-sqlite"
     },
     {

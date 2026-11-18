@@ -66,8 +66,7 @@
     "@deepseek-ai/dsh-settings": "workspace:*",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-otel": "workspace:*",
-    "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-loader-smoke": "workspace:*"
+    "@deepseek-ai/dsh-app-boot": "workspace:*"
   },
   "files": [
     "locale/*.json",

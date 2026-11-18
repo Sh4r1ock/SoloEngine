@@ -79,7 +79,7 @@ one-shot 和模式未知的 child 选用只读编辑器。可继续 child 经由
 
 模式未知的目录项仍可见、可点击，没有标签时显示子会话 id。读取子历史并确认受支持模式前，输入区保持只读；读取失败在该子会话中报告。
 
-会话树菜单高亮遵循[标准菜单边缘几何](../../../docs/ui-radius.zh.md#nested-hover)。每个分支展开控件的点击区域覆盖左侧 28px 空间与所在行的完整高度，不与相邻行重叠；仅原位的 12px 图标旋转，点击展开控件不会触发行导航或侧边栏导航。悬停展开控件仅高亮箭头；悬停导航主体或键盘聚焦时仍保留背景高亮。细连接线使用三级边框颜色，与首行图标中心对齐，跨过预留的展开控件空间连接叶子状态图标，末端竖线止于对应图标中心。
+会话树菜单高亮遵循标准菜单边缘几何。每个分支展开控件的点击区域覆盖左侧 28px 空间与所在行的完整高度，不与相邻行重叠；仅原位的 12px 图标旋转，点击展开控件不会触发行导航或侧边栏导航。悬停展开控件仅高亮箭头；悬停导航主体或键盘聚焦时仍保留背景高亮。细连接线使用三级边框颜色，与首行图标中心对齐，跨过预留的展开控件空间连接叶子状态图标，末端竖线止于对应图标中心。
 
 </details>
 
@@ -93,7 +93,7 @@ one-shot 和模式未知的 child 选用只读编辑器。可继续 child 经由
 - [ui-conversation](../ui-conversation/README.zh.md)——承载页头操作与编辑器链的聊天界面。
 - [ui-input-trigger](../ui-input-trigger/README.zh.md)——承载 `@` source 的建议机制。
 - [subagent](../../subagent/subagent/README.zh.md)——可继续 child 背后的宿主能力 seam。
-- [历史Web subagent 对话](../../../.agents/notes/archived/feature/2026-07-27-web-subagent-conversations.md)——目录与编辑器规范。
+- 历史Web subagent 对话——目录与编辑器规范。
 - [当前轮次中断](../../subagent/subagent/README.zh.md)——独立 Stop 的语义。
 
 -----

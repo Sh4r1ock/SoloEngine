@@ -39,7 +39,7 @@ kind: "package-reference"
 
 存放用户全局 `AGENTS.md` 的 harness home 属于进程策略，而不是配置行：该插件通过 `@deepseek-ai/dsh-home-paths` 解析 `$DSH_HOME` 或 `~/.dsh`，因此指令加载始终读取进程 home。共享 agents 根目录同样如此解析：`$DSH_AGENTS_HOME` 或 `~/.agents`。残留的 `dshHome` 与 `agentsHome` 配置行字段会被忽略。
 
-只有确认项目根标记不存在时，项目根发现才会继续上溯。权限或 I/O 失败会停止发现，并抛出宿主或文件系统提供方的原始错误，而不会选择祖先项目。[历史根标记元数据决策](../../../.agents/notes/archived/bug-fix/2026-09-03-root-marker-metadata-failures.md)说明发现为何必须失败，而不能替换为其他根目录。
+只有确认项目根标记不存在时，项目根发现才会继续上溯。权限或 I/O 失败会停止发现，并抛出宿主或文件系统提供方的原始错误，而不会选择祖先项目。历史根标记元数据决策说明发现为何必须失败，而不能替换为其他根目录。
 
 ```yaml
 - name: '@deepseek-ai/dsh-agent-instructions'
@@ -67,13 +67,13 @@ export interface Config {
 | `instructionFileCandidates` | `['AGENTS.md', 'CLAUDE.md']` | 每个项目目录中加载的基础文件名 |
 | `localInstructionFileCandidates` | `['AGENTS.local.md', 'CLAUDE.local.md']` | 在基础文件之后加载的本地 overlay 文件名 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-instructions)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 ### 观察预算
 
 渲染分别为用户全局指令链与项目指令链做预算，每条链各受 `maxBytes` 限制。在一条链内，渲染优先保留最具体的文件：先丢弃完整的较宽泛文件，再截断剩下的最后一个文件，然后依次退回到精简引言、带该文件空标题的预算通知，最后是仅含预算通知的文本。因此用户全局文件只有超出自身预算时才会被省略或截断，且 harness home 文件先于共享根目录文件被省略；下文的回退情形除外。可见的 `Workspace instruction budget ...` 通知会指名两条链中被省略与被截断的路径。超出预算的宽泛文件会被忽略；刷新期间它被视为暂时不可用，而非被移除。
 
-所有文件合起来能放进 `maxBytes` 时，消息包含全部文件且没有预算通知；只有一条链有文件时，该链单独在 `maxBytes` 内渲染。其他情况下，一个 `<system-reminder>` 框架包含合并后的预算通知（仅当有文件被省略或截断时）、一段引言（仅当某条链保留了框架时），以及按加载顺序排列的两条链渲染段落，因此基线中用户全局文件在前；这条消息可以超过 `maxBytes`，但至多为其两倍。若某条链在没有框架的情况下渲染，且合并后的框架会超过 `maxBytes` 的两倍，则所有文件改为作为一条链在一个 `maxBytes` 内渲染，这可能省略一个本可放进自身预算的用户全局文件；这只会在预算只有几百字节，或预算通知接近或超过 `maxBytes` 时发生。[按指令链分别预算的决策](../../../.agents/notes/implemented/architecture/2026-10-16-separate-instruction-chain-budgets.zh.md)记录了两条链分别预算的原因。
+所有文件合起来能放进 `maxBytes` 时，消息包含全部文件且没有预算通知；只有一条链有文件时，该链单独在 `maxBytes` 内渲染。其他情况下，一个 `<system-reminder>` 框架包含合并后的预算通知（仅当有文件被省略或截断时）、一段引言（仅当某条链保留了框架时），以及按加载顺序排列的两条链渲染段落，因此基线中用户全局文件在前；这条消息可以超过 `maxBytes`，但至多为其两倍。若某条链在没有框架的情况下渲染，且合并后的框架会超过 `maxBytes` 的两倍，则所有文件改为作为一条链在一个 `maxBytes` 内渲染，这可能省略一个本可放进自身预算的用户全局文件；这只会在预算只有几百字节，或预算通知接近或超过 `maxBytes` 时发生。按指令链分别预算的决策记录了两条链分别预算的原因。
 
 -----
 
@@ -117,10 +117,10 @@ export interface Config {
 
 包级约定不够用时阅读以下页面。它们从指令文件格式逐步进入设计决策与穷尽式配置。
 
-- [文档标准](../../../docs/AGENTS.md)——`AGENTS.md` 指令文件包含什么、如何维护。
-- [工作区上下文决策记录](../../../.agents/notes/archived/feature/2026-06-24-workspace-context.md)——按 agent／会话隔离与生命周期理由。
+- 文档标准——`AGENTS.md` 指令文件包含什么、如何维护。
+- 工作区上下文决策记录——按 agent／会话隔离与生命周期理由。
 - [上下文组地图](../README.zh.md)——相邻的请求上下文包。
-- [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-instructions)——每个受支持配置字段及其源声明。
+- 生成的配置目录——每个受支持配置字段及其源声明。
 
 -----
 

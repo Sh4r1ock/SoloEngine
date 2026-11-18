@@ -50,7 +50,7 @@ kind: "package-reference"
 | `fallbackMaxBytes` | 必填 | 回退允许的最大 UTF-8 字节数；不得超过 `maxTitleBytes` |
 | `maxTitleBytes` | 必填 | 接受任何来源标题的最大 UTF-8 字节数 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-title)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 ### 添加提供方
 
@@ -105,7 +105,7 @@ kind: "package-reference"
 
 当服务约定不够用时阅读以下页面。它们从子系统参考逐步进入在此插拔的模型支持提供方。
 
-- [会话标题子系统](../../../docs/subsystems/session-title.zh.md)——持久标题状态与提供方词汇类型。
+- 会话标题子系统——持久标题状态与提供方词汇类型。
 - [共享 LLM 执行模块](../session-title-llm/README.zh.md)——两个随附提供方共用的模型执行模块。
 - [首消息标题提供方](../session-title-first-prompt-llm/README.zh.md)——根据第一条符合条件的用户消息生成标题。
 - 全消息标题提供方——根据所有符合条件的用户消息生成标题。

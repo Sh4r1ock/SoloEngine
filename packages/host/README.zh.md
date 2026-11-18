@@ -43,10 +43,10 @@ kind: "package-group"
 
 先从传输与工作区记录的子系统参考读起，再看 Web Client 背后的分层决策。
 
-- [HTTP 服务器子系统](../../docs/subsystems/web-server.zh.md)——webserver 的路由、匹配顺序与配置。
-- [工作区子系统](../../docs/subsystems/workspace.zh.md)——目录选择器所喂给的工作区记录。
+- HTTP 服务器子系统——webserver 的路由、匹配顺序与配置。
+- 工作区子系统——目录选择器所喂给的工作区记录。
 - [Web 配置树启动与传输分层](../boot/app-boot/README.zh.md)——Web 传输各层的所有权。
-- [产品埋点](../../docs/subsystems/product-telemetry.zh.md)——显式提交分析事件。
+- 产品埋点——显式提交分析事件。
 
 <a id="dev-note"></a>
 ## 开发备注

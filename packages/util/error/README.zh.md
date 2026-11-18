@@ -33,7 +33,7 @@ export class ArchiveError extends HarnessError {}
 throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 ```
 
-打包工具可能重命名类时，在子类构造函数中把 `this.name` 赋为字符串字面量，因为 `name` 会被持久化。可以从 `@deepseek-ai/dsh-error` 导入该类，也可以使用 `@deepseek-ai/dsh-llm` 的重新导出；两者是同一个类，因此 `instanceof` 判断结果一致。[错误处理技能](../../../.agents/skills/dsh-error-handling/SKILL.md)规定了类的选择、命名与 code 约定。
+打包工具可能重命名类时，在子类构造函数中把 `this.name` 赋为字符串字面量，因为 `name` 会被持久化。可以从 `@deepseek-ai/dsh-error` 导入该类，也可以使用 `@deepseek-ai/dsh-llm` 的重新导出；两者是同一个类，因此 `instanceof` 判断结果一致。错误处理技能规定了类的选择、命名与 code 约定。
 
 -----
 
@@ -60,8 +60,8 @@ throw new ArchiveError('archive entry is missing', 'ARCHIVE_ENTRY_NOT_FOUND')
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [工具子系统](../../../docs/subsystems/tools.zh.md) — 注册表如何根据抛出的 `HarnessError` 记录 `ToolErrorInfo`。
-- [错误处理规则](../../../.agents/skills/dsh-error-handling/SKILL.md) — 何时必须抛出 `HarnessError`。
+- 工具子系统 — 注册表如何根据抛出的 `HarnessError` 记录 `ToolErrorInfo`。
+- 错误处理规则 — 何时必须抛出 `HarnessError`。
 
 -----
 

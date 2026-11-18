@@ -31,10 +31,10 @@ The todo group gives agents a session-level task list to plan with: add tasks, m
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Todo subsystem](../../docs/subsystems/todo.md) — the `todo/write` event payload, ownership rules, and `TodoItem`.
-- [Generated tool catalog](../../docs/tool-catalog.md#deepseek-aidsh-tool-todo) — the `todo_write` schema the model receives.
-- [Generated configuration catalog](../../docs/config-catalog.md#deepseek-aidsh-tool-todo) — every accepted config field.
-- [todo_write tool Agent Note](../../.agents/notes/archived/feature/2026-06-29-todo-write-tool.md) — the original design and its alternatives.
+- Todo subsystem — the `todo/write` event payload, ownership rules, and `TodoItem`.
+- Generated tool catalog — the `todo_write` schema the model receives.
+- Generated configuration catalog — every accepted config field.
+- todo_write tool Agent Note — the original design and its alternatives.
 
 -----
 

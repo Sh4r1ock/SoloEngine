@@ -36,7 +36,6 @@ No effect: VM lifecycle is not model input.
 - Requires QEMU, a bootable base image, and a platform key; the local and container forms never load it.
 - Guest egress is denied by default (`restrict=on`): the guest reaches only the explicitly forwarded SSH port.
 - `browser-use` and `computer-use` providers are not shipped (D16); the VM exposes a VNC display surface for deployments that install them in the guest.
-- The L3 acceptance run requires a bootable image and a working QEMU (`kvm` or `tcg`); without them the suite skips. The D-tier run was executed under TCG on a KVM-less host: `test/soloengine/vm-l3` **8/8**, including default-deny guest egress and the file boundary between two concurrent session VMs (`records/vm-l3.json`).
 
 ### Dev Note
 

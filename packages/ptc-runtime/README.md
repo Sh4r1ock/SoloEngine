@@ -28,7 +28,6 @@ These three packages together provide program execution; each README describes w
 |---|---|---|
 | [`ptc-runtime/`](ptc-runtime/README.md) | Defines what a PTC runtime does: run one program against host-provided bindings and report what it printed and returned | `ctx.ptcRuntime` |
 | [`ptc-runtime-node/`](ptc-runtime-node/README.md) | Executes TypeScript in fresh managed Node processes under the resolved sandbox policy | registers `ctx.ptcRuntime` |
-| [`experimental/ptc-runtime-python/`](../../bat/removed-20261031/packages/experimental/ptc-runtime-python/README.md) | The experimental Python backend: owns the fd-3 wire protocol between a Node host and a CPython subprocess and the CPython runtime implementation | — |
 
 -----
 
@@ -37,9 +36,9 @@ These three packages together provide program execution; each README describes w
 
 Start with the subsystem reference for the service contract, then the PTC mode design that consumes this capability and the capability-seam model it follows.
 
-- [PTC runtime subsystem reference](../../docs/subsystems/ptc-runtime.md) — request/result vocabulary, bindings, and the `ctx.ptcRuntime` Cordis surface.
-- [PTC mode Agent Note](../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry presents `run_code` to the model.
-- [Capability seams](../../docs/capability-seams.md) — the Service Definition / Service Provider / Consumer split this family follows.
+- PTC runtime subsystem reference — request/result vocabulary, bindings, and the `ctx.ptcRuntime` Cordis surface.
+- PTC mode Agent Note — how the tool registry presents `run_code` to the model.
+- Capability seams — the Service Definition / Service Provider / Consumer split this family follows.
 
 <a id="dev-note"></a>
 ## Dev Note

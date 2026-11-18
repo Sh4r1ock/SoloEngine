@@ -54,7 +54,7 @@ All fixed actions come from the service's observable fixed catalog. Conversation
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Web Client](../../../docs/subsystems/web-client.md)
+- Web Client
 - [UI primitives](../ui-primitives/README.md)
 - [Web app bundle](../../bundle/web-app/README.md)
 

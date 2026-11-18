@@ -86,8 +86,8 @@ kind: "package-reference"
 - [Client runner](../cordis-client-runner/README.zh.md)——面板读取并调用的浏览器面。
 - [Host runner](../cordis-host-runner/README.zh.md)——面板背后的清单与生命周期动词。
 - [工具包](../tool-cordis/README.zh.md)——只读运行时 API 发现。
-- [extensions 子系统](../../../docs/subsystems/extensions.zh.md)——生成的 `ctx.dynamicCordisRunner` API 与转发的 `cordis/*` 事件。
-- [slots 子系统](../../../docs/subsystems/slots.zh.md)——slot 注册的浏览器 UI 如何归其包所有。
+- extensions 子系统——生成的 `ctx.dynamicCordisRunner` API 与转发的 `cordis/*` 事件。
+- slots 子系统——slot 注册的浏览器 UI 如何归其包所有。
 
 -----
 

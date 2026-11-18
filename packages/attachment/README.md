@@ -36,9 +36,9 @@ These two packages provide durable image attachments; each README describes what
 
 Start with the subsystem reference for the service contract, then the capability-seam table and the configuration surface of the local backend.
 
-- [Attachment subsystem reference](../../docs/subsystems/attachment.md) — service contract, payload types, and the `ctx.attachments` Cordis surface.
-- [Capability seams](../../docs/capability-seams.md) — the Service Definition / Service Provider / Consumer split this family follows.
-- [Generated configuration catalog](../../docs/config-catalog.md#deepseek-aidsh-attachment-local) — every accepted field of the local backend.
+- Attachment subsystem reference — service contract, payload types, and the `ctx.attachments` Cordis surface.
+- Capability seams — the Service Definition / Service Provider / Consumer split this family follows.
+- Generated configuration catalog — every accepted field of the local backend.
 
 <a id="dev-note"></a>
 ## Dev Note

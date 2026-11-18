@@ -41,7 +41,7 @@ kind: "package-reference"
 |---|---|---|
 | `mode` | 必填 | `native`——每个 schema；`ptc`——`run_code` 加生成 SDK |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-agent-tool-presentation)是每个受支持字段的穷尽式真源。`mode` 是必填而非有默认值，因为不带这一行的 preset 会继承部署默认值。
+生成的配置目录是每个受支持字段的穷尽式真源。`mode` 是必填而非有默认值，因为不带这一行的 preset 会继承部署默认值。
 
 ### PTC 模式需要什么
 
@@ -87,7 +87,7 @@ kind: "package-reference"
 - [tools 包](../tools/README.zh.md)——工具呈现模式与 `setExecutor` API。
 - [agent-presets 包](../../preset/agent-preset-registry/README.zh.md)——preset 如何组合 agent 及其常驻挂载。
 - [Node ptc-runtime 包](../../ptc-runtime/ptc-runtime-node/README.zh.md)——PTC 模式所需的 TypeScript 运行时。
-- [历史PTC mode 执行器塌缩 note](../../../.agents/notes/archived/bug-fix/2026-08-07-ptc-executor-collapse.md)——通告面与可调用面为何保持一致。
+- 历史PTC mode 执行器塌缩 note——通告面与可调用面为何保持一致。
 - [core 分组地图](../README.zh.md)——core 各包如何组合。
 
 -----

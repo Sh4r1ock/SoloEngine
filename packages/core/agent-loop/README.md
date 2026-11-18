@@ -52,7 +52,7 @@ Agents declared in config start automatically when the plugin loads. Each entry 
 | `agents[].sessionId` | — | Exact identity: first use creates, a remount resumes materialized history |
 | `agents[].resumeSessionId` | — | Load this persisted session instead of creating one; mutually exclusive with `sessionId` |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-loop) lists every accepted field. `maxParallelToolCalls` remains a volatile positive-integer Config field with default `10`; `1` selects serial execution. The loop passes its current value to each batch's `execute()` call, taking precedence over executor configuration. Live edits apply to the next batch; `agents` remains startup configuration.
+The generated configuration catalog lists every accepted field. `maxParallelToolCalls` remains a volatile positive-integer Config field with default `10`; `1` selects serial execution. The loop passes its current value to each batch's `execute()` call, taking precedence over executor configuration. Live edits apply to the next batch; `agents` remains startup configuration.
 
 A configured resume records the declared route as the Session selection before publication. Programmatic resume preserves the Session choice unless its setup explicitly records another route; initial `agentOptions` alone do not override saved history.
 
@@ -94,7 +94,7 @@ Before prompt assembly, the loop calls `agent.model.current()` and captures prov
 
 After `agent/request`, `ctx.llm.prepareCall()` validates adapter-owned fields and resolves reasoning-effort and output-token defaults under the active turn signal. The loop retains that exact adapter through resolution, `request/header` logging, and dispatch. It writes a full header for the first request, a changed envelope (config or tools — the prompt is not part of the header), an explicit message-series start, a request after a surface replacement or image-offload decision, and resume; unchanged steps, retries, and ordinary later turns in the same series inherit the latest header, and an in-history prompt append is not a replacement, so the request that follows it inherits the header too. Beside the header, the loop logs `request/context` — provider, model, `contextWindow`, and the route's `systemPromptUpdate` mode from `prepareCall()` — only when one of those differs from the latest snapshot. Before the next waterfall, the loop removes adapter-default fields so the current route resolves them again, while explicit settings persist. An unhandled route still fails with `NO_ADAPTER`.
 
-The loop deep-freezes each derived message identity on its first request and reuses that proof only within the same agent. Restored messages keep their identity; request construction does not freeze their containing event wrappers. Each request freezes its local canonical header, fresh message array, and envelope while leaving the cancellation signal live. The [archived request-freeze decision](../../../.agents/notes/archived/simplification/2026-09-06-agent-request-freeze-evidence.md) explains ownership and measurement.
+The loop deep-freezes each derived message identity on its first request and reuses that proof only within the same agent. Restored messages keep their identity; request construction does not freeze their containing event wrappers. Each request freezes its local canonical header, fresh message array, and envelope while leaving the cancellation signal live. The archived request-freeze decision explains ownership and measurement.
 
 ### Source map
 
@@ -141,9 +141,9 @@ Before closing a failed step, the driver records an error result for each unansw
 The package-level contract is enough for most consumers; read these when you need the surrounding domain and the design rationale.
 
 - [agent package](../agent/README.md) — the `Agent` handle, registry, and `agent/*` events this loop implements.
-- [Core subsystem](../../../docs/subsystems/core.md) — the turn flow and interception decisions.
-- [Session subsystem](../../../docs/subsystems/session.md) — the durable log the loop writes and derives from.
-- [Tools subsystem](../../../docs/subsystems/tools.md) — the pipeline the loop dispatches through.
+- Core subsystem — the turn flow and interception decisions.
+- Session subsystem — the durable log the loop writes and derives from.
+- Tools subsystem — the pipeline the loop dispatches through.
 - [Core group map](../README.md) — how the core packages compose.
 
 -----
@@ -228,7 +228,7 @@ Recovery results append after the existing history and preserve its reusable pre
 
 These limits define when the loop needs special care. They are current package constraints, not a task backlog.
 
-- **Classification is unary** — calls whose safety depends on comparing siblings or resources must remain exclusive ([rationale](../../../.agents/notes/implemented/feature/2026-07-10-parallel-tool-call-execution.md)).
+- **Classification is unary** — calls whose safety depends on comparing siblings or resources must remain exclusive (rationale).
 - **Root shutdown persistence** — shutting down the root context with an active Agent can leave its final `turn/end` in memory but absent from the persisted log. Agent teardown completing does not guarantee that this event was saved.
 - **Previously closed inconsistent history** — failed-step recovery does not rewrite unanswered calls in already-closed historical turns.
 - **Config labels are fresh by default** — omitting `sessionId` creates a fresh `${id}-session-<uuid>` on every startup; exact resume-or-create behavior requires an explicit stable `sessionId`, while `resumeSessionId` requires existing persisted history.

@@ -39,8 +39,8 @@ kind: "package-group"
 
 先从子系统参考文档了解共享词汇，再看单一提供方选择服务背后的设计决策。
 
-- [web 子系统](../../docs/subsystems/web.zh.md)——搜索与抓取的请求和结果、提供方可用性、`WebError` 与抓取网络策略。
-- [web 能力 seam 决策](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.zh.md)——搜索与抓取为何共用一项提供方选择服务。
+- web 子系统——搜索与抓取的请求和结果、提供方可用性、`WebError` 与抓取网络策略。
+- web 能力 seam 决策——搜索与抓取为何共用一项提供方选择服务。
 
 <a id="dev-note"></a>
 ## 开发备注

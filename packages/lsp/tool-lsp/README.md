@@ -45,11 +45,11 @@ Navigation returns `path:line:character` locations grouped by file (one-based); 
 | `maxResultChars` | `16000` | Largest complete rendered result, including truncation metadata |
 | `timeoutMs` | `60000` | Tool-call timeout budget enforced by `dsh-tool-call-timeout-policy`; covers the complete queued open/query/close lifecycle and is not model-configurable |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-lsp) is the exhaustive source for every accepted field.
+The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### Failures and recovery
 
-An unknown operation, a blank `file_path`, or a coordinate that is not a positive integer fails with `ToolArgsError` `INVALID_ARGS` before any query. The tool requires an Agent Session; a non-agent call fails with `LSP_WORKSPACE_REQUIRED` before any query. The working-directory service supplies and validates its current root. When no provider handles the file's extension, the query fails with `LSP_UNAVAILABLE`; malformed provider payloads remain structured `LSP_MALFORMED_RESPONSE` errors. These and every provider failure surface to the model as error tool results that keep the failure's `name` and `code`; the [LSP navigation subsystem](../../../docs/subsystems/lsp.md#failures) lists the codes.
+An unknown operation, a blank `file_path`, or a coordinate that is not a positive integer fails with `ToolArgsError` `INVALID_ARGS` before any query. The tool requires an Agent Session; a non-agent call fails with `LSP_WORKSPACE_REQUIRED` before any query. The working-directory service supplies and validates its current root. When no provider handles the file's extension, the query fails with `LSP_UNAVAILABLE`; malformed provider payloads remain structured `LSP_MALFORMED_RESPONSE` errors. These and every provider failure surface to the model as error tool results that keep the failure's `name` and `code`; the LSP navigation subsystem lists the codes.
 
 -----
 
@@ -86,7 +86,7 @@ This section explains the design decisions behind the tool and where the code re
 
 Read these pages when the package-level contract is not enough. They move from the model-facing surface to the seam and the provider.
 
-- [LSP navigation subsystem](../../../docs/subsystems/lsp.md) — operations, coordinates, requests and results, and `LspError` codes.
+- LSP navigation subsystem — operations, coordinates, requests and results, and `LspError` codes.
 - [dsh-lsp](../lsp/README.md) — the seam this tool queries.
 - [dsh-lsp-stdio](../lsp-stdio/README.md) — the stdio provider that answers these queries.
 - [lsp group map](../README.md) — the three-package family and its related documentation.
@@ -120,7 +120,7 @@ Prefix-stable while the plugin scope and guidance text are unchanged; activation
 
 #### What the model sees
 
-The model sees the generated [`lsp` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-lsp).
+The model sees the generated `lsp` schema.
 
 #### Token effect
 

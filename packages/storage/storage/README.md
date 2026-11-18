@@ -76,7 +76,7 @@ The hub is a pure registration table with two faces, designed so backends and da
 
 ### The backend contract
 
-[`src/backend.ts`](src/backend.ts) is the normative contract for backend implementers; the shared conformance suite in `tests/contract.ts` checks whole-unit behavior on both shipped backends. A backend owns exactly one medium and exposes optional data-shape facets; `kv` is the only facet. Opening a unit yields a handle for opaque JSON values whose atomicity and durability follow the selected layout. Unit and table names must match `UNIT_NAME_RE`. Whole-unit keys stay opaque; JSON per-record keys become path-safe file segments. The caller orders concurrent writes. Reads accept the current or declared `compatibleVersions`; unsupported unit stamps reject `version-mismatch`, while unsupported JSON per-record documents read as absent. Mutations atomically stamp the current version with their data; a missing-key delete does not restamp. Domains own value conversion, and backend implementers must preserve these semantics; see [domain versioning](../../../docs/subsystems/storage.md#domain-versioning) for mixed values, failure recovery, and upgrades.
+[`src/backend.ts`](src/backend.ts) is the normative contract for backend implementers. A backend owns exactly one medium and exposes optional data-shape facets; `kv` is the only facet. Opening a unit yields a handle for opaque JSON values whose atomicity and durability follow the selected layout. Unit and table names must match `UNIT_NAME_RE`. Whole-unit keys stay opaque; JSON per-record keys become path-safe file segments. The caller orders concurrent writes. Reads accept the current or declared `compatibleVersions`; unsupported unit stamps reject `version-mismatch`, while unsupported JSON per-record documents read as absent. Mutations atomically stamp the current version with their data; a missing-key delete does not restamp. Domains own value conversion, and backend implementers must preserve these semantics; see domain versioning for mixed values, failure recovery, and upgrades.
 
 ### Source map
 
@@ -86,7 +86,6 @@ The hub is a pure registration table with two faces, designed so backends and da
 | [`src/registry.ts`](src/registry.ts) | `BackendRegistry`: name → backend table, registration disposers |
 | [`src/backend.ts`](src/backend.ts) | The backend contract: facets, units, `UNIT_NAME_RE` |
 | [`src/error.ts`](src/error.ts) | `StorageError` codes shared by the hub and every backend |
-| [`tests/contract.ts`](tests/contract.ts) | The shared conformance suite run against each backend |
 
 </details>
 
@@ -97,9 +96,9 @@ The hub is a pure registration table with two faces, designed so backends and da
 
 Read these pages when the hub's view is not enough: the subsystem reference is the authoritative contract, and the Agent Note records the family design and its deferred work.
 
-- [Storage subsystem](../../../docs/subsystems/storage.md) — the backend contract, domain semantics, change events, and generated API.
+- Storage subsystem — the backend contract, domain semantics, change events, and generated API.
 - [Storage package map](../README.md) — the family's packages and their repository position.
-- [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — the design behind the hub, the domain form, and the session-backend migration.
+- domain KV storage Agent Note — the design behind the hub, the domain form, and the session-backend migration.
 
 -----
 
@@ -127,7 +126,7 @@ Independent of live requests: the hub never touches a request prefix, so it cann
 
 These limits define what the hub cannot do. They are current package constraints, not a task backlog.
 
-- **`kv` is the only data shape** — a backend implements one facet; the `log` facet for session event logs is deferred to the session-backend migration ([Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md)).
+- **`kv` is the only data shape** — a backend implements one facet; the `log` facet for session event logs is deferred to the session-backend migration (Agent Note).
 - **Forms resolve lazily** — reading `ctx.storage.domain` before the domain plugin mounts throws `form-not-mounted`; assemblies order plugins accordingly rather than silently deferring.
 
 <a id="dev-note"></a>

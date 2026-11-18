@@ -50,13 +50,13 @@ Two fields: the database path and the journal mode. `:memory:` opens an in-proce
 | `path` | required | SQLite database file path, or `:memory:` |
 | `journalMode` | `wal` | Journal mode: `wal`, `delete`, `truncate`, or `persist` |
 
-`wal` suits local disks; a rollback-journal mode (`delete`/`truncate`/`persist`) fits filesystems where WAL's shared-memory files do not work, such as network mounts. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-storage-sqlite) is the exhaustive source for every accepted field and its JSDoc.
+`wal` suits local disks; a rollback-journal mode (`delete`/`truncate`/`persist`) fits filesystems where WAL's shared-memory files do not work, such as network mounts. The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Observable behavior
 
 Missing directories and database files are created owner-only (`0o700`/`0o600`); an existing database keeps its modes. A unit accepts its descriptor's current version or `compatibleVersions`, otherwise rejects `version-mismatch`. Accepted older units retain their stamp on read; the first mutation commits data and the current stamp in one transaction. Deleting missing keys or an empty batch leaves the stamp unchanged. Untouched record values and other units remain unchanged; the backend does not convert application values. A database stamped with a physical layout version other than the current one rejects outright; domain compatibility does not migrate the database layout. Storage checks use `StorageError` codes; underlying SQLite failures propagate, and writes are durable once resolved.
 
-Every nonempty batch delete uses one transaction, including its version update when needed. A failed transaction preserves data and stamp when SQLite rolls back successfully, including an automatic rollback. A failed `BEGIN` leaves the batch unapplied and permits retry on the same handle. If rollback itself fails, the backend retains a `StorageError` with code `unknown-state` whose cause is an `AggregateError` containing both failures, and rejects further unit reads, writes, and pending or new opens. The transaction outcome is unknown. Close the backend and its domains, then create a new backend to inspect saved state before deciding whether to retry. See [domain versioning](../../../docs/subsystems/storage.md#domain-versioning) for mixed records and downgrade behavior.
+Every nonempty batch delete uses one transaction, including its version update when needed. A failed transaction preserves data and stamp when SQLite rolls back successfully, including an automatic rollback. A failed `BEGIN` leaves the batch unapplied and permits retry on the same handle. If rollback itself fails, the backend retains a `StorageError` with code `unknown-state` whose cause is an `AggregateError` containing both failures, and rejects further unit reads, writes, and pending or new opens. The transaction outcome is unknown. Close the backend and its domains, then create a new backend to inspect saved state before deciding whether to retry. See domain versioning for mixed records and downgrade behavior.
 
 -----
 
@@ -96,10 +96,10 @@ Opening the database creates the parent as `0o700`, exclusively creates a missin
 
 Read these pages when this backend's view is not enough: the subsystem reference is the authoritative contract, and the sibling backend shows the alternative medium.
 
-- [Storage subsystem](../../../docs/subsystems/storage.md) — the backend contract, domain semantics, and generated API.
+- Storage subsystem — the backend contract, domain semantics, and generated API.
 - [Storage package map](../README.md) — the family's packages and their repository position.
 - [JSON storage backend](../storage-json/README.md) — the human-readable medium for small, inspectable data.
-- [domain KV storage Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.md) — the design behind the backend family and the deferred session-backend migration.
+- domain KV storage Agent Note — the design behind the backend family and the deferred session-backend migration.
 
 -----
 

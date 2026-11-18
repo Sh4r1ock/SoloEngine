@@ -60,7 +60,7 @@ Desktop native menus and embedded frames use the same command registry as DOM in
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Web Client](../../../docs/subsystems/web-client.md)
+- Web Client
 - [UI primitives](../ui-primitives/README.md)
 - [Web app bundle](../../bundle/web-app/README.md)
 

@@ -1,5 +1,5 @@
 {
-  // Client-side typecheck aggregate: packages/client tests and top-level Client benchmarks.
+  // Client-side typecheck aggregate for the browser-facing Client programs.
   // Split from the host aggregate because both sides merge cordis Context
   // under the same keys (sessions, loader) with different services; shared
   // leaves (session/llm/tools/...) build once and are referenced by
@@ -8,43 +8,23 @@
   "compilerOptions": {
     "noEmit": true,
     "rewriteRelativeImportExtensions": false,
-    // Tests execute under vitest on node (e2e files spawn processes); browser
-    // purity of package src is each package's own tsconfig plus
-    // scripts/client-bundle-purity.spec.ts.
+    // Client programs run in the browser; package src purity is each package's
+    // own tsconfig.
     "types": ["node"]
   },
   "include": [
-    "apps/desktop/tests/keyboard.spec.ts",
     "apps/desktop/src/keyboard.ts",
     "apps/desktop/src/keybindings.ts",
     "apps/desktop/src/browser-guests.ts",
     "apps/desktop/src/ipc.ts",
     "apps/desktop/src/update-overlay.ts",
-    "apps/desktop/tests/**/*.client.spec.tsx",
     "packages/client/*/src/css-modules.d.ts",
-    "packages/client/*/tests/**/*.ts",
-    "packages/client/*/tests/**/*.tsx",
-    "packages/*/*/tests/**/*.client.spec.ts",
-    "packages/*/*/tests/**/*.client.spec.tsx",
-    "packages/*/*/tests/**/*.client.tsx",
-    "packages/*/*/tests/**/*.client.ts",
     "packages/extensions/ui-cordis/src/css-modules.d.ts",
     "packages/client/tsdown.client.ts",
     "scripts/client-build-environment.ts",
     "scripts/shipped-locales.ts",
     "scripts/bundle-input-isolation.ts",
     "scripts/experimental-package-policy.ts",
-    "scripts/*.client.spec.ts",
-    "scripts/client-bundle-css.spec.ts",
-    "scripts/client-bundle-purity.spec.ts"
-  ],
-  // Host unit tests (`*.host.spec.ts`), e2e tests (`*.host.e2e.ts`), and fixtures
-  // (`*.host.ts`) belong to the host aggregate, which excludes `*.client.*`
-  // in turn. `exclude` wins over `include`, so the test glob above stays broad.
-  "exclude": [
-    "packages/client/*/tests/**/*.host.spec.ts",
-    "packages/client/*/tests/**/*.host.e2e.ts",
-    "packages/client/*/tests/**/*.host.ts"
   ],
   "references": [
     { "path": "./packages/client/ui-session-status/tsconfig.client.json" },
@@ -78,8 +58,6 @@
     { "path": "./packages/api/remotes/tsconfig.client.json" },
     { "path": "./packages/extensions/cordis-client-runner" },
     { "path": "./packages/extensions/ui-cordis" },
-    { "path": "./packages/test-support/client-runtime" },
-    { "path": "./packages/test-support/remote-mock" },
     { "path": "./packages/client/shortcuts/tsconfig.client.json" },
     { "path": "./packages/client/ui-shortcuts" },
     { "path": "./packages/client/ui-layout" },
@@ -149,7 +127,6 @@
     { "path": "./packages/session/message-quotes" },
     { "path": "./packages/core/tool-executor-native" },
     { "path": "./packages/core/tool-executor-ptc" },
-    { "path": "./packages/test-support/tool-testkit" },
     { "path": "./packages/client/ui-context-menu" },
     { "path": "./packages/client/ui-file-actions" }
   ]

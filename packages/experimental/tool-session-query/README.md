@@ -38,7 +38,7 @@ Choose it when a deployment wants model-driven retrieval of prior work — for e
 | `maxSearchResults` | `100` | Maximum authorized hits returned by one search call |
 | `searchTimeoutMs` | `30000` | Cooperative deadline attached to both full-text search tools |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-session-query) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### What the model can do
 
@@ -75,7 +75,7 @@ The consumer is built on one separation and three commitments:
 - **One model-boundary sanitizer.** Every trusted `ctx.sessionQuery` call goes through the service boundary, which preserves cancellation and contains diagnostic and classification failures.
 - **No second truncation format.** Results stay complete; the generic spill policy owns bounded inline output.
 
-The design history lives in the [model-facing session query tools note](../../../.agents/notes/archived/feature/2026-07-24-model-facing-session-query-tools.md) and the [session-search-not-shipped-default note](../../../.agents/notes/archived/feature/2026-08-02-session-search-not-shipped-default.md).
+The design history lives in the model-facing session query tools note and the session-search-not-shipped-default note.
 
 ### Source map
 
@@ -101,11 +101,11 @@ Each executor derives the caller, normalizes the model's arguments into service 
 
 Read these pages when the package-level contract is not enough. They move from the tool surface to the underlying service, the schema catalog, and the design evidence.
 
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-session-query) — the five tool schemas as the model sees them.
+- Generated tool catalog — the five tool schemas as the model sees them.
 - [dsh-session-query](../../session-query/session-query/README.md) — the service these tools call.
 - [dsh-session-query-sqlite](../../session-query/session-query-sqlite/README.md) — the full-text backend behind the two search tools.
-- [Session Query subsystem reference](../../../docs/subsystems/session-query.md) — the type-level contract under the tools.
-- [Model-facing session query tools](../../../.agents/notes/archived/feature/2026-07-24-model-facing-session-query-tools.md) — workspace authority, cursor-free results, and spill decisions.
+- Session Query subsystem reference — the type-level contract under the tools.
+- Model-facing session query tools — workspace authority, cursor-free results, and spill decisions.
 
 -----
 
@@ -136,7 +136,7 @@ Prefix-stable while the plugin and guidance text are unchanged.
 
 #### What the model sees
 
-The model sees the generated [`session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` schemas](../../../docs/tool-catalog.md#deepseek-aidsh-tool-session-query). Search filters add fixed schema tokens, while cursors, workspace paths, output pagination, and model-controlled result limits remain absent.
+The model sees the generated `session_search`, `session_event_search`, `session_trace`, `session_event_trace`, and `session_event_read` schemas. Search filters add fixed schema tokens, while cursors, workspace paths, output pagination, and model-controlled result limits remain absent.
 
 #### Token effect
 

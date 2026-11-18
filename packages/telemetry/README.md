@@ -27,7 +27,7 @@ This group provides reporting infrastructure shared by product analytics and fee
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [OTel subsystem](../../docs/subsystems/otel.md) — shared service and consumer ownership.
+- OTel subsystem — shared service and consumer ownership.
 
 <a id="dev-note"></a>
 ## Dev Note

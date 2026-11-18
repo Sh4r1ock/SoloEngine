@@ -43,7 +43,7 @@ Host 配置 `credentialOnboarding` 默认为 `true`。Electron preload 标记会
 
 API 密钥输入框通过 `autocomplete="new-password"` 请求浏览器不要自动填入已保存的登录密码。可编辑的草稿非空时，显示与会话密钥遮罩一致的眼睛按钮：**显示密钥**展示当前输入，**隐藏密钥**重新遮住输入。修改或清空输入后会重新遮住密钥。已保存密钥以 Host 生成的脱敏预览作为占位文字；实际输入值保持为空，完整密钥不进入 Client。提供方未提供预览时，仅显示使用已保存密钥的提示。本地提供方的[预览规则](../../credentials/credentials-local/README.zh.md)保留部分识别字符和 Unicode 码点数。已保存密钥隐藏显示按钮，并阻止复制和剪切。键入或粘贴会整项替换，Backspace 或 Delete 会暂存整项删除。已保存凭据从不读入输入框。原生密码框不提供剪切；可选中后按 Backspace 清空草稿，或显示明文后再剪切。
 
-编辑卡片上的主字段是单独一个 **API 密钥**输入框——页面从不询问环境变量名。键入的密钥经 `credentials.set` 以**只写**方式存入 profile 的引用之下，profile 没有引用时便派生 `<ROUTE>_API_KEY`，pi-ai profile 会把这次派生记录为 `apiKeyEnv`，因此 `cordis.patch.yml` 从不携带密钥值。为新的 pi-ai 提供商留空密钥会保存一个不带引用的 profile，从而保留提供商原生认证（例如 Bedrock 凭据链或 Vertex ADC）。profile 有 `apiKeyEnv` 时，字段的占位文字与帮助提示采用该引用；否则按查找顺序采用可配置提供商目录为该路由报告的 `nativeAuth` 凭据变量，并排除 `baseURLEnv` 地址变量。这些显示提示会忽略包含 `oauth` 的引用（不区分大小写），并说明优先使用已保存凭据，其后为显示的环境后备。这项显示过滤不改变[凭据解析顺序](../../../docs/subsystems/credentials.zh.md#resolution)、适配器的完整环境变量列表或显式引用。被过滤的显式引用仍有可用的密钥输入框，使用普通占位文字且不显示帮助提示。没有密钥认证的原生路由不显示密钥字段及认证帮助；显式引用仍会启用该字段。路由没有 `nativeAuth`（例如手动声明的路由）且 profile 没有引用时，显示普通的密钥占位文字，且不显示帮助提示。只有确认引用的凭据已配置时，行才会以绿色实心点标示 API 密钥状态；只有确认具名引用缺失时，才会以红色实心点标示。「应用」成功后会发出本地无障碍状态消息，且绝不回显任何机密内容。
+编辑卡片上的主字段是单独一个 **API 密钥**输入框——页面从不询问环境变量名。键入的密钥经 `credentials.set` 以**只写**方式存入 profile 的引用之下，profile 没有引用时便派生 `<ROUTE>_API_KEY`，pi-ai profile 会把这次派生记录为 `apiKeyEnv`，因此 `cordis.patch.yml` 从不携带密钥值。为新的 pi-ai 提供商留空密钥会保存一个不带引用的 profile，从而保留提供商原生认证（例如 Bedrock 凭据链或 Vertex ADC）。profile 有 `apiKeyEnv` 时，字段的占位文字与帮助提示采用该引用；否则按查找顺序采用可配置提供商目录为该路由报告的 `nativeAuth` 凭据变量，并排除 `baseURLEnv` 地址变量。这些显示提示会忽略包含 `oauth` 的引用（不区分大小写），并说明优先使用已保存凭据，其后为显示的环境后备。这项显示过滤不改变凭据解析顺序、适配器的完整环境变量列表或显式引用。被过滤的显式引用仍有可用的密钥输入框，使用普通占位文字且不显示帮助提示。没有密钥认证的原生路由不显示密钥字段及认证帮助；显式引用仍会启用该字段。路由没有 `nativeAuth`（例如手动声明的路由）且 profile 没有引用时，显示普通的密钥占位文字，且不显示帮助提示。只有确认引用的凭据已配置时，行才会以绿色实心点标示 API 密钥状态；只有确认具名引用缺失时，才会以红色实心点标示。「应用」成功后会发出本地无障碍状态消息，且绝不回显任何机密内容。
 
 编辑器使用脱敏 `CredentialInfo` 选择已保存凭据的占位文字或环境检测，不显示凭据来源标签。快照刷新会更新打开的编辑器，无需单独探测。提示从不接收凭据值，也不改变字段的可写性。
 
@@ -118,7 +118,7 @@ Models 页面包含 **DeepSeek 账号**（`deepseek-account`，英文为 **DeepS
 - [settings](../../settings/README.zh.md)——持久化用户设置 seam 及其文件提供方。
 - [credentials](../../credentials/README.zh.md)——本页写入密钥所经的凭据引用 seam。
 - [llm](../../llm/README.zh.md)——本页所配置提供商所在的适配器注册表。
-- [Web 配置平面](../../../.agents/notes/archived/architecture/2026-07-30-web-config-plane.md)——手写编辑器的设计依据。
+- Web 配置平面——手写编辑器的设计依据。
 
 -----
 

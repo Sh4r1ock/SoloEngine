@@ -62,8 +62,6 @@ while (frames.size > 0) {
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 环形双端队列操作与后备存储生命周期 |
-| [`tests/deque.spec.ts`](tests/deque.spec.ts) | FIFO、前插、环绕、扩容、压缩（compaction）、清空和复用覆盖 |
-| [`benchmarks/drain.ts`](benchmarks/drain.ts) | 随队列规模增长的可复现 backlog 排空计时 |
 
 </details>
 
@@ -73,7 +71,7 @@ while (frames.size > 0) {
 ## 进一步探索
 
 - [工具包映射](../README.zh.md)——跨包组共享的其他零依赖原语。
-- [线性流队列决策](../../../.agents/notes/archived/bug-fix/2026-08-28-linear-stream-queue-drain.md)——生产流为何使用本双端队列而非数组头部移除。
+- 线性流队列决策——生产流为何使用本双端队列而非数组头部移除。
 
 -----
 

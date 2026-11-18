@@ -45,7 +45,7 @@ kind: "package-reference"
 |---|---|---|
 | `maxEntries` | `1,000` | 单个列举层级的完整结果上限；隐藏行计入该上限 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-host-directory-picker-browse)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 -----
 
@@ -83,10 +83,10 @@ kind: "package-reference"
 当后端约定不够用时阅读以下内容：先看 seam 定义，再看决策记录与原生替代方案。
 
 - [目录选择 seam](../directory-picker/README.zh.md)——`browse` 能力约定与类型化错误词汇。
-- [目录选择能力 seam 决策](../../../.agents/notes/archived/architecture/2026-07-28-directory-picker-capability-seam.md)——列举与创建背后的策略裁决。
+- 目录选择能力 seam 决策——列举与创建背后的策略裁决。
 - [原生后端](../directory-picker-native/README.zh.md)——面向本地操作者的 OS 选择器替代方案。
 - [自适应选择器](../directory-picker-auto/README.zh.md)——两个后端之间的启动时判定。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-host-directory-picker-browse)——每个受支持配置字段及其源声明。
+- 生成配置目录——每个受支持配置字段及其源声明。
 
 -----
 

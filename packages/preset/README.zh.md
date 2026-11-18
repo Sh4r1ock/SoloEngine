@@ -29,9 +29,9 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [Scope](../../docs/subsystems/scope.zh.md)
-- [Cordis](../../docs/cordis-primer.zh.md)
-- [Agent preset](../../.agents/notes/implemented/architecture/2026-09-18-declarative-agent-presets.zh.md)
+- Scope
+- Cordis
+- Agent preset
 
 <a id="dev-note"></a>
 ## 开发笔记

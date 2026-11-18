@@ -52,7 +52,7 @@ kind: "package-reference"
 
 自动预算为每个来源 `max(65536, floor(contextWindow × 4 × referenceContextFraction))` 字节。模型上下文容量以 token 计量；每个 token 四字节是容量估算，不是精确的 token 换算。缺少 LLM（大语言模型）服务、适配器或容量时使用 64 KiB；其他模型元数据查询错误与取消会使准备失败。
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-reference)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 -----
 
@@ -97,11 +97,11 @@ kind: "package-reference"
 
 包级约定不够用时阅读以下页面。它们从共享引用表面进入设计决策与其背后的读取服务。
 
-- [会话引用子系统](../../../docs/subsystems/session-reference.zh.md)——规范 URI、投影规则与稳定的错误分类体系。
-- [历史会话引用 spill 复用](../../../.agents/notes/archived/bug-fix/2026-09-05-session-reference-spill-reuse.md)——快照身份、省略通知、存储归属与替代方案。
-- [会话查询子系统](../../../docs/subsystems/session-query.zh.md)——提供会话表层的读取服务。
+- 会话引用子系统——规范 URI、投影规则与稳定的错误分类体系。
+- 历史会话引用 spill 复用——快照身份、省略通知、存储归属与替代方案。
+- 会话查询子系统——提供会话表层的读取服务。
 - [上下文组地图](../README.zh.md)——相邻的请求上下文包。
-- [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-reference)——每个受支持配置字段及其源声明。
+- 生成的配置目录——每个受支持配置字段及其源声明。
 
 -----
 

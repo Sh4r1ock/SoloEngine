@@ -44,7 +44,7 @@ kind: "package-reference"
 | `maxItemsPerCall` | `4096` | 一次 `parallel()` 或 `pipeline()` 调用接受的条目数。 |
 | `syncTimeoutMs` | `5000` | 脚本最初同步片段的 VM 超时时间，单位为毫秒。 |
 
-负责运行的消费方可以为一次运行设置 `WorkflowStartRequest.subagentProvider` 并降低 `WorkflowStartRequest.maxTotalAgents`。脚本钩子不能更改这两项选择。进程堆、输出、控制通信和终止限制由 Node PTC 提供方负责；引擎不增加整体经过时间定时器。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-workflow-ptc)定义可接受的引擎字段。
+负责运行的消费方可以为一次运行设置 `WorkflowStartRequest.subagentProvider` 并降低 `WorkflowStartRequest.maxTotalAgents`。脚本钩子不能更改这两项选择。进程堆、输出、控制通信和终止限制由 Node PTC 提供方负责；引擎不增加整体经过时间定时器。生成的配置目录定义可接受的引擎字段。
 
 Node PTC 提供方的 `maxPendingCalls` 也限制工作流并发：子 agent 启动、结果等待与资源释放会占用这些名额。进度批次至多再占用一个名额。设置 `maxConcurrentAgents` 时应预留余量。
 
@@ -105,12 +105,12 @@ Host 分别跟踪待完成的启动与已接受的 Activation。取消会中止�
 
 共享执行保证与工作流约定见以下参考。
 
-- [工作流子系统](../../../docs/subsystems/workflow.zh.md)——请求、结果和事件定义。
+- 工作流子系统——请求、结果和事件定义。
 - [工作流服务](../workflow/README.zh.md)——调用方拥有的运行与清理。
 - [Node PTC 运行时](../../ptc-runtime/ptc-runtime-node/README.zh.md)——文件策略、进程限制与部署选择。
 - [workflow 工具](../tool-workflow/README.zh.md)——面向模型的脚本编排。
 - Ralph 工具——需显式启用的固定全新 agent 迭代。
-- [工作流沙箱复用](../../../.agents/notes/implemented/architecture/2026-09-13-workflow-ptc-sandbox-reuse.zh.md)——执行归属与取舍。
+- 工作流沙箱复用——执行归属与取舍。
 
 -----
 

@@ -60,7 +60,7 @@ The `servers` record maps each stable provider id to one server command. The pro
 | `shutdownTimeoutMs` | `5000` | Graceful `shutdown`/`exit` budget before escalation |
 | `killGraceMs` | `2000` | Request-cancel and SIGTERM→SIGKILL escalation grace |
 
-`servers` must contain at least one entry with non-empty ids; timer budgets must be positive integers within Node's timer range, and byte caps must be positive. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-lsp-stdio) is the exhaustive source for every accepted field.
+`servers` must contain at least one entry with non-empty ids; timer budgets must be positive integers within Node's timer range, and byte caps must be positive. The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### What a query does
 
@@ -68,7 +68,7 @@ On the first query for a workspace, the provider launches one server process for
 
 ### Observable success and failures
 
-A successful navigation returns normalized locations, and hover returns normalized text or a no-hover notice; empty results are successful no-result responses. Before the server starts, a missing, non-directory, non-regular, non-UTF-8, or oversized workspace or source fails with its `FsError` code, and a source outside the canonical workspace fails with `LSP_FILE_OUTSIDE_WORKSPACE`. The server then fails the query with `LSP_UNSUPPORTED_OPERATION` when it lacks the operation or the transient open/close synchronization, `LSP_UNSUPPORTED_ENCODING` for a non-UTF-16 position encoding, `LSP_MALFORMED_RESPONSE` for a malformed payload, and `LSP_SERVER_ERROR` for a JSON-RPC error response; a failed process or stream reports `LSP_SPAWN_FAILED`, `LSP_SERVER_EXITED`, `LSP_PROTOCOL_ERROR`, or `LSP_MESSAGE_TOO_LARGE`. The [LSP navigation subsystem](../../../docs/subsystems/lsp.md#failures) gives each code's meaning and consumer action. A hard-killed harness leaves servers running until they exit on their own — graceful shutdown happens only through service disposal.
+A successful navigation returns normalized locations, and hover returns normalized text or a no-hover notice; empty results are successful no-result responses. Before the server starts, a missing, non-directory, non-regular, non-UTF-8, or oversized workspace or source fails with its `FsError` code, and a source outside the canonical workspace fails with `LSP_FILE_OUTSIDE_WORKSPACE`. The server then fails the query with `LSP_UNSUPPORTED_OPERATION` when it lacks the operation or the transient open/close synchronization, `LSP_UNSUPPORTED_ENCODING` for a non-UTF-16 position encoding, `LSP_MALFORMED_RESPONSE` for a malformed payload, and `LSP_SERVER_ERROR` for a JSON-RPC error response; a failed process or stream reports `LSP_SPAWN_FAILED`, `LSP_SERVER_EXITED`, `LSP_PROTOCOL_ERROR`, or `LSP_MESSAGE_TOO_LARGE`. The LSP navigation subsystem gives each code's meaning and consumer action. A hard-killed harness leaves servers running until they exit on their own — graceful shutdown happens only through service disposal.
 
 ### Security boundary
 
@@ -120,7 +120,7 @@ Initialization advertises UTF-16 positions, workspace folders and configuration,
 
 Read these pages when the package-level contract is not enough. They move from the shared navigation model to the seam and the tool.
 
-- [LSP navigation subsystem](../../../docs/subsystems/lsp.md) — operations, coordinates, requests and results, and `LspError` codes.
+- LSP navigation subsystem — operations, coordinates, requests and results, and `LspError` codes.
 - [dsh-lsp](../lsp/README.md) — the seam this provider registers against.
 - [dsh-tool-lsp](../tool-lsp/README.md) — the model-facing tool over the seam.
 - [lsp group map](../README.md) — the three-package family and its related documentation.

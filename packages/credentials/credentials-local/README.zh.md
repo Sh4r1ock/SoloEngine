@@ -46,7 +46,7 @@ kind: "package-reference"
 | `watch` | `true` | 文件在磁盘上变化时自动重载 |
 | `debounceMs` | `100` | 变化后等待这么久再重载，单位为毫秒 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-credentials-local)完整列出了所有受支持字段及其 JSDoc，是这些信息的真源。
+生成的配置目录完整列出了所有受支持字段及其 JSDoc，是这些信息的真源。
 
 ### 存储与移除密钥
 
@@ -77,7 +77,7 @@ await ctx.credentials.unset(ref)                // remove
 | 项目的 `.env`（`<invocation cwd>/.env`） | 不在此处 | 主目录 `.env` |
 | 主目录的 `.env`（`$DSH_HOME/.env`） | 不在此处 | 无 |
 
-存储文件优先，因为通过产品明确保存的凭据必须对每个提供方一致生效（[决策](../../../.agents/notes/implemented/architecture/2026-10-09-stored-credential-precedence.zh.md)）。启动环境——`DEEPSEEK_API_KEY=… dsh`、CI 机密、容器 `-e`——在没有存储值时作为后备；随后是项目 `.env`，最后是 harness home 的 `.env`。保存总是写入胜出的那一层，因此 `describe` 对每个引用都报告 `writable: true`，其 `source` 指明当前提供该值的位置。环境层是启动时拍摄的启动器[环境快照](../../util/launch-environment/README.zh.md)，因此启动之后才导出的变量不会被看到。
+存储文件优先，因为通过产品明确保存的凭据必须对每个提供方一致生效（决策）。启动环境——`DEEPSEEK_API_KEY=… dsh`、CI 机密、容器 `-e`——在没有存储值时作为后备；随后是项目 `.env`，最后是 harness home 的 `.env`。保存总是写入胜出的那一层，因此 `describe` 对每个引用都报告 `writable: true`，其 `source` 指明当前提供该值的位置。环境层是启动时拍摄的启动器[环境快照](../../util/launch-environment/README.zh.md)，因此启动之后才导出的变量不会被看到。
 
 ### 凭据文件本身
 
@@ -172,7 +172,7 @@ YAML 解析器自己的消息会引用出错的那行源码，而在这份文档
 当提供方级约定不够用时阅读以下页面。它们从 seam 约定逐步进入环境快照、原子写入原语与启动期环境层。
 
 - [凭据引用 seam](../credentials/README.zh.md)——`resolve`、`describe`、`set`、`unset`、记录操作与 seam 的更新事件。
-- [凭据子系统参考](../../../docs/subsystems/credentials.zh.md)——`CredentialRef`、按操作解析、对 UI 安全的 `CredentialInfo`、提供方层。
+- 凭据子系统参考——`CredentialRef`、按操作解析、对 UI 安全的 `CredentialInfo`、提供方层。
 - [启动环境快照](../../util/launch-environment/README.zh.md)——解析读取的冻结层快照，而非 `process.env`。
 - [原子写入](../../util/atomic-write/README.zh.md)——每次写入所用的写锁与原子替换。
 - [应用启动与 Harness home 各层](../../boot/app-boot/README.zh.md)——产品 CLI 如何把 `.env` 载入快照与 `process.env`。

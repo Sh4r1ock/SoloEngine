@@ -101,7 +101,7 @@ seam 需要提供方与消费方才能发挥作用。最小组合挂载服务、
 
 当包级约定不够用时阅读以下页面。它们从共享的导航模型逐步进入提供方与工具。
 
-- [LSP 导航子系统](../../../docs/subsystems/lsp.zh.md)——操作、坐标、请求与结果，以及 `LspError` code。
+- LSP 导航子系统——操作、坐标、请求与结果，以及 `LspError` code。
 - [dsh-lsp-stdio](../lsp-stdio/README.zh.md)——注册到该 seam 的 stdio 提供方。
 - [dsh-tool-lsp](../tool-lsp/README.zh.md)——基于该 seam 的面向模型工具。
 - [lsp 组地图](../README.zh.md)——三个包的家族及其相关文档。

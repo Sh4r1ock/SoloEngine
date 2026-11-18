@@ -68,8 +68,8 @@ Activation awaits the projection handle before registering both sections and bot
 
 Read these pages when the package-level contract is not enough. They move from the decision record to the services this plugin reads.
 
-- [Process-specific values as runtime context](../../../.agents/notes/implemented/bug-fix/2026-10-11-process-specific-prompt-values-in-runtime-context.md) — why the values left the system prompt and how earlier Sessions stay stable.
-- [Session projections subsystem](../../../docs/subsystems/session-projection.md) — the projection contract the earlier-format state uses.
+- Process-specific values as runtime context — why the values left the system prompt and how earlier Sessions stay stable.
+- Session projections subsystem — the projection contract the earlier-format state uses.
 - [Web app bundle](../../bundle/web-app/README.md) — the `webApp` service and the row that mounts this plugin.
 - [Context group map](../README.md) — sibling request-context packages.
 

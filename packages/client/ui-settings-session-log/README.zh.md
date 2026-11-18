@@ -46,7 +46,7 @@ Host 提供 `session-log-deepseek` 时，配套插件贡献一个 `settings.gene
 
 - [设置表单](../ui-settings/README.zh.md)——Host 已接受的值与有序写入。
 - [会话日志上传](../../session/session-log-deepseek/README.zh.md)——请求字段与接收进度。
-- [Web 客户端](../../../docs/subsystems/web-client.zh.md)——插件组合与设置位置。
+- Web 客户端——插件组合与设置位置。
 
 <a id="model-experience"></a>
 ## 模型体验

@@ -39,8 +39,8 @@ Five packages play the web roles; the subsystem reference owns the exhaustive vo
 
 Start with the subsystem reference for the shared vocabulary, then the design decision behind the single provider-selection service.
 
-- [Web subsystem](../../docs/subsystems/web.md) — the search/fetch requests and results, provider availability, `WebError`, and the fetch network policy.
-- [Web capability seam decision](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md) — why search and fetch share one provider-selection service.
+- Web subsystem — the search/fetch requests and results, provider availability, `WebError`, and the fetch network policy.
+- Web capability seam decision — why search and fetch share one provider-selection service.
 
 <a id="dev-note"></a>
 ## Dev Note

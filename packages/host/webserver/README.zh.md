@@ -102,7 +102,6 @@ index 启动输入分两层，按页面所代表的 Peer 计算。`collectIndexI
 |---|---|
 | [`src/index.ts`](src/index.ts) | `WebServer` 服务：路由表、回退席位、index 渲染、匹配、TLS 监听、生命周期 |
 | [`src/injections.ts`](src/injections.ts) | 结构化 `IndexInjection` 行与 `renderIndexInjections` 行渲染 |
-| [`tests/tls-fixture.ts`](tests/tls-fixture.ts) | 为 TLS 监听测试生成的 TLS 材料；其他测试套件可物化同一套材料 |
 
 </details>
 
@@ -113,10 +112,10 @@ index 启动输入分两层，按页面所代表的 Peer 计算。`collectIndexI
 
 当服务器约定不够用时阅读以下内容：先看子系统参考，再看回退持有者，以及谁注册哪条路由背后的分层决策。
 
-- [HTTP 服务器子系统](../../../docs/subsystems/web-server.zh.md)——路由、匹配顺序与服务器接受的配置。
+- HTTP 服务器子系统——路由、匹配顺序与服务器接受的配置。
 - [SPA dist 服务器](../frontend-static/README.zh.md)——回退席位的随附持有者。
 - [Web 配置树启动与传输分层](../../boot/app-boot/README.zh.md)——功能插件为何拥有每条路由。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-host-webserver)——每个受支持配置字段及其源声明。
+- 生成配置目录——每个受支持配置字段及其源声明。
 
 -----
 
@@ -148,7 +147,6 @@ index 启动输入分两层，按页面所代表的 Peer 计算。`collectIndexI
 
 两条工作备注，均非权威结论：
 
-- TLS 测试材料在测试时生成（`tests/tls-fixture.ts`），绝不入库：GitHub push protection 会拦截测试中的 PEM 私钥，况且该证书本就是一次性的。该助手每个进程签发一张自签名的 localhost 证书，覆盖 127.0.0.1、`::1` 与 `localhost`，并以仅属主可读的权限写入私钥。
 - `selfsigned` 固定在 4.x：在 pnpm 下 5.x 会装入两份 `@peculiar/asn1-schema`，其 extension 构造器随后会让每次 `generate()` 抛错。
 
 </details>

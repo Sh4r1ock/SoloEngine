@@ -87,12 +87,12 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从工具逐步进入它所组合的约定、策略与后端。
 
-- [文件系统子系统](../../../docs/subsystems/filesystem.zh.md)——穷尽式提供方约定、策略事件与错误分类体系。
+- 文件系统子系统——穷尽式提供方约定、策略事件与错误分类体系。
 - [dsh-fs](../fs/README.zh.md)——本工具消费的 `ctx.fs` 约定。
 - [tool-fs](../tool-fs/README.zh.md)——替代的 `read`/`write`/`edit` 工具套件。
 - [fs-observation-policy](../fs-observation-policy/README.zh.md)——通过 `fs/*` 事件防护变更的策略插件。
 - [fs-sandbox](../fs-sandbox/README.zh.md)——围栏变更的沙箱强制后端。
-- [生成工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-str-replace-editor)——本包注册的穷尽式 schema。
+- 生成工具目录——本包注册的穷尽式 schema。
 
 -----
 
@@ -103,7 +103,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-生成的 [`str_replace_editor` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-str-replace-editor)，包含配置的 `description`。本插件不贡献独立系统提示词段。
+生成的 `str_replace_editor` schema，包含配置的 `description`。本插件不贡献独立系统提示词段。
 
 #### Token 影响
 

@@ -46,7 +46,7 @@ kind: "package-reference"
 |---|---|---|
 | `policy` | `ask` | 没有 `approval/policy` 覆盖的会话的默认策略 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-user-approval)是每个受支持字段及其 JSDoc 的穷尽式真源。`setPolicy(agent, policy)` 切换运行中的 agent 的策略，并为它的下一个模型步骤排队一条模型体验一节所述的切换通知；`setApprovalPolicy(session, policy)` 是会话初始化使用的直接持久写入路径。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。`setPolicy(agent, policy)` 切换运行中的 agent 的策略，并为它的下一个模型步骤排队一条模型体验一节所述的切换通知；`setApprovalPolicy(session, policy)` 是会话初始化使用的直接持久写入路径。
 
 ### 请求决定
 
@@ -98,8 +98,8 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从审批词汇逐步进入消费方与设计依据。
 
-- [审批子系统参考](../../../docs/subsystems/approval.zh.md)——共享的请求／结果词汇与 `ctx.approval` 的 Cordis 接口面。
-- [审批 seam Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-approval-seam.zh.md)——该 seam 的设计依据。
+- 审批子系统参考——共享的请求／结果词汇与 `ctx.approval` 的 Cordis 接口面。
+- 审批 seam Agent Note——该 seam 的设计依据。
 - [沙箱 参考](../../shell/tool-bash/README.zh.md)——沙箱 bash 工具如何为升权重试消费审批。
 - [交互组映射](../README.zh.md)——相邻的权限预设与问答包。
 

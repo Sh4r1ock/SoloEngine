@@ -40,7 +40,7 @@ Load the registry and the loader; the loader defaults to discovering every Loade
 |---|---|---|
 | `packages` | `[]` | Additional package artifacts to register for plugins nested behind another Loader entry; each must resolve from the config tree and export `./typert` |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-typert-loader) is the exhaustive source for every accepted field.
+The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### What gets registered
 
@@ -91,7 +91,7 @@ Read these pages when the package-level contract is not enough; they move from t
 
 - [Typert registry](../registry/README.md) — the service this plugin feeds.
 - [Typert generator](../generator/README.md) — what produces the artifacts the loader imports.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-typert-loader) — the `packages` field declaration and JSDoc.
+- Generated configuration catalog — the `packages` field declaration and JSDoc.
 - [Typert group map](../README.md) — the full type-reflection pipeline.
 
 -----

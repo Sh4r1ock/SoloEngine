@@ -87,9 +87,8 @@
   "scripts": {
     "benchmark:git-checkpoint": "pnpm run build && node scripts/benchmark-git-checkpoint.mjs",
     "build": "tsc -p tsconfig.build.json && tsc -p tsconfig.client.json && node scripts/wrap-client.mjs",
-    "check": "tsc -p tsconfig.json && pnpm run build && node --test tests/*.test.mjs && pnpm pack --dry-run",
-    "prepack": "pnpm run build",
-    "test": "pnpm run build && node --test tests/*.test.mjs"
+    "check": "tsc -p tsconfig.json && pnpm run build && pnpm pack --dry-run",
+    "prepack": "pnpm run build"
   },
   "keywords": [
     "deepseek-harness",

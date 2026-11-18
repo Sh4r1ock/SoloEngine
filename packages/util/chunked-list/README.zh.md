@@ -50,7 +50,6 @@ console.log([...iterateChunkedList(second)])
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 持久化列表操作与检查点校验 |
-| [`tests/chunked-list.spec.ts`](tests/chunked-list.spec.ts) | 版本隔离、顺序、结构共享与检查点接受条件 |
 
 </details>
 
@@ -60,7 +59,7 @@ console.log([...iterateChunkedList(second)])
 ## 进一步探索
 
 - [工具包映射](../README.zh.md)——共享原语。
-- [Subagent 目录决策](../../../.agents/notes/implemented/architecture/2026-09-01-parent-owned-subagent-catalog.zh.md)——projection state 使用分片的原因。
+- Subagent 目录决策——projection state 使用分片的原因。
 
 -----
 

@@ -36,6 +36,6 @@ pnpm --filter @deepseek-ai/dsh-desktop run package:mac:arm64:dir  # 仅产出 .a
 
 - 本仓库**不在 Windows 上构建 macOS 产物**：`package-target.ts` 会直接拒绝非 darwin 宿主；
   因此 macOS 的验收记录只包含「配置与脚本齐备 + 与 Windows 共用同一 profile/预设固化路径」，
-  **不包含**本机实测的 DMG 与公证结果；该边界在 `test/soloengine/records/` 的验收记录里同样标注。
+  **不包含**本机实测的 DMG 与公证结果。
 - 升级（壳 + 运行时 + 离线依赖同一签名单元）在 macOS 侧由 `dmg` + `zip`（更新载荷）+ 公证共同承担；
   差分与自动更新配置见 `apps/desktop/electron-builder.config.mjs`（`publish` 走 `resolveDesktopAutoUpdateConfig`）。

@@ -41,7 +41,7 @@ kind: "package-reference"
     path: /absolute/path/to/.credentials.yaml
 ```
 
-本地存储 README 拥有完整配置面；生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-credentials-local)是穷尽式字段清单。
+本地存储 README 拥有完整配置面；生成的配置目录是穷尽式字段清单。
 
 ### 存储、检查与移除密钥
 
@@ -150,9 +150,9 @@ apiKeyEnv: DEEPSEEK_API_KEY
 
 当包级约定不够用时阅读以下页面。它们从共享子系统词汇逐步进入随附存储与能力架构。
 
-- [凭据子系统参考](../../../docs/subsystems/credentials.zh.md)——`CredentialRef`/`CredentialKey`、按操作解析、对 UI 安全的信息、提供方层与生成的 Cordis 接口面。
+- 凭据子系统参考——`CredentialRef`/`CredentialKey`、按操作解析、对 UI 安全的信息、提供方层与生成的 Cordis 接口面。
 - [本地凭据存储](../credentials-local/README.zh.md)——默认本机存储：密钥与记录存放在哪里、环境层如何排序。
-- [能力 seam](../../../docs/capability-seams.zh.md)——本包遵循的 Service Definition / Service Provider / Consumer 拆分。
+- 能力 seam——本包遵循的 Service Definition / Service Provider / Consumer 拆分。
 
 -----
 

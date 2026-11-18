@@ -35,7 +35,7 @@ Client 入口安装 `ctx.jobs`（`IJobs`），由包内部的 `ClientJobsModel` 
 | `observeFlushMs` | `100` | 注册表提交到下一次名册或输出读取之间的聚合窗口，毫秒 |
 | `observeMaxFrameBytes` | `65,536` | 每个观测输出帧的软字节预算；更大的单块整块发送 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-job-controller)是所有受支持字段及其 JSDoc 的完整来源。
+生成的配置目录是所有受支持字段及其 JSDoc 的完整来源。
 
 -----
 

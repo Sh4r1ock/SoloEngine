@@ -39,7 +39,7 @@ Mount the plugin with no configuration:
 - name: '@deepseek-ai/dsh-tool-call-timeout-policy'
 ```
 
-The limit is set where the tool is configured. For example, `dsh-tool-web`'s `fetchTimeoutMs`/`searchTimeoutMs` settings (default 30,000 ms) put the limit on `web_fetch` and `web_search`. Tools without a limit — the shipped `bash`, `read`, `write`, and `edit` — are never cut off. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-web) lists the tool settings that produce limits.
+The limit is set where the tool is configured. For example, `dsh-tool-web`'s `fetchTimeoutMs`/`searchTimeoutMs` settings (default 30,000 ms) put the limit on `web_fetch` and `web_search`. Tools without a limit — the shipped `bash`, `read`, `write`, and `edit` — are never cut off. The generated configuration catalog lists the tool settings that produce limits.
 
 ### What you get
 
@@ -59,7 +59,7 @@ This section explains how the plugin arms a deadline around each dispatch and ma
 
 The wrapper is built on four commitments:
 
-- **Enforcement home, not a library.** `dsh-timeout` owns timing and classification (`deadline`, `timeoutOf`); this plugin owns the per-call wiring over `tools/execute`; each capability owns termination. The split is recorded in the [timeout-deadline-library Agent Note](../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md).
+- **Enforcement home, not a library.** `dsh-timeout` owns timing and classification (`deadline`, `timeoutOf`); this plugin owns the per-call wiring over `tools/execute`; each capability owns termination. The split is recorded in the timeout-deadline-library Agent Note.
 - **The tool declares its own budget.** `timeoutMs` lives on the tool's `ToolDefinition`, read from the registry (`ctx.tools.get(exec.name, exec.agent)?.timeoutMs`), so a mistyped tool name is impossible and undeclared tools delegate untouched.
 - **Scoped classification.** `TOOL_TIMEOUT` serves as both the internal `deadline` classification code and the structured error `code`; scoping `timeoutOf` to it keeps a nested outer deadline (another wrapper's timer that fired first) from being misread as this plugin's timeout — it reads as an ordinary upstream cancel.
 - **Signal swap, then restore.** Cordis `next()` ignores passed arguments, so the wrapper mutates the shared `exec` in place: it swaps the derived deadline signal onto `exec` for dispatch and restores the caller's signal in a `finally`, so `tools/post-execute` listeners never see this plugin's possibly-aborted signal.
@@ -87,9 +87,9 @@ Multiple `tools/execute` listeners compose by Cordis registration order, which c
 
 Read these pages when the package-level contract is not enough. They move from the tool-call pipeline to the timeout-library split, the enforced limits, and the guard group map.
 
-- [Tools subsystem reference](../../../docs/subsystems/tools.md) — the `tools/execute` waterfall and decision shapes this wrapper hooks.
-- [Timeout deadline library Agent Note](../../../.agents/notes/implemented/architecture/2026-07-06-timeout-deadline-library.md) — the timing/termination split and why the deadline only notifies.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-web) — `dsh-tool-web`'s `fetchTimeoutMs`/`searchTimeoutMs` budgets the policy enforces.
+- Tools subsystem reference — the `tools/execute` waterfall and decision shapes this wrapper hooks.
+- Timeout deadline library Agent Note — the timing/termination split and why the deadline only notifies.
+- Generated configuration catalog — `dsh-tool-web`'s `fetchTimeoutMs`/`searchTimeoutMs` budgets the policy enforces.
 - [guard group map](../README.md) — the sibling guard packages and the loop-hygiene family.
 
 -----
@@ -129,6 +129,6 @@ These limits define when the policy is a poor fit. They are current package cons
 
 This Dev Note is working context for maintainers: open questions and directions that are not decided. It is explicitly non-authoritative — shipped behavior, limits, and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
-The `src/index.ts` FIXME asks to settle a `@deepseek-ai/dsh-timeout-guard` rename; the [naming ledger](../../../.agents/notes/archived/architecture/2026-08-11-repository-naming-contract-and-rename-ledger.md) already records `@deepseek-ai/dsh-tool-call-timeout-policy` as the decided name, so the FIXME is stale pending a code cleanup.
+The `src/index.ts` FIXME asks to settle a `@deepseek-ai/dsh-timeout-guard` rename; the naming ledger already records `@deepseek-ai/dsh-tool-call-timeout-policy` as the decided name, so the FIXME is stale pending a code cleanup.
 
 </details>

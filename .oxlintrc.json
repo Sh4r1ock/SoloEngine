@@ -20,8 +20,6 @@
     "**/.node-next-types-*/**",
     "**/.oxlint-contract-*/**", // Scratch files created by the executable lint-contract tests.
     "**/oxlint-contract-*", // Flat probes use real TypeScript project include paths.
-    "packages/typert/generator/tests/fixtures/type-model/**", // tsgolint rejects this fixture's preserved project shapes before rules run.
-    "website/.generated/**",
     "vendor/**", // Vendored source keeps upstream style and idioms.
     "native/**", // The imported landlock-run subtree has its own gates; see native/README.md.
     "**/*.js",
@@ -31,15 +29,10 @@
   ],
   "overrides": [
     {
-      // Shared strict type-aware rules. Source/test differences stay in the short overrides below.
       "files": [
         "packages/*/*/src/**/*.{ts,tsx}",
-        "packages/*/*/tests/**/*.{ts,tsx}",
         "apps/*/src/**/*.{ts,tsx}",
-        "apps/*/tests/**/*.{ts,tsx}",
-        "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "no-var": "error",
@@ -186,54 +179,9 @@
     },
     {
       "files": [
-        "examples/**/*.ts"
-      ],
-      "rules": {
-        "typescript/require-await": "off" // Demo callbacks conform to async interfaces without awaiting.
-      },
-      "plugins": [
-        "typescript"
-      ]
-    },
-    {
-      "files": [
-        "packages/*/*/tests/**/*.{ts,tsx}",
-        "apps/*/tests/**/*.{ts,tsx}",
-        "examples/*/tests/**/*.{ts,tsx}",
-        "scripts/**/*.spec.{ts,tsx}"
-      ],
-      "rules": {
-        // Session assertions inspect the log; other deprecated APIs remain errors.
-        "typescript/no-deprecated": [
-          "error",
-          {
-            "allow": [
-              {
-                "from": "file",
-                "name": ["snapshotEvents", "eventAt", "ownEvents"],
-                "path": "packages/core/session/src/index.ts"
-              }
-            ]
-          }
-        ],
-        "typescript/no-invalid-void-type": "error",
-        "typescript/no-non-null-assertion": "off", // Assertions commonly follow an expect() that proves presence.
-        "typescript/no-unnecessary-condition": "off",
-        "typescript/only-throw-error": "off", // Tests deliberately exercise non-Error throws.
-        "typescript/require-await": "off", // Mock execute() implementations must retain async signatures.
-        "typescript/restrict-template-expressions": "off"
-      },
-      "plugins": [
-        "typescript"
-      ]
-    },
-    {
-      "files": [
         "packages/**/*.{ts,tsx}",
         "apps/**/*.{ts,tsx}",
-        "examples/**/*.{ts,tsx}",
-        "scripts/**/*.{ts,tsx}",
-        "website/**/*.{ts,tsx}"
+        "scripts/**/*.{ts,tsx}"
       ],
       "rules": {
         "sonarjs/duplicates-in-character-class": "error",
@@ -318,39 +266,6 @@
       },
       "jsPlugins": [
         "@stylistic/eslint-plugin"
-      ]
-    },
-    {
-      // The project-free staged profile re-includes this syntax-coverage fixture.
-      "files": [
-        "packages/typert/generator/tests/fixtures/type-model/**/*.{ts,tsx}"
-      ],
-      "rules": {
-        "typescript/no-explicit-any": "off"
-      }
-    },
-    {
-      // TypeGraph coverage must retain source-authored syntax that the normal quote rule forbids.
-      "files": [
-        "packages/typert/generator/tests/fixtures/type-model/packages/host/src/models.ts"
-      ],
-      "rules": {
-        "@stylistic/quotes": "off"
-      }
-    },
-    {
-      "files": [
-        "packages/experimental/webworker-runtime/src/node/**/*.ts",
-        "packages/experimental/webworker-runtime/src/storage/memory.ts",
-        "packages/experimental/webworker-runtime/src/module-system/module-loader.ts",
-        "packages/experimental/webworker-runtime/src/transport/synthetic-http.ts"
-      ],
-      "rules": {
-        "typescript/require-await": "off", // Async faces Node and Cordis define (fs promises, the module seam) reject rather than throw; the VFS beneath them never awaits.
-        "typescript/no-extraneous-class": "off" // Node constructs these (`new Script()`, `new Worker()`), so a stub that refuses must still be a class.
-      },
-      "plugins": [
-        "typescript"
       ]
     }
   ]

@@ -96,7 +96,7 @@ kind: "package-reference"
 
 - [goal 服务](../goal/README.zh.md)——命令变更的状态与生命周期。
 - [命令服务](../../interaction/commands/README.zh.md)——命令注册表约定与分发。
-- [历史Harness 层目标式执行 Agent Note](../../../.agents/notes/archived/feature/2026-07-16-harness-level-loop.md)——用户体验与组合决策。
+- 历史Harness 层目标式执行 Agent Note——用户体验与组合决策。
 
 -----
 

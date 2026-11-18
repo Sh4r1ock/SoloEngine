@@ -43,7 +43,7 @@ Loading the plugin with no config is safe: files land in a lazily-created privat
 | `root` | private 0700 temp dir | Root directory for spill files; set to keep them under a known location |
 | `cleanupPeriodDays` | `30` | File age in days before the one-shot startup cleanup may delete it; `0` disables cleanup |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-spill-local) is the exhaustive source for every accepted field.
+The generated configuration catalog is the exhaustive source for every accepted field.
 
 ### What you get back
 
@@ -102,8 +102,8 @@ Read these pages when the package-level contract is not enough.
 - [Spill storage service](../spill/README.md) — the `saveText` contract and vocabulary this backend implements.
 - [Spill package map](../README.md) — the three-package family and each role.
 - [dsh-spill-policy](../spill-policy/README.md) — the policy that calls this backend when a result is too large.
-- [Spill subsystem](../../../docs/subsystems/spill.md) — the exhaustive vocabulary and ownership.
-- [Tool output spill decision](../../../.agents/notes/implemented/architecture/2026-07-08-tool-output-spill-files.md) — the capability boundary and design rationale.
+- Spill subsystem — the exhaustive vocabulary and ownership.
+- Tool output spill decision — the capability boundary and design rationale.
 
 -----
 

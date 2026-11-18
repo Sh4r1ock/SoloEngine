@@ -27,7 +27,7 @@ This package renders the changed-files card a finished turn ends with — the fi
 
 Mount this plugin alongside `ui-conversation` and the Host [workspace-changes](../../deliverables/workspace-changes/README.md) plugin; a finished turn then ends with the changed-files card between the closing message's body and its action footer. Without a served summary — a turn that changed no file, the plugin composed out, or a Host restarted since the turn ran — the card is absent and only deliveries and prose links remain; outside a git repository the summary lists file-tool edits only.
 
-Changed-file and delivery entry cards and hover previews follow the [R16 preview-card rule](../../../docs/ui-radius.md#radius-scale); their file-icon tiles use the same rule’s R10 exception. Each retains the same contour on hover.
+Changed-file and delivery entry cards and hover previews follow the R16 preview-card rule; their file-icon tiles use the same rule’s R10 exception. Each retains the same contour on hover.
 
 <a id="explicit-deliveries"></a>
 ### Explicit deliveries
@@ -79,9 +79,9 @@ Read these pages when the deliverables surface is not enough. They move from the
 
 - [workspace-changes](../../deliverables/workspace-changes/README.md) — the Host plugin that records and serves the summary the card renders.
 - [ui-chat](../ui-chat/README.md) — declares the `conversation.chat.turnTail` hole and renders the closing prose.
-- [historical Turn changed-files card](../../../.agents/notes/archived/feature/2026-09-11-turn-changed-files-card.md) — the decision behind git-recorded summaries replacing the mutation-call row.
-- [historical Workspace file links](../../../.agents/notes/archived/feature/2026-07-31-web-workspace-file-links.md) — the decision behind the earlier produced-files row; its Host open path is superseded by the [right Sidebar](../../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.md).
-- [Inline file mentions](../../../.agents/notes/archived/feature/2026-08-07-web-inline-file-mentions.md) — the decision behind clickable mentions in the closing prose.
+- historical Turn changed-files card — the decision behind git-recorded summaries replacing the mutation-call row.
+- historical Workspace file links — the decision behind the earlier produced-files row; its Host open path is superseded by the right Sidebar.
+- Inline file mentions — the decision behind clickable mentions in the closing prose.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
 -----

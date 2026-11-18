@@ -33,7 +33,7 @@ kind: "package-reference"
 
 生产方通过在 spec 上声明拉取源——由注册表按自己的节奏泵送的非消耗偏移读取器——或经 starter 收到的 `JobHandle` 推送块来流式输出；二者都落入该 job 的有界环，其中 `stdout` 与 `stderr` 块到达模型，`log` 块只到达观察者。观察者按绝对字节偏移读取保留块并在推进时收到信号；结束 job 的结算同时封流，在此之前 `updateProgress` 把实时进度行发布进每个投影。观测对模型不可见：`readAt` 不消耗任何东西，也从不触碰通知状态。
 
-随附提供方还会在 Session 中记录有所有者 job 的生命周期元数据。工具创建 job 时，生产方附加 `JobSpec.toolCall`，保留嵌套调用与根调用标识。时间与重启语义见[持久化事件字段](../../../docs/subsystems/jobs.zh.md#session-lifecycle-records)。
+随附提供方还会在 Session 中记录有所有者 job 的生命周期元数据。工具创建 job 时，生产方附加 `JobSpec.toolCall`，保留嵌套调用与根调用标识。时间与重启语义见持久化事件字段。
 
 ### 归属边界
 
@@ -100,13 +100,13 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从任务类型逐步进入随附实现、模型侧控制与设计记录。
 
-- [后台任务运行时子系统](../../../docs/subsystems/jobs.zh.md)——任务类型、投影字段与 `ctx.jobs` 的 Cordis 接口面。
+- 后台任务运行时子系统——任务类型、投影字段与 `ctx.jobs` 的 Cordis 接口面。
 - [jobs 组映射](../README.zh.md)——同级组页面及其包表格。
 - [进程本地注册表](../jobs-local/README.zh.md)——在本进程中运行任务的随附实现。
 - [模型侧任务控制](../tool-jobs/README.zh.md)——`job_output`、`job_list` 与 `job_kill` 工具及完成通知。
-- [Jobs 生命周期与输出归属](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.zh.md)——一套生命周期、输出环与观测流。
-- [任务注册表 seam Agent Note](../../../.agents/notes/archived/architecture/2026-07-26-job-registry-seam.md)——按所有者隔离的注册表约定及其理由。
-- [jobs seam 收敛 Agent Note](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.zh.md)——一个输出环、一个投影、一条事件流。
+- Jobs 生命周期与输出归属——一套生命周期、输出环与观测流。
+- 任务注册表 seam Agent Note——按所有者隔离的注册表约定及其理由。
+- jobs seam 收敛 Agent Note——一个输出环、一个投影、一条事件流。
 
 -----
 

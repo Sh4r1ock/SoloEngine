@@ -50,7 +50,7 @@ All limits are required; the library supplies no defaults. Mount the service wit
 | `fallbackMaxBytes` | required | Maximum UTF-8 bytes in the fallback; must not exceed `maxTitleBytes` |
 | `maxTitleBytes` | required | Maximum UTF-8 bytes accepted from any source |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-title) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Adding a provider
 
@@ -105,7 +105,7 @@ Accepted titles are cleaned of terminal control sequences, directional and invis
 
 Read these pages when the service contract is not enough. They move from the subsystem reference to the model-backed providers that plug in here.
 
-- [Session title subsystem](../../../docs/subsystems/session-title.md) — durable title state and the provider vocabulary types.
+- Session title subsystem — durable title state and the provider vocabulary types.
 - [Shared LLM execution module](../session-title-llm/README.md) — the model-backed execution module both shipped providers use.
 - [First-message title provider](../session-title-first-prompt-llm/README.md) — titles from the first eligible human message.
 - All-messages title provider — titles from every eligible human message.

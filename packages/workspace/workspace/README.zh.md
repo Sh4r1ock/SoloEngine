@@ -66,7 +66,7 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 目录解析器仅在允许创建时于变更队列内运行。它返回绝对路径；注册表创建缺失的父目录、规范化路径、重新检查 Session 历史，再一起提交 Workspace 和初始化标记，标题取所请求目录（而非规范路径）的最后一段，因此该路径上的符号链接不会让工作区改用链接目标的名称。已存在的目录直接复用；文件冲突或目录操作失败时拒绝初始化。[Host 控制器](../../api/workspace-controller/README.zh.md#first-use-workspace)提供 Documents 路径策略。
 
-首次成功登记会持久保存工作区身份。重复调用直接返回它，不再解析目录；改名保留该身份，删除登记也不会允许再次自动创建。目录或登记失败时，初始化状态保持未设置，可以重试。后续步骤失败前已创建的目录会保留在磁盘上。目录解析成功后，调用方取消操作不会回滚目录创建或登记。[历史首次使用决策](../../../.agents/notes/archived/feature/2026-09-20-default-workspace.md)说明这一生命周期。
+首次成功登记会持久保存工作区身份。重复调用直接返回它，不再解析目录；改名保留该身份，删除登记也不会允许再次自动创建。目录或登记失败时，初始化状态保持未设置，可以重试。后续步骤失败前已创建的目录会保留在磁盘上。目录解析成功后，调用方取消操作不会回滚目录创建或登记。历史首次使用决策说明这一生命周期。
 
 ### 将会话归入项目
 
@@ -134,11 +134,11 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 当本包的视角不够用时阅读以下页面：子系统参考是权威的功能约定，Agent Note 记录了项目为何从会话历史起步、以及移除为何是非破坏性的。
 
-- [Workspace 子系统](../../../docs/subsystems/workspace.zh.md)——项目及其会话的功能约定，以及 workspace 服务的生成 API。
+- Workspace 子系统——项目及其会话的功能约定，以及 workspace 服务的生成 API。
 - [Workspace 包映射](../README.zh.md)——本组唯一的包及其仓库位置。
-- [领域 KV 存储 Agent Note](../../../.agents/notes/proposed/architecture/2026-07-24-domain-kv-storage-and-workspace.zh.md)——为什么项目记录使用领域数据形式。
-- [Workspace UI 产品流 Agent Note](../../../.agents/notes/archived/feature/2026-07-25-workspace-ui-product-flow.md)——首次启动如何从会话历史构建项目，以及 GUI 如何排序。
-- [历史删除 Workspace 注册记录决策](../../../.agents/notes/archived/feature/2026-07-27-workspace-registration-deletion.md)——为什么移除项目绝不会删除其文件夹或会话。
+- 领域 KV 存储 Agent Note——为什么项目记录使用领域数据形式。
+- Workspace UI 产品流 Agent Note——首次启动如何从会话历史构建项目，以及 GUI 如何排序。
+- 历史删除 Workspace 注册记录决策——为什么移除项目绝不会删除其文件夹或会话。
 
 -----
 
@@ -183,6 +183,6 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 #### 开放：`create(path, title?)` 的 title 参数
 
-网关的按名称创建分支移除后，`title` 参数已无生产调用方；代码中的 TODO 提议把该参数与其 `@param` 子句一并移除（参见[笔记](../../../.agents/notes/archived/simplification/2026-07-31-one-route-to-add-a-workspace.md)）。
+网关的按名称创建分支移除后，`title` 参数已无生产调用方；代码中的 TODO 提议把该参数与其 `@param` 子句一并移除（参见笔记）。
 
 </details>

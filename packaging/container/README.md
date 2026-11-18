@@ -50,9 +50,9 @@ docker logs soloengine | Select-String 'dsh web: http'
 
 `--network=host` 下容器不与宿主冲突端口：宿主上若有别的进程占用 8991，`doctor` 的第 1 类检查会报出（并提示 `start` 会以同端口重启）。端口归属按平台取系统真实来源（Windows `Get-NetTCPConnection`、Linux `/proc`、macOS `lsof`）——容器里没有 powershell，这条判据不能建立在它身上。
 
-## 五、实测结果（`node test/soloengine/container-deployment-probe.mjs`）
+## 五、实测结果
 
-**13/13**：镜像在位 / `--network=host` 起容器 / 容器内 `/api/solo/health` 200 / 容器日志出现平台就绪行与 `product surfaces mounted` 行 / 容器内 `doctor` 六类全过且**端口归属报到真实持有者**（`port 8991 held by this instance: pid 60`）/ 容器内 `status` 报组合清单与就绪地址 / **组合层禁用在镜像内同样生效**（面板 HTML 不含被禁用的平台品牌行、仍有产品品牌行）/ 容器内登录建画布 201 / `docker restart` 后同一画布仍在 / 停容器后主实例在 8991 恢复。逐条证据落 `test/soloengine/records/stage9-container-deployment.json` 与 `test/logs/container-probe.log`。
+**13/13**：镜像在位 / `--network=host` 起容器 / 容器内 `/api/solo/health` 200 / 容器日志出现平台就绪行与 `product surfaces mounted` 行 / 容器内 `doctor` 六类全过且**端口归属报到真实持有者**（`port 8991 held by this instance: pid 60`）/ 容器内 `status` 报组合清单与就绪地址 / **组合层禁用在镜像内同样生效**（面板 HTML 不含被禁用的平台品牌行、仍有产品品牌行）/ 容器内登录建画布 201 / `docker restart` 后同一画布仍在 / 停容器后主实例在 8991 恢复。
 
 ## 六、边界
 

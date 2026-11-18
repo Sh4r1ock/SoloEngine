@@ -60,7 +60,7 @@ const requireNative = createLazyRequire<NativeModule>('native-package', import.m
 ## 进一步探索
 
 - [工具包地图](../README.zh.md)——相邻的共享原语。
-- [NPM 发布序列](../../../.agents/notes/implemented/process/2026-08-10-npm-release-sequences.zh.md)——发布依赖分类与首次使用加载策略。
+- NPM 发布序列——发布依赖分类与首次使用加载策略。
 
 -----
 

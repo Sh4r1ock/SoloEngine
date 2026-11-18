@@ -100,7 +100,7 @@ kind: "package-reference"
 
 ### 可写根目录
 
-`workspaceWritableRoots` 为 bwrap 和 Landlock 推导工作区与显式额外目录。`writableRoots` 为 Seatbelt 和进程内文件系统围栏加入主机临时区域。两者都对根目录去重，并拒绝不存在、不是目录或经过符号链接解析的额外路径。路径比较接受 Windows 上的大小写和分隔符差异。每次执行都会重新检查这些路径。Windows 子进程忽略额外根目录；文件工具仍然执行这些授权。参见[模式定义](../../../docs/subsystems/sandbox.zh.md)。
+`workspaceWritableRoots` 为 bwrap 和 Landlock 推导工作区与显式额外目录。`writableRoots` 为 Seatbelt 和进程内文件系统围栏加入主机临时区域。两者都对根目录去重，并拒绝不存在、不是目录或经过符号链接解析的额外路径。路径比较接受 Windows 上的大小写和分隔符差异。每次执行都会重新检查这些路径。Windows 子进程忽略额外根目录；文件工具仍然执行这些授权。参见模式定义。
 
 </details>
 
@@ -111,8 +111,8 @@ kind: "package-reference"
 
 先从子系统参考文档了解穷尽式约定，再看实现它的后端、消费方与策略来源。
 
-- [进程沙箱子系统](../../../docs/subsystems/sandbox.zh.md)——完整词汇、逐调用策略与分类方言。
-- [历史子进程沙箱决策](../../../.agents/notes/archived/feature/2026-07-06-sandbox.md)——能力边界、升权设计与延期阶段。
+- 进程沙箱子系统——完整词汇、逐调用策略与分类方言。
+- 历史子进程沙箱决策——能力边界、升权设计与延期阶段。
 - [本地沙箱后端](../sandbox-local/README.zh.md)——`ctx.sandbox` 背后的各平台 runner。
 - [Bash 沙箱执行器](../../shell/bash-sandbox/README.zh.md)——受限的 bash 消费方。
 - [沙箱策略包](../sandbox-policy/README.zh.md)——逐调用模式与工作区根目录的来源。

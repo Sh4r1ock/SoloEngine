@@ -25,7 +25,7 @@ Change one Session’s working directory while existing processes retain theirs.
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount alongside `fs`, `sessionProjections`, and `systemPrompt`. `defaultDirectory` selects an absolute fallback for Sessions without an original directory; omission uses the launch directory. See the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-working-directory).
+Mount alongside `fs`, `sessionProjections`, and `systemPrompt`. `defaultDirectory` selects an absolute fallback for Sessions without an original directory; omission uses the launch directory. See the configuration catalog.
 
 ```yaml
 - name: '@deepseek-ai/dsh-working-directory'
@@ -52,9 +52,9 @@ No runtime invariant companion is published because the service reads its only d
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Working directories](../../../docs/subsystems/working-directory.md) — shared runtime behavior.
+- Working directories — shared runtime behavior.
 - [Session group](../README.md) — durable Session services.
-- [Testing](../../../docs/testing.md) — composition and replay verification.
+- Testing — composition and replay verification.
 
 -----
 

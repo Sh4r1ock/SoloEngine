@@ -21,9 +21,6 @@
       "path": "../store"
     },
     {
-      "path": "../../test-support/client-runtime"
-    },
-    {
       "path": "../ui-conversation/tsconfig.client.json"
     },
     {

@@ -99,11 +99,11 @@ return { reviewed: reviews.length }
 
 当包级契约不够用时阅读以下页面。它们从共享工作流模型逐步进入当前引擎与面向模型的消费方。
 
-- [工作流子系统](../../../docs/subsystems/workflow.zh.md)——完整类型词汇、启动请求与事件载荷。
+- 工作流子系统——完整类型词汇、启动请求与事件载荷。
 - [组地图](../README.zh.md)——工作流能力家族及其包。
 - [workflow 工具](../tool-workflow/README.zh.md)——拥有调用 schema 与结果包络的模型侧消费方。
 - [PTC 工作流引擎](../workflow-ptc/README.zh.md)——当前执行引擎及其隔离边界。
-- [历史动态工作流 Agent Note](../../../.agents/notes/archived/feature/2026-07-05-dynamic-workflows.md)——seam 设计及其决策。
+- 历史动态工作流 Agent Note——seam 设计及其决策。
 
 -----
 

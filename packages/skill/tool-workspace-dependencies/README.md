@@ -87,7 +87,7 @@ A container can copy both directories into an immutable image layer and set `DSH
 
 #### What the model sees
 
-The model sees the generated [`load_workspace_dependencies` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-workspace-dependencies).
+The model sees the generated `load_workspace_dependencies` schema.
 
 #### Token effect
 

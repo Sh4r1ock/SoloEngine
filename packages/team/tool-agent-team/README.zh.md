@@ -42,7 +42,7 @@ kind: "package-reference"
   name: '@deepseek-ai/dsh-tool-agent-team'
 ```
 
-设置 `interrupt`、`freshProvider` 或 `forkProvider` 的配置行不会激活，dsh 会在启动警告中指出该键。升级指南把已移除的工具与键对应到替代方式，生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-agent-team)记录空配置。
+设置 `interrupt`、`freshProvider` 或 `forkProvider` 的配置行不会激活，dsh 会在启动警告中指出该键。升级指南把已移除的工具与键对应到替代方式，生成的配置目录记录空配置。
 
 让 Lead 启动子代理审查差异、创建审查任务并等待结果。`description` 说明子代理的工作；返回的名称用于寻址。
 
@@ -79,7 +79,7 @@ kind: "package-reference"
 - **声明式结果，紧凑 JSON。** 每个工具都声明完整结果 schema，并把该值渲染为紧凑 JSON，因此编译器会对照向模型承诺的结果检查 `execute`，任何结果都不会在缩进上消耗 token。
 - **领域掌握裁决权。** 工具委托给 `ctx.agentTeams`，后者强制执行 Lead 权限与 revision 校验；适配器不添加更弱的路径。
 
-[subagent teammate Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.zh.md)负责模型侧与 scoping 决策。
+subagent teammate Agent Note负责模型侧与 scoping 决策。
 
 ### 源码地图
 
@@ -105,10 +105,10 @@ kind: "package-reference"
 当包级约定不够用时阅读以下页面。它们从领域服务逐步进入精确 schema 与设计背后的决策。
 
 - [agent-team 包](../agent-team/README.zh.md)——这些工具背后的 `ctx.agentTeams` 领域服务。
-- [Agent Teams 子系统](../../../docs/subsystems/agent-team.zh.md)——持久 Team 类型与服务 API。
+- Agent Teams 子系统——持久 Team 类型与服务 API。
 - [subagent 控制工具](../../subagent/tool-subagent-control/README.zh.md) — 通信、列表、中断和收件箱等待。
-- [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-agent-team)——模型接收的每个工具 schema。
-- [subagent teammate Agent Note](../../../.agents/notes/implemented/architecture/2026-10-15-agent-teams-as-subagents.zh.md)——模型侧、scoping 与工具族决策。
+- 生成的工具目录——模型接收的每个工具 schema。
+- subagent teammate Agent Note——模型侧、scoping 与工具族决策。
 
 -----
 
@@ -145,7 +145,7 @@ Task changes do not end wait_agent calls, add inbox messages, or start idle agen
 
 #### 模型看到什么
 
-每个成员接收[生成工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-agent-team)中的相同四个任务 schema。结果是紧凑的 JSON 任务视图或分页。仅根可重新分配的限制在执行时实施，而非通过不同 schema 实施。
+每个成员接收生成工具目录中的相同四个任务 schema。结果是紧凑的 JSON 任务视图或分页。仅根可重新分配的限制在执行时实施，而非通过不同 schema 实施。
 
 #### Token 影响
 

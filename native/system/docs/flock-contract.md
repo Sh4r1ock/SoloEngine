@@ -2,9 +2,7 @@
 
 `tryLockExclusive(fd)` returns a promise for one `flock(fd, LOCK_EX | LOCK_NB)` attempt. The syscall runs off the JavaScript thread. The caller keeps the descriptor open through completion; the binding does not open, duplicate, or close it. It exposes neither a blocking-wait API nor a shared-lock API.
 
-## Behavior tests
-
-The [native tests](../test/flock.test.js) exercise real descriptors and independent processes. The [C oracle](../test/fixtures/flock-oracle.c) calls the operating system directly, independently of `system.node`.
+## Observed contract
 
 | Condition | Required observation |
 |---|---|

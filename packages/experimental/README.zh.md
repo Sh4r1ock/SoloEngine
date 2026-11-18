@@ -28,8 +28,8 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [会话查询子系统](../../docs/subsystems/session-query.zh.md)——这些工具投影的检索服务。
-- [终端子系统](../../docs/subsystems/terminal.zh.md)——按所有者隔离的持久 PTY 会话。
+- 会话查询子系统——这些工具投影的检索服务。
+- 终端子系统——按所有者隔离的持久 PTY 会话。
 - [实验包策略](../../scripts/experimental-package-policy.ts)——发布默认值与私有例外。
 
 <a id="dev-note"></a>

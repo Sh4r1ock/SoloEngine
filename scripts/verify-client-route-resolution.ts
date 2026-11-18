@@ -20,11 +20,7 @@
  * must not be stamped with a root-absolute app route. Internal route keys and
  * response-table keys stay absolute and are not references. This rule reads
  * inline literal fragments only, so a composed reference
- * (`comboReference(...)`, `artifact.url.slice(1)`) is not traced:
- * `packages/client/modules/tests/node-half.client.spec.ts` owns the regression
- * signal for composed graph rows, batch descriptors, and the source-map trailer.
- *
- * Rationale: .agents/notes/implemented/architecture/2026-09-14-web-document-relative-app-routes.md.
+ * (`comboReference(...)`, `artifact.url.slice(1)`) is not traced.
  */
 
 import { existsSync, globSync, readFileSync } from 'node:fs'

@@ -70,7 +70,7 @@ A failed request the shared transport classifies as `QUOTA` is rewritten to `ACC
 <a id="further-exploration"></a>
 ## Further Exploration
 
-[LLM streaming](../../../docs/subsystems/llm-streaming.md) · [Messages](../llm-deepseek/README.md) · [Account catalog decision](../../../.agents/notes/implemented/architecture/2026-09-24-deepseek-account-remote-model-catalog.md)
+LLM streaming · [Messages](../llm-deepseek/README.md) · Account catalog decision
 
 <a id="model-experience"></a>
 ## Model Experience

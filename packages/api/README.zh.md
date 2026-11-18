@@ -44,8 +44,8 @@ Remote 调用沿 Client → Host 方向运行在应用共享的 Connection 之�
 
 先读 API Gateway 参考以端到端了解 Remote 模型，再读 Typert 子系统页了解共享定义，并通过 Connection 了解物理载体。
 
-- [API Gateway 参考](../../docs/api-gateway.zh.md)——Typert API Gateway 的现状参考：编程模型、生成流水线与运行时调用。
-- [Typert 子系统参考](../../docs/subsystems/typert.zh.md)——protocol、Gateway 与消费方装配共享的公共约定。
+- API Gateway 参考——Typert API Gateway 的现状参考：编程模型、生成流水线与运行时调用。
+- Typert 子系统参考——protocol、Gateway 与消费方装配共享的公共约定。
 - [Connection](../client/connection/README.zh.md)——每次 Remote 调用背后的 RPC 载体、`/api` 信任围栏与响应封装。
 
 <a id="dev-note"></a>

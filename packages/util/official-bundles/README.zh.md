@@ -70,8 +70,8 @@ kind: "package-library"
 ## 进一步探索
 
 - [dsh-app-boot](../../boot/app-boot/README.zh.md)——应用模板和退役列表的 profile 加载。
-- [随附可选组合包](../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.zh.md)——为什么由安装持有可选列表。
-- [Official 按需组合包](../../../.agents/notes/implemented/architecture/2026-10-05-official-on-demand-bundles.zh.md)——离线目录的决策。
+- 随附可选组合包——为什么由安装持有可选列表。
+- Official 按需组合包——离线目录的决策。
 
 -----
 

@@ -121,11 +121,11 @@ notice 是单向的，且从不携带机密：一条消息，以及可选的「�
 
 当包级约定不够用时阅读以下页面。它们从共享凭据词汇逐步进入 flow 写入的记录存储，以及本 seam 背后的决策证据。
 
-- [凭据子系统参考](../../../docs/subsystems/credentials.zh.md)——两个键空间与两个 seam 的生成 Cordis 接口面。
+- 凭据子系统参考——两个键空间与两个 seam 的生成 Cordis 接口面。
 - [凭据包映射](../README.zh.md)——凭据引用、本地存储与授权三个包。
 - [凭据引用 seam](../credentials/README.zh.md)——每个 flow 都经由它提交的记录存储。
-- [能力 seam](../../../docs/capability-seams.zh.md)——本 seam 遵循的 Service Definition / Service Provider / Consumer 拆分。
-- [凭据记录与授权 flow](../../../.agents/notes/implemented/architecture/2026-08-13-credential-records-and-authorization-flows.zh.md)——记录半侧与本 seam 背后的理由与决策。
+- 能力 seam——本 seam 遵循的 Service Definition / Service Provider / Consumer 拆分。
+- 凭据记录与授权 flow——记录半侧与本 seam 背后的理由与决策。
 
 -----
 

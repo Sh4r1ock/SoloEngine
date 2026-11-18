@@ -45,7 +45,7 @@ kind: "package-reference"
 |---|---|---|
 | `refreshIntervalMs` | `0`（每个变化轮次） | 同一会话中两次持久注入之间的最小毫秒数 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tmux-context)是所有受支持字段及其 JSDoc 的完整真源。
+生成的配置目录是所有受支持字段及其 JSDoc 的完整真源。
 
 ### 何时知道位置
 
@@ -86,10 +86,10 @@ pre-step 监听器在等待投影注册前安装。激活期间到达的步骤�
 
 包级约定不够用时阅读以下页面。这些页面从设计决策讲到查询所经由的执行器以及完整配置。
 
-- [tmux 位置上下文决策记录](../../../.agents/notes/archived/feature/2026-07-27-tmux-location-context.md)——基于 tty 的检测与读数形状的设计理由。
-- [shell 子系统](../../../docs/subsystems/shell.zh.md)——只读查询所经由的执行器服务。
+- tmux 位置上下文决策记录——基于 tty 的检测与读数形状的设计理由。
+- shell 子系统——只读查询所经由的执行器服务。
 - [上下文组地图](../README.zh.md)——相邻的请求上下文包。
-- [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tmux-context)——每个受支持配置字段及其源声明。
+- 生成的配置目录——每个受支持配置字段及其源声明。
 
 -----
 

@@ -58,9 +58,9 @@ Schedule 拥有任务存储与投递。Agent 工具和 Web UI 使用同一管理
 | `deliveryHistoryRecords` | `200` | 每个任务保留最新的 1–10,000 条回执。 |
 | `newSessionIntervalSeconds` | `60` | `new` 目标的最小投递间隔，范围 60–604,800 秒。 |
 
-[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-schedule)定义全部字段。Remote `deliveryLimits()` 向 UI 提示提供实际的新 Session 投递间隔。
+配置目录定义全部字段。Remote `deliveryLimits()` 向 UI 提示提供实际的新 Session 投递间隔。
 
-通过 `create({ title, prompt, timing, target? }, actorSessionId?, signal?)` 创建任务。`timing.kind` 选择 `after`、`at`、`every`、`daily`、`weekly`、`cron` 或 `rrule`；只接受该类型对应的选择器。[Schedule 参考](../../../docs/subsystems/schedule.zh.md#recurrence-rules)定义各选择器及其边界。例如：
+通过 `create({ title, prompt, timing, target? }, actorSessionId?, signal?)` 创建任务。`timing.kind` 选择 `after`、`at`、`every`、`daily`、`weekly`、`cron` 或 `rrule`；只接受该类型对应的选择器。Schedule 参考定义各选择器及其边界。例如：
 
 ```json
 {"title":"Deploy check","prompt":"Check the deployment.","timing":{"kind":"cron","cron":{"expression":"*/15 9-17 * * 1-5","time_zone":"Asia/Shanghai"}},"target":{"kind":"new_once"}}
@@ -68,7 +68,7 @@ Schedule 拥有任务存储与投递。Agent 工具和 Web UI 使用同一管理
 
 RRULE 时间规则使用 `{ kind: "rrule", rrule: "DTSTART:…\nRRULE:…" }`。模型工具引导使用 RRULE；Web 自定义编辑器也接受带显式时区的五字段 Cron。标题必填、去除首尾空白后至多 120 字符；指令不能为空。
 
-`session` 目标复用已有、未归档且非委派的 Session；未加载目标通过只读头部的 `SessionPersistence.stat()` 校验，不激活会话或回放历史。默认 `new_once` 预留一个 Session id，首次投递创建后复用。`new` 目标每次投递新建 Session。两种新建目标启用时均需要 Session 创建提供方。可选的 `create` 值选择目录和 preset；省略时使用宿主默认值。[执行目标](../../../docs/subsystems/schedule.zh.md#delivery-targets)说明创建、命名、复用和归档准入。
+`session` 目标复用已有、未归档且非委派的 Session；未加载目标通过只读头部的 `SessionPersistence.stat()` 校验，不激活会话或回放历史。默认 `new_once` 预留一个 Session id，首次投递创建后复用。`new` 目标每次投递新建 Session。两种新建目标启用时均需要 Session 创建提供方。可选的 `create` 值选择目录和 preset；省略时使用宿主默认值。执行目标说明创建、命名、复用和归档准入。
 
 `edit({ id, action: "update", patch, expectedUpdatedAt? }, actorSessionId?, signal?)` 修改 `title`、`prompt`、`timing`、`target` 或 `active`；`action: "delete"` 删除任务。版本不匹配返回 `schedule_conflict`；`null` 比较存储版本字段缺失的情况。等价编辑保留已提交发生时点，并写入当前行格式。暂停保留任务；恢复计算下一个未来发生时点。
 
@@ -113,7 +113,7 @@ Schedule 在 Host 打开时将全部任务载入内存并校验。任务查找�
 | `status` | `active`、`paused` 或 `ended`；省略表示 `active`，旧 `inactive` 表示 `ended`。 |
 | `involvedSessionIds` | 通知目的地；省略时从可复用或预留目标开始，`new` 则使用 `[]`。 |
 | `createdAt`、`updatedAt` | 可选的已知时间戳。未知历史值保持缺失。 |
-| `lastDelivery`、`deliveryHistory` | 可选的回执和历史。缺失历史时暴露最新回执，并标记更早记录不可用；不编造指令或目的地。[已保存投递](../../../docs/subsystems/schedule.zh.md#saved-delivery-records)定义回执字段和保留规则。 |
+| `lastDelivery`、`deliveryHistory` | 可选的回执和历史。缺失历史时暴露最新回执，并标记更早记录不可用；不编造指令或目的地。已保存投递定义回执字段和保留规则。 |
 | `pendingDelivery` | 为逐次新建 Session 的投递，在创建前保存的可选 `{ targetSessionId }` 预留。 |
 
 当前写入器保存显式目标、状态、涉及 Session 和历史，省略顶层 `sessionId`，并在时间戳未知时保持缺失。两个版本通过可选字段与默认值解码为同一任务类型，无需行级版本。已有时间类型和已提交发生时点保持不变。以 `DTSTART` 开始的自定义文本选择 RRULE；其他文本选择带所选时区的 Cron，由 Host 校验。模型创建和编辑工具只暴露 RRULE；用户标签仅显示自定义。
@@ -166,7 +166,7 @@ Schedule 在 Host 打开时将全部任务载入内存并校验。任务查找�
 
 #### 未来版本
 
-兼容的 v3 使用 `version: 3, compatibleVersions: [1, 2]`，扩展此解码器和默认规则，并在编辑或投递时写入当前行。保持一个任务类型和管理 API。无需启动脚本或 v1→v2→v3 转换链。当前单元版本戳下可包含未改动旧行，因此在全部受影响行重写并验证之前保留其解码逻辑。若相同已存字段具有不同含义，应使用显式判别字段或可恢复的完整升级。目前存储领域没有不兼容值迁移执行器；Session 日志迁移与 SQLite 物理布局版本各有拥有方。参阅共享的[领域版本策略](../../../docs/subsystems/storage.zh.md#domain-versioning)。
+兼容的 v3 使用 `version: 3, compatibleVersions: [1, 2]`，扩展此解码器和默认规则，并在编辑或投递时写入当前行。保持一个任务类型和管理 API。无需启动脚本或 v1→v2→v3 转换链。当前单元版本戳下可包含未改动旧行，因此在全部受影响行重写并验证之前保留其解码逻辑。若相同已存字段具有不同含义，应使用显式判别字段或可恢复的完整升级。目前存储领域没有不兼容值迁移执行器；Session 日志迁移与 SQLite 物理布局版本各有拥有方。参阅共享的领域版本策略。
 
 v2 写入后，v1 程序会拒绝该存储。无效或有歧义的回执会被拒绝，而非编造历史目的地。
 
@@ -187,7 +187,7 @@ v2 写入后，v1 程序会拒绝该存储。无效或有歧义的回执会被�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [Schedule 子系统](../../../docs/subsystems/schedule.zh.md)——时间、管理、存储与投递契约。
+- Schedule 子系统——时间、管理、存储与投递契约。
 - [时间工具](../../util/time/README.zh.md)——Cron 与 RRULE 解析和发生时点计算。
 - [领域助手](src/domain.ts)、[时间编辑](src/update.ts)、[存储](src/storage.ts)和[运行时](src/runtime.ts)拥有 Schedule 策略。
 
@@ -198,7 +198,7 @@ v2 写入后，v1 程序会拒绝该存储。无效或有歧义的回执会被�
 
 #### 模型看到什么
 
-[生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-schedule) 包含 `schedule_create`、`schedule_list`、`schedule_view` 和 `schedule_edit` 的描述与 schema；这些工具由 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md) 贡献给挂载它的 preset。
+生成的工具目录 包含 `schedule_create`、`schedule_list`、`schedule_view` 和 `schedule_edit` 的描述与 schema；这些工具由 [`@deepseek-ai/dsh-tool-schedule`](../tool-schedule/README.zh.md) 贡献给挂载它的 preset。
 
 #### Token 影响
 

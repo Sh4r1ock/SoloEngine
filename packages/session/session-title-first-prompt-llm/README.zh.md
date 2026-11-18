@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 配置
 
-插件要求 `targetWords` 与 `targetCjkCharacters`，外加共享的[执行控制](../session-title-llm/README.zh.md#configuration)：`maxInputBytes`、`maxOutputTokens`、`timeoutMs`，以及可选成对的 `provider`/`model` 路由。同时省略二者，会继承当前已记录主请求的确切路由；同时设置二者，则让标题生成使用独立路由。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-title-first-prompt-llm)是每个受支持字段的穷尽式真源。
+插件要求 `targetWords` 与 `targetCjkCharacters`，外加共享的[执行控制](../session-title-llm/README.zh.md#configuration)：`maxInputBytes`、`maxOutputTokens`、`timeoutMs`，以及可选成对的 `provider`/`model` 路由。同时省略二者，会继承当前已记录主请求的确切路由；同时设置二者，则让标题生成使用独立路由。生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 失败与恢复
 
@@ -73,7 +73,6 @@ kind: "package-reference"
 当提供方约定不够用时阅读以下页面。它们从共享执行模块逐步进入替代节奏与它所插入的服务。
 
 - [共享 LLM 执行模块](../session-title-llm/README.zh.md)——此提供方使用的执行模块。
-- [全消息标题提供方](../../../bat/removed-20261031/packages/experimental/session-title-all-prompts-llm/README.md)——在每条新提示词后重新生成标题的节奏。
 - [会话标题服务](../session-title/README.zh.md)——回退行为、重命名、刷新与提供方注册。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 

@@ -60,7 +60,7 @@ contributor 必须声明它返回的每个键；返回未声明或非字符串�
 |---|---|---|
 | `dshHome` | `$DSH_HOME`，然后 `~/.dsh` | 暴露为 `DSH_HOME` 的 Harness 主目录绝对路径 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-shell-env)是每个受支持字段及其 JSDoc 的穷尽式真源。
+生成的配置目录是每个受支持字段及其 JSDoc 的穷尽式真源。
 
 ### 可能出什么问题
 
@@ -103,11 +103,11 @@ contributor 必须声明它返回的每个键；返回未声明或非字符串�
 当包级约定不够用时阅读以下页面。它们从 shell 家族逐步进入执行器 seam 与生成目录。
 
 - [shell 包映射](../README.zh.md)——bash 能力家族及其角色。
-- [Bash 执行器子系统](../../../docs/subsystems/shell.zh.md)——工具执行所经由的 `ctx.shell` seam。
+- Bash 执行器子系统——工具执行所经由的 `ctx.shell` seam。
 - [tool-bash](../tool-bash/README.zh.md)——消费本环境的 bash 工具。
 - [tool-pwsh](../tool-pwsh/README.zh.md)——消费本环境的 pwsh 工具。
 - [home paths 包](../../util/home-paths/README.zh.md)——`DSH_HOME` 如何解析。
-- [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-shell-env)——每个受支持配置字段及其源声明。
+- 生成的配置目录——每个受支持配置字段及其源声明。
 
 -----
 

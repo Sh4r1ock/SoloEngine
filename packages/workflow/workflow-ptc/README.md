@@ -44,7 +44,7 @@ With those dependencies available, mount the engine and its model-facing consume
 | `maxItemsPerCall` | `4096` | Items accepted by one `parallel()` or `pipeline()` call. |
 | `syncTimeoutMs` | `5000` | VM timeout for the script's initial synchronous slice, in milliseconds. |
 
-An owning consumer may set `WorkflowStartRequest.subagentProvider` and lower `WorkflowStartRequest.maxTotalAgents` for one run. Script hooks cannot change either choice. Process heap, output, control and termination limits belong to the Node PTC provider; the engine adds no overall elapsed timer. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-workflow-ptc) defines accepted engine fields.
+An owning consumer may set `WorkflowStartRequest.subagentProvider` and lower `WorkflowStartRequest.maxTotalAgents` for one run. Script hooks cannot change either choice. Process heap, output, control and termination limits belong to the Node PTC provider; the engine adds no overall elapsed timer. The generated configuration catalog defines accepted engine fields.
 
 The Node PTC provider's `maxPendingCalls` also limits workflow concurrency: child startup, result waits and disposal use those slots. Progress batches use at most one additional slot. Leave headroom when setting `maxConcurrentAgents`.
 
@@ -105,12 +105,12 @@ The first accepted terminal outcome owns the run result. Cancellation stops the 
 
 Use these references for the shared execution guarantees and workflow contracts.
 
-- [Workflow subsystem](../../../docs/subsystems/workflow.md) — request, result and event definitions.
+- Workflow subsystem — request, result and event definitions.
 - [Workflow service](../workflow/README.md) — caller-owned runs and cleanup.
 - [Node PTC runtime](../../ptc-runtime/ptc-runtime-node/README.md) — file policy, process limits and deployment choices.
 - [workflow tool](../tool-workflow/README.md) — model-facing scripted orchestration.
 - Ralph tool — opt-in fixed fresh-agent iteration.
-- [Workflow sandbox reuse](../../../.agents/notes/implemented/architecture/2026-09-13-workflow-ptc-sandbox-reuse.md) — execution ownership and tradeoffs.
+- Workflow sandbox reuse — execution ownership and tradeoffs.
 
 -----
 

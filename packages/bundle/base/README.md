@@ -95,7 +95,6 @@ The patch gates the two shell stacks by platform on its own rows: `bash-sandbox`
 |---|---|
 | [`cordis.patch.yml`](cordis.patch.yml) | The bundle substance: the base plugin rows, with per-row rationale as inline comments |
 | [`src/index.ts`](src/index.ts) | Package entry; carries no runtime API |
-| [`tests/base.spec.ts`](tests/base.spec.ts) | Manifest declaration and platform-gating checks |
 
 </details>
 
@@ -109,7 +108,7 @@ Read these pages when you want to go deeper into profiles, the surfaces built on
 - [app-boot profile section](../../boot/app-boot/README.md) — how profiles are resolved, layered, and customized.
 - [Bundle package map](../README.md) — the surfaces built on this core.
 - [Generated composition graph](../../../apps/cli/composition.md) — the exact plugin set each shipped profile uses.
-- [Profile plugin bundles note](../../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.md) — the profile and bundle composition design.
+- Profile plugin bundles note — the profile and bundle composition design.
 - [Codex and Claude Code provider bundles](../../subagent/README.md) — optional provider bundles you can install on top.
 
 -----

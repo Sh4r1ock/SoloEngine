@@ -58,7 +58,7 @@ At plugin startup, terminal-kind entries in the sidebar's complete open-tab inve
 
 - [Subprocess](../../subprocess/subprocess/README.md)
 - [Right Sidebar](../../client/ui-sidebar-right/README.md)
-- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.md)
+- Web terminal decision
 
 <a id="model-experience"></a>
 ## Model Experience

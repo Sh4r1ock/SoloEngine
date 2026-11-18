@@ -36,9 +36,9 @@ kind: "package-group"
 
 先从子系统参考了解共享类型与服务接口面，再从 Agent Note 了解设计理由与暂缓边界。
 
-- [终端子系统参考](../../docs/subsystems/terminal.zh.md)——id、后端与会话约定、发送就绪、有界读取，以及生成的 `ctx.terminals` API。
-- [持久 PTY Agent Note](../../.agents/notes/implemented/feature/2026-07-16-persistent-pty-sessions.zh.md)——设计决策、备选方案与延期工作。
-- [能力 seam](../../docs/capability-seams.zh.md)——本家族遵循的 Service Definition / Service Provider / Consumer 拆分。
+- 终端子系统参考——id、后端与会话约定、发送就绪、有界读取，以及生成的 `ctx.terminals` API。
+- 持久 PTY Agent Note——设计决策、备选方案与延期工作。
+- 能力 seam——本家族遵循的 Service Definition / Service Provider / Consumer 拆分。
 
 实验性可选能力见 [`tool-terminal`](../experimental/tool-terminal/README.zh.md)。
 

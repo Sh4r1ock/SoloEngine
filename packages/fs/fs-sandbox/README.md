@@ -39,7 +39,7 @@ Load the shared policy service, then this backend, then the tools; the read-befo
 - name: '@deepseek-ai/dsh-tool-fs'
 ```
 
-The backend's config is unchanged from the local backend's (`cwd` resolution default and `diffBasisMaxBytes` overwrite bound); the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-fs-sandbox) is the exhaustive source.
+The backend's config is unchanged from the local backend's (`cwd` resolution default and `diffBasisMaxBytes` overwrite bound); the configuration catalog is the exhaustive source.
 
 ### How the fence behaves
 
@@ -87,11 +87,11 @@ The residual resolve-to-syscall TOCTOU is narrowed by re-canonicalizing immediat
 
 Read these pages when the package-level contract is not enough. They move from this backend to the shared policy home and the confinement decisions behind it.
 
-- [Filesystem subsystem](../../../docs/subsystems/filesystem.md) — exhaustive provider contract, policy events, and error taxonomy.
+- Filesystem subsystem — exhaustive provider contract, policy events, and error taxonomy.
 - [dsh-fs](../fs/README.md) — the `ctx.fs` contract this backend implements.
 - [fs-local](../fs-local/README.md) — the local backend this one extends.
 - [sandbox-policy](../../sandbox/sandbox-policy/README.md) — the shared per-session policy resolver this backend requires.
-- [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — modes, per-call policy, and fail-closed errors.
+- Process sandbox subsystem — modes, per-call policy, and fail-closed errors.
 - [Cross-family fs sandbox reference](../../sandbox/sandbox-policy/README.md) — the shared mode fence and its escalation choreography.
 
 -----

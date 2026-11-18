@@ -55,7 +55,7 @@ New folder 和 Cancel 操作使用共享 [Button](../ui-primitives/README.zh.md)
 - [dsh-host-directory-picker-browse](../../host/directory-picker-browse/README.zh.md)——本表面驱动的目录列出后端。
 - [ui-workspace](../ui-workspace/README.zh.md)——声明目录流程槽位并拥有拾取对话。
 - [ui-directory-picker-native](../ui-directory-picker-native/README.zh.md)——面向本地部署的原生操作系统选择器替代方案。
-- [Web 客户端架构](../../../docs/subsystems/web-client.zh.md)——浏览器插件行如何加载并注册槽位。
+- Web 客户端架构——浏览器插件行如何加载并注册槽位。
 
 -----
 

@@ -46,7 +46,7 @@ The minimal mount needs no configuration. A positive `refreshIntervalMs` suppres
 | `timeZone` | process zone | Fallback display zone when the open turn has no unique browser zone |
 | `refreshIntervalMs` | `600000` (10 minutes) | Minimum milliseconds between durable injections in one session |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-time-context) is the exhaustive source for every accepted field and its JSDoc.
+The generated configuration catalog is the exhaustive source for every accepted field and its JSDoc.
 
 ### Choosing the zone
 
@@ -89,9 +89,9 @@ When an injection is due, the plugin samples the wall clock, derives the browser
 
 Read these pages when the package-level contract is not enough. They move from the design decision to the composition that mounts the plugin and the exhaustive configuration.
 
-- [Schedule user guide](../../../docs/user/guide/schedule.md) — the official configuration path for mounting this plugin.
+- Schedule user guide — the official configuration path for mounting this plugin.
 - [Context group map](../README.md) — sibling request-context packages.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-time-context) — every accepted config field and its source declaration.
+- Generated configuration catalog — every accepted config field and its source declaration.
 
 -----
 

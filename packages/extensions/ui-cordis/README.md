@@ -86,8 +86,8 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Client runner](../cordis-client-runner/README.md) — the browser face the panel reads and calls.
 - [Host runner](../cordis-host-runner/README.md) — the inventory and lifecycle verbs behind the panel.
 - [Tool package](../tool-cordis/README.md) — read-only runtime API discovery.
-- [Extensions subsystem](../../../docs/subsystems/extensions.md) — the generated `ctx.dynamicCordisRunner` API and forwarded `cordis/*` events.
-- [Slots subsystem](../../../docs/subsystems/slots.md) — how slot-registered browser UI is owned by its package.
+- Extensions subsystem — the generated `ctx.dynamicCordisRunner` API and forwarded `cordis/*` events.
+- Slots subsystem — how slot-registered browser UI is owned by its package.
 
 -----
 

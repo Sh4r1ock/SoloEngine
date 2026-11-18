@@ -86,7 +86,7 @@ Search API 接收 `query`、`count`（配置的结果数，或请求中更小的
 
 [插件](src/index.ts)在每次操作时读取一次设置，注册两个提供者，并把一个能力的设置快照、会话的路由和活动的模型路由条目转换为该操作的有序凭据，每个凭据都绑定其发往的 API 基础地址。[Search 提供者](src/search.ts)在返回服务结果前校验响应 JSON；[Fetch 提供者](src/fetch.ts)校验 Markdown 正文。[传输层](src/transport.ts)按顺序读取这些凭据，用第一个存在的凭据发送一次请求，并负责取消、重定向拒绝和失败指引；记录钩子在发送前运行，抛出异常即阻止发送。Search 与 Fetch API 调用不产生辅助请求事件。[Messages 搜索提供方](../web-search-deepseek/README.zh.md)负责声明和记录自身的 `web/deepseek-search-llm-request` 会话事件。工具调用和结果仍按常规记录到会话。
 
-服务类型见 [Web 子系统](../../../docs/subsystems/web.zh.md)，受限的模型输出见 [tool-web](../tool-web/README.zh.md)。
+服务类型见 Web 子系统，受限的模型输出见 [tool-web](../tool-web/README.zh.md)。
 
 </details>
 

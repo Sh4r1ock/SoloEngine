@@ -35,8 +35,8 @@ harness 运行的每个子进程与终端会话——bash 命令、语言服务�
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [子进程子系统](../../docs/subsystems/subprocess.zh.md)——spawn spec、输出读取器、结果与受管的 `DSH_*` 环境。
-- [subprocess seam Agent Note](../../.agents/notes/archived/architecture/2026-07-26-subprocess-seam.md)——bash 执行器的进程部分为何成为独立的 seam。
+- 子进程子系统——spawn spec、输出读取器、结果与受管的 `DSH_*` 环境。
+- subprocess seam Agent Note——bash 执行器的进程部分为何成为独立的 seam。
 
 -----
 

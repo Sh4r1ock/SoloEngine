@@ -15,9 +15,6 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../test-support/client-runtime"
-    },
-    {
       "path": "../ui-renderer"
     },
     {

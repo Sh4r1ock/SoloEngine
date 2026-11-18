@@ -77,9 +77,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 延伸阅读
 
-- [产品埋点](../../../docs/subsystems/product-telemetry.zh.md)——消费方类型与服务参考。
+- 产品埋点——消费方类型与服务参考。
 - [会话上报](../../session/session-telemetry-otel/README.zh.md)——独立的、由反馈授权的 Session 上报。
-- [测试策略](../../../docs/testing.zh.md)——Loader 组合与网络测试夹具。
+- 测试策略——Loader 组合与网络测试夹具。
 
 -----
 

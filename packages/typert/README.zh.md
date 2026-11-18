@@ -34,9 +34,9 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [Typert 子系统参考](../../docs/subsystems/typert.zh.md)——从协议与注册表类型中原样记录的公共约定。
-- [API Gateway 参考](../../docs/api-gateway.zh.md)——生成的 Remote 描述符如何成为实际的 Host 到 Client 调用。
-- [Remote 调用 Agent Note](../../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)——Remote 调用背后的架构与传输决策。
+- Typert 子系统参考——从协议与注册表类型中原样记录的公共约定。
+- API Gateway 参考——生成的 Remote 描述符如何成为实际的 Host 到 Client 调用。
+- Remote 调用 Agent Note——Remote 调用背后的架构与传输决策。
 - [包工作区地图](../README.zh.md)——工作区中的每个组及其职责。
 
 -----

@@ -72,7 +72,7 @@ kind: "package-reference"
 - [ui-conversation](../ui-conversation/README.zh.md)——持有共享更多按钮的会话头部。
 - [ui-sidebar-documentpreview](../ui-sidebar-documentpreview/README.zh.md)——声明文件控件所占头部与空态子 slot 的文档预览。
 - [ui-deliverables](../ui-deliverables/README.zh.md)——交付卡片，仍通过自己的路由打开声明过的文件。
-- [Web client 架构](../../../docs/subsystems/web-client.zh.md)——浏览器插件行如何加载并注册 slot。
+- Web client 架构——浏览器插件行如何加载并注册 slot。
 
 -----
 
@@ -105,6 +105,6 @@ Host 在打开或定位前通过当前文件系统验证路径。没有对应 Ho
 <details>
 <summary>维护者工作语境——点击展开</summary>
 
-功能层面的各项决定，包括拆分为主机包与本表面包，记录在[历史转正 Agent Note](../../../.agents/notes/archived/feature/2026-08-25-promote-open-anywhere-plugin.md)；文档预览的文件控件记录在[历史默认应用 Agent Note](../../../.agents/notes/archived/feature/2026-09-16-open-in-default-app-for-sidebar-files.md)。
+功能层面的各项决定，包括拆分为主机包与本表面包，记录在历史转正 Agent Note；文档预览的文件控件记录在历史默认应用 Agent Note。
 
 </details>

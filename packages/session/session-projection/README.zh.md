@@ -141,11 +141,11 @@ Session 摘要包含每个已注册客户端视图，但排除 `SessionProjectio
 
 当包级约定不够用时阅读以下页面。它们从单元约定逐步进入读模型子系统与持久缓存。
 
-- [会话投影子系统](../../../docs/subsystems/session-projection.zh.md)——投影单元约定、驱动语义与生成的服务 API。
-- [会话持久化子系统](../../../docs/subsystems/persistence.zh.md)——投影折叠其上的事件日志。
+- 会话投影子系统——投影单元约定、驱动语义与生成的服务 API。
+- 会话持久化子系统——投影折叠其上的事件日志。
 - [会话投影缓存](../session-projection-cache/README.zh.md)——让冷读跳过全量日志加载的持久检查点。
 - [会话包映射](../README.zh.md)——相邻的持久化、标题与遥测包。
-- [会话投影 RFC](../../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)——投影与命令日志的设计理由。
+- 会话投影 RFC——投影与命令日志的设计理由。
 
 -----
 

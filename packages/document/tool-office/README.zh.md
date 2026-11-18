@@ -81,7 +81,7 @@ kind: "package-reference"
 
 - [Office 套件](../office-kit/README.zh.md) — 转换队列、上限和 Kit 定位。
 - Office 工具决策 — Office 操作为何通过 Host 执行。
-- [工具编写参考](../../../docs/cookbook/adding-a-tool.zh.md) — 执行与展示契约。
+- 工具编写参考 — 执行与展示契约。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -90,7 +90,7 @@ kind: "package-reference"
 
 #### 模型看到的内容
 
-三个工具的声明见[工具目录](../../../docs/tool-catalog.zh.md)。渲染结果以 `Rendered <count> image(s) of <absolute input path> (<pageCount> in the document) at <dpi> DPI.` 开头，缺少字体时追加 `Fonts not installed and substituted: <families>.`，随后每张图片先给出 `Page <n>: <width>x<height> px` 或 `Sheet "<name>" <range>: <width>x<height> px` 标签，再给出图片。转换时报告 `Converted <input> to <format> (<bytes> bytes[, <n> pages]): <temporary file>`（或 `Recalculated …`），随后是 `Copy this temporary file to its destination with the shell now; it may be deleted after a retention period or to free space, and is deleted when this conversation ends.` 和相同的字体行。失败为 `cannot <operation> "<path>": <reason>`；文件系统无法读取输入时为 `cannot read "<path>": <reason>`。schema 无法表达的参数规则不满足时为 `invalid arguments: <violations>`。
+三个工具的声明见工具目录。渲染结果以 `Rendered <count> image(s) of <absolute input path> (<pageCount> in the document) at <dpi> DPI.` 开头，缺少字体时追加 `Fonts not installed and substituted: <families>.`，随后每张图片先给出 `Page <n>: <width>x<height> px` 或 `Sheet "<name>" <range>: <width>x<height> px` 标签，再给出图片。转换时报告 `Converted <input> to <format> (<bytes> bytes[, <n> pages]): <temporary file>`（或 `Recalculated …`），随后是 `Copy this temporary file to its destination with the shell now; it may be deleted after a retention period or to free space, and is deleted when this conversation ends.` 和相同的字体行。失败为 `cannot <operation> "<path>": <reason>`；文件系统无法读取输入时为 `cannot read "<path>": <reason>`。schema 无法表达的参数规则不满足时为 `invalid arguments: <violations>`。
 
 #### Token 影响
 

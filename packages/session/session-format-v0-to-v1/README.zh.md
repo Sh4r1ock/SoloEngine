@@ -74,7 +74,7 @@ Alpha 迁移边会拒绝冻结清单之外的所有事件类型，包括带有 `
 
 - [迁移机制](../session-format/README.zh.md)——纯迁移链与编解码约定。
 - [静态目录](../session-format-catalog/README.zh.md)——由构建负责的装配。
-- [会话子系统](../../../docs/subsystems/session.zh.md)——当前逻辑会话语义。
+- 会话子系统——当前逻辑会话语义。
 
 -----
 

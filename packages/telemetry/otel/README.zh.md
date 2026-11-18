@@ -43,7 +43,7 @@ Header 显式提供。服务不会附加 channel header，也不继承环境中�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [OTel 子系统](../../../docs/subsystems/otel.zh.md) — 服务职责与 API。
+- OTel 子系统 — 服务职责与 API。
 - [产品适配器](../../host/product-telemetry-otel/README.zh.md) — 显式埋点策略与配置。
 - [Session 适配器](../../session/session-telemetry-otel/README.zh.md) — 反馈授权和上传限制配置。
 

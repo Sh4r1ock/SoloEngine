@@ -73,7 +73,7 @@ Platform tools run without a shell: on macOS one `osascript -l JavaScript` scrip
 Read these when the backend contract is not enough: the seam definition first, then the alternative backend and the chooser that selects between them.
 
 - [Directory-picker seam](../directory-picker/README.md) — the `native` capability contract and the typed error vocabulary.
-- [Directory-picker capability seam decision](../../../.agents/notes/archived/architecture/2026-07-28-directory-picker-capability-seam.md) — why backends differ in interaction shape.
+- Directory-picker capability seam decision — why backends differ in interaction shape.
 - [Browse backend](../directory-picker-browse/README.md) — the in-app alternative for remote clients.
 - [Adaptive chooser](../directory-picker-auto/README.md) — boot-time resolution between native and browse.
 - [No-shell subprocess runner](../../util/native-command/README.md) — the shared subprocess primitive the chooser runs on.

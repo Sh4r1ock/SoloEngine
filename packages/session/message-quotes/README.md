@@ -45,7 +45,7 @@ The shared [Markdown formatter](../../client/ui-primitives/README.md#rendering-a
 ## Further Exploration
 
 - [Session package map](../README.md) — related persistence and projection packages.
-- [Conversation subsystem](../../../docs/subsystems/conversation.md) — composer and transcript consumers.
+- Conversation subsystem — composer and transcript consumers.
 
 -----
 

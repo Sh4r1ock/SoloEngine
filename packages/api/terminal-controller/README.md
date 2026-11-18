@@ -83,8 +83,8 @@ Closing saves an unfinished cleanup request before releasing the tab, then await
 
 - [Subprocess](../../subprocess/subprocess/README.md)
 - [Right Sidebar](../../client/ui-sidebar-right/README.md)
-- [User-terminal permissions](../../../.agents/notes/implemented/architecture/2026-09-16-user-terminal-permissions.md)
-- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.md)
+- User-terminal permissions
+- Web terminal decision
 
 <a id="model-experience"></a>
 ## Model Experience

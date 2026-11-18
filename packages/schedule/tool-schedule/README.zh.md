@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 四个工具
 
-- `schedule_create(title, prompt, rrule, target)` —— 创建一个任务，四项输入均为必填。`title` 不超过 120 个字符，使用用户的语言命名动作与对象；时间、状态和 id 保留在各自字段中。`prompt` 是每个发生时点投递的指令，`rrule` 是 [Schedule 所支持的 RFC 5545 子集](../../../docs/subsystems/schedule.zh.md#rrule-input)中的一行 `DTSTART` 与一行 `RRULE`。返回任务及其生成的 id。
+- `schedule_create(title, prompt, rrule, target)` —— 创建一个任务，四项输入均为必填。`title` 不超过 120 个字符，使用用户的语言命名动作与对象；时间、状态和 id 保留在各自字段中。`prompt` 是每个发生时点投递的指令，`rrule` 是 Schedule 所支持的 RFC 5545 子集中的一行 `DTSTART` 与一行 `RRULE`。返回任务及其生成的 id。
 - `schedule_list(active?, limit?, offset?)` —— 列出宿主全部任务中的一页，包括其他 Session 创建的任务。活动任务按下一个发生时点排在前面，暂停与已结束的任务随后，按最新时间在前。`active: true` 只保留活动任务，`active: false` 只保留暂停与已结束的任务；`limit` 取 1 到 500，默认 100。
 - `schedule_view(id)` —— 按 id 读取一个任务。未知 id 返回 `{ id, code: 'schedule_not_found' }`。
 - `schedule_edit(id, action, ...)` —— `update` 至少改变 `title`、`prompt`、`rrule`、`target` 与 `active` 中的一项；`active: false` 暂停任务，`active: true` 恢复任务。恢复需要未来发生时点；旧规则耗尽时须提供新的 `rrule`。带有 `expectedUpdatedAt` 时，如果任务在那次读取之后发生过改变，更新或删除返回 `schedule_conflict` 且不做任何改变。`delete` 不接受任何补丁字段，并移除任务及其已保存的投递。
@@ -77,9 +77,9 @@ kind: "package-reference"
 
 - [Schedule 服务](../schedule/README.zh.md) —— 这些工具所管理的宿主任务存储、运行时与投递行为。
 - [Schedule 分组映射](../README.zh.md) —— 本组内的同级包。
-- [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-schedule) —— 模型接收的确切四个 schema。
-- [Schedule 子系统](../../../docs/subsystems/schedule.zh.md) —— `ctx.schedule` 的 Cordis 接线区域与存储类型。
-- [Schedule 用户指南](../../../docs/user/guide/schedule.zh.md) —— 面向用户的定时任务工作流。
+- 生成的工具目录 —— 模型接收的确切四个 schema。
+- Schedule 子系统 —— `ctx.schedule` 的 Cordis 接线区域与存储类型。
+- Schedule 用户指南 —— 面向用户的定时任务工作流。
 
 -----
 
@@ -110,7 +110,7 @@ Native 和 PTC 模式下，每次组装 prompt 只加入一句固定文本。同
 
 #### What the model sees
 
-只要本包在调用方 Agent 的作用域内可见，模型就会收到生成的 [`schedule_create`、`schedule_list`、`schedule_view` 与 `schedule_edit` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-schedule)。目录展示默认配置；当 `new` 投递的配置间隔超过一分钟时，`schedule_create` 的 `target` 描述会加上该间隔。
+只要本包在调用方 Agent 的作用域内可见，模型就会收到生成的 `schedule_create`、`schedule_list`、`schedule_view` 与 `schedule_edit` schema。目录展示默认配置；当 `new` 投递的配置间隔超过一分钟时，`schedule_create` 的 `target` 描述会加上该间隔。
 
 #### Token effect
 

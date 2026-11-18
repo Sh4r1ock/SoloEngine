@@ -74,7 +74,7 @@ kind: "package-reference"
 以下页面介绍服务器配置、执行机制与资源访问决策。
 
 - [MCP 客户端](../mcp-client/README.zh.md)——服务器传输、指令与连接生命周期。
-- [工具子系统](../../../docs/subsystems/tools.zh.md)——规范值与模型可见结果。
+- 工具子系统——规范值与模型可见结果。
 - [资源可见性参考](README.zh.md)——profile 统一挂载及由已配置服务器决定的可见性。
 - [资源与指令参考](README.zh.md)——作用域、按需访问及未纳入的机制。
 
@@ -87,7 +87,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-[生成的工具 schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-mcp-resources)定义了调用方可见的所有已配置服务器共享的三个工具。没有这类服务器时，native schema、PTC 声明与绑定以及服务器名称提示词均不存在。激活的客户端连接、断开或重试时，这些共享工具定义保持不变。挂载系统提示词装配且存在可见提供方时，`MCP resource servers` 段落显示 `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` 名称来自同一作用域注册表，包括既没有工具也没有指令的服务器。注册表为空时不贡献该段落。
+生成的工具 schema定义了调用方可见的所有已配置服务器共享的三个工具。没有这类服务器时，native schema、PTC 声明与绑定以及服务器名称提示词均不存在。激活的客户端连接、断开或重试时，这些共享工具定义保持不变。挂载系统提示词装配且存在可见提供方时，`MCP resource servers` 段落显示 `Use list_mcp_resources, list_mcp_resource_templates, or read_mcp_resource with one of these names as the server argument: <JSON array>.` 名称来自同一作用域注册表，包括既没有工具也没有指令的服务器。注册表为空时不贡献该段落。
 
 #### Token 影响
 

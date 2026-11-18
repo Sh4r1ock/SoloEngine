@@ -74,7 +74,7 @@ Load the plugin alongside the skill registry; it requires `ctx.skills`.
 | `watch` | `true` | Watch local roots and invalidate the provider when the catalog may have changed |
 | `bundledSkillDir` | — | Bundled skill root scanned at rank 600 when configured |
 
-The remaining `watch*` fields tune Chokidar behavior — polling, stability window, interval, project cap, and symlink following. The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-skill-filesystem) is the exhaustive source for every field.
+The remaining `watch*` fields tune Chokidar behavior — polling, stability window, interval, project cap, and symlink following. The generated configuration catalog is the exhaustive source for every field.
 
 ### Change detection
 
@@ -121,7 +121,7 @@ Existing roots are watched by Chokidar at depth 1; a root that does not exist is
 
 Read these pages when the package-level contract is not enough. They move from the registry contract to the consumer that renders discovered skills and the home-path resolution used by the config defaults.
 
-- [Skill subsystem reference](../../../docs/subsystems/skills.md) — the registry contract and the local discovery priority table.
+- Skill subsystem reference — the registry contract and the local discovery priority table.
 - [skill package](../skill/README.md) — the registry this provider registers on.
 - [tool-skill package](../tool-skill/README.md) — how discovered skills reach the session catalog and the model.
 - [home-paths package](../../util/home-paths/README.md) — how `dshHome` and `agentsHome` resolve.

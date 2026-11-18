@@ -33,10 +33,10 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [架构](../../docs/soloengine/01-架构.md)
-- [组合与插件全量清单](../../docs/soloengine/02-组合与插件全量清单.md)
-- [数据层](../../docs/soloengine/03-数据层.md)
-- [REST 与账号域](../../docs/soloengine/04-REST与账号域.md)
+- 架构
+- 组合与插件全量清单
+- 数据层
+- REST 与账号域
 
 <a id="dev-note"></a>
 ## 开发说明

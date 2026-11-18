@@ -65,7 +65,6 @@ Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编
 
 - [Connection](../connection/README.zh.md)——认证 RPC、Host 精确路由与 connection generation。
 - [Session Controller](../../api/session-controller/README.zh.md)——消费暂存凭证的 prompt 准入。
-- [Web Worker runtime](../../../bat/removed-20261031/packages/experimental/webworker-runtime/README.md)——页面到 Host Worker 的请求隧道。
 - [客户端组地图](../README.zh.md)——浏览器服务与 UI 功能包。
 
 -----

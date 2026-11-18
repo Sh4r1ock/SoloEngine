@@ -83,8 +83,8 @@ function assertSupportedSegment(segment: string): void {
  * resolves each time; wildcard segments and `**` resolve through dirent
  * types, so they never enter symlinked directories and never match dot
  * names. Node documents `follow: false` only for `**` expansion, so the
- * wildcard-side behavior is this walker's own contract, pinned by
- * repo-files.spec.ts, rather than a cross-version node guarantee; the four
+ * wildcard-side behavior is this walker's own contract rather than a
+ * cross-version node guarantee; the four
  * consuming gates' current patterns contain no wildcard segment over a
  * symlinked directory, so the corpus is unchanged. `**` spans zero or more
  * directories. The final segment matches files and symlinks; a broken or

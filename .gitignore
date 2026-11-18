@@ -281,6 +281,9 @@ tmp/
 .codebuddy/
 .qoder/
 .trae-html-share-packages/
+.playwright-cli/
+.screenshots/
+.workbuddy-ai/
 .git-node.js/
 _ls.txt
 _probe.txt
@@ -288,6 +291,10 @@ _probe2.txt
 test/
 deepseek_harness/
 PRD/
+/_archive/
+/plans/
+/reference/
+/文档备份-*/
 analysis/
 data/dsh-home/
 data/dsh-home-node-b/

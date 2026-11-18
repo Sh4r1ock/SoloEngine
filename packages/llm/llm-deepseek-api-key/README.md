@@ -60,7 +60,7 @@ API-key lookup calls `resolveDeepSeekApiKey` from the [shared credential module]
 <a id="further-exploration"></a>
 ## Further Exploration
 
-[LLM streaming](../../../docs/subsystems/llm-streaming.md) · [Messages](../llm-deepseek/README.md) · [Official listing decision](../../../.agents/notes/implemented/architecture/2026-10-22-deepseek-official-model-listing.md)
+LLM streaming · [Messages](../llm-deepseek/README.md) · Official listing decision
 
 <a id="model-experience"></a>
 ## Model Experience

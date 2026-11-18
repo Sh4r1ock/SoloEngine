@@ -70,8 +70,8 @@ Repository checks read the lists in `src/bundles.ts` as TypeScript literals with
 ## Further Exploration
 
 - [dsh-app-boot](../../boot/app-boot/README.md) — profile loading that applies the templates and retired list.
-- [Shipped optional bundles](../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md) — why the installation owns the optional list.
-- [Official on-demand bundles](../../../.agents/notes/implemented/architecture/2026-10-05-official-on-demand-bundles.md) — the offline catalog decision.
+- Shipped optional bundles — why the installation owns the optional list.
+- Official on-demand bundles — the offline catalog decision.
 
 -----
 

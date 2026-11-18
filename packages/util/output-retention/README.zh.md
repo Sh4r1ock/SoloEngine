@@ -132,7 +132,7 @@ const footer = formatRetentionNotice(
 当你需要消费方或库背后的边界决策时，阅读以下页面。
 
 - [spill 策略](../../spill/spill-policy/README.zh.md)——组合 `TextRetainer`，围绕 spill 文件通知构建有界预览。
-- [spill 子系统](../../../docs/subsystems/spill.zh.md)——本库预览机制所服务的 spill 词汇。
+- spill 子系统——本库预览机制所服务的 spill 词汇。
 - [文件搜索工具](../../fs/tool-fs-search/README.zh.md)——为 spill 收集完整结果的 `ItemRetainer` 消费方。
 
 -----

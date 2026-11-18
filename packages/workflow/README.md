@@ -33,11 +33,10 @@ The workflow group lets an agent run orchestration scripts that delegate work to
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Workflow subsystem](../../docs/subsystems/workflow.md) — the seam's types, start request, and `workflow/*` events.
-- [Generated tool catalog](../../docs/tool-catalog.md#deepseek-aidsh-tool-workflow) — the `workflow` tool schema the model receives.
-- [Generated configuration catalog](../../docs/config-catalog.md#deepseek-aidsh-workflow-ptc) — every accepted engine config field.
-- [historical Dynamic workflows Agent Note](../../.agents/notes/archived/feature/2026-07-05-dynamic-workflows.md) — the seam design and its decisions.
-- [Harness-level goal-based execution reference](../../bat/removed-20261031/packages/experimental/tool-ralph/README.md) — the fixed fresh-agent loop design and deferred work.
+- Workflow subsystem — the seam's types, start request, and `workflow/*` events.
+- Generated tool catalog — the `workflow` tool schema the model receives.
+- Generated configuration catalog — every accepted engine config field.
+- historical Dynamic workflows Agent Note — the seam design and its decisions.
 
 -----
 

@@ -77,7 +77,7 @@ The package root only re-exports declarations from [`src/types.ts`](src/types.ts
 ## Further Exploration
 
 - [Profile launcher](../../boot/app-boot/README.md#profiles) — manifest loading and composition.
-- [Public package metadata](../../../.agents/notes/implemented/architecture/2026-09-10-public-package-manifest.md) — field placement and reader ownership.
+- Public package metadata — field placement and reader ownership.
 
 <a id="model-experience"></a>
 ## Model Experience

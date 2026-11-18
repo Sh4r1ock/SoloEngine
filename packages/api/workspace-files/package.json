@@ -1,7 +1,5 @@
 {
   "name": "@deepseek-ai/dsh-api-workspace-files",
-  "description": "Workspace file service and Client resource provider: bounded reads, directory listing, live metadata, and workspace-confined human mutations over the workspaceFiles Remote namespace",
-  "version": "0.2.2-rc.2",
   "description": "Workspace file service and Client resource provider: bounded reads, directory listing, and live metadata over the workspaceFiles Remote namespace",
   "version": "0.2.2-rc.3",
   "publishConfig": {
@@ -73,7 +71,6 @@
     "@deepseek-ai/dsh-client-resources": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-fs": "workspace:*",
-    "@deepseek-ai/dsh-remote-mock": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",

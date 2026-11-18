@@ -43,7 +43,7 @@ kind: "package-reference"
 | `root` | 私有 0700 临时目录 | spill 文件的根目录；设置后可将文件保存在已知位置 |
 | `cleanupPeriodDays` | `30` | 文件在一次性启动清理中可被删除前需经过的天数；`0` 禁用清理 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-spill-local)是每个受支持字段的穷尽式真源。
+生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 你会得到什么
 
@@ -102,8 +102,8 @@ kind: "package-reference"
 - [spill 存储服务](../spill/README.zh.md)——此后端实现的 `saveText` 约定与词汇。
 - [spill 包映射](../README.zh.md)——三包家族与各自职责。
 - [dsh-spill-policy](../spill-policy/README.zh.md)——结果过大时调用此后端的策略。
-- [spill 子系统](../../../docs/subsystems/spill.zh.md)——穷尽式词汇与归属。
-- [工具输出 spill 决策](../../../.agents/notes/implemented/architecture/2026-07-08-tool-output-spill-files.zh.md)——能力边界与设计依据。
+- spill 子系统——穷尽式词汇与归属。
+- 工具输出 spill 决策——能力边界与设计依据。
 
 -----
 

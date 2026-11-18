@@ -70,7 +70,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-[LLM streaming](../../../docs/subsystems/llm-streaming.zh.md) · [Messages](../llm-deepseek/README.zh.md) · [账号目录决策](../../../.agents/notes/implemented/architecture/2026-09-24-deepseek-account-remote-model-catalog.zh.md)
+LLM streaming · [Messages](../llm-deepseek/README.zh.md) · 账号目录决策
 
 <a id="model-experience"></a>
 ## 模型体验

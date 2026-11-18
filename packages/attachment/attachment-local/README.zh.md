@@ -48,7 +48,7 @@ kind: "package-reference"
 | `normalizedImageMaxBytes` | `4 MiB` | 编码字节目标；没有候选满足时保留质量阶梯中的最小输出 |
 | `imageCompressionConcurrency` | `2` | 并发规范化与请求变换的 FIFO 上限 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-attachment-local)完整列出了所有受支持的字段及其 JSDoc。
+生成的配置目录完整列出了所有受支持的字段及其 JSDoc。
 
 ### 图片存储在哪里、会保留多久
 
@@ -111,9 +111,9 @@ kind: "package-reference"
 
 完整的服务约定与载荷类型请看子系统参考；这份存储所支撑的能力请看 seam 包。
 
-- [附件子系统参考](../../../docs/subsystems/attachment.zh.md)——服务约定、载荷类型与 `ctx.attachments` 的 Cordis 接口面。
+- 附件子系统参考——服务约定、载荷类型与 `ctx.attachments` 的 Cordis 接口面。
 - [附件 seam 包](../attachment/README.zh.md)——本存储支撑的图片附件能力。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-attachment-local)——每个受支持配置字段及其源声明。
+- 生成配置目录——每个受支持配置字段及其源声明。
 - [Home 路径解析](../../util/home-paths/README.zh.md)——`DSH_HOME` 如何从显式配置、环境变量与用户主目录解析。
 
 -----

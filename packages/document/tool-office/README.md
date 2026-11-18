@@ -81,7 +81,7 @@ Native request headers retain Office declarations across resume and fork, includ
 
 - [Office kit](../office-kit/README.md) — conversion queue, limits, and Kit location.
 - Office tool decision — why Office operations run through the Host.
-- [Tool authoring reference](../../../docs/cookbook/adding-a-tool.md) — execution and presentation contracts.
+- Tool authoring reference — execution and presentation contracts.
 
 <a id="model-experience"></a>
 ## Model Experience
@@ -90,7 +90,7 @@ Native request headers retain Office declarations across resume and fork, includ
 
 #### What the model sees
 
-The three declarations are documented in the [tool catalog](../../../docs/tool-catalog.md). A render result opens with `Rendered <count> image(s) of <absolute input path> (<pageCount> in the document) at <dpi> DPI.`, adds `Fonts not installed and substituted: <families>.` when fonts are missing, then gives each image as a `Page <n>: <width>x<height> px` or `Sheet "<name>" <range>: <width>x<height> px` label followed by the image. A conversion reports `Converted <input> to <format> (<bytes> bytes[, <n> pages]): <temporary file>` (or `Recalculated …`), then `Copy this temporary file to its destination with the shell now; it may be deleted after a retention period or to free space, and is deleted when this conversation ends.` and the same font line. Failures read `cannot <operation> "<path>": <reason>`, or `cannot read "<path>": <reason>` for an input the filesystem cannot read. An argument rule the schema cannot express reads `invalid arguments: <violations>`.
+The three declarations are documented in the tool catalog. A render result opens with `Rendered <count> image(s) of <absolute input path> (<pageCount> in the document) at <dpi> DPI.`, adds `Fonts not installed and substituted: <families>.` when fonts are missing, then gives each image as a `Page <n>: <width>x<height> px` or `Sheet "<name>" <range>: <width>x<height> px` label followed by the image. A conversion reports `Converted <input> to <format> (<bytes> bytes[, <n> pages]): <temporary file>` (or `Recalculated …`), then `Copy this temporary file to its destination with the shell now; it may be deleted after a retention period or to free space, and is deleted when this conversation ends.` and the same font line. Failures read `cannot <operation> "<path>": <reason>`, or `cannot read "<path>": <reason>` for an input the filesystem cannot read. An argument rule the schema cannot express reads `invalid arguments: <violations>`.
 
 #### Token effect
 

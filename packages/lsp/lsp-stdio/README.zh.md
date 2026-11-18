@@ -60,7 +60,7 @@ kind: "package-reference"
 | `shutdownTimeoutMs` | `5000` | 升级前用于优雅 `shutdown`／`exit` 的预算 |
 | `killGraceMs` | `2000` | 请求取消及 SIGTERM→SIGKILL 升级的宽限期 |
 
-`servers` 必须至少包含一个配置项，每个 id 都必须非空；定时器预算必须是 Node 定时器范围内的正整数，字节上限必须为正。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-lsp-stdio)是每个受支持字段的穷尽式真源。
+`servers` 必须至少包含一个配置项，每个 id 都必须非空；定时器预算必须是 Node 定时器范围内的正整数，字节上限必须为正。生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 查询做什么
 
@@ -68,7 +68,7 @@ kind: "package-reference"
 
 ### 可观察的成功与失败
 
-成功的导航返回规范化位置，悬停返回规范化文本或无可悬停提示；空结果是成功的无结果响应。在服务器启动前，缺失、非目录、非普通文件、非 UTF-8 或过大的工作区或源文件以其 `FsError` 错误码失败，位于规范工作区之外的源文件以 `LSP_FILE_OUTSIDE_WORKSPACE` 失败。随后，服务器不支持该操作或临时打开／关闭同步时查询以 `LSP_UNSUPPORTED_OPERATION` 失败，非 UTF-16 位置编码以 `LSP_UNSUPPORTED_ENCODING` 失败，格式错误的载荷以 `LSP_MALFORMED_RESPONSE` 失败，JSON-RPC 错误响应以 `LSP_SERVER_ERROR` 失败；进程或流失败时报告 `LSP_SPAWN_FAILED`、`LSP_SERVER_EXITED`、`LSP_PROTOCOL_ERROR` 或 `LSP_MESSAGE_TOO_LARGE`。[LSP 导航子系统](../../../docs/subsystems/lsp.zh.md#failures)给出每个错误码的含义与消费方操作。被强制杀死的 harness 会让服务器继续运行直到自行退出——优雅关闭只发生在服务释放时。
+成功的导航返回规范化位置，悬停返回规范化文本或无可悬停提示；空结果是成功的无结果响应。在服务器启动前，缺失、非目录、非普通文件、非 UTF-8 或过大的工作区或源文件以其 `FsError` 错误码失败，位于规范工作区之外的源文件以 `LSP_FILE_OUTSIDE_WORKSPACE` 失败。随后，服务器不支持该操作或临时打开／关闭同步时查询以 `LSP_UNSUPPORTED_OPERATION` 失败，非 UTF-16 位置编码以 `LSP_UNSUPPORTED_ENCODING` 失败，格式错误的载荷以 `LSP_MALFORMED_RESPONSE` 失败，JSON-RPC 错误响应以 `LSP_SERVER_ERROR` 失败；进程或流失败时报告 `LSP_SPAWN_FAILED`、`LSP_SERVER_EXITED`、`LSP_PROTOCOL_ERROR` 或 `LSP_MESSAGE_TOO_LARGE`。LSP 导航子系统给出每个错误码的含义与消费方操作。被强制杀死的 harness 会让服务器继续运行直到自行退出——优雅关闭只发生在服务释放时。
 
 ### 安全边界
 
@@ -120,7 +120,7 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从共享的导航模型逐步进入 seam 与工具。
 
-- [LSP 导航子系统](../../../docs/subsystems/lsp.zh.md)——操作、坐标、请求与结果，以及 `LspError` code。
+- LSP 导航子系统——操作、坐标、请求与结果，以及 `LspError` code。
 - [dsh-lsp](../lsp/README.zh.md)——本提供方注册到的 seam。
 - [dsh-tool-lsp](../tool-lsp/README.zh.md)——基于该 seam 的面向模型工具。
 - [lsp 组地图](../README.zh.md)——三个包的家族及其相关文档。

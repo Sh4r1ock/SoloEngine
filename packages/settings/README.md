@@ -29,7 +29,7 @@ The package README owns the form behavior; the settings reference documents its 
 <a id="related-documentation"></a>
 ## Related documentation
 
-- [Settings reference](../../docs/subsystems/settings.md) — descriptors and edits.
+- Settings reference — descriptors and edits.
 - [Configuration editor](../boot/config-editor/README.md) — profile persistence.
 - [Volatile configuration](../../vendor/loader/README.md) — updates without remounting.
 

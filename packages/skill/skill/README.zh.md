@@ -43,7 +43,7 @@ kind: "package-reference"
 |---|---|---|
 | `collectCacheMaxEntries` | `128` | 内存中保留的已完成 cwd/提供方目录数 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill)是每个受支持字段的穷尽式真源。
+生成的配置目录是每个受支持字段的穷尽式真源。
 
 ### 注册表提供什么
 
@@ -114,11 +114,11 @@ Skill 摘要保留胜出提供方可选的指令文件 `path`，供提供文件�
 
 当包级约定不够用时阅读以下页面。它们从共享的 skill 词汇逐步进入随附提供方、面向模型的消费方与设计依据。
 
-- [skill 子系统参考](../../../docs/subsystems/skills.zh.md)——注册表、提供方约定与本地发现优先级。
+- skill 子系统参考——注册表、提供方约定与本地发现优先级。
 - [skill-filesystem 包](../skill-filesystem/README.zh.md)——从磁盘发现 skill 的随附本地提供方。
 - [tool-skill 包](../tool-skill/README.zh.md)——渲染会话目录与 `skill` 工具的消费方。
-- [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill)——每个配置字段及其源声明。
-- [历史skill 调用策略 Agent Note](../../../.agents/notes/archived/feature/2026-07-28-skill-invocation-policy.md)——模型与用户调用控制的依据。
+- 生成配置目录——每个配置字段及其源声明。
+- 历史skill 调用策略 Agent Note——模型与用户调用控制的依据。
 
 -----
 

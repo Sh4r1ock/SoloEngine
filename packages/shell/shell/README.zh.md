@@ -78,7 +78,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 
 ### 设计理念
 
-本包是标准能力 seam 中的一个角色：命名执行器约定的 Service Definition，Service Provider 与 Consumer 各自拆分，使每个角色都能独立演进（见[能力 seam 笔记](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)）。两项决策锚定了该约定：
+本包是标准能力 seam 中的一个角色：命名执行器约定的 Service Definition，Service Provider 与 Consumer 各自拆分，使每个角色都能独立演进（见能力 seam 笔记）。两项决策锚定了该约定：
 
 - **边界处的显式解析。** `resolve(request)` 是应用默认值与上限的唯一位置；`execute` 只接受已解析的 spec，绝不再次默认化，因此实现内部不会藏有隐藏的兜底值。
 - **一次执行，多个投影。** `execute` 在准备完成后返回句柄；前台结果与后台游标读取都是同一个已 spawn 进程上的投影，前台/后台是调用方的选择，绝不是第二条 spawn 路径。句柄不带 id 或所有者；job 身份、所有权与生命周期属于通用 `ctx.jobs` 运行时，使执行器与会话保持独立。
@@ -108,11 +108,11 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 
 当 seam 约定不够用时阅读以下页面。它们从共享子系统参考逐步进入具体执行器与面向模型的工具。
 
-- [Bash 执行器子系统](../../../docs/subsystems/shell.zh.md) —— 请求/spec 词汇、结果与完整的服务约定。
+- Bash 执行器子系统 —— 请求/spec 词汇、结果与完整的服务约定。
 - [bash-local](../bash-local/README.zh.md) —— 默认 POSIX 执行器：全新的 `bash -c` 进程、预算与 deadline。
 - [bash-sandbox](../bash-sandbox/README.zh.md) —— 沙箱执行器：沙箱模式、拒绝与升权。
 - [tool-bash](../tool-bash/README.zh.md) —— 基于该 seam 的面向模型 `bash` 工具。
-- [能力 seam 笔记](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md) —— 本 seam 遵循的 Service Definition / Provider / Consumer 拆分。
+- 能力 seam 笔记 —— 本 seam 遵循的 Service Definition / Provider / Consumer 拆分。
 
 -----
 
@@ -133,7 +133,7 @@ seam 本身不是执行器：每个组合只挂载一个提供方，工具即可
 这些限制说明该 seam 不提供什么。它们是当前包约束，不是路线图。
 
 - **没有交互式输入词汇**——`stdin` 只在 spawn 时写入一次并关闭；seam 没有向运行中任务继续输入的通道，也没有 PTY 会话概念。
-- **前台超时始终由执行器负责**——seam 上由调用方负责 deadline 的模式已由[工具调用超时策略笔记](../../../.agents/notes/implemented/architecture/2026-07-07-tool-call-timeout-policy.zh.md)明确延期。
+- **前台超时始终由执行器负责**——seam 上由调用方负责 deadline 的模式已由工具调用超时策略笔记明确延期。
 
 <a id="dev-note"></a>
 ### 开发备注

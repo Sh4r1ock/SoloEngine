@@ -58,7 +58,7 @@ Agent 打开的终端会自动出现。Session 的标题栏显示期间，provid
 
 - [Subprocess](../../subprocess/subprocess/README.zh.md)
 - [Right Sidebar](../../client/ui-sidebar-right/README.zh.md)
-- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.zh.md)
+- Web terminal decision
 
 <a id="model-experience"></a>
 ## 模型体验

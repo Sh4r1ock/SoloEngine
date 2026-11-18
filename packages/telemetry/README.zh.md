@@ -27,7 +27,7 @@ kind: "package-group"
 <a id="related-documentation"></a>
 ## 相关文档
 
-- [OTel 子系统](../../docs/subsystems/otel.zh.md) — 共享服务与调用方职责。
+- OTel 子系统 — 共享服务与调用方职责。
 
 <a id="dev-note"></a>
 ## 开发备注
